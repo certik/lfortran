@@ -93,3 +93,42 @@ jobs:
             set MACOS=0
             call "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
             xonsh ci\test.xsh
+
+  debug:
+    name: Check Debug build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-update-conda: true
+          environment-file: ci/environment.yml
+          python-version: 3.10
+          auto-activate-base: false
+
+      - name: Install Linux
+        shell: bash -l {0}
+        run: conda install bison=3.4 rapidjson
+
+      - name: Conda info
+        shell: bash -l {0}
+        run: |
+            conda info
+            conda list
+
+      - name: Build Linux
+        shell: bash -l {0}
+        run: |
+            ./build0.sh
+            ./build1.sh
+
+      - name: Test Linux
+        shell: bash -l {0}
+        run: |
+            ctest
+            ./run_tests.sh
+            cd integration_tests
+            ./run_tests.py -b llvm
