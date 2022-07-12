@@ -121,7 +121,15 @@ jobs:
         shell: bash -l {0}
         run: |
             ./build0.sh
-            ./build1.sh
+            cmake \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DWITH_LLVM=yes \
+              -DLFORTRAN_BUILD_ALL=yes \
+              -DWITH_STACKTRACE=no \
+              -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" \
+              -DCMAKE_INSTALL_PREFIX=`pwd`/inst \
+              .
+            cmake --build . -j16 --target install
 
       - name: Test Linux
         shell: bash -l {0}
