@@ -135,6 +135,6 @@ jobs:
         shell: bash -l {0}
         run: |
             ctest
-            ./run_tests.sh
+            ./run_tests.py
             cd integration_tests
             ./run_tests.py -b llvm
