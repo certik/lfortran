@@ -109,11 +109,7 @@ jobs:
           channels: conda-forge,defaults
           channel-priority: true
           activate-environment: anaconda-client-env
-          environment-file: ci/environment.yml
-
-      - name: Install Linux
-        shell: bash -l {0}
-        run: conda install bison=3.4 rapidjson
+          environment-file: ci/environment_linux.yml
 
       - name: Conda info
         shell: bash -l {0}
