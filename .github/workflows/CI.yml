@@ -104,10 +104,12 @@ jobs:
 
       - uses: conda-incubator/setup-miniconda@v2
         with:
-          auto-update-conda: true
-          environment-file: ci/environment.yml
           python-version: 3.10
-          auto-activate-base: false
+          mamba-version: "*"
+          channels: conda-forge,defaults
+          channel-priority: true
+          activate-environment: anaconda-client-env
+          environment-file: ci/environment.yml
 
       - name: Install Linux
         shell: bash -l {0}
