@@ -5,10 +5,11 @@ import subprocess as sp
 import os
 
 # Initialization
-no_of_threads = 8 # default no of threads is 8
+no_of_threads = 8  # default no of threads is 8
 supported_backends = ['llvm', 'llvm2', 'llvm_rtlib', 'cpp', 'x86', 'wasm', 'gfortran', 'llvmImplicit']
 base_dir = os.path.dirname(os.path.realpath(__file__))
 lfortran_path = f"{base_dir}/../src/bin:$PATH"
+
 
 def run_cmd(cmd, cwd=None):
     print(f"+ {cmd}")
@@ -17,10 +18,11 @@ def run_cmd(cmd, cwd=None):
         print("Command failed.")
         exit(1)
 
+
 def run_test(backend):
     run_cmd(f"mkdir {base_dir}/test-{backend}")
-    cwd=f"{base_dir}/test-{backend}"
-    common=f" -DCURRENT_BINARY_DIR={base_dir}/test-{backend} -S {base_dir} -B {base_dir}/test-{backend}"
+    cwd = f"{base_dir}/test-{backend}"
+    common = f" -DCURRENT_BINARY_DIR={base_dir}/test-{backend} -S {base_dir} -B {base_dir}/test-{backend}"
     if backend == "gfortran":
         run_cmd(f"FC=gfortran cmake" + common,
                 cwd=cwd)
@@ -37,14 +39,16 @@ def test_backend(backend):
         return
     run_test(backend)
 
+
 def get_args():
     parser = argparse.ArgumentParser(description="LFortran Integration Test Suite")
     parser.add_argument("-j", "-n", "--no_of_threads", type=int,
-                help="Parallel testing on given number of threads")
+                        help="Parallel testing on given number of threads")
     parser.add_argument("-b", "--backends", nargs="*", default=["llvm"], type=str,
-                help="Test the requested backends (%s)" % \
-                        ", ".join(supported_backends))
+                        help="Test the requested backends (%s)" % \
+                             ", ".join(supported_backends))
     return parser.parse_args()
+
 
 def main():
     args = get_args()
@@ -59,6 +63,7 @@ def main():
     no_of_threads = args.no_of_threads or no_of_threads
     for backend in args.backends:
         test_backend(backend)
+
 
 if __name__ == "__main__":
     main()
