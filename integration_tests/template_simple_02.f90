@@ -14,6 +14,16 @@ module template_simple_02_m
         end function
     end requirement
 
+    requirement operator_integer_r(T, V, binary_func)
+        type, deferred :: T
+        type, deferred :: V
+        pure elemental function binary_func(lhs, rhs) result(res)
+            type(T), intent(in) :: lhs
+            integer, intent(in) :: rhs
+            type(V) :: res
+        end function
+    end requirement
+
     requirement cast_r(T, cast)
         type, deferred :: T
         pure elemental function cast(arg) result(res)
@@ -52,6 +62,21 @@ contains
         end if
     end function
 
+    pure function generic_avg{T, add, cast_to_T, div}(arr) result(res)
+    requires operator_r(T, T, T, add)
+    requires cast_r(T, cast_to_T)
+    requires operator_integer_r(T, T, div)
+    type(T), intent(in) :: arr(:)
+    type(T) :: res
+    integer :: n, i
+    n = size(arr)
+    if (n > 0) then
+        res = div(generic_sum{T, add, cast_to_T}(arr),n)
+    else
+        res = cast_to_T(0)
+    end if
+    end function generic_avg
+
     subroutine test_template()
         integer :: a_i(10), i, s_i
         real :: a_r(10), s_r
@@ -61,6 +86,8 @@ contains
         end do
         s_i = generic_sum{integer, operator(+), cast_integer}(a_i)
         s_r = generic_sum{real, operator(+), cast_real}(a_r)
+        !s_i = generic_avg{integer, operator(+), cast_integer, operator(/)}(a_i)
+        !s_r = generic_avg{real, operator(+), cast_real, operator(/)}(a_r)
         print *, s_i
         print *, s_r
     end subroutine
