@@ -4,4 +4,4 @@ cmake \
     -DWITH_STACKTRACE=no \
     -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" \
     .
-cmake --build . -j16
+cmake --build . --config Release -j16
