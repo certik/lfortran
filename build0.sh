@@ -1,4 +1,4 @@
-echo "v0.40.0-57-gb50db1203" > version
+echo "0.40.0-57-gb50db1203" > version
 
 # Generate a Fortran AST from AST.asdl (C++)
 python src/libasr/asdl_cpp.py grammar/AST.asdl src/lfortran/ast.h
