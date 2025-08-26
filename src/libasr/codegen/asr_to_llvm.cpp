@@ -3049,7 +3049,8 @@ public:
         llvm::Value* array = llvm_symtab[h];
         llvm::Type* type = llvm_utils->get_type_from_ttype_t_util(x.m_enum_type, enum_type->m_enum_type, module.get());
         tmp = llvm_utils->create_gep2(type, array, tmp);
-        llvm::Type* element_type = llvm_utils->get_type_from_ttype_t_util(&x.base.base, enum_symbol->m_type, module.get());
+        ASR::expr_t* e=const_cast<ASR::expr_t*>(&x.base);
+        llvm::Type* element_type = llvm_utils->get_type_from_ttype_t_util(e, enum_symbol->m_type, module.get());
         tmp = llvm_utils->CreateLoad(llvm_utils->create_gep2(element_type, tmp, 1));
     }
 
@@ -3110,7 +3111,8 @@ public:
             }
             tmp = builder->CreateSub(tmp, llvm::ConstantInt::get(tmp->getType(),
                         llvm::APInt(32, min_value, true)));
-            llvm::Type* array_element_type = llvm_utils->get_type_from_ttype_t_util(&x.base.base, enum_type->m_type, module.get());
+            ASR::expr_t* e=const_cast<ASR::expr_t*>(&x.base);
+            llvm::Type* array_element_type = llvm_utils->get_type_from_ttype_t_util(e, enum_type->m_type, module.get());
             tmp = llvm_utils->create_gep2(array_element_type, array, tmp);
             tmp = llvm_utils->create_gep2(array_element_type, tmp, 0);
         }
