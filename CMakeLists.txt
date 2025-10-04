@@ -227,6 +227,11 @@ if (WITH_LLVM)
     find_package(LLVM REQUIRED)
     message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
     message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+    
+    # LLVM 8 needs the ipo library for PassManagerBuilder
+    if (LLVM_VERSION_MAJOR LESS 9)
+        list(APPEND LFORTRAN_LLVM_COMPONENTS ipo)
+    endif()
 
     # Always enable the native target
     if ("${LLVM_NATIVE_ARCH}" STREQUAL "AArch64")
