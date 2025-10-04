@@ -326,6 +326,25 @@ void LLVMEvaluator::add_module(std::unique_ptr<LLVMModule> m) {
 }
 
 intptr_t LLVMEvaluator::get_symbol_address(const std::string &name) {
+#if LLVM_VERSION_MAJOR < 8
+    // LLVM 7: Use findSymbol which returns JITSymbol
+    llvm::JITSymbol s = jit->findSymbol(name);
+    if (!s) {
+        throw LCompilersException("findSymbol() failed to find the symbol '" + name + "'");
+    }
+    auto addr = s.getAddress();
+    if (!addr) {
+        llvm::Error e = addr.takeError();
+        llvm::SmallVector<char, 128> buf;
+        llvm::raw_svector_ostream dest(buf);
+        llvm::logAllUnhandledErrors(std::move(e), dest, "");
+        std::string msg = std::string(dest.str().data(), dest.str().size());
+        if (msg[msg.size()-1] == '\n') msg = msg.substr(0, msg.size()-1);
+        throw LCompilersException("getAddress() failed for symbol '"
+            + name + "', error: " + msg);
+    }
+    return (intptr_t)addr.get();
+#else
 #if LLVM_VERSION_MAJOR < 17
     llvm::Expected<llvm::JITEvaluatedSymbol>
 #else
@@ -357,6 +376,7 @@ intptr_t LLVMEvaluator::get_symbol_address(const std::string &name) {
         throw LCompilersException("JITSymbol::getAddress() returned an error: " + msg);
     }
     return (intptr_t)cantFail(std::move(addr0));
+#endif
 }
 
 void write_file(const std::string &filename, const std::string &contents)
