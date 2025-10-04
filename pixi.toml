@@ -16,6 +16,8 @@ ctest = "cmake --build . --parallel --target test"
 tests = "./run_tests.py"
 integration_tests = "cd integration_tests && ./run_tests.py -j16"
 
+[feature.llvm7.host-dependencies]
+llvmdev = "7.0.1"
 [feature.llvm8.host-dependencies]
 llvmdev = "8.0.1"
 [feature.llvm9.host-dependencies]
@@ -99,6 +101,7 @@ m2-bison = "3.0.4"
 build = "bash ./build1.sh"
 
 [environments]
+llvm7 = {features = ["llvm7", "build"]}
 llvm8 = {features = ["llvm8", "build"]}
 llvm9 = {features = ["llvm9", "build"]}
 llvm10 = {features = ["llvm10", "build"]}
