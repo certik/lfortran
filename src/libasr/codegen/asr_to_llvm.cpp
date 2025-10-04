@@ -115,17 +115,18 @@ private:
     }
 
     //! Workaround for LLVM 7 CreateGlobalStringPtr bug
-    llvm::Constant* CreateGlobalStringPtrSafe(llvm::StringRef Str, const llvm::Twine &Name = "", unsigned AddressSpace = 0) {
+    llvm::Value* CreateGlobalStringPtrSafe(llvm::StringRef Str, const llvm::Twine &Name = "", unsigned AddressSpace = 0) {
 #if LLVM_VERSION_MAJOR <= 7
-        // LLVM 7: CreateGlobalStringPtr has a bug, so we avoid using getInBoundsGetElementPtr
-        // Instead, create the global string and use a direct bitcast
+        // LLVM 7: CreateGlobalStringPtr has a bug with ConstantExpr::getGetElementPtr
+        // Use bitcast as a workaround. This creates a text relocation warning but works correctly.
+        // The warning is unavoidable in LLVM 7 due to how global string references are handled.
         llvm::Constant *StrConstant = llvm::ConstantDataArray::getString(context, Str);
         auto *GV = new llvm::GlobalVariable(
             *module, StrConstant->getType(), true,
             llvm::GlobalValue::PrivateLinkage, StrConstant, Name, nullptr,
             llvm::GlobalVariable::NotThreadLocal, AddressSpace);
         GV->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-        // Cast to i8* (char*) - this gives us a pointer to the first character
+        // Bitcast to i8* - this works but may produce a linker warning about text relocations
         return llvm::ConstantExpr::getBitCast(GV, llvm::Type::getInt8PtrTy(context, AddressSpace));
 #else
         // LLVM 8+: Use the standard IRBuilder method
