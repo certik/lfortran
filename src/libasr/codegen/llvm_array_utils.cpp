@@ -13,7 +13,7 @@ namespace LCompilers {
         static llvm::Constant* CreateGlobalStringPtrSafe(
                 [[maybe_unused]] llvm::LLVMContext &context,
                 [[maybe_unused]] llvm::Module &module,
-                llvm::IRBuilder<> &builder, llvm::StringRef Str) {
+                [[maybe_unused]] llvm::IRBuilder<> &builder, llvm::StringRef Str) {
 #if LLVM_VERSION_MAJOR <= 7
             // LLVM 7: CreateGlobalStringPtr has a bug, use bitcast workaround
             llvm::Constant *StrConstant = llvm::ConstantDataArray::getString(context, Str);
