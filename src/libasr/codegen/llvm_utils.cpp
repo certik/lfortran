@@ -1463,6 +1463,29 @@ namespace LCompilers {
     }
 
     llvm::Value* LLVMUtils::create_gep2(llvm::Type *t, llvm::Value* ds, int idx) {
+#if LLVM_VERSION_MAJOR <= 8
+        // LLVM 8 and earlier have issues with constant folding nested GEPs on struct types.
+        // When ds is a constant (e.g., global or constant GEP expression),
+        // the constant folder may crash trying to call PointerType::get() with a null type.
+        // Work around by bitcasting through i8* to break the constant folding chain.
+        if (llvm::isa<llvm::Constant>(ds) && llvm::isa<llvm::StructType>(t)) {
+            // Cast through i8* to break the constant folding chain
+            llvm::Type* i8_ptr = llvm::Type::getInt8PtrTy(context);
+            llvm::Value* ds_as_i8 = builder->CreateBitCast(ds, i8_ptr);
+            // Calculate byte offset manually
+            llvm::DataLayout data_layout(module);
+            const llvm::StructLayout* struct_layout = data_layout.getStructLayout(
+                llvm::cast<llvm::StructType>(t));
+            uint64_t offset = struct_layout->getElementOffset(idx);
+            llvm::Value* offset_val = llvm::ConstantInt::get(
+                llvm::Type::getInt64Ty(context), offset);
+            llvm::Value* ds_offseted = builder->CreateGEP(
+                llvm::Type::getInt8Ty(context), ds_as_i8, offset_val);
+            // Cast back to the member type
+            llvm::Type* member_type = t->getStructElementType(idx);
+            return builder->CreateBitCast(ds_offseted, member_type->getPointerTo());
+        }
+#endif
         std::vector<llvm::Value*> idx_vec = {
         llvm::ConstantInt::get(context, llvm::APInt(32, 0)),
         llvm::ConstantInt::get(context, llvm::APInt(32, idx))};
