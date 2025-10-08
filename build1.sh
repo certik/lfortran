@@ -3,6 +3,9 @@
 set -e
 set -x
 
+export CC=x86_64-conda-linux-gnu-gcc
+export CXX=x86_64-conda-linux-gnu-g++
+
 cmake \
     -DCMAKE_BUILD_TYPE=Debug \
     -DWITH_LLVM=yes \

@@ -18,6 +18,8 @@ integration_tests = "cd integration_tests && ./run_tests.py -j16"
 
 [feature.llvm7.target.linux-64.host-dependencies]
 llvmdev = "==7.0.1"
+gcc_linux-64 = "==7.5.0"
+gxx_linux-64 = "==7.5.0"
 [feature.llvm7.target.win-64.host-dependencies]
 llvmdev = "==7.0.1"
 [feature.llvm8.target.linux-64.host-dependencies]
