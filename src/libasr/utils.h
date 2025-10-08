@@ -3,7 +3,7 @@
 
 #include <string>
 #include <vector>
-#include <filesystem>
+//#include <filesystem>
 #include <libasr/containers.h>
 
 namespace LCompilers {
@@ -26,8 +26,8 @@ int visualize_json(std::string &astr_data_json, LCompilers::Platform os);
 std::string generate_visualize_html(std::string &astr_data_json);
 
 struct PassOptions {
-    std::filesystem::path mod_files_dir;
-    std::vector<std::filesystem::path> include_dirs;
+    std::string mod_files_dir;
+    std::vector<std::string> include_dirs;
 
     int default_integer_kind = 4;
 

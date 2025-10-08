@@ -3,12 +3,32 @@
 #include <iostream>
 #include <regex>
 #include <stdlib.h>
-#include <filesystem>
 #include <random>
+#include <libgen.h>
 #ifndef CLI11_HAS_FILESYSTEM
 #define CLI11_HAS_FILESYSTEM 0
 #endif // CLI11_HAS_FILESYSTEM
 #include <bin/CLI11.hpp>
+
+// Helper functions for path operations (GCC 7.5.0 compatible)
+namespace {
+    inline std::string path_join(const std::string& dir, const std::string& file) {
+        if (dir.empty()) return file;
+        if (dir.back() == '/') return dir + file;
+        return dir + "/" + file;
+    }
+    
+    inline std::string get_basename(const std::string& path) {
+        size_t pos = path.find_last_of("/\\");
+        return (pos == std::string::npos) ? path : path.substr(pos + 1);
+    }
+    
+    inline std::string replace_extension(const std::string& path, const std::string& new_ext) {
+        size_t pos = path.find_last_of('.');
+        if (pos == std::string::npos) return path + new_ext;
+        return path.substr(0, pos) + new_ext;
+    }
+}
 
 #include <libasr/stacktrace.h>
 #include <lfortran/parser/parser.h>
@@ -507,7 +527,7 @@ int emit_prescan(const std::string &infile, CompilerOptions &compiler_options)
         lm.file_ends.push_back(input.size());
     }
 
-    std::vector<std::filesystem::path> include_dirs;
+    std::vector<std::string> include_dirs;
     include_dirs.push_back(LCompilers::parent_path(lm.files.back().in_filename));
     include_dirs.insert(include_dirs.end(),
                           compiler_options.po.include_dirs.begin(),
@@ -534,7 +554,7 @@ int emit_tokens(const std::string &infile, bool line_numbers, const CompilerOpti
         lm.files.push_back(fl);
     }
     if (compiler_options.prescan || compiler_options.fixed_form) {
-        std::vector<std::filesystem::path> include_dirs;
+        std::vector<std::string> include_dirs;
         include_dirs.push_back(LCompilers::parent_path(lm.files.back().in_filename));
         include_dirs.insert(include_dirs.end(),
                             compiler_options.po.include_dirs.begin(),
@@ -966,8 +986,7 @@ int save_mod_files(const LCompilers::ASR::TranslationUnit_t &u,
                 modfile_name = std::string(m->m_parent_module) + "@" + std::string(m->m_name) + ".smod";
             }
 
-	    std::filesystem::path filename { modfile_name };
-            std::filesystem::path fullpath = compiler_options.po.mod_files_dir / filename;
+            std::string fullpath = path_join(compiler_options.po.mod_files_dir, modfile_name);
             {
                 std::ofstream out;
 		out.open(fullpath, std::ofstream::out | std::ofstream::binary);
@@ -976,8 +995,8 @@ int save_mod_files(const LCompilers::ASR::TranslationUnit_t &u,
 
             // Create an empty modfile for submodules using submodule name to satify CMAKE condition.
             if (m->m_parent_module) {
-                std::filesystem::path emptyfile_filename { std::string(m->m_name) + ".mod" };
-                std::filesystem::path emptyfile_fullpath = compiler_options.po.mod_files_dir / emptyfile_filename;
+                std::string emptyfile_filename = std::string(m->m_name) + ".mod";
+                std::string emptyfile_fullpath = path_join(compiler_options.po.mod_files_dir, emptyfile_filename);
                 {
                     std::ofstream emptyfile_out(emptyfile_fullpath);
                 }
@@ -1223,8 +1242,8 @@ int compile_src_to_object_file(const std::string &infile,
                 std::cerr << diagnostics.render(lm, compiler_options);
                 if (mlir_res.ok) {
                     mlir_res.result->mlir_to_llvm(*mlir_res.result->llvm_ctx);
-                    std::string mlir_tmp_o = (std::filesystem::path(LFORTRAN_TEMP_DIR) / std::filesystem::path(infile)
-                        .filename().replace_extension(".mlir.tmp_" + LCOMPILERS_UNIQUE_ID + ".o")).string();
+                    std::string mlir_tmp_o = path_join(LFORTRAN_TEMP_DIR, 
+                        replace_extension(get_basename(infile), ".mlir.tmp_" + LCOMPILERS_UNIQUE_ID + ".o"));
                     e.save_object_file(*(mlir_res.result->llvm_m), mlir_tmp_o);
                 } else {
                     LCOMPILERS_ASSERT(diagnostics.has_error())
@@ -1956,9 +1975,9 @@ int link_executable(const std::vector<std::string> &infiles,
                 if (backend == Backend::llvm &&
                         compiler_options.po.enable_gpu_offloading &&
                         std::regex_match(s, std::regex(R"(.*\.tmp_\w+\.o)"))) {
-                    std::string file_path = std::filesystem::path(s.substr(0, s.size() - 2)).string();    // strip ".o" from end
-                    std::string mlir_tmp_o = std::filesystem::path(file_path).replace_extension(
-                        ".mlir.tmp_" + LCOMPILERS_UNIQUE_ID + ".o").string();
+                    std::string file_path = s.substr(0, s.size() - 2);    // strip ".o" from end
+                    std::string mlir_tmp_o = replace_extension(file_path, 
+                        ".mlir.tmp_" + LCOMPILERS_UNIQUE_ID + ".o");
                     compile_cmd += mlir_tmp_o + " ";
                     mlir_temp_object_files.push_back(mlir_tmp_o);
                 }
@@ -2483,29 +2502,29 @@ int main_app(int argc, char *argv[]) {
     }
 
     std::string outfile;
-    std::filesystem::path basename = std::filesystem::path(opts.arg_file).filename();
+    std::string basename = get_basename(opts.arg_file);
     if (compiler_options.arg_o.size() > 0) {
         outfile = compiler_options.arg_o;
     } else if (opts.arg_S) {
-        outfile = basename.replace_extension(".s").string();
+        outfile = replace_extension(basename, ".s");
     } else if (opts.arg_c) {
-        outfile = basename.replace_extension(".o").string();
+        outfile = replace_extension(basename, ".o");
     } else if (opts.show_prescan) {
-        outfile = basename.replace_extension(".prescan").string();
+        outfile = replace_extension(basename, ".prescan");
     } else if (opts.show_tokens) {
-        outfile = basename.replace_extension(".tokens").string();
+        outfile = replace_extension(basename, ".tokens");
     } else if (opts.show_ast) {
-        outfile = basename.replace_extension(".ast").string();
+        outfile = replace_extension(basename, ".ast");
     } else if (opts.show_asr) {
-        outfile = basename.replace_extension(".asr").string();
+        outfile = replace_extension(basename, ".asr");
     } else if (opts.show_llvm) {
-        outfile = basename.replace_extension(".ll").string();
+        outfile = replace_extension(basename, ".ll");
     } else if (opts.show_wat) {
-        outfile = basename.replace_extension(".wat").string();
+        outfile = replace_extension(basename, ".wat");
     } else if (opts.show_julia) {
-        outfile = basename.replace_extension(".jl").string();
+        outfile = replace_extension(basename, ".jl");
     } else {
-        outfile = basename.replace_extension(".out").string();
+        outfile = replace_extension(basename, ".out");
     }
 
     lfortran_pass_manager.parse_pass_arg(opts.arg_pass, opts.skip_pass);
@@ -2650,8 +2669,8 @@ int main_app(int argc, char *argv[]) {
     std::vector<std::string> temp_object_files;
     for (const auto &arg_file : opts.arg_files) {
         int err = 0;
-        std::string tmp_o = (std::filesystem::path(LFORTRAN_TEMP_DIR) / std::filesystem::path(arg_file)
-                                .filename().replace_extension(".tmp_" + LCOMPILERS_UNIQUE_ID + ".o")).string();
+        std::string tmp_o = path_join(LFORTRAN_TEMP_DIR, 
+            replace_extension(get_basename(arg_file), ".tmp_" + LCOMPILERS_UNIQUE_ID + ".o"));
         temp_object_files.push_back(tmp_o);
         if (endswith(arg_file, ".f90") || endswith(arg_file, ".f") ||
             endswith(arg_file, ".F90") || endswith(arg_file, ".F")) {

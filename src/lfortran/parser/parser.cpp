@@ -694,7 +694,7 @@ The prescan phase includes:
 - Handling of fixed-form column rules (columns 1–6 for labels/comments)
 */
 std::string prescan(const std::string &s, LocationManager &lm,
-        bool fixed_form, std::vector<std::filesystem::path> &include_dirs)
+        bool fixed_form, std::vector<std::string> &include_dirs)
 {
     if (fixed_form) {
         // `pos` is the position in the original code `s`

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <filesystem>
 #include <shared_mutex>
 #include <regex>
 #include <string>

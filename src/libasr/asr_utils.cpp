@@ -1,6 +1,7 @@
 #include "libasr/asr.h"
 #include <unordered_set>
 #include <map>
+#include <dirent.h>
 #include <libasr/asr_utils.h>
 #include <libasr/string_utils.h>
 #include <libasr/serialization.h>
@@ -1203,20 +1204,23 @@ Result<ASR::TranslationUnit_t*, ErrorMessage> find_and_load_module(Allocator &al
                                                 SymbolTable &symtab, bool intrinsic,
                                                 LCompilers::PassOptions& pass_options,
                                                 LCompilers::LocationManager &lm) {
-    std::filesystem::path runtime_library_dir { pass_options.runtime_library_dir };
-    std::filesystem::path filename {msym + ".mod"};
-    std::vector<std::filesystem::path> mod_files_dirs;
+    std::string filename = msym + ".mod";
+    std::vector<std::string> mod_files_dirs;
 
-    mod_files_dirs.push_back( runtime_library_dir );
-    mod_files_dirs.push_back( pass_options.mod_files_dir );
+    mod_files_dirs.push_back(pass_options.runtime_library_dir);
+    mod_files_dirs.push_back(pass_options.mod_files_dir);
     mod_files_dirs.insert(mod_files_dirs.end(),
                           pass_options.include_dirs.begin(),
                           pass_options.include_dirs.end());
 
-    for (auto path : mod_files_dirs) {
+    for (auto &path : mod_files_dirs) {
         std::string modfile;
-        std::filesystem::path full_path = path / filename;
-        if (read_file(full_path.string(), modfile)) {
+        std::string full_path = path;
+        if (!full_path.empty() && full_path.back() != '/') {
+            full_path += "/";
+        }
+        full_path += filename;
+        if (read_file(full_path, modfile)) {
             Result<ASR::TranslationUnit_t*, ErrorMessage> res = load_modfile(al, modfile, false, symtab, lm);
             if (res.ok) {
                 ASR::TranslationUnit_t* asr = res.result;
@@ -1237,32 +1241,42 @@ Result<std::vector<ASR::TranslationUnit_t*>, ErrorMessage> find_and_load_submodu
                                                             LCompilers::PassOptions &pass_options,
                                                             LCompilers::LocationManager &lm) {
     std::vector<ASR::TranslationUnit_t*> submodules_collector;
-    std::filesystem::path runtime_library_dir { pass_options.runtime_library_dir };
-    std::vector<std::filesystem::path> mod_files_dirs;
+    std::vector<std::string> mod_files_dirs;
 
-    mod_files_dirs.push_back(runtime_library_dir);
+    mod_files_dirs.push_back(pass_options.runtime_library_dir);
     mod_files_dirs.push_back(pass_options.mod_files_dir);
     mod_files_dirs.insert(mod_files_dirs.end(),
                           pass_options.include_dirs.begin(),
                           pass_options.include_dirs.end());
 
-    for (auto &path : mod_files_dirs) {
-        if (path.empty()) path = ".";
-        for (auto &file : std::filesystem::directory_iterator(path)) {
-            std::string submod_filename = file.path().filename().string();
+    for (auto &path_str : mod_files_dirs) {
+        std::string dir_path = path_str.empty() ? "." : path_str;
+        
+        // Use POSIX dirent.h API for directory iteration (GCC 7.5.0 compatible)
+        DIR* dir = opendir(dir_path.c_str());
+        if (dir == nullptr) {
+            continue; // Skip directories that cannot be opened
+        }
+        
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != nullptr) {
+            std::string submod_filename(entry->d_name);
             if (startswith(submod_filename, parent_module_name) && endswith(submod_filename, ".smod")) {
+                std::string full_path = dir_path + "/" + submod_filename;
                 std::string submodfile;
-                if (read_file(file.path().string(), submodfile)) {
+                if (read_file(full_path, submodfile)) {
                     Result<ASR::TranslationUnit_t*, ErrorMessage> sub_res = load_modfile(al, submodfile, false, symtab, lm);
                     if (sub_res.ok) {
                         ASR::TranslationUnit_t* asr = sub_res.result;
                         submodules_collector.push_back(asr);
                     } else {
+                        closedir(dir);
                         return sub_res.error;
                     }
                 }
             }
         }
+        closedir(dir);
     }
 
     return submodules_collector;
