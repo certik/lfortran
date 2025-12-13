@@ -3809,7 +3809,9 @@ _lfortran_open(int32_t unit_num,
                char* action,
                int64_t action_len,
                char* delim,
-               int64_t delim_len)
+               int64_t delim_len,
+               char* position,
+               int64_t position_len)
 {
     if (iostat != NULL) {
         *iostat = 0;
@@ -3860,6 +3862,12 @@ _lfortran_open(int32_t unit_num,
         delim_len = 4;
         ini_delim = false;
     }
+    bool ini_position = true;
+    if (position == NULL) {
+       position = "asis";
+       position_len = 4;
+       ini_position = false;
+    }
     bool file_exists[1] = { false };
     FILE* already_open = get_file_pointer_from_unit(unit_num, NULL, NULL, NULL, NULL, NULL);
 
@@ -3868,6 +3876,7 @@ _lfortran_open(int32_t unit_num,
     trim_trailing_spaces(&form, &form_len, ini_form);
     trim_trailing_spaces(&action, &action_len, ini_action);
     trim_trailing_spaces(&delim, &delim_len, ini_delim);
+    trim_trailing_spaces(&position, &position_len, ini_position);
 
     // Prepare null-terminated names for C APIs
     char* f_name_c = to_c_string((const fchar*)f_name, f_name_len);
@@ -3876,6 +3885,7 @@ _lfortran_open(int32_t unit_num,
     char* access_c = to_c_string((const fchar*)access, access_len);
     char* action_c = to_c_string((const fchar*)action, action_len);
     char* delim_c = to_c_string((const fchar*)delim, delim_len);
+    char* position_c = to_c_string((const fchar*)position, position_len);
 
     _lfortran_inquire(
         (const fchar*)f_name, f_name_len, file_exists, -1, NULL, NULL, NULL,
@@ -4063,6 +4073,28 @@ _lfortran_open(int32_t unit_num,
             perror(f_name_c);
             exit(1);
         }
+        if (fd != NULL) {
+            if (streql(position_c, "asis")) {
+                // keep current position
+            } else if (streql(position_c, "rewind")) {
+                rewind(fd);
+            } else if (streql(position_c, "append")) {
+                fseek(fd, 0, SEEK_END);
+            } else {
+                if (iostat != NULL) {
+                    *iostat = 5002;
+                    if ((iomsg != NULL) && (iomsg_len > 0)) {
+                        char* temp = "POSITION specifier in OPEN statement has invalid value.";
+                        snprintf(iomsg, iomsg_len + 1, "%s", temp);
+                        pad_with_spaces(iomsg, strlen(iomsg), iomsg_len);
+                    }
+                } else {
+                    printf("Runtime error: POSITION specifier in OPEN statement has "
+                           "invalid value '%s'\n", position_c);
+                    exit(1);
+                }
+            }
+        }
         store_unit_file(unit_num, f_name_c, fd, unit_file_bin, access_id, read_access, write_access, delim_value);
         return (int64_t) fd;
     }
@@ -4071,6 +4103,7 @@ _lfortran_open(int32_t unit_num,
     free(form_c);
     free(access_c);
     free(action_c);
+    free(position_c);
     return 0;
 }
 
@@ -5663,22 +5696,25 @@ struct Stacktrace get_stacktrace_addresses() {
 }
 
 char *get_base_name(char *filename) {
-    // Assuming filename always has an extensions
-    size_t end = strrchr(filename, '.')-filename-1;
-    // Check for directories else start at 0th index
-    char *slash_idx_ptr = strrchr(filename, '/');
-    size_t start = 0;
-    if (slash_idx_ptr) {
-        start = slash_idx_ptr - filename+1;
-    }
-    int nos_of_chars = end - start + 1;
-    char *base_name;
-    if (nos_of_chars < 0) {
+    if (filename == NULL) {
         return NULL;
     }
-    base_name = malloc (sizeof (char) * (nos_of_chars + 1));
-    base_name[nos_of_chars] = '\0';
-    strncpy (base_name, filename + start, nos_of_chars);
+
+    char *slash_idx_ptr = strrchr(filename, '/');
+    const char *base_start = slash_idx_ptr ? (slash_idx_ptr + 1) : filename;
+    const char *dot_idx_ptr = strrchr(base_start, '.');
+
+    if (dot_idx_ptr == NULL || dot_idx_ptr == base_start) {
+        return NULL;
+    }
+
+    size_t base_len = (size_t)(dot_idx_ptr - base_start);
+    char *base_name = malloc(base_len + 1);
+    if (base_name == NULL) {
+        return NULL;
+    }
+    memcpy(base_name, base_start, base_len);
+    base_name[base_len] = '\0';
     return base_name;
 }
 
@@ -5808,20 +5844,39 @@ uint32_t get_file_size(int64_t fp) {
  */
 void get_local_info_dwarfdump(struct Stacktrace *d) {
     // TODO: Read the contents of lines.dat from here itself.
+    d->stack_size = 0;
     char *base_name = get_base_name(source_filename);
+    if (base_name == NULL) {
+        return;
+    }
+
     char *filename = malloc(strlen(base_name) + 15);
+    if (filename == NULL) {
+        free(base_name);
+        return;
+    }
     strcpy(filename, base_name);
     strcat(filename, "_lines.dat.txt");
     int64_t fd = _lpython_open(filename, "r");
+    free(base_name);
+    free(filename);
+    if (fd < 0) {
+        return;
+    }
     uint32_t size = get_file_size(fd);
+    if (size == 0) {
+        _lpython_close(fd);
+        return;
+    }
     char *file_contents = _lpython_read(fd, size);
     _lpython_close(fd);
-    free(filename);
+    if (file_contents == NULL) {
+        return;
+    }
 
     char s[LCOMPILERS_MAX_STACKTRACE_LENGTH];
     bool address = true;
     uint32_t j = 0;
-    d->stack_size = 0;
     for (uint32_t i = 0; i < size; i++) {
         if (file_contents[i] == '\n') {
             memset(s, '\0', sizeof(s));
@@ -5843,15 +5898,24 @@ void get_local_info_dwarfdump(struct Stacktrace *d) {
         }
         s[j++] = file_contents[i];
     }
+    free(file_contents);
 }
 
 char *read_line_from_file(char *filename, uint32_t line_number, int64_t *out_len) {
+    if (line_number == 0) {
+        *out_len = 0;
+        return NULL;
+    }
+
     FILE *fp = fopen(filename, "r");
-    if (!fp) exit(1);
+    if (!fp) {
+        *out_len = 0;
+        return NULL;
+    }
 
     char *line = NULL;
     size_t cap = 0;
-    ssize_t read_len;
+    ssize_t read_len = -1;
     uint32_t n = 0;
     while (n < line_number && (read_len = getline(&line, &cap, fp)) != -1) n++;
     fclose(fp);
@@ -5882,6 +5946,26 @@ static inline uint64_t bisection(const uint64_t vec[],
     return i1;
 }
 
+static inline void print_stacktrace_raw_addresses(struct Stacktrace *d, bool use_colors) {
+    if (d->pc_size == 0) {
+        return;
+    }
+
+    if (use_colors) {
+        fprintf(stderr, DIM "note: debug line info unavailable; printing raw addresses\n" S_RESET);
+    } else {
+        fprintf(stderr, "note: debug line info unavailable; printing raw addresses\n");
+    }
+
+    for (int32_t i = (int32_t)d->pc_size - 1; i >= 0; i--) {
+        if (use_colors) {
+            fprintf(stderr, DIM "  0x%" PRIxPTR "\n" S_RESET, d->pc[i]);
+        } else {
+            fprintf(stderr, "  0x%" PRIxPTR "\n", d->pc[i]);
+        }
+    }
+}
+
 #endif // HAVE_RUNTIME_STACKTRACE
 
 LFORTRAN_API void print_stacktrace_addresses(char *filename, bool use_colors) {
@@ -5890,6 +5974,10 @@ LFORTRAN_API void print_stacktrace_addresses(char *filename, bool use_colors) {
     struct Stacktrace d = get_stacktrace_addresses();
     get_local_address(&d);
     get_local_info_dwarfdump(&d);
+    if (d.stack_size == 0) {
+        print_stacktrace_raw_addresses(&d, use_colors);
+        return;
+    }
 
 #ifdef HAVE_LFORTRAN_MACHO
     for (int32_t i = d.local_pc_size-1; i >= 0; i--) {
@@ -5899,7 +5987,10 @@ LFORTRAN_API void print_stacktrace_addresses(char *filename, bool use_colors) {
         uint64_t index = bisection(d.addresses, d.stack_size, d.local_pc[i]);
         int64_t line_len;
         char* line = read_line_from_file(source_filename, d.line_numbers[index], &line_len);
-        char* trimmed = remove_whitespace(line, &line_len);  // updated to be len-aware
+        char* trimmed = "";
+        if (line != NULL) {
+            trimmed = remove_whitespace(line, &line_len);
+        }
         if(use_colors) {
             fprintf(stderr, DIM "  File " S_RESET
                 BOLD MAGENTA "\"%s\"" C_RESET S_RESET

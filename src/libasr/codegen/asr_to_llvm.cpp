@@ -400,12 +400,7 @@ public:
     void debug_emit_loc(const T &x) {
         Location loc = x.base.base.loc;
         uint32_t line, column;
-        if (compiler_options.emit_debug_line_column) {
-            debug_get_line_column(loc.first, line, column);
-        } else {
-            line = loc.first;
-            column = 0;
-        }
+        debug_get_line_column(loc.first, line, column);
         builder->SetCurrentDebugLocation(
             llvm::DILocation::get(debug_current_scope->getContext(),
                 line, column, debug_current_scope));
@@ -418,11 +413,7 @@ public:
             debug_CU->getDirectory());
         llvm::DIScope *FContext = debug_Unit;
         uint32_t line, column;
-        if (compiler_options.emit_debug_line_column) {
-            debug_get_line_column(x.base.base.loc.first, line, column);
-        } else {
-            line = 0;
-        }
+        debug_get_line_column(x.base.base.loc.first, line, column);
         std::string fn_debug_name = x.m_name;
         llvm::DIBasicType *return_type_info = nullptr;
         if constexpr (std::is_same_v<T, ASR::Function_t>){
@@ -5285,12 +5276,7 @@ public:
                 // Reset the debug location
                 builder->SetCurrentDebugLocation(nullptr);
                 uint32_t line, column;
-                if (compiler_options.emit_debug_line_column) {
-                    debug_get_line_column(v->base.base.loc.first, line, column);
-                } else {
-                    line = v->base.base.loc.first;
-                    column = 0;
-                }
+                debug_get_line_column(v->base.base.loc.first, line, column);
                 std::string type_name;
                 uint32_t type_size, type_encoding;
                 get_type_debug_info(v->m_type, type_name, type_size,
@@ -11440,6 +11426,7 @@ public:
         llvm::Value *iostat{};
         llvm::Value *action{}, *action_len{};
         llvm::Value *delim{}, *delim_len{};
+        llvm::Value *position{}, *position_len{};
 
         this->visit_expr_wrapper(x.m_newunit, true);
         unit_val = llvm_utils->convert_kind(tmp, llvm::Type::getInt32Ty(context));
@@ -11493,6 +11480,12 @@ public:
             delim = llvm::Constant::getNullValue(character_type);
             delim_len = llvm::ConstantInt::get(context, llvm::APInt(64, 0));
         }
+        if (x.m_position) {
+            std::tie(position, position_len) = get_string_data_and_length(x.m_position);
+        } else {
+            position = llvm::Constant::getNullValue(character_type);
+            position_len = llvm::ConstantInt::get(context, llvm::APInt(64, 0));
+        }
         ptr_loads = ptr_copy;
         std::string runtime_func_name = "_lfortran_open";
         llvm::Function *fn = module->getFunction(runtime_func_name);
@@ -11508,7 +11501,8 @@ public:
                         character_type, i64, //iomsg, iomsg_len
                         llvm::Type::getInt32Ty(context)->getPointerTo(),
                         character_type, i64, // action, action_len
-                        character_type, i64 // delim, delim_len
+                        character_type, i64, // delim, delim_len
+                        character_type, i64, // position, position_len
                     }, false);
             fn = llvm::Function::Create(function_type,
                     llvm::Function::ExternalLinkage, runtime_func_name, module.get());
@@ -11520,7 +11514,8 @@ public:
             access_data, access_len,
             iomsg_data, iomsg_len,
             iostat,
-            action, action_len, delim, delim_len});
+            action, action_len, delim, delim_len,
+            position, position_len});
     }
 
     void visit_FileInquire(const ASR::FileInquire_t &x) {

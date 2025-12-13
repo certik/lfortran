@@ -770,8 +770,7 @@ RUN(NAME array_section_is_non_allocatable LABELS gfortran llvm llvm_wasm llvm_wa
 RUN(NAME array_indices_array_section LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME array_indices_array_section_assignment LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME arrays_constructor_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
-# FIXME: fails with bounds checking
-RUN(NAME array_constructor_02 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran EXTRA_ARGS --no-array-bounds-checking)
+RUN(NAME array_constructor_02 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran EXTRA_ARGS --realloc-lhs-arrays)
 RUN(NAME allocatble_c_ptr LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME hashmap_struct_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME hashmap_nested_dealloc_derived_pointer LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
@@ -1143,6 +1142,7 @@ RUN(NAME intrinsics_254 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # derfc
 RUN(NAME intrinsics_255 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # dbesjn, dbesyn
 RUN(NAME intrinsics_256 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # minval
 RUN(NAME intrinsics_257 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # product
+RUN(NAME intrinsics_product_nodes_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # product
 RUN(NAME intrinsics_258 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # abs
 RUN(NAME intrinsics_259 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # lgt, llt, lge, lle
 RUN(NAME intrinsics_260 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # sum
@@ -2068,6 +2068,8 @@ RUN(NAME class_79 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME class_80 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME class_81 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME class_82 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
+RUN(NAME class_83 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc EXTRA_ARGS --realloc-lhs-arrays)
+RUN(NAME class_84 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc EXTRA_ARGS --realloc-lhs-arrays)
 
 RUN(NAME class_procedure_args_01 LABELS gfortran llvm)
 
@@ -2083,6 +2085,7 @@ RUN(NAME test_iso_fortran_env LABELS gfortran llvm llvm_wasm llvm_wasm_emcc wasm
 RUN(NAME test_ieee_arithmetic LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME test_ieee_arithmetic_02 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME iso_fortran_env_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc wasm)
+RUN(NAME test_position LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 
 
 RUN(NAME abs_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc wasm c fortran mlir)
@@ -2551,6 +2554,7 @@ RUN(NAME transfer_05 LABELS gfortran llvm)
 RUN(NAME transfer_06 LABELS gfortran llvm)
 RUN(NAME transfer_07 LABELS gfortran llvm fortran)
 RUN(NAME transfer_08 LABELS gfortran llvm fortran)
+RUN(NAME transfer_09 LABELS gfortran llvm fortran)
 
 RUN(NAME present_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME present_02 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
