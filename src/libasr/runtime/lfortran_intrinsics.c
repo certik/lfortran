@@ -2445,6 +2445,37 @@ static int runtime_try_render_error(const char *formatted) {
         return 0;
     }
 
+    char *summary = NULL;
+    char *note = NULL;
+    char array_name[256];
+    int index = 0;
+    int dim = 0;
+    int lbound = 0;
+    int ubound = 0;
+    if (sscanf(message_start,
+            "Array '%255[^']' index out of bounds.\n\n"
+            "Tried to access index %d of dimension %d, but valid range is %d to %d.",
+            array_name, &index, &dim, &lbound, &ubound) == 5) {
+        int needed = snprintf(NULL, 0,
+            "Array '%s' index out of bounds in dimension %d", array_name, dim);
+        if (needed > 0) {
+            summary = (char*)malloc((size_t)needed + 1);
+            if (summary) {
+                snprintf(summary, (size_t)needed + 1,
+                    "Array '%s' index out of bounds in dimension %d", array_name, dim);
+            }
+        }
+        needed = snprintf(NULL, 0, "note: valid range is %d:%d, got %d",
+            lbound, ubound, index);
+        if (needed > 0) {
+            note = (char*)malloc((size_t)needed + 1);
+            if (note) {
+                snprintf(note, (size_t)needed + 1, "note: valid range is %d:%d, got %d",
+                    lbound, ubound, index);
+            }
+        }
+    }
+
     const char *color_reset = "\033[0;0m";
     const char *color_bold = "\033[0;1m";
     const char *color_bold_red = "\033[0;31;1m";
@@ -2452,8 +2483,9 @@ static int runtime_try_render_error(const char *formatted) {
     int width = runtime_line_num_width((unsigned int)line);
     size_t squiggle_len = runtime_squiggle_len(line_text, (unsigned int)column);
 
+    const char *header_message = summary ? summary : message;
     fprintf(stderr, "%sruntime error%s%s: %s%s\n",
-            color_bold_red, color_reset, color_bold, message, color_reset);
+            color_bold_red, color_reset, color_bold, header_message, color_reset);
     fprintf(stderr, "%*s%s-->%s %s:%lu:%lu\n",
             width, "", color_bold_blue, color_reset, filename, line, column);
     fprintf(stderr, "%*s%s|%s\n", width + 1, "", color_bold_blue, color_reset);
@@ -2467,12 +2499,19 @@ static int runtime_try_render_error(const char *formatted) {
     for (size_t i = 0; i < squiggle_len; i++) {
         fputc('^', stderr);
     }
-    fprintf(stderr, " %s\n", color_reset);
+    fprintf(stderr, " %s", color_reset);
+    if (note) {
+        fprintf(stderr, "%s\n", note);
+    } else {
+        fputc('\n', stderr);
+    }
     fflush(stderr);
 
     free(filename);
     free(message);
     free(line_text);
+    free(summary);
+    free(note);
     return 1;
 }
 
