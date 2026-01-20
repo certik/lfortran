@@ -11803,6 +11803,165 @@ public:
         }
     }
 
+    // Helper to build namelist descriptor and call runtime function
+    llvm::Value* build_namelist_descriptor(ASR::symbol_t* nml_sym) {
+        ASR::Namelist_t* nml = ASR::down_cast<ASR::Namelist_t>(nml_sym);
+
+        // Get group name (lowercase)
+        std::string group_name = std::string(nml->m_group_name);
+        std::transform(group_name.begin(), group_name.end(), group_name.begin(), ::tolower);
+
+        // Create global constant for group name
+        llvm::Value* group_name_ptr = LCompilers::create_global_string_ptr(context, *module, *builder, group_name);
+
+        // Build array of lfortran_nml_item_t structures
+        std::vector<llvm::Value*> nml_items;
+
+        // Define item struct type
+        llvm::StructType* item_type = llvm::StructType::get(
+            character_type,                               // name
+            llvm::Type::getInt32Ty(context),             // type
+            llvm::Type::getInt32Ty(context),             // rank
+            llvm::Type::getInt64Ty(context),             // elem_len
+            llvm::Type::getInt8Ty(context)->getPointerTo(), // data
+            llvm::Type::getInt64Ty(context)->getPointerTo()  // shape
+        );
+
+        for (size_t i = 0; i < nml->n_var_list; i++) {
+            ASR::symbol_t* var_sym = nml->m_var_list[i];
+            ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(var_sym);
+
+            // Get variable name (lowercase)
+            std::string var_name = std::string(var->m_name);
+            std::transform(var_name.begin(), var_name.end(), var_name.begin(), ::tolower);
+            llvm::Value* var_name_ptr = LCompilers::create_global_string_ptr(context, *module, *builder, var_name);
+
+            // Determine type code
+            ASR::ttype_t* var_type = ASRUtils::type_get_past_allocatable_pointer(var->m_type);
+            int32_t type_code = -1;
+            int64_t elem_len = 0;
+
+            if (ASR::is_a<ASR::Integer_t>(*var_type)) {
+                int kind = ASRUtils::extract_kind_from_ttype_t(var_type);
+                if (kind == 1) type_code = 0; // LFORTRAN_NML_INT1
+                else if (kind == 2) type_code = 1; // LFORTRAN_NML_INT2
+                else if (kind == 4) type_code = 2; // LFORTRAN_NML_INT4
+                else if (kind == 8) type_code = 3; // LFORTRAN_NML_INT8
+            } else if (ASR::is_a<ASR::Real_t>(*var_type)) {
+                int kind = ASRUtils::extract_kind_from_ttype_t(var_type);
+                if (kind == 4) type_code = 4; // LFORTRAN_NML_REAL4
+                else if (kind == 8) type_code = 5; // LFORTRAN_NML_REAL8
+            } else if (ASR::is_a<ASR::Logical_t>(*var_type)) {
+                int kind = ASRUtils::extract_kind_from_ttype_t(var_type);
+                if (kind == 1) type_code = 6; // LFORTRAN_NML_LOGICAL1
+                else if (kind == 2) type_code = 7; // LFORTRAN_NML_LOGICAL2
+                else if (kind == 4) type_code = 8; // LFORTRAN_NML_LOGICAL4
+                else if (kind == 8) type_code = 9; // LFORTRAN_NML_LOGICAL8
+            } else if (ASR::is_a<ASR::Complex_t>(*var_type)) {
+                int kind = ASRUtils::extract_kind_from_ttype_t(var_type);
+                if (kind == 4) type_code = 10; // LFORTRAN_NML_COMPLEX4
+                else if (kind == 8) type_code = 11; // LFORTRAN_NML_COMPLEX8
+            } else if (ASR::is_a<ASR::String_t>(*var_type)) {
+                type_code = 12; // LFORTRAN_NML_CHAR
+                ASR::String_t* str_type = ASR::down_cast<ASR::String_t>(var_type);
+                int len_val = 0;
+                if (ASRUtils::extract_value(str_type->m_len, len_val)) {
+                    elem_len = len_val;
+                } else {
+                    elem_len = 10; // Default length for deferred-length strings
+                }
+            }
+
+            // Get rank and shape
+            int32_t rank = 0;
+            llvm::Value* shape_ptr = llvm::ConstantPointerNull::get(llvm::Type::getInt64Ty(context)->getPointerTo());
+
+            if (ASRUtils::is_array(var->m_type)) {
+                ASR::dimension_t* dims = nullptr;
+                size_t n_dims = ASRUtils::extract_dimensions_from_ttype(var->m_type, dims);
+                rank = (int32_t)n_dims;
+
+                if (rank > 0) {
+                    // Build shape array
+                    std::vector<llvm::Constant*> shape_vals;
+                    for (size_t d = 0; d < n_dims; d++) {
+                        if (dims[d].m_length) {
+                            this->visit_expr(*dims[d].m_length);
+                            llvm::Value* dim_len = tmp;
+                            if (llvm::isa<llvm::Constant>(dim_len)) {
+                                shape_vals.push_back(llvm::cast<llvm::Constant>(dim_len));
+                            } else {
+                                // Non-constant dimension - not supported in initial version
+                                throw CodeGenError("Namelist with non-constant array dimensions not yet supported");
+                            }
+                        } else {
+                            throw CodeGenError("Namelist array must have explicit dimensions");
+                        }
+                    }
+
+                    llvm::ArrayType* shape_arr_type = llvm::ArrayType::get(llvm::Type::getInt64Ty(context), n_dims);
+                    llvm::Constant* shape_arr = llvm::ConstantArray::get(shape_arr_type, shape_vals);
+                    llvm::GlobalVariable* shape_global = new llvm::GlobalVariable(
+                        *module, shape_arr_type, true, llvm::GlobalValue::PrivateLinkage,
+                        shape_arr, "nml_shape_" + var_name);
+                    shape_ptr = builder->CreateBitCast(shape_global, llvm::Type::getInt64Ty(context)->getPointerTo());
+                }
+            }
+
+            // Get data pointer
+            uint32_t var_hash = get_hash((ASR::asr_t*)var);
+            llvm::Value* data_ptr = llvm_symtab[var_hash];
+            if (!data_ptr) {
+                throw CodeGenError("Variable " + var_name + " not found in symbol table");
+            }
+            data_ptr = builder->CreateBitCast(data_ptr, llvm::Type::getInt8Ty(context)->getPointerTo());
+
+            // Create lfortran_nml_item_t struct
+            llvm::Value* item = llvm_utils->CreateAlloca(*builder, item_type);
+            builder->CreateStore(var_name_ptr, builder->CreateStructGEP(item_type, item, 0));
+            builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), type_code),
+                               builder->CreateStructGEP(item_type, item, 1));
+            builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), rank),
+                               builder->CreateStructGEP(item_type, item, 2));
+            builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), elem_len),
+                               builder->CreateStructGEP(item_type, item, 3));
+            builder->CreateStore(data_ptr, builder->CreateStructGEP(item_type, item, 4));
+            builder->CreateStore(shape_ptr, builder->CreateStructGEP(item_type, item, 5));
+
+            nml_items.push_back(item);
+        }
+
+        // Create items array
+        llvm::ArrayType* items_array_type = llvm::ArrayType::get(item_type, nml->n_var_list);
+        llvm::Value* items_array = llvm_utils->CreateAlloca(*builder, items_array_type);
+
+        // Copy items into array
+        for (size_t i = 0; i < nml->n_var_list; i++) {
+            llvm::Value* dest_ptr = builder->CreateConstGEP2_32(items_array_type, items_array, 0, i);
+            llvm::Value* src_item = builder->CreateLoad(item_type, nml_items[i]);
+            builder->CreateStore(src_item, dest_ptr);
+        }
+
+        // Get pointer to first element of items array
+        llvm::Value* items_ptr = builder->CreateConstGEP2_32(items_array_type, items_array, 0, 0);
+
+        // Create lfortran_nml_group_t struct
+        // struct { const char *group_name, int32_t n_items, lfortran_nml_item_t *items }
+        llvm::StructType* group_type = llvm::StructType::get(
+            character_type,                           // group_name
+            llvm::Type::getInt32Ty(context),         // n_items
+            item_type->getPointerTo()                // items
+        );
+
+        llvm::Value* group = llvm_utils->CreateAlloca(*builder, group_type);
+        builder->CreateStore(group_name_ptr, builder->CreateStructGEP(group_type, group, 0));
+        builder->CreateStore(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), nml->n_var_list),
+                           builder->CreateStructGEP(group_type, group, 1));
+        builder->CreateStore(items_ptr, builder->CreateStructGEP(group_type, group, 2));
+
+        return group;
+    }
+
     // All read functions now have a unified signature with iostat as the last parameter.
     // Pass NULL for iostat when not needed (will exit on error), or a valid pointer
     // (will set iostat and return on error).
@@ -12018,6 +12177,54 @@ public:
         if( x.m_overloaded ) {
             this->visit_stmt(*x.m_overloaded);
             return ;
+        }
+
+        // Handle namelist read
+        if (x.m_nml) {
+            llvm::Value *unit_val, *iostat;
+
+            if (x.m_unit == nullptr) {
+                unit_val = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), llvm::APInt(32, -1, true));
+            } else {
+                this->visit_expr_wrapper(x.m_unit, true);
+                unit_val = llvm_utils->convert_kind(tmp, llvm::Type::getInt32Ty(context));
+            }
+
+            if (x.m_iostat) {
+                int ptr_copy = ptr_loads;
+                ptr_loads = 0;
+                this->visit_expr_wrapper(x.m_iostat, false);
+                ptr_loads = ptr_copy;
+                iostat = tmp;
+            } else {
+                iostat = llvm::ConstantPointerNull::get(llvm::Type::getInt32Ty(context)->getPointerTo());
+            }
+
+            // Build namelist descriptor and call _lfortran_namelist_read
+            llvm::Value* nml_group = build_namelist_descriptor(x.m_nml);
+
+            // Get or create _lfortran_namelist_read function
+            std::string func_name = "_lfortran_namelist_read";
+            llvm::Function* fn = module->getFunction(func_name);
+            if (!fn) {
+                llvm::StructType* group_type = llvm::StructType::get(
+                    character_type,
+                    llvm::Type::getInt32Ty(context),
+                    llvm::Type::getInt8Ty(context)->getPointerTo()
+                );
+                std::vector<llvm::Type*> args{
+                    llvm::Type::getInt32Ty(context),         // unit_num
+                    llvm::Type::getInt32Ty(context)->getPointerTo(), // iostat
+                    group_type->getPointerTo()              // group
+                };
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    llvm::Type::getVoidTy(context), args, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, func_name, module.get());
+            }
+
+            builder->CreateCall(fn, {unit_val, iostat, nml_group});
+            return;
         }
 
         llvm::Value *unit_val, *iostat, *iostat_for_empty_read, *read_size;
@@ -13075,6 +13282,54 @@ public:
         if( x.m_overloaded ) {
             this->visit_stmt(*x.m_overloaded);
             return ;
+        }
+
+        // Handle namelist write
+        if (x.m_nml) {
+            llvm::Value *unit_val, *iostat;
+
+            if (x.m_unit == nullptr) {
+                unit_val = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), llvm::APInt(32, 6, true));
+            } else {
+                this->visit_expr_wrapper(x.m_unit, true);
+                unit_val = llvm_utils->convert_kind(tmp, llvm::Type::getInt32Ty(context));
+            }
+
+            if (x.m_iostat) {
+                int ptr_copy = ptr_loads;
+                ptr_loads = 0;
+                this->visit_expr_wrapper(x.m_iostat, false);
+                ptr_loads = ptr_copy;
+                iostat = tmp;
+            } else {
+                iostat = llvm::ConstantPointerNull::get(llvm::Type::getInt32Ty(context)->getPointerTo());
+            }
+
+            // Build namelist descriptor and call _lfortran_namelist_write
+            llvm::Value* nml_group = build_namelist_descriptor(x.m_nml);
+
+            // Get or create _lfortran_namelist_write function
+            std::string func_name = "_lfortran_namelist_write";
+            llvm::Function* fn = module->getFunction(func_name);
+            if (!fn) {
+                llvm::StructType* group_type = llvm::StructType::get(
+                    character_type,
+                    llvm::Type::getInt32Ty(context),
+                    llvm::Type::getInt8Ty(context)->getPointerTo()
+                );
+                std::vector<llvm::Type*> args{
+                    llvm::Type::getInt32Ty(context),         // unit_num
+                    llvm::Type::getInt32Ty(context)->getPointerTo(), // iostat
+                    group_type->getPointerTo()              // group
+                };
+                llvm::FunctionType *function_type = llvm::FunctionType::get(
+                    llvm::Type::getVoidTy(context), args, false);
+                fn = llvm::Function::Create(function_type,
+                    llvm::Function::ExternalLinkage, func_name, module.get());
+            }
+
+            builder->CreateCall(fn, {unit_val, iostat, nml_group});
+            return;
         }
 
         if (x.m_unit == nullptr) {
