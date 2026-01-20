@@ -11838,32 +11838,31 @@ public:
 
             // Determine type code
             ASR::ttype_t* var_type = ASRUtils::type_get_past_allocatable_pointer(var->m_type);
+            // For arrays, get the element type
+            ASR::ttype_t* elem_type = ASRUtils::type_get_past_array(var_type);
             int32_t type_code = -1;
             int64_t elem_len = 0;
 
-            if (ASR::is_a<ASR::Integer_t>(*var_type)) {
-                int kind = ASRUtils::extract_kind_from_ttype_t(var_type);
+            if (ASR::is_a<ASR::Integer_t>(*elem_type)) {
+                int kind = ASRUtils::extract_kind_from_ttype_t(elem_type);
                 if (kind == 1) type_code = 0; // LFORTRAN_NML_INT1
                 else if (kind == 2) type_code = 1; // LFORTRAN_NML_INT2
                 else if (kind == 4) type_code = 2; // LFORTRAN_NML_INT4
                 else if (kind == 8) type_code = 3; // LFORTRAN_NML_INT8
-            } else if (ASR::is_a<ASR::Real_t>(*var_type)) {
-                int kind = ASRUtils::extract_kind_from_ttype_t(var_type);
+            } else if (ASR::is_a<ASR::Real_t>(*elem_type)) {
+                int kind = ASRUtils::extract_kind_from_ttype_t(elem_type);
                 if (kind == 4) type_code = 4; // LFORTRAN_NML_REAL4
                 else if (kind == 8) type_code = 5; // LFORTRAN_NML_REAL8
-            } else if (ASR::is_a<ASR::Logical_t>(*var_type)) {
-                int kind = ASRUtils::extract_kind_from_ttype_t(var_type);
-                if (kind == 1) type_code = 6; // LFORTRAN_NML_LOGICAL1
-                else if (kind == 2) type_code = 7; // LFORTRAN_NML_LOGICAL2
-                else if (kind == 4) type_code = 8; // LFORTRAN_NML_LOGICAL4
-                else if (kind == 8) type_code = 9; // LFORTRAN_NML_LOGICAL8
-            } else if (ASR::is_a<ASR::Complex_t>(*var_type)) {
-                int kind = ASRUtils::extract_kind_from_ttype_t(var_type);
+            } else if (ASR::is_a<ASR::Logical_t>(*elem_type)) {
+                // For logicals, we'll determine the type code after getting the LLVM type
+                type_code = -2; // Marker to set it later
+            } else if (ASR::is_a<ASR::Complex_t>(*elem_type)) {
+                int kind = ASRUtils::extract_kind_from_ttype_t(elem_type);
                 if (kind == 4) type_code = 10; // LFORTRAN_NML_COMPLEX4
                 else if (kind == 8) type_code = 11; // LFORTRAN_NML_COMPLEX8
-            } else if (ASR::is_a<ASR::String_t>(*var_type)) {
+            } else if (ASR::is_a<ASR::String_t>(*elem_type)) {
                 type_code = 12; // LFORTRAN_NML_CHAR
-                ASR::String_t* str_type = ASR::down_cast<ASR::String_t>(var_type);
+                ASR::String_t* str_type = ASR::down_cast<ASR::String_t>(elem_type);
                 int len_val = 0;
                 if (ASRUtils::extract_value(str_type->m_len, len_val)) {
                     elem_len = len_val;
@@ -11921,6 +11920,19 @@ public:
                 throw CodeGenError("Variable " + var_name + " not found in symbol table");
             }
 
+            // For logicals, determine type code from actual LLVM type size
+            if (type_code == -2) {
+                llvm::Type* llvm_type = data_ptr->getType()->getPointerElementType();
+                if (llvm::isa<llvm::IntegerType>(llvm_type)) {
+                    unsigned bit_width = llvm::cast<llvm::IntegerType>(llvm_type)->getBitWidth();
+                    unsigned byte_size = (bit_width + 7) / 8; // Round up to nearest byte
+                    if (byte_size == 1) type_code = 6; // LFORTRAN_NML_LOGICAL1
+                    else if (byte_size == 2) type_code = 7; // LFORTRAN_NML_LOGICAL2
+                    else if (byte_size == 4) type_code = 8; // LFORTRAN_NML_LOGICAL4
+                    else if (byte_size == 8) type_code = 9; // LFORTRAN_NML_LOGICAL8
+                }
+            }
+
             // For strings, we need to extract the data pointer from the descriptor
             if (ASR::is_a<ASR::String_t>(*var_type)) {
                 llvm::Type* string_desc_type = data_ptr->getType()->getPointerElementType();
@@ -11928,7 +11940,7 @@ public:
                 data_ptr = llvm_utils->CreateLoad2(character_type, str_data_ptr_ptr);
             }
 
-            // For arrays with descriptor, get the data pointer
+            // For arrays, get the data pointer
             if (ASRUtils::is_array(var->m_type)) {
                 ASR::ttype_t* past_alloc = ASRUtils::type_get_past_allocatable_pointer(var->m_type);
                 if (ASR::is_a<ASR::Array_t>(*past_alloc)) {
@@ -11937,8 +11949,12 @@ public:
                         // Get data pointer from array descriptor
                         llvm::Type* arr_type = data_ptr->getType()->getPointerElementType();
                         data_ptr = arr_descr->get_pointer_to_data(arr_type, data_ptr);
+                    } else if (arr_t->m_physical_type == ASR::array_physical_typeType::FixedSizeArray) {
+                        // For FixedSizeArray, data_ptr points to [N x Type]*, we need Type*
+                        // Use GEP with indices [0, 0] to get pointer to first element
+                        llvm::Type* arr_type = data_ptr->getType()->getPointerElementType();
+                        data_ptr = builder->CreateConstGEP2_32(arr_type, data_ptr, 0, 0);
                     }
-                    // For FixedSizeArray, data_ptr is already correct
                 }
             }
 
