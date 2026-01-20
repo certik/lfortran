@@ -7775,27 +7775,28 @@ LFORTRAN_API void _lfortran_namelist_write(
 }
 
 // Helper to skip whitespace and comments
-static void skip_whitespace(FILE *fp, char **line_buf, size_t *line_len, ssize_t *read_len) {
+static void skip_whitespace(FILE *fp, char **line_buf, char **line_ptr,
+                            size_t *line_len, ssize_t *read_len) {
     while (1) {
         // Skip spaces in current line
-        while (*line_buf && **line_buf && isspace(**line_buf)) {
-            (*line_buf)++;
+        while (*line_ptr && **line_ptr && isspace(**line_ptr)) {
+            (*line_ptr)++;
         }
 
         // Check for comment
-        if (*line_buf && **line_buf == '!') {
+        if (*line_ptr && **line_ptr == '!') {
             // Skip rest of line
-            *line_buf = NULL;
-            *line_len = 0;
+            *line_ptr = NULL;
         }
 
         // If we need a new line, read it
-        if (!*line_buf || !**line_buf) {
+        if (!*line_ptr || !**line_ptr) {
             *read_len = getline(line_buf, line_len, fp);
             if (*read_len == -1) {
-                *line_buf = NULL;
+                *line_ptr = NULL;
                 return;
             }
+            *line_ptr = *line_buf;
             continue;
         }
 
@@ -7804,42 +7805,43 @@ static void skip_whitespace(FILE *fp, char **line_buf, size_t *line_len, ssize_t
 }
 
 // Helper to read a token (word or operator)
-static char* read_token(FILE *fp, char **line_buf, size_t *line_len, ssize_t *read_len) {
-    skip_whitespace(fp, line_buf, line_len, read_len);
-    if (!*line_buf || !**line_buf) return NULL;
+static char* read_token(FILE *fp, char **line_buf, char **line_ptr,
+                        size_t *line_len, ssize_t *read_len) {
+    skip_whitespace(fp, line_buf, line_ptr, line_len, read_len);
+    if (!*line_ptr || !**line_ptr) return NULL;
 
     char *token = (char*)malloc(256);
     int pos = 0;
 
     // Check for special single-char tokens
-    if (**line_buf == '&' || **line_buf == '$' || **line_buf == '/' ||
-        **line_buf == '=' || **line_buf == ',') {
-        token[pos++] = **line_buf;
-        (*line_buf)++;
+    if (**line_ptr == '&' || **line_ptr == '$' || **line_ptr == '/' ||
+        **line_ptr == '=' || **line_ptr == ',') {
+        token[pos++] = **line_ptr;
+        (*line_ptr)++;
         token[pos] = '\0';
         return token;
     }
 
     // Check for quoted string
-    if (**line_buf == '\'' || **line_buf == '"') {
-        char quote = **line_buf;
-        (*line_buf)++;
-        while (**line_buf && **line_buf != quote) {
-            token[pos++] = **line_buf;
-            (*line_buf)++;
+    if (**line_ptr == '\'' || **line_ptr == '"') {
+        char quote = **line_ptr;
+        (*line_ptr)++;
+        while (**line_ptr && **line_ptr != quote) {
+            token[pos++] = **line_ptr;
+            (*line_ptr)++;
             if (pos >= 255) break;
         }
-        if (**line_buf == quote) (*line_buf)++;
+        if (**line_ptr == quote) (*line_ptr)++;
         token[pos] = '\0';
         return token;
     }
 
     // Read alphanumeric token
-    while (**line_buf && (isalnum(**line_buf) || **line_buf == '_' ||
-           **line_buf == '.' || **line_buf == '+' || **line_buf == '-' ||
-           **line_buf == '(' || **line_buf == ')')) {
-        token[pos++] = **line_buf;
-        (*line_buf)++;
+    while (**line_ptr && (isalnum(**line_ptr) || **line_ptr == '_' ||
+           **line_ptr == '.' || **line_ptr == '+' || **line_ptr == '-' ||
+           **line_ptr == '(' || **line_ptr == ')')) {
+        token[pos++] = **line_ptr;
+        (*line_ptr)++;
         if (pos >= 255) break;
     }
     token[pos] = '\0';
@@ -7948,6 +7950,7 @@ LFORTRAN_API void _lfortran_namelist_read(
     }
 
     char *line_buf = NULL;
+    char *line_ptr = NULL;
     size_t line_len = 0;
     ssize_t read_len;
 
@@ -7955,19 +7958,18 @@ LFORTRAN_API void _lfortran_namelist_read(
     char *token;
     bool found_group = false;
     while ((read_len = getline(&line_buf, &line_len, filep)) != -1) {
-        char *line_ptr = line_buf;
-        token = read_token(filep, &line_ptr, &line_len, &read_len);
+        line_ptr = line_buf;
+        token = read_token(filep, &line_buf, &line_ptr, &line_len, &read_len);
         if (!token) continue;
 
         if (strcmp(token, "&") == 0 || strcmp(token, "$") == 0) {
             free(token);
-            token = read_token(filep, &line_ptr, &line_len, &read_len);
+            token = read_token(filep, &line_buf, &line_ptr, &line_len, &read_len);
             if (token) {
                 to_lowercase(token);
                 if (strcmp(token, group->group_name) == 0) {
                     found_group = true;
                     free(token);
-                    line_buf = line_ptr;
                     break;
                 }
                 free(token);
@@ -7990,7 +7992,7 @@ LFORTRAN_API void _lfortran_namelist_read(
 
     // Parse name=value pairs
     while (1) {
-        token = read_token(filep, &line_buf, &line_len, &read_len);
+        token = read_token(filep, &line_buf, &line_ptr, &line_len, &read_len);
         if (!token) {
             free(line_buf);
             if (iostat) *iostat = 5011;
@@ -8003,7 +8005,7 @@ LFORTRAN_API void _lfortran_namelist_read(
 
         // Check for terminator
         if (strcmp(token, "/") == 0 ||
-            (strcmp(token, "&") == 0 && (token = read_token(filep, &line_buf, &line_len, &read_len)) &&
+            (strcmp(token, "&") == 0 && (token = read_token(filep, &line_buf, &line_ptr, &line_len, &read_len)) &&
              strcmp(token, "end") == 0)) {
             free(token);
             break;
@@ -8036,7 +8038,7 @@ LFORTRAN_API void _lfortran_namelist_read(
         free(name);
 
         // Expect '='
-        token = read_token(filep, &line_buf, &line_len, &read_len);
+        token = read_token(filep, &line_buf, &line_ptr, &line_len, &read_len);
         if (!token || strcmp(token, "=") != 0) {
             free(token);
             free(line_buf);
@@ -8055,7 +8057,7 @@ LFORTRAN_API void _lfortran_namelist_read(
         int64_t value_idx = 0;
 
         while (value_idx < total_size) {
-            token = read_token(filep, &line_buf, &line_len, &read_len);
+            token = read_token(filep, &line_buf, &line_ptr, &line_len, &read_len);
             if (!token || strcmp(token, "/") == 0 || strcmp(token, "&") == 0) {
                 if (token) free(token);
                 break;
@@ -8072,12 +8074,10 @@ LFORTRAN_API void _lfortran_namelist_read(
             value_idx++;
 
             // Check for comma or end
-            char *line_ptr = line_buf;
-            skip_whitespace(filep, &line_ptr, &line_len, &read_len);
-            line_buf = line_ptr;
-            if (line_buf && *line_buf == ',') {
-                line_buf++;
-            } else if (line_buf && (*line_buf == '/' || *line_buf == '&')) {
+            skip_whitespace(filep, &line_buf, &line_ptr, &line_len, &read_len);
+            if (line_ptr && *line_ptr == ',') {
+                line_ptr++;
+            } else if (line_ptr && (*line_ptr == '/' || *line_ptr == '&')) {
                 break;
             }
         }
