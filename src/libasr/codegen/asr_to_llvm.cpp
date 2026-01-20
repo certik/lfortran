@@ -11889,7 +11889,13 @@ public:
                             this->visit_expr(*dims[d].m_length);
                             llvm::Value* dim_len = tmp;
                             if (llvm::isa<llvm::Constant>(dim_len)) {
-                                shape_vals.push_back(llvm::cast<llvm::Constant>(dim_len));
+                                // Convert to i64 if necessary
+                                llvm::Constant* dim_len_const = llvm::cast<llvm::Constant>(dim_len);
+                                if (dim_len_const->getType() != llvm::Type::getInt64Ty(context)) {
+                                    dim_len_const = llvm::ConstantExpr::getSExtOrBitCast(
+                                        dim_len_const, llvm::Type::getInt64Ty(context));
+                                }
+                                shape_vals.push_back(dim_len_const);
                             } else {
                                 // Non-constant dimension - not supported in initial version
                                 throw CodeGenError("Namelist with non-constant array dimensions not yet supported");
@@ -11914,6 +11920,28 @@ public:
             if (!data_ptr) {
                 throw CodeGenError("Variable " + var_name + " not found in symbol table");
             }
+
+            // For strings, we need to extract the data pointer from the descriptor
+            if (ASR::is_a<ASR::String_t>(*var_type)) {
+                llvm::Type* string_desc_type = data_ptr->getType()->getPointerElementType();
+                llvm::Value* str_data_ptr_ptr = llvm_utils->create_gep2(string_desc_type, data_ptr, 0);
+                data_ptr = llvm_utils->CreateLoad2(character_type, str_data_ptr_ptr);
+            }
+
+            // For arrays with descriptor, get the data pointer
+            if (ASRUtils::is_array(var->m_type)) {
+                ASR::ttype_t* past_alloc = ASRUtils::type_get_past_allocatable_pointer(var->m_type);
+                if (ASR::is_a<ASR::Array_t>(*past_alloc)) {
+                    ASR::Array_t* arr_t = ASR::down_cast<ASR::Array_t>(past_alloc);
+                    if (arr_t->m_physical_type == ASR::array_physical_typeType::DescriptorArray) {
+                        // Get data pointer from array descriptor
+                        llvm::Type* arr_type = data_ptr->getType()->getPointerElementType();
+                        data_ptr = arr_descr->get_pointer_to_data(arr_type, data_ptr);
+                    }
+                    // For FixedSizeArray, data_ptr is already correct
+                }
+            }
+
             data_ptr = builder->CreateBitCast(data_ptr, llvm::Type::getInt8Ty(context)->getPointerTo());
 
             // Create lfortran_nml_item_t struct
@@ -12207,10 +12235,19 @@ public:
             std::string func_name = "_lfortran_namelist_read";
             llvm::Function* fn = module->getFunction(func_name);
             if (!fn) {
+                // Define item struct type (must match build_namelist_descriptor)
+                llvm::StructType* item_type = llvm::StructType::get(
+                    character_type,                               // name
+                    llvm::Type::getInt32Ty(context),             // type
+                    llvm::Type::getInt32Ty(context),             // rank
+                    llvm::Type::getInt64Ty(context),             // elem_len
+                    llvm::Type::getInt8Ty(context)->getPointerTo(), // data
+                    llvm::Type::getInt64Ty(context)->getPointerTo()  // shape
+                );
                 llvm::StructType* group_type = llvm::StructType::get(
                     character_type,
                     llvm::Type::getInt32Ty(context),
-                    llvm::Type::getInt8Ty(context)->getPointerTo()
+                    item_type->getPointerTo()
                 );
                 std::vector<llvm::Type*> args{
                     llvm::Type::getInt32Ty(context),         // unit_num
@@ -13312,10 +13349,19 @@ public:
             std::string func_name = "_lfortran_namelist_write";
             llvm::Function* fn = module->getFunction(func_name);
             if (!fn) {
+                // Define item struct type (must match build_namelist_descriptor)
+                llvm::StructType* item_type = llvm::StructType::get(
+                    character_type,                               // name
+                    llvm::Type::getInt32Ty(context),             // type
+                    llvm::Type::getInt32Ty(context),             // rank
+                    llvm::Type::getInt64Ty(context),             // elem_len
+                    llvm::Type::getInt8Ty(context)->getPointerTo(), // data
+                    llvm::Type::getInt64Ty(context)->getPointerTo()  // shape
+                );
                 llvm::StructType* group_type = llvm::StructType::get(
                     character_type,
                     llvm::Type::getInt32Ty(context),
-                    llvm::Type::getInt8Ty(context)->getPointerTo()
+                    item_type->getPointerTo()
                 );
                 std::vector<llvm::Type*> args{
                     llvm::Type::getInt32Ty(context),         // unit_num
