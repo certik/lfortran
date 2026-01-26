@@ -3,8 +3,3 @@ style suggestion: Use '>' instead of '.gt.'
   |
 9 |         if (i .GT. 5) then
   |               ^^^^ help: write this as '>'
-
-code generation error: asr_to_llvm: module failed verification. Error:
-Operand is null
-  store i32 %2, <null operand!>, align 4
-

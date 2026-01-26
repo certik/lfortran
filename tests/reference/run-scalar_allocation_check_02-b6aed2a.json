@@ -5,9 +5,9 @@
     "infile_hash": "334ddfdd17e21ad5f18931bde4b01c8463c16124c4f2b35f872b0bae",
     "outfile": null,
     "outfile_hash": null,
-    "stdout": "run-scalar_allocation_check_02-b6aed2a.stdout",
-    "stdout_hash": "2c18fbd2bb9d8e4445aaff9bc7afc5657c6cc048ebb27a698b7f5952",
+    "stdout": null,
+    "stdout_hash": null,
     "stderr": "run-scalar_allocation_check_02-b6aed2a.stderr",
-    "stderr_hash": "9eeed9b9fcb0dbb16532bb85a62e9c3471c212def6ea2343dc77d74e",
-    "returncode": 5
+    "stderr_hash": "750d1566bb2c8a1c12d5502880f3ac91631ac4c3d0e020105c0dff23",
+    "returncode": 1
 }

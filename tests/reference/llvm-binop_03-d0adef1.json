@@ -5,9 +5,9 @@
     "infile_hash": "40773874fce64382337a961de0452b96aa45b51534cabb1e1f791341",
     "outfile": null,
     "outfile_hash": null,
-    "stdout": null,
-    "stdout_hash": null,
-    "stderr": "llvm-binop_03-d0adef1.stderr",
-    "stderr_hash": "2c1fa498c715011a2e2c48a09ac2cf5bcb43b9d9cfccf5f9eaa628a3",
-    "returncode": 1
+    "stdout": "llvm-binop_03-d0adef1.stdout",
+    "stdout_hash": "fa00b91dde1dd3753ca446d0ba04d06ddae6b2020796161b9f9450b7",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
 }

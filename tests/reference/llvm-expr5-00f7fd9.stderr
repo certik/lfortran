@@ -1,6 +1,0 @@
-code generation error: asr_to_llvm: module failed verification. Error:
-Operand is null
-  store i32 25, <null operand!>, align 4
-Operand is null
-  %2 = load, align 4
-

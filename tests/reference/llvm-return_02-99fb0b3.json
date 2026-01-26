@@ -5,9 +5,9 @@
     "infile_hash": "e5f24828e2cdf4070fa9095cd731b2eb065bd9c3cbb2885c825f0655",
     "outfile": null,
     "outfile_hash": null,
-    "stdout": null,
-    "stdout_hash": null,
+    "stdout": "llvm-return_02-99fb0b3.stdout",
+    "stdout_hash": "e62c5b6f9e2520c4f4c671648cf86f4500fab7e2ea307f3ae0182002",
     "stderr": "llvm-return_02-99fb0b3.stderr",
-    "stderr_hash": "2c1fa498c715011a2e2c48a09ac2cf5bcb43b9d9cfccf5f9eaa628a3",
-    "returncode": 1
+    "stderr_hash": "efcbccc2e2e71c4026b6ef48d5fa977b7432890f8fc2395640038aa4",
+    "returncode": 0
 }

@@ -5,9 +5,9 @@
     "infile_hash": "3f887434509231f48fbbbda31f34778f17ddb6871b39c44626d54f2e",
     "outfile": null,
     "outfile_hash": null,
-    "stdout": null,
-    "stdout_hash": null,
-    "stderr": "llvm-doloop_02-9fcb598.stderr",
-    "stderr_hash": "2c1fa498c715011a2e2c48a09ac2cf5bcb43b9d9cfccf5f9eaa628a3",
-    "returncode": 1
+    "stdout": "llvm-doloop_02-9fcb598.stdout",
+    "stdout_hash": "0f0cd6d7e799cea658271f9d22d69951d12ffa61a7f31634256275c8",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
 }

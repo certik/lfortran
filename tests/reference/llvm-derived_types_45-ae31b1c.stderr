@@ -1,5 +1,0 @@
-code generation error: myint doesn't have any member named m
-  --> tests/../integration_tests/derived_types_45.f90:13:11
-   |
-13 |     ins = myint(44)
-   |           ^^^^^^^^^ 

@@ -1,6 +1,0 @@
-code generation error: asr_to_llvm: module failed verification. Error:
-Operand is null
-  %2 = call float @__module_callback_02_foo(float* %call_arg_value, float* %call_arg_value1, <null operand!>)
-Operand is null
-  store float %2, <null operand!>, align 4
-

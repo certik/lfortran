@@ -1,49 +1,11 @@
-Internal Compiler Error: Unhandled exception
-Traceback (most recent call last):
-[2m  File "[0m[1m[35m$DIR/src/bin/lfortran.cpp[39m[0m[2m", line 2805[0m
-    LCompilers::print_stack_on_segfault();
-[2m  File "[0m[1m[35m$DIR/src/bin/lfortran.cpp[39m[0m[2m", line 2732[0m
-    err = compile_src_to_object_file(arg_file, tmp_o, compiler_options.time_report, false,
-[2m  File "[0m[1m[35m$DIR/src/bin/lfortran.cpp[39m[0m[2m", line 1250[0m
-    std::cerr << diagnostics.render(lm, compiler_options);
-[2m  File "[0m[1m[35m$DIR/src/lfortran/fortran_evaluator.cpp[39m[0m[2m", line 381[0m
-    if (res.ok) {
-[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 18093[0m
-    v.visit_asr((ASR::asr_t&)asr);
-[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 361[0m
-    void visit_asr(const asr_t &b) { visit_asr_t(b, self()); }
-[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 335[0m
-    case asrType::unit: { v.visit_unit((const unit_t &)x); return; }
-[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 362[0m
-    void visit_unit(const unit_t &b) { visit_unit_t(b, self()); }
-[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 22[0m
-    case unitType::TranslationUnit: { v.visit_TranslationUnit((const TranslationUnit_t &)x); return; }
-[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 1580[0m
-    visit_symbol(*item.second);
-[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 364[0m
-    void visit_symbol(const symbol_t &b) { visit_symbol_t(b, self()); }
-[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 30[0m
-    case symbolType::Program: { v.visit_Program((const Program_t &)x); return; }
-[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 4940[0m
-    this->visit_stmt(*x.m_body[i]);
-[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 381[0m
-    void visit_stmt(const stmt_t &b) { visit_stmt_t(b, self()); }
-[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 53[0m
-    case stmtType::Allocate: { v.visit_Allocate((const Allocate_t &)x); return; }
-[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 1981[0m
-    visit_AllocateUtil(x, x.m_stat, false, x.m_source);
-[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 1595[0m
-    visit_expr_load_wrapper(tmp_expr, 0);
-[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 9324[0m
-    } else {
-[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 435[0m
-    void visit_expr(const expr_t &b) { visit_expr_t(b, self()); }
-[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 178[0m
-    case exprType::DictLen: { v.visit_DictLen((const DictLen_t &)x); return; }
-[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 11432[0m
-    ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(x_m_v);
-[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 11364[0m
-    fetch_ptr(x);
-[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 11263[0m
-    LCOMPILERS_ASSERT(llvm_symtab.find(x_h) != llvm_symtab.end());
-AssertFailed: llvm_symtab.find(x_h) != llvm_symtab.end()
+runtime error: Array shape mismatch in subroutine 'ff'. Tried to match size 5 of dimension 1 of argument number 1, but expected size is 100000
+ --> tests/errors/array_bounds_check_08.f90:4:3
+  |
+4 |   arr = ff()
+  |   ^^^
+  |
+8 |     function ff() result(res)
+  |              ~~ Here
+  |
+9 |         integer :: res(100000)
+  |                        ~~~~~~ Expected size
