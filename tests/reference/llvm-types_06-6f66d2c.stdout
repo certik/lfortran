@@ -53,13 +53,10 @@ source_filename = "LFortran"
 
 define i32 @main(i32 %0, i8** %1) {
 .entry:
-  call void @_lpython_call_initial_functions(i32 %0, i8** %1)
-  %i = alloca i32, align 4
-  %r = alloca float, align 4
-  store float 2.000000e+00, float* %r, align 4
-  store i32 2, i32* %i, align 4
-  %2 = load i32, i32* %i, align 4
-  %3 = load i32, i32* %i, align 4
+  store float 2.000000e+00, <null operand!>, align 4
+  store i32 2, <null operand!>, align 4
+  %2 = load, align 4
+  %3 = load, align 4
   %4 = icmp slt i32 %2, %3
   br i1 %4, label %then, label %else
 
@@ -72,8 +69,8 @@ else:                                             ; preds = %.entry
   br label %ifcont
 
 ifcont:                                           ; preds = %else, %then
-  %5 = load float, float* %r, align 4
-  %6 = load float, float* %r, align 4
+  %5 = load, align 4
+  %6 = load, align 4
   %7 = fcmp olt float %5, %6
   br i1 %7, label %then1, label %else2
 
@@ -86,8 +83,8 @@ else2:                                            ; preds = %ifcont
   br label %ifcont3
 
 ifcont3:                                          ; preds = %else2, %then1
-  %8 = load float, float* %r, align 4
-  %9 = load i32, i32* %i, align 4
+  %8 = load, align 4
+  %9 = load, align 4
   %10 = sitofp i32 %9 to float
   %11 = fcmp olt float %8, %10
   br i1 %11, label %then4, label %else5
@@ -101,9 +98,9 @@ else5:                                            ; preds = %ifcont3
   br label %ifcont6
 
 ifcont6:                                          ; preds = %else5, %then4
-  %12 = load i32, i32* %i, align 4
+  %12 = load, align 4
   %13 = sitofp i32 %12 to float
-  %14 = load float, float* %r, align 4
+  %14 = load, align 4
   %15 = fcmp olt float %13, %14
   br i1 %15, label %then7, label %else8
 
@@ -116,8 +113,8 @@ else8:                                            ; preds = %ifcont6
   br label %ifcont9
 
 ifcont9:                                          ; preds = %else8, %then7
-  %16 = load i32, i32* %i, align 4
-  %17 = load i32, i32* %i, align 4
+  %16 = load, align 4
+  %17 = load, align 4
   %18 = icmp sgt i32 %16, %17
   br i1 %18, label %then10, label %else11
 
@@ -130,8 +127,8 @@ else11:                                           ; preds = %ifcont9
   br label %ifcont12
 
 ifcont12:                                         ; preds = %else11, %then10
-  %19 = load float, float* %r, align 4
-  %20 = load float, float* %r, align 4
+  %19 = load, align 4
+  %20 = load, align 4
   %21 = fcmp ogt float %19, %20
   br i1 %21, label %then13, label %else14
 
@@ -144,8 +141,8 @@ else14:                                           ; preds = %ifcont12
   br label %ifcont15
 
 ifcont15:                                         ; preds = %else14, %then13
-  %22 = load float, float* %r, align 4
-  %23 = load i32, i32* %i, align 4
+  %22 = load, align 4
+  %23 = load, align 4
   %24 = sitofp i32 %23 to float
   %25 = fcmp ogt float %22, %24
   br i1 %25, label %then16, label %else17
@@ -159,9 +156,9 @@ else17:                                           ; preds = %ifcont15
   br label %ifcont18
 
 ifcont18:                                         ; preds = %else17, %then16
-  %26 = load i32, i32* %i, align 4
+  %26 = load, align 4
   %27 = sitofp i32 %26 to float
-  %28 = load float, float* %r, align 4
+  %28 = load, align 4
   %29 = fcmp ogt float %27, %28
   br i1 %29, label %then19, label %else20
 
@@ -174,8 +171,8 @@ else20:                                           ; preds = %ifcont18
   br label %ifcont21
 
 ifcont21:                                         ; preds = %else20, %then19
-  %30 = load i32, i32* %i, align 4
-  %31 = load i32, i32* %i, align 4
+  %30 = load, align 4
+  %31 = load, align 4
   %32 = icmp ne i32 %30, %31
   br i1 %32, label %then22, label %else23
 
@@ -188,8 +185,8 @@ else23:                                           ; preds = %ifcont21
   br label %ifcont24
 
 ifcont24:                                         ; preds = %else23, %then22
-  %33 = load float, float* %r, align 4
-  %34 = load float, float* %r, align 4
+  %33 = load, align 4
+  %34 = load, align 4
   %35 = fcmp une float %33, %34
   br i1 %35, label %then25, label %else26
 
@@ -202,8 +199,8 @@ else26:                                           ; preds = %ifcont24
   br label %ifcont27
 
 ifcont27:                                         ; preds = %else26, %then25
-  %36 = load float, float* %r, align 4
-  %37 = load i32, i32* %i, align 4
+  %36 = load, align 4
+  %37 = load, align 4
   %38 = sitofp i32 %37 to float
   %39 = fcmp une float %36, %38
   br i1 %39, label %then28, label %else29
@@ -217,9 +214,9 @@ else29:                                           ; preds = %ifcont27
   br label %ifcont30
 
 ifcont30:                                         ; preds = %else29, %then28
-  %40 = load i32, i32* %i, align 4
+  %40 = load, align 4
   %41 = sitofp i32 %40 to float
-  %42 = load float, float* %r, align 4
+  %42 = load, align 4
   %43 = fcmp une float %41, %42
   br i1 %43, label %then31, label %else32
 
@@ -232,9 +229,9 @@ else32:                                           ; preds = %ifcont30
   br label %ifcont33
 
 ifcont33:                                         ; preds = %else32, %then31
-  %44 = load i32, i32* %i, align 4
+  %44 = load, align 4
   %45 = add i32 %44, 1
-  %46 = load i32, i32* %i, align 4
+  %46 = load, align 4
   %47 = icmp sle i32 %45, %46
   br i1 %47, label %then34, label %else35
 
@@ -247,9 +244,9 @@ else35:                                           ; preds = %ifcont33
   br label %ifcont36
 
 ifcont36:                                         ; preds = %else35, %then34
-  %48 = load float, float* %r, align 4
+  %48 = load, align 4
   %49 = fadd float %48, 1.000000e+00
-  %50 = load float, float* %r, align 4
+  %50 = load, align 4
   %51 = fcmp ole float %49, %50
   br i1 %51, label %then37, label %else38
 
@@ -262,9 +259,9 @@ else38:                                           ; preds = %ifcont36
   br label %ifcont39
 
 ifcont39:                                         ; preds = %else38, %then37
-  %52 = load float, float* %r, align 4
+  %52 = load, align 4
   %53 = fadd float %52, 1.000000e+00
-  %54 = load i32, i32* %i, align 4
+  %54 = load, align 4
   %55 = sitofp i32 %54 to float
   %56 = fcmp ole float %53, %55
   br i1 %56, label %then40, label %else41
@@ -278,10 +275,10 @@ else41:                                           ; preds = %ifcont39
   br label %ifcont42
 
 ifcont42:                                         ; preds = %else41, %then40
-  %57 = load i32, i32* %i, align 4
+  %57 = load, align 4
   %58 = add i32 %57, 1
   %59 = sitofp i32 %58 to float
-  %60 = load float, float* %r, align 4
+  %60 = load, align 4
   %61 = fcmp ole float %59, %60
   br i1 %61, label %then43, label %else44
 
@@ -294,8 +291,8 @@ else44:                                           ; preds = %ifcont42
   br label %ifcont45
 
 ifcont45:                                         ; preds = %else44, %then43
-  %62 = load i32, i32* %i, align 4
-  %63 = load i32, i32* %i, align 4
+  %62 = load, align 4
+  %63 = load, align 4
   %64 = add i32 %63, 1
   %65 = icmp sge i32 %62, %64
   br i1 %65, label %then46, label %else47
@@ -309,8 +306,8 @@ else47:                                           ; preds = %ifcont45
   br label %ifcont48
 
 ifcont48:                                         ; preds = %else47, %then46
-  %66 = load float, float* %r, align 4
-  %67 = load float, float* %r, align 4
+  %66 = load, align 4
+  %67 = load, align 4
   %68 = fadd float %67, 1.000000e+00
   %69 = fcmp oge float %66, %68
   br i1 %69, label %then49, label %else50
@@ -324,8 +321,8 @@ else50:                                           ; preds = %ifcont48
   br label %ifcont51
 
 ifcont51:                                         ; preds = %else50, %then49
-  %70 = load float, float* %r, align 4
-  %71 = load i32, i32* %i, align 4
+  %70 = load, align 4
+  %71 = load, align 4
   %72 = add i32 %71, 1
   %73 = sitofp i32 %72 to float
   %74 = fcmp oge float %70, %73
@@ -340,9 +337,9 @@ else53:                                           ; preds = %ifcont51
   br label %ifcont54
 
 ifcont54:                                         ; preds = %else53, %then52
-  %75 = load i32, i32* %i, align 4
+  %75 = load, align 4
   %76 = sitofp i32 %75 to float
-  %77 = load float, float* %r, align 4
+  %77 = load, align 4
   %78 = fadd float %77, 1.000000e+00
   %79 = fcmp oge float %76, %78
   br i1 %79, label %then55, label %else56
@@ -356,8 +353,8 @@ else56:                                           ; preds = %ifcont54
   br label %ifcont57
 
 ifcont57:                                         ; preds = %else56, %then55
-  %80 = load i32, i32* %i, align 4
-  %81 = load i32, i32* %i, align 4
+  %80 = load, align 4
+  %81 = load, align 4
   %82 = add i32 %81, 1
   %83 = icmp eq i32 %80, %82
   br i1 %83, label %then58, label %else59
@@ -371,8 +368,8 @@ else59:                                           ; preds = %ifcont57
   br label %ifcont60
 
 ifcont60:                                         ; preds = %else59, %then58
-  %84 = load float, float* %r, align 4
-  %85 = load float, float* %r, align 4
+  %84 = load, align 4
+  %85 = load, align 4
   %86 = fadd float %85, 1.000000e+00
   %87 = fcmp oeq float %84, %86
   br i1 %87, label %then61, label %else62
@@ -386,8 +383,8 @@ else62:                                           ; preds = %ifcont60
   br label %ifcont63
 
 ifcont63:                                         ; preds = %else62, %then61
-  %88 = load float, float* %r, align 4
-  %89 = load i32, i32* %i, align 4
+  %88 = load, align 4
+  %89 = load, align 4
   %90 = add i32 %89, 1
   %91 = sitofp i32 %90 to float
   %92 = fcmp oeq float %88, %91
@@ -402,9 +399,9 @@ else65:                                           ; preds = %ifcont63
   br label %ifcont66
 
 ifcont66:                                         ; preds = %else65, %then64
-  %93 = load i32, i32* %i, align 4
+  %93 = load, align 4
   %94 = sitofp i32 %93 to float
-  %95 = load float, float* %r, align 4
+  %95 = load, align 4
   %96 = fadd float %95, 1.000000e+00
   %97 = fcmp oeq float %94, %96
   br i1 %97, label %then67, label %else68
@@ -428,10 +425,110 @@ FINALIZE_SYMTABLE_types_06:                       ; preds = %return
   ret i32 0
 }
 
-declare void @_lpython_call_initial_functions(i32, i8**)
-
 declare void @_lcompilers_print_error(i8*, ...)
 
 declare void @exit(i32)
 
 declare void @_lpython_free_argv()
+asr_to_llvm: module failed verification. Error:
+Operand is null
+  store float 2.000000e+00, <null operand!>, align 4
+Operand is null
+  store i32 2, <null operand!>, align 4
+Operand is null
+  %2 = load, align 4
+Operand is null
+  %3 = load, align 4
+Operand is null
+  %5 = load, align 4
+Operand is null
+  %6 = load, align 4
+Operand is null
+  %8 = load, align 4
+Operand is null
+  %9 = load, align 4
+Operand is null
+  %12 = load, align 4
+Operand is null
+  %14 = load, align 4
+Operand is null
+  %16 = load, align 4
+Operand is null
+  %17 = load, align 4
+Operand is null
+  %19 = load, align 4
+Operand is null
+  %20 = load, align 4
+Operand is null
+  %22 = load, align 4
+Operand is null
+  %23 = load, align 4
+Operand is null
+  %26 = load, align 4
+Operand is null
+  %28 = load, align 4
+Operand is null
+  %30 = load, align 4
+Operand is null
+  %31 = load, align 4
+Operand is null
+  %33 = load, align 4
+Operand is null
+  %34 = load, align 4
+Operand is null
+  %36 = load, align 4
+Operand is null
+  %37 = load, align 4
+Operand is null
+  %40 = load, align 4
+Operand is null
+  %42 = load, align 4
+Operand is null
+  %44 = load, align 4
+Operand is null
+  %46 = load, align 4
+Operand is null
+  %48 = load, align 4
+Operand is null
+  %50 = load, align 4
+Operand is null
+  %52 = load, align 4
+Operand is null
+  %54 = load, align 4
+Operand is null
+  %57 = load, align 4
+Operand is null
+  %60 = load, align 4
+Operand is null
+  %62 = load, align 4
+Operand is null
+  %63 = load, align 4
+Operand is null
+  %66 = load, align 4
+Operand is null
+  %67 = load, align 4
+Operand is null
+  %70 = load, align 4
+Operand is null
+  %71 = load, align 4
+Operand is null
+  %75 = load, align 4
+Operand is null
+  %77 = load, align 4
+Operand is null
+  %80 = load, align 4
+Operand is null
+  %81 = load, align 4
+Operand is null
+  %84 = load, align 4
+Operand is null
+  %85 = load, align 4
+Operand is null
+  %88 = load, align 4
+Operand is null
+  %89 = load, align 4
+Operand is null
+  %93 = load, align 4
+Operand is null
+  %95 = load, align 4
+

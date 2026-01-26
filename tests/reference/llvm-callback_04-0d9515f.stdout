@@ -56,7 +56,6 @@ declare void @_lfortran_printf(i8*, i8*, i32, i8*, i32)
 
 define i32 @main(i32 %0, i8** %1) {
 .entry:
-  call void @_lpython_call_initial_functions(i32 %0, i8** %1)
   call void @__module_dr_fortran_cb_print_dr_fortran(void ()* @__module_dr_fortran_cb_print_dr)
   call void @__module_dr_fortran_cb_print_dr_fortran(void ()* @__module_dr_fortran_cb_print_fortran)
   call void @_lpython_free_argv()
@@ -68,7 +67,5 @@ return:                                           ; preds = %.entry
 FINALIZE_SYMTABLE_main:                           ; preds = %return
   ret i32 0
 }
-
-declare void @_lpython_call_initial_functions(i32, i8**)
 
 declare void @_lpython_free_argv()

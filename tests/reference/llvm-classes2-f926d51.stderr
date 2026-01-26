@@ -1,0 +1,60 @@
+Assertion failed: (Ty && "Invalid GetElementPtrInst indices for type!"), function checkGEPType, file Instructions.h, line 897.
+Traceback (most recent call last):
+[2m  File "[0m[1m[35m$DIR/src/bin/lfortran.cpp[39m[0m[2m", line 2805[0m
+    LCompilers::print_stack_on_segfault();
+[2m  File "[0m[1m[35m$DIR/src/bin/lfortran.cpp[39m[0m[2m", line 2607[0m
+    return emit_llvm(opts.arg_file, lfortran_pass_manager,
+[2m  File "[0m[1m[35m$DIR/src/bin/lfortran.cpp[39m[0m[2m", line 1117[0m
+    std::cerr << diagnostics.render(lm, compiler_options);
+[2m  File "[0m[1m[35m$DIR/src/lfortran/fortran_evaluator.cpp[39m[0m[2m", line 315[0m
+    Result<std::unique_ptr<LLVMModule>> res = get_llvm2(code, lm, pass_manager, diagnostics);
+[2m  File "[0m[1m[35m$DIR/src/lfortran/fortran_evaluator.cpp[39m[0m[2m", line 337[0m
+    diagnostics, lm, lm.files.back().in_filename, nullptr);
+[2m  File "[0m[1m[35m$DIR/src/lfortran/fortran_evaluator.cpp[39m[0m[2m", line 381[0m
+    if (res.ok) {
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 18093[0m
+    v.visit_asr((ASR::asr_t&)asr);
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 361[0m
+    void visit_asr(const asr_t &b) { visit_asr_t(b, self()); }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 335[0m
+    case asrType::unit: { v.visit_unit((const unit_t &)x); return; }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 362[0m
+    void visit_unit(const unit_t &b) { visit_unit_t(b, self()); }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 22[0m
+    case unitType::TranslationUnit: { v.visit_TranslationUnit((const TranslationUnit_t &)x); return; }
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 1580[0m
+    visit_symbol(*item.second);
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 364[0m
+    void visit_symbol(const symbol_t &b) { visit_symbol_t(b, self()); }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 30[0m
+    case symbolType::Program: { v.visit_Program((const Program_t &)x); return; }
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 4940[0m
+    this->visit_stmt(*x.m_body[i]);
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 381[0m
+    void visit_stmt(const stmt_t &b) { visit_stmt_t(b, self()); }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 55[0m
+    case stmtType::Assign: { v.visit_Assign((const Assign_t &)x); return; }
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 8270[0m
+    this->visit_expr(*x.m_target);
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 435[0m
+    void visit_expr(const expr_t &b) { visit_expr_t(b, self()); }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 192[0m
+    case exprType::BitCast: { v.visit_BitCast((const BitCast_t &)x); return; }
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 4037[0m
+    tmp = builder->CreateExtractValue(tmp, member_idx);
+[2m  File "[0m[1m[35m/Users/ondrej/.pixi/envs/lf/include/llvm/IR/IRBuilder.h[39m[0m[2m", line 2436[0m
+    return Insert(ExtractValueInst::Create(Agg, Idxs), Name);
+[2m  File "[0m[1m[35m/Users/ondrej/.pixi/envs/lf/include/llvm/IR/Instructions.h[39m[0m[2m", line 2312[0m
+    ExtractValueInst(Agg, Idxs, NameStr, InsertBefore);
+[2m  File "[0m[1m[35m/Users/ondrej/.pixi/envs/lf/include/llvm/IR/Instructions.h[39m[0m[2m", line 2374[0m
+    }
+[2m  File "[0m[1m[35m/Users/ondrej/.pixi/envs/lf/include/llvm/IR/Instructions.h[39m[0m[2m", line 2371[0m
+    : UnaryInstruction(checkGEPType(getIndexedType(Agg->getType(), Idxs)),
+[2m  File "[0m[1m[35m/Users/ondrej/.pixi/envs/lf/include/llvm/IR/Instructions.h[39m[0m[2m", line 898[0m
+    return Ty;
+[2m  Binary file "[0m[1m[35m/usr/lib/system/libsystem_c.dylib[39m[0m[2m", local address: 0x18037bc17[0m
+[2m  Binary file "[0m[1m[35m/usr/lib/system/libsystem_c.dylib[39m[0m[2m", local address: 0x18037c9e3[0m
+[2m  Binary file "[0m[1m[35m/usr/lib/system/libsystem_pthread.dylib[39m[0m[2m", local address: 0x180473847[0m
+[2m  Binary file "[0m[1m[35m/usr/lib/system/libsystem_platform.dylib[39m[0m[2m", local address: 0x1804ad6a3[0m
+Abort: Signal SIGABRT (abort) received
+

@@ -1,1 +1,14 @@
-Runtime Error: Format mismatch between OPEN statement and WRITE statement on unit 1.
+code generation error: asr_to_llvm: module failed verification. Error:
+Operand is null
+  store i32 0, <null operand!>, align 4
+Operand is null
+  store i32 1, <null operand!>, align 4
+Operand is null
+  call void @__module_lfortran_intrinsic_custom_newunit_int_4(<null operand!>)
+Operand is null
+  %2 = load, align 4
+Operand is null
+  %5 = load, align 4
+Operand is null
+  %9 = load, align 4
+

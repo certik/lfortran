@@ -1,0 +1,4 @@
+code generation error: asr_to_llvm: module failed verification. Error:
+Operand is null
+  store i32 %2, <null operand!>, align 4
+

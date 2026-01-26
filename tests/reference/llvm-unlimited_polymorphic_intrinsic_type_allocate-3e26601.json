@@ -5,9 +5,9 @@
     "infile_hash": "5e3fd98f08d2d9173c3610e43114224b2865c77917c3c0faa1951861",
     "outfile": null,
     "outfile_hash": null,
-    "stdout": "llvm-unlimited_polymorphic_intrinsic_type_allocate-3e26601.stdout",
-    "stdout_hash": "3c54164bf4fca9d31b6b4b47871a2df9bfc164cbceeb4a6dcc2c3424",
-    "stderr": null,
-    "stderr_hash": null,
-    "returncode": 0
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": "llvm-unlimited_polymorphic_intrinsic_type_allocate-3e26601.stderr",
+    "stderr_hash": "6e79f59acfb7d51a45df378a3ab6b3768ce0b453949ffa87bb5eb4cd",
+    "returncode": 1
 }

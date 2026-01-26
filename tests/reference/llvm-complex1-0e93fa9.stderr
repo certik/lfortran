@@ -1,0 +1,4 @@
+code generation error: asr_to_llvm: module failed verification. Error:
+Operand is null
+  store %complex_4 <{ float 3.000000e+00, float 4.000000e+00 }>, <null operand!>, align 1
+

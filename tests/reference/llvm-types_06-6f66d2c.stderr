@@ -1,0 +1,102 @@
+code generation error: asr_to_llvm: module failed verification. Error:
+Operand is null
+  store float 2.000000e+00, <null operand!>, align 4
+Operand is null
+  store i32 2, <null operand!>, align 4
+Operand is null
+  %2 = load, align 4
+Operand is null
+  %3 = load, align 4
+Operand is null
+  %5 = load, align 4
+Operand is null
+  %6 = load, align 4
+Operand is null
+  %8 = load, align 4
+Operand is null
+  %9 = load, align 4
+Operand is null
+  %12 = load, align 4
+Operand is null
+  %14 = load, align 4
+Operand is null
+  %16 = load, align 4
+Operand is null
+  %17 = load, align 4
+Operand is null
+  %19 = load, align 4
+Operand is null
+  %20 = load, align 4
+Operand is null
+  %22 = load, align 4
+Operand is null
+  %23 = load, align 4
+Operand is null
+  %26 = load, align 4
+Operand is null
+  %28 = load, align 4
+Operand is null
+  %30 = load, align 4
+Operand is null
+  %31 = load, align 4
+Operand is null
+  %33 = load, align 4
+Operand is null
+  %34 = load, align 4
+Operand is null
+  %36 = load, align 4
+Operand is null
+  %37 = load, align 4
+Operand is null
+  %40 = load, align 4
+Operand is null
+  %42 = load, align 4
+Operand is null
+  %44 = load, align 4
+Operand is null
+  %46 = load, align 4
+Operand is null
+  %48 = load, align 4
+Operand is null
+  %50 = load, align 4
+Operand is null
+  %52 = load, align 4
+Operand is null
+  %54 = load, align 4
+Operand is null
+  %57 = load, align 4
+Operand is null
+  %60 = load, align 4
+Operand is null
+  %62 = load, align 4
+Operand is null
+  %63 = load, align 4
+Operand is null
+  %66 = load, align 4
+Operand is null
+  %67 = load, align 4
+Operand is null
+  %70 = load, align 4
+Operand is null
+  %71 = load, align 4
+Operand is null
+  %75 = load, align 4
+Operand is null
+  %77 = load, align 4
+Operand is null
+  %80 = load, align 4
+Operand is null
+  %81 = load, align 4
+Operand is null
+  %84 = load, align 4
+Operand is null
+  %85 = load, align 4
+Operand is null
+  %88 = load, align 4
+Operand is null
+  %89 = load, align 4
+Operand is null
+  %93 = load, align 4
+Operand is null
+  %95 = load, align 4
+

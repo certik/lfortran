@@ -1,0 +1,51 @@
+Traceback (most recent call last):
+[2m  File "[0m[1m[35m$DIR/src/bin/lfortran.cpp[39m[0m[2m", line 2805[0m
+    LCompilers::print_stack_on_segfault();
+[2m  File "[0m[1m[35m$DIR/src/bin/lfortran.cpp[39m[0m[2m", line 2732[0m
+    err = compile_src_to_object_file(arg_file, tmp_o, compiler_options.time_report, false,
+[2m  File "[0m[1m[35m$DIR/src/bin/lfortran.cpp[39m[0m[2m", line 1250[0m
+    std::cerr << diagnostics.render(lm, compiler_options);
+[2m  File "[0m[1m[35m$DIR/src/lfortran/fortran_evaluator.cpp[39m[0m[2m", line 381[0m
+    if (res.ok) {
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 18093[0m
+    v.visit_asr((ASR::asr_t&)asr);
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 361[0m
+    void visit_asr(const asr_t &b) { visit_asr_t(b, self()); }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 335[0m
+    case asrType::unit: { v.visit_unit((const unit_t &)x); return; }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 362[0m
+    void visit_unit(const unit_t &b) { visit_unit_t(b, self()); }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 22[0m
+    case unitType::TranslationUnit: { v.visit_TranslationUnit((const TranslationUnit_t &)x); return; }
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 1580[0m
+    visit_symbol(*item.second);
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 364[0m
+    void visit_symbol(const symbol_t &b) { visit_symbol_t(b, self()); }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 30[0m
+    case symbolType::Program: { v.visit_Program((const Program_t &)x); return; }
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 4940[0m
+    this->visit_stmt(*x.m_body[i]);
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 381[0m
+    void visit_stmt(const stmt_t &b) { visit_stmt_t(b, self()); }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 55[0m
+    case stmtType::Assign: { v.visit_Assign((const Assign_t &)x); return; }
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 8270[0m
+    this->visit_expr(*x.m_target);
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 435[0m
+    void visit_expr(const expr_t &b) { visit_expr_t(b, self()); }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 182[0m
+    case exprType::ArrayConstant: { v.visit_ArrayConstant((const ArrayConstant_t &)x); return; }
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 3568[0m
+    tmp = arr_descr->get_single_element(type, array, indices, x.n_args, ASRUtils::expr_type(x.m_v), x.m_v, location_manager,
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/llvm_array_utils.cpp[39m[0m[2m", line 836[0m
+    tmp = llvm_utils->get_string_element_in_array(ASR::down_cast<ASR::String_t>(ASRUtils::extract_type(asr_type)), array, idx);
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/llvm_utils.cpp[39m[0m[2m", line 2088[0m
+    llvm::Value* desired_ptr = get_string_element_in_array_(str_type, data, arr_idx);
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/llvm_utils.cpp[39m[0m[2m", line 2080[0m
+    llvm::Value* string_len = get_string_length(str_type, data);
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/llvm_utils.cpp[39m[0m[2m", line 2041[0m
+    LCOMPILERS_ASSERT(is_proper_string_llvm_variable(str_type, str))
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/llvm_utils.cpp[39m[0m[2m", line 1874[0m
+    return str->getType()->isPointerTy() &&
+[2m  Binary file "[0m[1m[35m/usr/lib/system/libsystem_platform.dylib[39m[0m[2m", local address: 0x1804ad6a3[0m
+Segfault: Signal SIGSEGV (segmentation fault) received

@@ -1,0 +1,12 @@
+code generation error: asr_to_llvm: module failed verification. Error:
+Operand is null
+  store float 1.000000e+00, <null operand!>, align 4
+Operand is null
+  store float 1.500000e+00, <null operand!>, align 4
+Operand is null
+  store float 1.000000e+00, <null operand!>, align 4
+Operand is null
+  store float 2.000000e+00, <null operand!>, align 4
+Operand is null
+  store float 3.000000e+00, <null operand!>, align 4
+

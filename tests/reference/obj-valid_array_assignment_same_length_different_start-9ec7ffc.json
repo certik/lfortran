@@ -7,7 +7,7 @@
     "outfile_hash": null,
     "stdout": null,
     "stdout_hash": null,
-    "stderr": null,
-    "stderr_hash": null,
-    "returncode": 0
+    "stderr": "obj-valid_array_assignment_same_length_different_start-9ec7ffc.stderr",
+    "stderr_hash": "6a8dcb9060e1d51ddb4584f89cc9b701de66e6c4ae47a88d10a82d5c",
+    "returncode": 1
 }

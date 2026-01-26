@@ -1,5 +1,14 @@
-runtime error: Tried to access member of unallocated variable 'var'
-  --> tests/errors/scalar_allocation_check_02.f90:14:22
-   |
-14 |             print *, var%x
-   |                      ^^^^^ 
+code generation error: asr_to_llvm: module failed verification. Error:
+Operand is null
+  %2 = load, align 8
+Operand is null
+  %3 = load, align 8
+Operand is null
+  store %base_class* null, <null operand!>, align 8
+Operand is null
+  %18 = load, align 8
+Operand is null
+  %30 = load, align 8
+Operand is null
+  %48 = load, align 8
+

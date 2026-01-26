@@ -4885,29 +4885,6 @@ public:
             builder->SetCurrentDebugLocation(nullptr);
             debug_emit_loc(x);
         }
-        // Call the `_lpython_call_initial_functions` function to assign command line argument
-        // values to `argc` and `argv`, and set the random seed to the system clock.
-        {
-            if (compiler_options.emit_debug_info) debug_emit_loc(x);
-            llvm::Function *fn = module->getFunction("_lpython_call_initial_functions");
-            if(!fn) {
-                llvm::FunctionType *function_type = llvm::FunctionType::get(
-                    llvm::Type::getVoidTy(context), {
-                        llvm::Type::getInt32Ty(context),
-                        character_type->getPointerTo()
-                    }, false);
-                fn = llvm::Function::Create(function_type,
-                    llvm::Function::ExternalLinkage, "_lpython_call_initial_functions", module.get());
-            }
-            std::vector<llvm::Value *> args;
-            for (llvm::Argument &llvm_arg : F->args()) {
-                args.push_back(&llvm_arg);
-            }
-            builder->CreateCall(fn, args);
-        }
-        // Declare variables before nested procedures to make host symbols available.
-        declare_vars(x);
-        llvm::BasicBlock *bb_after_decls = builder->GetInsertBlock();
 
         // Generate code for nested subroutines and functions first:
         for (auto &item : x.m_symtab->get_scope()) {
@@ -4920,7 +4897,7 @@ public:
         visit_procedures(x);
         llvm_goto_targets.clear();
 
-        builder->SetInsertPoint(bb_after_decls);
+        builder->SetInsertPoint(BB);
         // Clear alloca pool after nested functions are processed, before main body
         call_arg_alloca_pool.clear();
         call_arg_alloca_idx.clear();

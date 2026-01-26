@@ -5,9 +5,9 @@
     "infile_hash": "8e1e2efa590937906428b5c80f2025a351c33f23a5a821a26341ba02",
     "outfile": null,
     "outfile_hash": null,
-    "stdout": "llvm-volatile_02-2beae13.stdout",
-    "stdout_hash": "a0887b897cb738eaf462b6c61c1bd0d194de8ab7a5f69f746c4c3830",
-    "stderr": null,
-    "stderr_hash": null,
-    "returncode": 0
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": "llvm-volatile_02-2beae13.stderr",
+    "stderr_hash": "358567da6fa7c9fa64e15e4785457d1a840af8f037563ec252480b4b",
+    "returncode": 1
 }

@@ -1,0 +1,39 @@
+Internal Compiler Error: Unhandled exception
+Traceback (most recent call last):
+[2m  File "[0m[1m[35m$DIR/src/bin/lfortran.cpp[39m[0m[2m", line 2805[0m
+    LCompilers::print_stack_on_segfault();
+[2m  File "[0m[1m[35m$DIR/src/bin/lfortran.cpp[39m[0m[2m", line 2607[0m
+    return emit_llvm(opts.arg_file, lfortran_pass_manager,
+[2m  File "[0m[1m[35m$DIR/src/bin/lfortran.cpp[39m[0m[2m", line 1117[0m
+    std::cerr << diagnostics.render(lm, compiler_options);
+[2m  File "[0m[1m[35m$DIR/src/lfortran/fortran_evaluator.cpp[39m[0m[2m", line 315[0m
+    Result<std::unique_ptr<LLVMModule>> res = get_llvm2(code, lm, pass_manager, diagnostics);
+[2m  File "[0m[1m[35m$DIR/src/lfortran/fortran_evaluator.cpp[39m[0m[2m", line 337[0m
+    diagnostics, lm, lm.files.back().in_filename, nullptr);
+[2m  File "[0m[1m[35m$DIR/src/lfortran/fortran_evaluator.cpp[39m[0m[2m", line 381[0m
+    if (res.ok) {
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 18093[0m
+    v.visit_asr((ASR::asr_t&)asr);
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 361[0m
+    void visit_asr(const asr_t &b) { visit_asr_t(b, self()); }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 335[0m
+    case asrType::unit: { v.visit_unit((const unit_t &)x); return; }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 362[0m
+    void visit_unit(const unit_t &b) { visit_unit_t(b, self()); }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 22[0m
+    case unitType::TranslationUnit: { v.visit_TranslationUnit((const TranslationUnit_t &)x); return; }
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 1580[0m
+    visit_symbol(*item.second);
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 364[0m
+    void visit_symbol(const symbol_t &b) { visit_symbol_t(b, self()); }
+[2m  File "[0m[1m[35m$DIR/src/libasr/asr_base_visitor.h[39m[0m[2m", line 30[0m
+    case symbolType::Program: { v.visit_Program((const Program_t &)x); return; }
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/asr_to_llvm.cpp[39m[0m[2m", line 4953[0m
+    llvm_symtab_finalizer.finalize_symtab(x.m_symtab);
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/llvm_utils.h[39m[0m[2m", line 1526[0m
+    finalize_variable(ASR::down_cast<ASR::Variable_t>(sym));
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/llvm_utils.h[39m[0m[2m", line 897[0m
+    auto const llvm_var = get_llvm_var(v);
+[2m  File "[0m[1m[35m$DIR/src/libasr/codegen/llvm_utils.h[39m[0m[2m", line 1344[0m
+    LCOMPILERS_ASSERT(llvm_utils_->llvm_symtab.find(v_h) != llvm_utils_->llvm_symtab.end());
+AssertFailed: llvm_utils_->llvm_symtab.find(v_h) != llvm_utils_->llvm_symtab.end()
