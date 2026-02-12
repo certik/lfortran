@@ -1,0 +1,76 @@
+│ Plan to implement                                                            │
+│                                                                              │
+│ Fix: "Non-allocatable string isn't allocated" for character arrays with      │
+│ DescriptorArray layout                                                       │
+│                                                                              │
+│ Context                                                                      │
+│                                                                              │
+│ When declaring a local character, dimension(N) array where N is a runtime    │
+│ expression (e.g., character, dimension(len(str)) :: tmp), the variable gets  │
+│ DescriptorArray physical type. The LLVM codegen allocates the array of       │
+│ string_descriptor structs for arr.data, but never allocates the underlying   │
+│ flat character buffer that arr.data[0].ptr should point to. When element     │
+│ assignment like tmp(i) = str(i:i) is executed, _lfortran_strcpy reads *lhs   │
+│ (which is arr.data[0].ptr) and finds it NULL/uninitialized, triggering the   │
+│ error.                                                                       │
+│                                                                              │
+│ For PointerArray character arrays, this works correctly via                  │
+│ create_and_setup_string_for_array which calls                                │
+│ set_array_of_strings_memory_on_heap. But for DescriptorArray, the generic    │
+│ SimpleCMODescriptor::fill_array_details treats string_descriptors as plain   │
+│ data elements and doesn't know about the inner character buffer.             │
+│                                                                              │
+│ Fix                                                                          │
+│                                                                              │
+│ File: src/libasr/codegen/asr_to_llvm.cpp, function fill_array_details_       │
+│ (~line 5164-5168)                                                            │
+│                                                                              │
+│ After fill_array_details allocates the string_descriptor array and stores it │
+│  in arr.data, add code for character arrays to:                              │
+│ 1. Load arr.data (the first string_descriptor pointer)                       │
+│ 2. Evaluate the string length from the ASR String type                       │
+│ 3. Compute the total array size (product of dimension lengths)               │
+│ 4. Call allocate_allocatable_array_of_strings to allocate the flat character │
+│  buffer and store in data[0].ptr                                             │
+│                                                                              │
+│ if( is_array_type && !is_malloc_array_type && !is_list ) {                   │
+│     llvm::Type* ptr_typ = llvm_utils->get_type_from_ttype_t_util(...);       │
+│     fill_array_details(ptr_typ, ptr, llvm_data_type, m_dims, n_dims,         │
+│ is_data_only);                                                               │
+│     // NEW: For character DescriptorArrays, allocate the flat character      │
+│ buffer                                                                       │
+│     if( !is_data_only && ASRUtils::is_character(*m_type) ) {                 │
+│         ASR::String_t* str_type =                                            │
+│ ASR::down_cast<ASR::String_t>(ASRUtils::extract_type(m_type));               │
+│         llvm::Value* data_ptr_ptr = arr_descr->get_pointer_to_data(ptr_typ,  │
+│ ptr);                                                                        │
+│         llvm::Value* first_str_desc = llvm_utils->CreateLoad2(               │
+│             llvm_data_type->getPointerTo(), data_ptr_ptr);                   │
+│         // Compute array size (prod of dimension lengths)                    │
+│         int ptr_loads_copy = ptr_loads;                                      │
+│         ptr_loads = 2;                                                       │
+│         llvm::Value* prod = llvm::ConstantInt::get(context, llvm::APInt(32,  │
+│ 1));                                                                         │
+│         for( size_t r = 0; r < n_dims; r++ ) {                               │
+│             load_array_size_deep_copy(m_dims[r].m_length);                   │
+│             prod = builder->CreateMul(prod, tmp);                            │
+│         }                                                                    │
+│         ptr_loads = ptr_loads_copy;                                          │
+│         llvm_utils->allocate_allocatable_array_of_strings(                   │
+│             str_type, first_str_desc, nullptr, prod, false);                 │
+│     }                                                                        │
+│ }                                                                            │
+│                                                                              │
+│ Integration Test                                                             │
+│                                                                              │
+│ Add integration_tests/char_array_descriptor_01.f90 with labels gfortran and  │
+│ llvm.                                                                        │
+│                                                                              │
+│ Verification                                                                 │
+│                                                                              │
+│ 1. Build: ninja -C build -j16                                                │
+│ 2. Test the original file: src/bin/lfortran a.f90 && ./a.out should print    │
+│ sum_string(str):         1484                                                │
+│ 3. Run integration tests: cd integration_tests && ./run_tests.py -b llvm     │
+│ char_array_descriptor_01 && ./run_tests.py -b gfortran                       │
+│ char_array_descriptor_01                                                     │
