@@ -177,7 +177,7 @@
                                     (SymbolTable
                                         5
                                         {
-                                            associate_block:
+                                            associate_block_EU0wesSTLp7FDXxLRWoCCJ:
                                                 (AssociateBlock
                                                     (SymbolTable
                                                         6
@@ -236,7 +236,7 @@
                                                                     .false.
                                                                 )
                                                         })
-                                                    associate_block
+                                                    associate_block_EU0wesSTLp7FDXxLRWoCCJ
                                                     [(Associate
                                                         (Var 6 ii)
                                                         (Var 5 i)
@@ -401,7 +401,7 @@
                                     []
                                     [(Var 5 package)]
                                     [(AssociateBlockCall
-                                        5 associate_block
+                                        5 associate_block_EU0wesSTLp7FDXxLRWoCCJ
                                     )]
                                     ()
                                     Public

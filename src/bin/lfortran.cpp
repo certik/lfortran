@@ -1191,7 +1191,7 @@ int compile_src_to_object_file(const std::string &infile,
     LCompilers::Result<LCompilers::ASR::TranslationUnit_t*>
         result = fe.get_asr2(input, lm, diagnostics);
     t2 = std::chrono::high_resolution_clock::now();
-    lcompilers_unique_ID_separate_compilation = compiler_options.separate_compilation ? LCOMPILERS_UNIQUE_ID : "";
+    lcompilers_unique_ID_separate_compilation = (compiler_options.separate_compilation || arg_c) ? LCOMPILERS_UNIQUE_ID : "";
 
     time_src_to_asr = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
     bool has_error_w_cc = compiler_options.continue_compilation && diagnostics.has_error();
@@ -1217,7 +1217,8 @@ int compile_src_to_object_file(const std::string &infile,
 
     if (!(compiler_options.separate_compilation || compiler_options.generate_code_for_global_procedures)
         && !LCompilers::ASRUtils::main_program_present(*asr)
-        && !LCompilers::ASRUtils::global_function_present(*asr)) {
+        && !LCompilers::ASRUtils::global_function_present(*asr)
+        && !LCompilers::ASRUtils::submodule_present(*asr)) {
         // Create an empty object file (things will be actually
         // compiled and linked when the main program is present):
         e.create_empty_object_file(outfile);
@@ -2402,8 +2403,9 @@ int main_app(int argc, char *argv[]) {
         }
     }
 
-    lcompilers_unique_ID_separate_compilation = ( parser.opts.compiler_options.separate_compilation || compiler_options.generate_code_for_global_procedures ) ? LCOMPILERS_UNIQUE_ID : "";
-    if (parser.opts.compiler_options.separate_compilation) {
+    compiler_options.arg_c = opts.arg_c;
+    lcompilers_unique_ID_separate_compilation = ( parser.opts.compiler_options.separate_compilation || compiler_options.generate_code_for_global_procedures || opts.arg_c ) ? LCOMPILERS_UNIQUE_ID : "";
+    if (parser.opts.compiler_options.separate_compilation || opts.arg_c) {
         compiler_options.po.intrinsic_symbols_mangling = true;
         compiler_options.po.intrinsic_module_name_mangling = true;
         compiler_options.po.skip_removal_of_unused_procedures_in_pass_array_by_data = true;

@@ -111,6 +111,12 @@ struct CompilerOptions {
     */
     bool separate_compilation = false;
     /*
+        Set when -c flag is used (compile to object file, do not link).
+        Used to avoid loading submodule implementations into the main
+        program, so that each .o file is self-contained.
+    */
+    bool arg_c = false;
+    /*
         Generates object code *only* for global procedures ( subroutines / functions ) *if present* in ASR
         by marking modules as external. We have a utility that identifies global procedures and hence this
         option is not exposed to user. It gets set to true if there are any global procedures in ASR.

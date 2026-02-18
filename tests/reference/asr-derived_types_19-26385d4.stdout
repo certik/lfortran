@@ -70,14 +70,31 @@
                                                     .false.
                                                     .false.
                                                 ),
-                                            ~select_type_block_:
+                                            ~select_type_block_1:
                                                 (Block
                                                     (SymbolTable
                                                         8
                                                         {
+                                                            
+                                                        })
+                                                    ~select_type_block_1
+                                                    [(SubroutineCall
+                                                        4 default_class
+                                                        ()
+                                                        []
+                                                        ()
+                                                        .false.
+                                                    )
+                                                    (Return)]
+                                                ),
+                                            ~select_type_block__X2JF2TyfzkzzZ7fPp719vR:
+                                                (Block
+                                                    (SymbolTable
+                                                        9
+                                                        {
                                                             1_child_value_ok:
                                                                 (ExternalSymbol
-                                                                    8
+                                                                    9
                                                                     1_child_value_ok
                                                                     5 ok
                                                                     child_value
@@ -86,7 +103,7 @@
                                                                     Public
                                                                 )
                                                         })
-                                                    ~select_type_block_
+                                                    ~select_type_block__X2JF2TyfzkzzZ7fPp719vR
                                                     [(If
                                                         ()
                                                         (StructInstanceMember
@@ -104,7 +121,7 @@
                                                                 ()
                                                                 (Var 4 child_value)
                                                             )
-                                                            8 1_child_value_ok
+                                                            9 1_child_value_ok
                                                             (Logical 4)
                                                             ()
                                                         )
@@ -134,23 +151,6 @@
                                                         )
                                                         (Return)]
                                                     )]
-                                                ),
-                                            ~select_type_block_1:
-                                                (Block
-                                                    (SymbolTable
-                                                        9
-                                                        {
-                                                            
-                                                        })
-                                                    ~select_type_block_1
-                                                    [(SubroutineCall
-                                                        4 default_class
-                                                        ()
-                                                        []
-                                                        ()
-                                                        .false.
-                                                    )
-                                                    (Return)]
                                                 )
                                         })
                                     check_proc
@@ -168,8 +168,8 @@
                                         []
                                         .false.
                                     )
-                                    [not_ok
-                                    default_class]
+                                    [default_class
+                                    not_ok]
                                     []
                                     [(If
                                         ()
@@ -186,7 +186,7 @@
                                                 4 child_value
                                                 [(BlockCall
                                                     -1
-                                                    7 ~select_type_block_
+                                                    7 ~select_type_block__X2JF2TyfzkzzZ7fPp719vR
                                                 )]
                                             )]
                                             [(BlockCall

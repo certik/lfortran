@@ -3711,7 +3711,7 @@ public:
 
         ASR::symbol_t *t = current_scope->resolve_symbol(msym);
         SymbolTable *tu_symtab = current_scope->get_global_scope();
-        bool load_submodules = (!compiler_options.separate_compilation && in_program);
+        bool load_submodules = (!compiler_options.separate_compilation && !compiler_options.arg_c && in_program);
         if (!t) {
             t = (ASR::symbol_t*)(ASRUtils::load_module(al, tu_symtab,
                 msym, x.base.base.loc, false, loaded_submodules, compiler_options.po, true,
