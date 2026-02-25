@@ -137,13 +137,27 @@ time_section "🧪 Testing splpak" '
   rm -rf splpak
 '
 
+time_section "🧪 Testing smart-pointers" '
+  git clone https://github.com/certik/smart-pointers.git
+  cd smart-pointers
+  export PATH="$(pwd)/../src/bin:$PATH"
+  micromamba install -c conda-forge fpm
+
+  git checkout -t origin/lf2
+  git checkout 95de5105c6a469b64feb39e999567f5e2fcdd033
+  fpm test --compiler=lfortran --flag --cpp --flag --realloc-lhs-arrays
+
+  print_success "Done with smart-pointers"
+  cd ..
+'
+
 time_section "🧪 Testing Formal" '
   git clone https://github.com/certik/formal.git
   cd formal
   export PATH="$(pwd)/../src/bin:$PATH"
   micromamba install -c conda-forge fpm
 
-  git checkout lf1
+  git checkout -t orirign/lf1
   git checkout 671ab24c3d639b1a2fedd27f727e96dadf404c5c
   fpm test --compiler=lfortran --flag --cpp --flag --realloc-lhs-arrays
   rm -rf build
