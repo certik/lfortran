@@ -3396,9 +3396,15 @@ public:
     void resolve_proc_pointer_placeholders() {
         // After all interfaces/functions have been processed, update
         // m_type_declaration for procedure pointer variables inside structs
-        // that still reference a placeholder Function_t.
+        // and function parameters that still reference a placeholder Function_t.
         for (auto &[name, placeholder_sym] : pending_proc_placeholders) {
             ASR::symbol_t *real_sym = current_scope->resolve_symbol(name);
+            if (!real_sym || real_sym == placeholder_sym) continue;
+            ASR::ttype_t *real_sig = nullptr;
+            if (ASR::is_a<ASR::Function_t>(*ASRUtils::symbol_get_past_external(real_sym))) {
+                real_sig = ASR::down_cast<ASR::Function_t>(
+                    ASRUtils::symbol_get_past_external(real_sym))->m_function_signature;
+            }
             for (auto &[sym_name, sym] : current_scope->get_scope()) {
                 if (ASR::is_a<ASR::Struct_t>(*sym)) {
                     ASR::Struct_t* struct_def = ASR::down_cast<ASR::Struct_t>(sym);
@@ -3407,6 +3413,24 @@ public:
                             ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(var_sym);
                             if (var->m_type_declaration == placeholder_sym) {
                                 var->m_type_declaration = real_sym;
+                            }
+                        }
+                    }
+                }
+                if (ASR::is_a<ASR::Function_t>(*sym) && real_sig) {
+                    ASR::Function_t *func = ASR::down_cast<ASR::Function_t>(sym);
+                    ASR::FunctionType_t *func_type = ASR::down_cast<ASR::FunctionType_t>(
+                        func->m_function_signature);
+                    for (size_t i = 0; i < func->n_args; i++) {
+                        if (!ASR::is_a<ASR::Var_t>(*func->m_args[i])) continue;
+                        ASR::Var_t *var_ref = ASR::down_cast<ASR::Var_t>(func->m_args[i]);
+                        if (!ASR::is_a<ASR::Variable_t>(*var_ref->m_v)) continue;
+                        ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(var_ref->m_v);
+                        if (var->m_type_declaration == placeholder_sym) {
+                            var->m_type_declaration = real_sym;
+                            var->m_type = real_sig;
+                            if (i < func_type->n_arg_types) {
+                                func_type->m_arg_types[i] = real_sig;
                             }
                         }
                     }
