@@ -985,10 +985,29 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
                     // alphabetical visit order where an AssociateBlock or Block
                     // containing the call is visited before this variable),
                     // process it now so the call can be properly updated.
-                    if ( new_x_name == nullptr && !is_external &&
+                    if ( new_x_name == nullptr &&
                          v.proc2newproc.find((ASR::symbol_t*)variable) == v.proc2newproc.end() ) {
                         visit_Variable(*variable);
                         new_x_name = resolve_new_proc(x.m_name);
+                        // Wrap in ExternalSymbol when the resolved
+                        // symbol lives outside the current scope.
+                        if (is_external && new_x_name != nullptr &&
+                            ASRUtils::symbol_parent_symtab(new_x_name)->get_counter() !=
+                                current_scope->get_counter()) {
+                            ASR::ExternalSymbol_t* orig_ext =
+                                ASR::down_cast<ASR::ExternalSymbol_t>(x.m_name);
+                            std::string new_ext_name = current_scope->get_unique_name(
+                                ASRUtils::symbol_name(new_x_name));
+                            ASR::symbol_t* new_ext = ASR::down_cast<ASR::symbol_t>(
+                                ASR::make_ExternalSymbol_t(al, x.m_name->base.loc,
+                                    current_scope, s2c(al, new_ext_name), new_x_name,
+                                    orig_ext->m_module_name,
+                                    orig_ext->m_scope_names, orig_ext->n_scope_names,
+                                    ASRUtils::symbol_name(new_x_name),
+                                    orig_ext->m_access));
+                            current_scope->add_symbol(new_ext_name, new_ext);
+                            new_x_name = new_ext;
+                        }
                     }
                     if ( new_x_name != nullptr ) {
                         ASR::Function_t* new_func = ASR::down_cast<ASR::Function_t>(resolve_new_proc(subrout_sym));
@@ -1230,6 +1249,20 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
         void visit_StructInstanceMember(const ASR::StructInstanceMember_t &x) {
             //Case: prob % calfun => temp_calfun (where calfun is procedure variable)
             ASR::ASRPassBaseWalkVisitor<EditProcedureCallsVisitor>::visit_StructInstanceMember(x);
+            // Lazy registration: if the member variable hasn't been
+            // processed yet but its type_declaration has, process it
+            // now (can happen when a submodule is visited before its
+            // parent module due to alphabetical traversal order).
+            ASR::symbol_t* member_sym = ASRUtils::symbol_get_past_external(x.m_m);
+            if (v.proc2newproc.find(member_sym) == v.proc2newproc.end() &&
+                    ASR::is_a<ASR::Variable_t>(*member_sym)) {
+                ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(member_sym);
+                if (var->m_type_declaration &&
+                        v.proc2newproc.find(ASRUtils::symbol_get_past_external(
+                            var->m_type_declaration)) != v.proc2newproc.end()) {
+                    visit_Variable(*var);
+                }
+            }
             if (v.proc2newproc.find(ASRUtils::symbol_get_past_external(x.m_m)) != v.proc2newproc.end()) {
                 ASR::symbol_t* new_func_sym_ = x.m_m;
                 if (ASR::is_a<ASR::ExternalSymbol_t>(*x.m_m)) {
