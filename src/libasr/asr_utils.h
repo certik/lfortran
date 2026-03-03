@@ -3397,6 +3397,11 @@ static inline ASR::ttype_t* duplicate_type(Allocator& al, const ASR::ttype_t* t,
         case ASR::ttypeType::Array: {
             ASR::Array_t* tnew = ASR::down_cast<ASR::Array_t>(t);
             ASR::ttype_t* duplicated_element_type = duplicate_type(al, tnew->m_type);
+            if (tnew->m_physical_type == ASR::array_physical_typeType::AssumedRankArray) {
+                return ASRUtils::TYPE(ASR::make_Array_t(al, tnew->base.base.loc,
+                    duplicated_element_type, nullptr, 0,
+                    ASR::array_physical_typeType::AssumedRankArray));
+            }
             if (dims == nullptr) {
                 dimsp = duplicate_dimensions(al, tnew->m_dims, tnew->n_dims);
                 dimsn = tnew->n_dims;

@@ -10357,7 +10357,15 @@ public:
         visit_Var(*selector_var);
         ptr_loads = ptr_loads_copy;
         llvm::Value* llvm_selector = tmp;
-        llvm::Type* llvm_selector_type_ = llvm_utils->get_type_from_ttype_t_util(x.m_selector, ASRUtils::expr_type(x.m_selector), module.get());
+        ASR::ttype_t* selector_type = ASRUtils::expr_type(x.m_selector);
+        ASR::ttype_t* selector_asr_type = ASRUtils::type_get_past_allocatable(
+            ASRUtils::type_get_past_pointer(selector_type));
+        llvm::Type* llvm_selector_type_ = llvm_utils->get_type_from_ttype_t_util(
+            x.m_selector, selector_asr_type, module.get());
+        if (LLVM::is_llvm_pointer(*selector_type)) {
+            llvm_selector = llvm_utils->CreateLoad2(
+                llvm_selector_type_->getPointerTo(), llvm_selector);
+        }
         llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(context, "ifcont");
 
         llvm::Value* rank = arr_descr->get_rank(llvm_selector_type_, llvm_selector);
