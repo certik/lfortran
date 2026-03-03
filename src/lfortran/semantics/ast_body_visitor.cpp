@@ -2802,10 +2802,34 @@ public:
             } else if( source_cond ) {
                 this->visit_expr(*(x.m_keywords[i].m_value));
                 source = ASRUtils::EXPR(tmp);
+                if (ASRUtils::is_assumed_rank_array(ASRUtils::expr_type(source))
+                        && ASR::is_a<ASR::Var_t>(*source)) {
+                    std::string var_name = ASRUtils::symbol_name(ASR::down_cast<ASR::Var_t>(source)->m_v);
+                    if (assumed_rank_arrays.find(var_name) != assumed_rank_arrays.end()) {
+                        size_t rank = assumed_rank_arrays[var_name];
+                        ASR::ttype_t* elem_type = ASRUtils::extract_type(ASRUtils::expr_type(source));
+                        ASR::ttype_t* new_type = ASRUtils::create_array_type_with_empty_dims(al, rank, elem_type);
+                        source = ASRUtils::EXPR(ASRUtils::make_ArrayPhysicalCast_t_util(al, source->base.loc,
+                            source, ASR::array_physical_typeType::AssumedRankArray,
+                            ASR::array_physical_typeType::DescriptorArray, new_type, nullptr));
+                    }
+                }
                 set_string_len_if_needed(x, alloc_args_vec, source_cond, source);
             } else if ( mold_cond ) {
                 this->visit_expr(*(x.m_keywords[i].m_value));
                 mold = ASRUtils::EXPR(tmp);
+                if (ASRUtils::is_assumed_rank_array(ASRUtils::expr_type(mold))
+                        && ASR::is_a<ASR::Var_t>(*mold)) {
+                    std::string var_name = ASRUtils::symbol_name(ASR::down_cast<ASR::Var_t>(mold)->m_v);
+                    if (assumed_rank_arrays.find(var_name) != assumed_rank_arrays.end()) {
+                        size_t rank = assumed_rank_arrays[var_name];
+                        ASR::ttype_t* elem_type = ASRUtils::extract_type(ASRUtils::expr_type(mold));
+                        ASR::ttype_t* new_type = ASRUtils::create_array_type_with_empty_dims(al, rank, elem_type);
+                        mold = ASRUtils::EXPR(ASRUtils::make_ArrayPhysicalCast_t_util(al, mold->base.loc,
+                            mold, ASR::array_physical_typeType::AssumedRankArray,
+                            ASR::array_physical_typeType::DescriptorArray, new_type, nullptr));
+                    }
+                }
                 set_string_len_if_needed(x, alloc_args_vec, mold_cond, mold);
             }
         }
@@ -2955,7 +2979,22 @@ public:
                 }
             }
             alloc_args_vec = new_alloc_args_vec;
-            if (!source_cond) source = mold;
+            if (!source_cond) {
+                // For struct/polymorphic mold, the LLVM backend needs the
+                // mold expression in source for vtable and type allocation.
+                // For plain array mold, dimensions are already in alloc_args
+                // and source would incorrectly trigger data copy in array_op.
+                bool needs_source = false;
+                for (size_t i = 0; i < new_alloc_args_vec.size(); i++) {
+                    if (new_alloc_args_vec[i].m_type != nullptr) {
+                        needs_source = true;
+                        break;
+                    }
+                }
+                if (needs_source) {
+                    source = mold;
+                }
+            }
         }
 
         if( !cond ) {
