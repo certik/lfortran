@@ -9955,6 +9955,14 @@ public:
             ASRUtils::type_get_past_pointer(ASRUtils::expr_type(m_arg))),
             module.get());
         llvm::Type* m_arg_llvm_type = llvm_utils->get_type_from_ttype_t_util(m_arg, ASRUtils::expr_type(m_arg), module.get());
+        if( m_old == ASR::array_physical_typeType::FixedSizeArray &&
+            m_new != ASR::array_physical_typeType::SIMDArray &&
+            !tmp->getType()->isPointerTy() ) {
+            llvm::AllocaInst* tmp_alloca = llvm_utils->CreateAlloca(
+                m_arg_llvm_type, nullptr, "fixed_size_arr_tmp");
+            builder->CreateStore(tmp, tmp_alloca);
+            tmp = tmp_alloca;
+        }
         if( m_new == ASR::array_physical_typeType::PointerArray &&
             m_old == ASR::array_physical_typeType::DescriptorArray ) {
             if( ASR::is_a<ASR::StructInstanceMember_t>(*m_arg) ) {
