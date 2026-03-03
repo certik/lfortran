@@ -3398,6 +3398,11 @@ static inline ASR::ttype_t* duplicate_type(Allocator& al, const ASR::ttype_t* t,
             ASR::Array_t* tnew = ASR::down_cast<ASR::Array_t>(t);
             ASR::ttype_t* duplicated_element_type = duplicate_type(al, tnew->m_type);
             if (tnew->m_physical_type == ASR::array_physical_typeType::AssumedRankArray) {
+                if (override_physical_type && dims != nullptr) {
+                    return ASRUtils::make_Array_t_util(al, tnew->base.base.loc,
+                        duplicated_element_type, dimsp, dimsn, ASR::abiType::Source,
+                        false, physical_type, override_physical_type);
+                }
                 return ASRUtils::TYPE(ASR::make_Array_t(al, tnew->base.base.loc,
                     duplicated_element_type, nullptr, 0,
                     ASR::array_physical_typeType::AssumedRankArray));
@@ -7277,6 +7282,9 @@ static inline void Call_t_body(Allocator& al, ASR::symbol_t* a_name,
                 if (ASRUtils::is_pointer(physical_cast_type)) {
                     dimensions = nullptr;
                 } else if (ASRUtils::is_fixed_size_array(orig_arg_array_t->m_dims, orig_arg_array_t->n_dims)) {
+                    dimensions = &dimension_;
+                } else if (arg_array_t->m_physical_type == ASR::array_physical_typeType::AssumedRankArray
+                           && orig_arg_array_t->m_physical_type != ASR::array_physical_typeType::AssumedRankArray) {
                     dimensions = &dimension_;
                 } else if (orig_arg_array_t->m_physical_type == ASR::array_physical_typeType::AssumedRankArray) {
                     dimension_.from_pointer_n_copy(al, arg_array_t->m_dims, arg_array_t->n_dims);
