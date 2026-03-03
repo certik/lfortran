@@ -8206,6 +8206,40 @@ public:
     ASR::asr_t* create_DerivedTypeConstructor(const Location &loc,
             AST::fnarg_t* m_args, size_t n_args, AST::keyword_t* kwargs,
             size_t n_kwargs, ASR::symbol_t *v, bool is_const = false) {
+        // If v is a PDT template, instantiate with default kind values
+        ASR::symbol_t* v_orig = ASRUtils::symbol_get_past_external(v);
+        if (ASR::is_a<ASR::Struct_t>(*v_orig)) {
+            ASR::Struct_t* pdt_struct = ASR::down_cast<ASR::Struct_t>(v_orig);
+            if (pdt_struct->n_kind_params > 0) {
+                std::vector<int64_t> default_kind_vals;
+                for (size_t ki = 0; ki < pdt_struct->n_kind_params; ki++) {
+                    ASR::symbol_t* kp_sym = pdt_struct->m_symtab->get_symbol(
+                        pdt_struct->m_kind_params[ki]);
+                    LCOMPILERS_ASSERT(kp_sym && ASR::is_a<ASR::Variable_t>(*kp_sym));
+                    ASR::Variable_t* kp_var = ASR::down_cast<ASR::Variable_t>(kp_sym);
+                    int64_t kval = 0;
+                    if (kp_var->m_symbolic_value) {
+                        ASR::expr_t* val_expr = ASRUtils::expr_value(kp_var->m_symbolic_value);
+                        if (val_expr) {
+                            ASRUtils::extract_value(val_expr, kval);
+                        } else {
+                            ASRUtils::extract_value(kp_var->m_symbolic_value, kval);
+                        }
+                    }
+                    default_kind_vals.push_back(kval);
+                }
+                Vec<ASR::dimension_t> empty_dims;
+                empty_dims.reserve(al, 0);
+                ASR::symbol_t* type_decl = nullptr;
+                instantiate_pdt_by_values(loc,
+                    std::string(pdt_struct->m_name),
+                    default_kind_vals, false, false, empty_dims, type_decl,
+                    ASR::abiType::Source, false);
+                if (type_decl) {
+                    v = type_decl;
+                }
+            }
+        }
         Vec<ASR::call_arg_t> vals;
         visit_expr_list(m_args, n_args, vals);
         visit_kwargs(vals, kwargs, n_kwargs, loc, v, diag);
@@ -10278,6 +10312,21 @@ public:
                     par_der_type = ASR::down_cast<ASR::Struct_t>(parent_sym);
                     if (par_der_type->m_name == var_name) {    // if the parent type is the member itself
                         member = parent_sym;
+                    } else {
+                        // For PDT instances (e.g. parent_t_4), the user writes
+                        // the original PDT template name (parent_t). Check if
+                        // var_name refers to a PDT template that was instantiated
+                        // to produce par_der_type.
+                        SymbolTable* parent_def_scope = ASRUtils::symbol_parent_symtab(parent_sym);
+                        ASR::symbol_t* maybe_pdt = parent_def_scope->get_symbol(var_name);
+                        if (maybe_pdt && ASR::is_a<ASR::Struct_t>(
+                                *ASRUtils::symbol_get_past_external(maybe_pdt))) {
+                            ASR::Struct_t* pdt_struct = ASR::down_cast<ASR::Struct_t>(
+                                ASRUtils::symbol_get_past_external(maybe_pdt));
+                            if (pdt_struct->n_kind_params > 0) {
+                                member = parent_sym;
+                            }
+                        }
                     }
                 } else {
                     par_der_type = nullptr;
