@@ -12,7 +12,7 @@ Traceback (most recent call last):
     compiler_options.symtab_only, compiler_options, lm);
 [2m  File "[0m[1m[35m$DIR/src/lfortran/semantics/ast_to_asr.cpp[39m[0m[2m", line 115[0m
     if (res.ok) {
-[2m  File "[0m[1m[35m$DIR/src/lfortran/semantics/ast_body_visitor.cpp[39m[0m[2m", line 8365[0m
+[2m  File "[0m[1m[35m$DIR/src/lfortran/semantics/ast_body_visitor.cpp[39m[0m[2m", line 8404[0m
     b.is_body_visitor = true;
 [2m  File "[0m[1m[35m$DIR/src/lfortran/semantics/ast_body_visitor.cpp[39m[0m[2m", line 244[0m
     visit_ast(*x.m_items[i]);
@@ -24,7 +24,7 @@ Traceback (most recent call last):
     void visit_mod(const mod_t &b) { visit_mod_t(b, self()); }
 [2m  File "[0m[1m[35m$DIR/src/lfortran/ast.h[39m[0m[2m", line 4618[0m
     case modType::BlockData: { v.visit_BlockData((const BlockData_t &)x); return; }
-[2m  File "[0m[1m[35m$DIR/src/lfortran/semantics/ast_body_visitor.cpp[39m[0m[2m", line 4064[0m
+[2m  File "[0m[1m[35m$DIR/src/lfortran/semantics/ast_body_visitor.cpp[39m[0m[2m", line 4103[0m
     transform_stmts(body, x.n_body, x.m_body);
 [2m  File "[0m[1m[35m$DIR/src/lfortran/semantics/ast_body_visitor.cpp[39m[0m[2m", line 205[0m
     this->visit_stmt(*m_body[i]);
@@ -32,7 +32,7 @@ Traceback (most recent call last):
     void visit_stmt(const stmt_t &b) { visit_stmt_t(b, self()); }
 [2m  File "[0m[1m[35m$DIR/src/lfortran/ast.h[39m[0m[2m", line 4729[0m
     case stmtType::Assign: { v.visit_Assign((const Assign_t &)x); return; }
-[2m  File "[0m[1m[35m$DIR/src/lfortran/semantics/ast_body_visitor.cpp[39m[0m[2m", line 5152[0m
+[2m  File "[0m[1m[35m$DIR/src/lfortran/semantics/ast_body_visitor.cpp[39m[0m[2m", line 5191[0m
     current_variable_type_ = temp_current_variable_type_;
 [2m  File "[0m[1m[35m$DIR/src/libasr/asr_utils.h[39m[0m[2m", line 110[0m
     return ASR::down_cast<ASR::expr_t>(f);
