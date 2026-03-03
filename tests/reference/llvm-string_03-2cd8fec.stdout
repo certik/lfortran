@@ -35,7 +35,7 @@ source_filename = "LFortran"
 @16 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
 @17 = private unnamed_addr constant [5 x i8] c"%s%s\00", align 1
 
-define void @_lcompilers_stringconcat(%string_descriptor* %s1, %string_descriptor* %s2, i32* %s1_len, i32* %s2_len, %string_descriptor* %concat_result) {
+define linkonce_odr void @_lcompilers_stringconcat(%string_descriptor* %s1, %string_descriptor* %s2, i32* %s1_len, i32* %s2_len, %string_descriptor* %concat_result) {
 .entry:
   %0 = load i32, i32* %s1_len, align 4
   %1 = load i32, i32* %s2_len, align 4

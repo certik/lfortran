@@ -5099,11 +5099,11 @@ public:
 
         visit_procedures(x);
 
-        // If this is a submodule loaded from .smod (not the source being
-        // compiled), mark its functions as LinkOnceODR so they don't
-        // conflict with the strong definitions from the submodule's own
+        // If this module was loaded from a .mod/.smod file (not the source
+        // being compiled), mark its functions as LinkOnceODR so they don't
+        // conflict with the strong definitions from the module's own
         // object file.
-        if (x.m_parent_module && x.m_loaded_from_mod) {
+        if (x.m_loaded_from_mod) {
             for (auto &sym: functions) {
                 uint32_t h = get_hash((ASR::asr_t*)sym);
                 if (llvm_symtab_fn.find(h) != llvm_symtab_fn.end()) {
@@ -6611,8 +6611,18 @@ public:
             );
             if (llvm_symtab_fn_names.find(fn_name) == llvm_symtab_fn_names.end()) {
                 llvm_symtab_fn_names[fn_name] = h;
+                // Use LinkOnceODR for compiler-generated helper functions
+                // (e.g., _lcompilers_trim_str, __lcompilers_created_helper_function_*)
+                // since identical copies may be generated in multiple TUs.
+                bool is_lcompilers_helper =
+                    fn_name.rfind("_lcompilers_", 0) == 0 ||
+                    fn_name.rfind("__lcompilers_", 0) == 0;
+                llvm::GlobalValue::LinkageTypes linkage =
+                    is_lcompilers_helper
+                        ? llvm::Function::LinkOnceODRLinkage
+                        : llvm::Function::ExternalLinkage;
                 F = llvm::Function::Create(function_type,
-                    llvm::Function::ExternalLinkage, fn_name, module.get());
+                    linkage, fn_name, module.get());
             } else {
                 uint32_t old_h = llvm_symtab_fn_names[fn_name];
                 F = llvm_symtab_fn[old_h];
