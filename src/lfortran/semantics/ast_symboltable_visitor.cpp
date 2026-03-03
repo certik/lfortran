@@ -431,6 +431,7 @@ public:
         add_overloaded_procedures();
         add_class_procedures();
         add_generic_class_procedures();
+        propagate_tbp_to_pdt_instances();
         resolve_proc_pointer_placeholders();
         resolve_pending_proc_ptr_inits();
         evaluate_postponed_calls_to_genericProcedure();
@@ -663,6 +664,7 @@ public:
         add_generic_procedures();
         add_class_procedures();
         add_generic_class_procedures();
+        propagate_tbp_to_pdt_instances();
         evaluate_postponed_calls_to_genericProcedure();
         resolve_proc_pointer_placeholders();
         resolve_pending_proc_ptr_inits();
@@ -3315,6 +3317,72 @@ public:
                 }
                 ASR::symbol_t *cls_proc_sym = ASR::down_cast<ASR::symbol_t>(v);
                 clss->m_symtab->add_symbol(pname.first, cls_proc_sym);
+            }
+        }
+    }
+
+    // After add_class_procedures() and add_generic_class_procedures() populate
+    // type-bound procedures on PDT template structs, propagate those symbols
+    // to any monomorphized instances that were created before the procedures
+    // were added.
+    void propagate_tbp_to_pdt_instances() {
+        for (auto& item : current_scope->get_scope()) {
+            if (!ASR::is_a<ASR::Struct_t>(*item.second)) continue;
+            ASR::Struct_t* pdt_struct = ASR::down_cast<ASR::Struct_t>(item.second);
+            if (pdt_struct->n_kind_params == 0) continue;
+            std::string tpl_prefix = std::string(pdt_struct->m_name) + "_";
+            for (auto& inst_item : current_scope->get_scope()) {
+                if (!ASR::is_a<ASR::Struct_t>(*inst_item.second)) continue;
+                if (inst_item.first.substr(0, tpl_prefix.size()) != tpl_prefix) continue;
+                ASR::Struct_t* inst = ASR::down_cast<ASR::Struct_t>(inst_item.second);
+                if (inst->n_kind_params > 0) continue;
+                for (auto& sym_item : pdt_struct->m_symtab->get_scope()) {
+                    if (inst->m_symtab->get_symbol(sym_item.first) != nullptr) continue;
+                    if (ASR::is_a<ASR::StructMethodDeclaration_t>(*sym_item.second)) {
+                        ASR::StructMethodDeclaration_t* smd =
+                            ASR::down_cast<ASR::StructMethodDeclaration_t>(sym_item.second);
+                        ASR::asr_t* new_smd = ASR::make_StructMethodDeclaration_t(
+                            al, smd->base.base.loc, inst->m_symtab,
+                            smd->m_name, smd->m_self_argument,
+                            smd->m_proc_name, smd->m_proc, smd->m_abi,
+                            smd->m_is_deferred, smd->m_is_nopass);
+                        inst->m_symtab->add_symbol(sym_item.first,
+                            ASR::down_cast<ASR::symbol_t>(new_smd));
+                    } else if (ASR::is_a<ASR::GenericProcedure_t>(*sym_item.second)) {
+                        ASR::GenericProcedure_t* gp =
+                            ASR::down_cast<ASR::GenericProcedure_t>(sym_item.second);
+                        // Remap m_procs to point to the instance's copies
+                        Vec<ASR::symbol_t*> new_procs;
+                        new_procs.reserve(al, gp->n_procs);
+                        for (size_t i = 0; i < gp->n_procs; i++) {
+                            std::string proc_name = ASRUtils::symbol_name(gp->m_procs[i]);
+                            ASR::symbol_t* inst_proc = inst->m_symtab->get_symbol(proc_name);
+                            new_procs.push_back(al, inst_proc ? inst_proc : gp->m_procs[i]);
+                        }
+                        ASR::asr_t* new_gp = ASR::make_GenericProcedure_t(
+                            al, gp->base.base.loc, inst->m_symtab,
+                            gp->m_name, new_procs.p, new_procs.size(),
+                            gp->m_access);
+                        inst->m_symtab->add_symbol(sym_item.first,
+                            ASR::down_cast<ASR::symbol_t>(new_gp));
+                    } else if (ASR::is_a<ASR::CustomOperator_t>(*sym_item.second)) {
+                        ASR::CustomOperator_t* co =
+                            ASR::down_cast<ASR::CustomOperator_t>(sym_item.second);
+                        Vec<ASR::symbol_t*> new_procs;
+                        new_procs.reserve(al, co->n_procs);
+                        for (size_t i = 0; i < co->n_procs; i++) {
+                            std::string proc_name = ASRUtils::symbol_name(co->m_procs[i]);
+                            ASR::symbol_t* inst_proc = inst->m_symtab->get_symbol(proc_name);
+                            new_procs.push_back(al, inst_proc ? inst_proc : co->m_procs[i]);
+                        }
+                        ASR::asr_t* new_co = ASR::make_CustomOperator_t(
+                            al, co->base.base.loc, inst->m_symtab,
+                            co->m_name, new_procs.p, new_procs.size(),
+                            co->m_access);
+                        inst->m_symtab->add_symbol(sym_item.first,
+                            ASR::down_cast<ASR::symbol_t>(new_co));
+                    }
+                }
             }
         }
     }
