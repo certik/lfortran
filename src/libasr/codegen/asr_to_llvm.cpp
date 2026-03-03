@@ -1586,6 +1586,11 @@ public:
                 ASRUtils::type_get_past_allocatable(
                 ASRUtils::expr_type(tmp_expr)));
             size_t n_dims = ASRUtils::extract_n_dims_from_ttype(curr_arg_m_a_type);
+            // For assumed-rank arrays inside select rank, the variable type
+            // has n_dims=0 but allocate provides explicit dimensions.
+            if( n_dims == 0 && curr_arg.n_dims > 0 ) {
+                n_dims = curr_arg.n_dims;
+            }
             curr_arg_m_a_type = ASRUtils::type_get_past_array(curr_arg_m_a_type);
             if( n_dims == 0 ) {
                 if (ASRUtils::is_character(*curr_arg_m_a_type)) {
