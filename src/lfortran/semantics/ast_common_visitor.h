@@ -7219,14 +7219,23 @@ public:
                     actual_inner.push_back(s);
                 }
             }
+            ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(item.second);
+            bool mem_is_pointer = ASR::is_a<ASR::Pointer_t>(*var->m_type);
+            bool mem_is_allocatable = ASR::is_a<ASR::Allocatable_t>(*var->m_type);
+            ASR::ttype_t* mem_type_inner = ASRUtils::type_get_past_pointer(
+                ASRUtils::type_get_past_allocatable(var->m_type));
+            ASR::dimension_t* mem_dims = nullptr;
+            size_t mem_n_dims = ASRUtils::extract_dimensions_from_ttype(mem_type_inner, mem_dims);
+            Vec<ASR::dimension_t> mem_dims_vec;
+            mem_dims_vec.reserve(al, mem_n_dims);
+            for (size_t di = 0; di < mem_n_dims; di++) {
+                mem_dims_vec.push_back(al, mem_dims[di]);
+            }
             ASR::symbol_t* inner_sym_decl = nullptr;
-            Vec<ASR::dimension_t> empty_dims;
-            empty_dims.reserve(al, 0);
             ASR::ttype_t* inner_type = instantiate_pdt_by_values(
                 loc, inner_name, actual_inner,
-                false, false, empty_dims, inner_sym_decl,
+                mem_is_pointer, mem_is_allocatable, mem_dims_vec, inner_sym_decl,
                 ASR::abiType::Source, false);
-            ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(item.second);
             var->m_type = inner_type;
             var->m_type_declaration = inner_sym_decl;
         }
