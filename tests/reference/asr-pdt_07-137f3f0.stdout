@@ -1,0 +1,745 @@
+(TranslationUnit
+    (SymbolTable
+        1
+        {
+            pdt_07:
+                (Program
+                    (SymbolTable
+                        8
+                        {
+                            1_inner_t_8_val:
+                                (ExternalSymbol
+                                    8
+                                    1_inner_t_8_val
+                                    7 val
+                                    inner_t_8
+                                    []
+                                    val
+                                    Public
+                                ),
+                            1_outer_t_8_comp:
+                                (ExternalSymbol
+                                    8
+                                    1_outer_t_8_comp
+                                    6 comp
+                                    outer_t_8
+                                    []
+                                    comp
+                                    Public
+                                ),
+                            dp:
+                                (ExternalSymbol
+                                    8
+                                    dp
+                                    2 dp
+                                    pdt_07_mod
+                                    []
+                                    dp
+                                    Public
+                                ),
+                            inner_t:
+                                (ExternalSymbol
+                                    8
+                                    inner_t
+                                    2 inner_t
+                                    pdt_07_mod
+                                    []
+                                    inner_t
+                                    Public
+                                ),
+                            inner_t_8:
+                                (ExternalSymbol
+                                    8
+                                    inner_t_8
+                                    2 inner_t_8
+                                    pdt_07_mod
+                                    []
+                                    inner_t_8
+                                    Public
+                                ),
+                            obj:
+                                (Variable
+                                    8
+                                    obj
+                                    []
+                                    Local
+                                    ()
+                                    ()
+                                    Default
+                                    (StructType
+                                        [(StructType
+                                            [(Integer 4)
+                                            (Real 8)]
+                                            []
+                                            .true.
+                                            .false.
+                                        )
+                                        (Integer 4)]
+                                        []
+                                        .true.
+                                        .false.
+                                    )
+                                    8 outer_t_8
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                ),
+                            outer_t:
+                                (ExternalSymbol
+                                    8
+                                    outer_t
+                                    2 outer_t
+                                    pdt_07_mod
+                                    []
+                                    outer_t
+                                    Public
+                                ),
+                            outer_t_8:
+                                (ExternalSymbol
+                                    8
+                                    outer_t_8
+                                    2 outer_t_8
+                                    pdt_07_mod
+                                    []
+                                    outer_t_8
+                                    Public
+                                ),
+                            sp:
+                                (ExternalSymbol
+                                    8
+                                    sp
+                                    2 sp
+                                    pdt_07_mod
+                                    []
+                                    sp
+                                    Public
+                                ),
+                            test_it:
+                                (ExternalSymbol
+                                    8
+                                    test_it
+                                    2 test_it
+                                    pdt_07_mod
+                                    []
+                                    test_it
+                                    Public
+                                ),
+                            x:
+                                (Variable
+                                    8
+                                    x
+                                    []
+                                    Local
+                                    ()
+                                    ()
+                                    Default
+                                    (Real 8)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                )
+                        })
+                    pdt_07
+                    [pdt_07_mod]
+                    [(Assignment
+                        (StructInstanceMember
+                            (StructInstanceMember
+                                (Var 8 obj)
+                                8 1_outer_t_8_comp
+                                (StructType
+                                    [(Integer 4)
+                                    (Real 8)]
+                                    []
+                                    .true.
+                                    .false.
+                                )
+                                ()
+                            )
+                            8 1_inner_t_8_val
+                            (Real 8)
+                            ()
+                        )
+                        (RealConstant
+                            3.140000
+                            (Real 8)
+                        )
+                        ()
+                        .false.
+                        .false.
+                    )
+                    (SubroutineCall
+                        8 test_it
+                        ()
+                        [((Var 8 obj))
+                        ((Var 8 x))]
+                        ()
+                        .false.
+                    )
+                    (If
+                        ()
+                        (RealCompare
+                            (IntrinsicElementalFunction
+                                Abs
+                                [(RealBinOp
+                                    (Var 8 x)
+                                    Sub
+                                    (RealConstant
+                                        3.140000
+                                        (Real 8)
+                                    )
+                                    (Real 8)
+                                    ()
+                                )]
+                                0
+                                (Real 8)
+                                ()
+                            )
+                            Gt
+                            (RealConstant
+                                0.000000
+                                (Real 8)
+                            )
+                            (Logical 4)
+                            ()
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringConstant
+                            "ok"
+                            (String 1 (IntegerConstant 2 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        )
+                    )]
+                ),
+            pdt_07_mod:
+                (Module
+                    (SymbolTable
+                        2
+                        {
+                            dp:
+                                (Variable
+                                    2
+                                    dp
+                                    []
+                                    Local
+                                    (TypeInquiry
+                                        Kind
+                                        (Real 8)
+                                        (RealConstant
+                                            1.000000
+                                            (Real 8)
+                                        )
+                                        (Integer 4)
+                                        (IntegerConstant 8 (Integer 4) Decimal)
+                                    )
+                                    (IntegerConstant 8 (Integer 4) Decimal)
+                                    Parameter
+                                    (Integer 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                ),
+                            inner_t:
+                                (Struct
+                                    (SymbolTable
+                                        3
+                                        {
+                                            k:
+                                                (Variable
+                                                    3
+                                                    k
+                                                    [sp]
+                                                    Local
+                                                    (Var 2 sp)
+                                                    (IntegerConstant 1000 (Integer 4) Decimal)
+                                                    Parameter
+                                                    (Integer 4)
+                                                    ()
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
+                                                    .false.
+                                                ),
+                                            val:
+                                                (Variable
+                                                    3
+                                                    val
+                                                    []
+                                                    Local
+                                                    ()
+                                                    ()
+                                                    Default
+                                                    (Real 1000)
+                                                    ()
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
+                                                    .false.
+                                                )
+                                        })
+                                    inner_t
+                                    (StructType
+                                        [(Integer 4)
+                                        (Real 1000)]
+                                        []
+                                        .true.
+                                        .false.
+                                    )
+                                    []
+                                    [k
+                                    val]
+                                    []
+                                    Source
+                                    Public
+                                    .false.
+                                    .false.
+                                    []
+                                    ()
+                                    ()
+                                    [k]
+                                ),
+                            inner_t_8:
+                                (Struct
+                                    (SymbolTable
+                                        7
+                                        {
+                                            k:
+                                                (Variable
+                                                    7
+                                                    k
+                                                    []
+                                                    Local
+                                                    (IntegerConstant 8 (Integer 4) Decimal)
+                                                    (IntegerConstant 8 (Integer 4) Decimal)
+                                                    Parameter
+                                                    (Integer 4)
+                                                    ()
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
+                                                    .false.
+                                                ),
+                                            val:
+                                                (Variable
+                                                    7
+                                                    val
+                                                    []
+                                                    Local
+                                                    ()
+                                                    ()
+                                                    Default
+                                                    (Real 8)
+                                                    ()
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
+                                                    .false.
+                                                )
+                                        })
+                                    inner_t_8
+                                    (StructType
+                                        [(Integer 4)
+                                        (Real 8)]
+                                        []
+                                        .true.
+                                        .false.
+                                    )
+                                    []
+                                    [k
+                                    val]
+                                    []
+                                    Source
+                                    Public
+                                    .false.
+                                    .false.
+                                    []
+                                    ()
+                                    ()
+                                    []
+                                ),
+                            outer_t:
+                                (Struct
+                                    (SymbolTable
+                                        4
+                                        {
+                                            comp:
+                                                (Variable
+                                                    4
+                                                    comp
+                                                    []
+                                                    Local
+                                                    ()
+                                                    ()
+                                                    Default
+                                                    (StructType
+                                                        [(Integer 4)
+                                                        (Real 1000)]
+                                                        []
+                                                        .true.
+                                                        .false.
+                                                    )
+                                                    2 inner_t
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
+                                                    .false.
+                                                ),
+                                            k:
+                                                (Variable
+                                                    4
+                                                    k
+                                                    [sp]
+                                                    Local
+                                                    (Var 2 sp)
+                                                    (IntegerConstant 1000 (Integer 4) Decimal)
+                                                    Parameter
+                                                    (Integer 4)
+                                                    ()
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
+                                                    .false.
+                                                )
+                                        })
+                                    outer_t
+                                    (StructType
+                                        [(StructType
+                                            [(Integer 4)
+                                            (Real 1000)]
+                                            []
+                                            .true.
+                                            .false.
+                                        )
+                                        (Integer 4)]
+                                        []
+                                        .true.
+                                        .false.
+                                    )
+                                    []
+                                    [k
+                                    comp]
+                                    []
+                                    Source
+                                    Public
+                                    .false.
+                                    .false.
+                                    []
+                                    ()
+                                    ()
+                                    [k]
+                                ),
+                            outer_t_8:
+                                (Struct
+                                    (SymbolTable
+                                        6
+                                        {
+                                            comp:
+                                                (Variable
+                                                    6
+                                                    comp
+                                                    []
+                                                    Local
+                                                    ()
+                                                    ()
+                                                    Default
+                                                    (StructType
+                                                        [(Integer 4)
+                                                        (Real 8)]
+                                                        []
+                                                        .true.
+                                                        .false.
+                                                    )
+                                                    2 inner_t_8
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
+                                                    .false.
+                                                ),
+                                            k:
+                                                (Variable
+                                                    6
+                                                    k
+                                                    []
+                                                    Local
+                                                    (IntegerConstant 8 (Integer 4) Decimal)
+                                                    (IntegerConstant 8 (Integer 4) Decimal)
+                                                    Parameter
+                                                    (Integer 4)
+                                                    ()
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
+                                                    .false.
+                                                )
+                                        })
+                                    outer_t_8
+                                    (StructType
+                                        [(StructType
+                                            [(Integer 4)
+                                            (Real 8)]
+                                            []
+                                            .true.
+                                            .false.
+                                        )
+                                        (Integer 4)]
+                                        []
+                                        .false.
+                                        .false.
+                                    )
+                                    [inner_t_8]
+                                    [k
+                                    comp]
+                                    []
+                                    Source
+                                    Public
+                                    .false.
+                                    .false.
+                                    []
+                                    ()
+                                    ()
+                                    []
+                                ),
+                            sp:
+                                (Variable
+                                    2
+                                    sp
+                                    []
+                                    Local
+                                    (TypeInquiry
+                                        Kind
+                                        (Real 4)
+                                        (RealConstant
+                                            1.000000
+                                            (Real 4)
+                                        )
+                                        (Integer 4)
+                                        (IntegerConstant 4 (Integer 4) Decimal)
+                                    )
+                                    (IntegerConstant 4 (Integer 4) Decimal)
+                                    Parameter
+                                    (Integer 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                ),
+                            test_it:
+                                (Function
+                                    (SymbolTable
+                                        5
+                                        {
+                                            1_inner_t_8_val:
+                                                (ExternalSymbol
+                                                    5
+                                                    1_inner_t_8_val
+                                                    7 val
+                                                    inner_t_8
+                                                    []
+                                                    val
+                                                    Public
+                                                ),
+                                            1_outer_t_8_comp:
+                                                (ExternalSymbol
+                                                    5
+                                                    1_outer_t_8_comp
+                                                    6 comp
+                                                    outer_t_8
+                                                    []
+                                                    comp
+                                                    Public
+                                                ),
+                                            self:
+                                                (Variable
+                                                    5
+                                                    self
+                                                    []
+                                                    In
+                                                    ()
+                                                    ()
+                                                    Default
+                                                    (StructType
+                                                        [(StructType
+                                                            [(Integer 4)
+                                                            (Real 8)]
+                                                            []
+                                                            .true.
+                                                            .false.
+                                                        )
+                                                        (Integer 4)]
+                                                        []
+                                                        .false.
+                                                        .false.
+                                                    )
+                                                    2 outer_t_8
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
+                                                    .false.
+                                                ),
+                                            x:
+                                                (Variable
+                                                    5
+                                                    x
+                                                    []
+                                                    Out
+                                                    ()
+                                                    ()
+                                                    Default
+                                                    (Real 8)
+                                                    ()
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
+                                                    .false.
+                                                )
+                                        })
+                                    test_it
+                                    (FunctionType
+                                        [(StructType
+                                            [(StructType
+                                                [(Integer 4)
+                                                (Real 8)]
+                                                []
+                                                .true.
+                                                .false.
+                                            )
+                                            (Integer 4)]
+                                            []
+                                            .false.
+                                            .false.
+                                        )
+                                        (Real 8)]
+                                        ()
+                                        Source
+                                        Implementation
+                                        ()
+                                        .false.
+                                        .false.
+                                        .false.
+                                        .false.
+                                        .false.
+                                        []
+                                        .false.
+                                    )
+                                    []
+                                    [(Var 5 self)
+                                    (Var 5 x)]
+                                    [(Assignment
+                                        (Var 5 x)
+                                        (StructInstanceMember
+                                            (StructInstanceMember
+                                                (Var 5 self)
+                                                5 1_outer_t_8_comp
+                                                (StructType
+                                                    [(Integer 4)
+                                                    (Real 8)]
+                                                    []
+                                                    .true.
+                                                    .false.
+                                                )
+                                                ()
+                                            )
+                                            5 1_inner_t_8_val
+                                            (Real 8)
+                                            ()
+                                        )
+                                        ()
+                                        .false.
+                                        .false.
+                                    )]
+                                    ()
+                                    Public
+                                    .false.
+                                    .false.
+                                    ()
+                                )
+                        })
+                    pdt_07_mod
+                    ()
+                    []
+                    .false.
+                    .false.
+                    .false.
+                )
+        })
+    []
+)

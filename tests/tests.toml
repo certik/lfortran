@@ -5091,3 +5091,7 @@ run = true
 filename = "errors/continue_compilation_walrus.f90"
 semantics_only_cc = true
 options = "--infer"
+
+[[test]]
+filename = "../integration_tests/pdt_07.f90"
+asr = true
