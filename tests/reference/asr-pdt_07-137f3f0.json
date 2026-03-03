@@ -1,0 +1,13 @@
+{
+    "basename": "asr-pdt_07-137f3f0",
+    "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
+    "infile": "tests/../integration_tests/pdt_07.f90",
+    "infile_hash": "f3f3f808bf28dc77ce1e2f9e593e7bdbdf92b8c47d9ae551611db628",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "asr-pdt_07-137f3f0.stdout",
+    "stdout_hash": "1f9ef975b495ebe45c2dd3af2680e70d3f67b0452c1e6b807be31e8e",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}
