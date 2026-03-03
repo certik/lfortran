@@ -7126,6 +7126,8 @@ public:
                     ASR::make_IntegerConstant_t(al, loc, kv.second, int_type));
                 kp_var->m_value = val;
                 kp_var->m_symbolic_value = val;
+                kp_var->m_dependencies = nullptr;
+                kp_var->n_dependencies = 0;
             }
         }
 
