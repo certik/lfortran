@@ -2217,7 +2217,7 @@ namespace LCompilers {
         if(ASRUtils::is_value_constant(str->m_len) && ASRUtils::is_fixed_size_array(type)){
             int64_t arr_size, str_len;
             arr_size = ASRUtils::get_fixed_size_of_array(type);
-            str_len = ASR::down_cast<ASR::IntegerConstant_t>(str->m_len)->m_n;
+            str_len = ASR::down_cast<ASR::IntegerConstant_t>(ASRUtils::expr_value(str->m_len))->m_n;
             return llvm::ConstantInt::get(
                 context, llvm::APInt(64, arr_size * str_len));
         } else {
