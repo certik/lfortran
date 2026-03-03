@@ -408,7 +408,9 @@ bool fill_new_args(Vec<ASR::call_arg_t>& new_args, Allocator& al,
                     }
                 }
                 ASR::symbol_t* arg_decl = func_arg_j->m_type_declaration;
-                if( ASR::is_a<ASR::Array_t>(*arg_type) ) { // Create dummy array dims
+                if( ASR::is_a<ASR::Array_t>(*arg_type) &&
+                    ASR::down_cast<ASR::Array_t>(arg_type)->m_physical_type
+                        != ASR::array_physical_typeType::AssumedRankArray ) { // Create dummy array dims
                     ASR::Array_t* array_t = ASR::down_cast<ASR::Array_t>(arg_type);
                     Vec<ASR::dimension_t> dims;
                     dims.reserve(al, array_t->n_dims);
