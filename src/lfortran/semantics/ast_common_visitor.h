@@ -7091,6 +7091,51 @@ public:
         }
     }
 
+    // Recursively replace sentinel kind values in all types embedded in an
+    // expression tree.  This is needed so that default-initialiser expressions
+    // carried over from the PDT template (e.g. `real(1.5, k)`) get their
+    // placeholder kinds resolved to the concrete values.
+    static void replace_sentinel_kinds_in_expr(ASR::expr_t* expr,
+        const std::map<int64_t, int64_t>& sentinel_to_actual)
+    {
+        if (!expr) return;
+        // Replace in the expression's own type
+        replace_sentinel_kinds(ASRUtils::expr_type(expr), sentinel_to_actual);
+        // Recurse into sub-expressions
+        switch (expr->type) {
+            case ASR::exprType::IntrinsicElementalFunction: {
+                auto* f = ASR::down_cast<ASR::IntrinsicElementalFunction_t>(expr);
+                for (size_t i = 0; i < f->n_args; i++) {
+                    replace_sentinel_kinds_in_expr(f->m_args[i], sentinel_to_actual);
+                }
+                replace_sentinel_kinds_in_expr(f->m_value, sentinel_to_actual);
+                break;
+            }
+            case ASR::exprType::Cast: {
+                auto* c = ASR::down_cast<ASR::Cast_t>(expr);
+                replace_sentinel_kinds_in_expr(c->m_arg, sentinel_to_actual);
+                replace_sentinel_kinds_in_expr(c->m_value, sentinel_to_actual);
+                break;
+            }
+            case ASR::exprType::RealBinOp: {
+                auto* b = ASR::down_cast<ASR::RealBinOp_t>(expr);
+                replace_sentinel_kinds_in_expr(b->m_left, sentinel_to_actual);
+                replace_sentinel_kinds_in_expr(b->m_right, sentinel_to_actual);
+                replace_sentinel_kinds_in_expr(b->m_value, sentinel_to_actual);
+                break;
+            }
+            case ASR::exprType::IntegerBinOp: {
+                auto* b = ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+                replace_sentinel_kinds_in_expr(b->m_left, sentinel_to_actual);
+                replace_sentinel_kinds_in_expr(b->m_right, sentinel_to_actual);
+                replace_sentinel_kinds_in_expr(b->m_value, sentinel_to_actual);
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
     // Core monomorphizer: given explicit kind values, create the concrete struct.
     // Called both from instantiate_pdt (which parses kind args from AST) and
     // recursively for inner PDT members that were deferred during template
@@ -7226,6 +7271,8 @@ public:
             if (kind_values.find(item.first) != kind_values.end()) continue;
             ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(item.second);
             replace_sentinel_kinds(var->m_type, sentinel_to_actual);
+            replace_sentinel_kinds_in_expr(var->m_symbolic_value, sentinel_to_actual);
+            replace_sentinel_kinds_in_expr(var->m_value, sentinel_to_actual);
         }
 
         // Build data member names (same as template)
