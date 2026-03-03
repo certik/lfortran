@@ -2302,6 +2302,49 @@ public:
                 throw SemanticAbort();
             }
             parent_sym = current_scope->get_symbol(parent_sym_name);
+
+            // If the parent is a PDT template, instantiate it with default
+            // kind values so the child extends a concrete type.
+            ASR::symbol_t* parent_orig = ASRUtils::symbol_get_past_external(parent_sym);
+            if (ASR::is_a<ASR::Struct_t>(*parent_orig)) {
+                ASR::Struct_t* parent_struct = ASR::down_cast<ASR::Struct_t>(parent_orig);
+                if (parent_struct->n_kind_params > 0) {
+                    std::vector<int64_t> default_kind_vals;
+                    for (size_t ki = 0; ki < parent_struct->n_kind_params; ki++) {
+                        ASR::symbol_t* kp_sym = parent_struct->m_symtab->get_symbol(
+                            parent_struct->m_kind_params[ki]);
+                        LCOMPILERS_ASSERT(kp_sym && ASR::is_a<ASR::Variable_t>(*kp_sym));
+                        ASR::Variable_t* kp_var = ASR::down_cast<ASR::Variable_t>(kp_sym);
+                        int64_t kval = 0;
+                        if (kp_var->m_symbolic_value) {
+                            ASR::expr_t* val_expr = ASRUtils::expr_value(kp_var->m_symbolic_value);
+                            if (val_expr) {
+                                ASRUtils::extract_value(val_expr, kval);
+                            } else {
+                                ASRUtils::extract_value(kp_var->m_symbolic_value, kval);
+                            }
+                        }
+                        if (kval == 0) {
+                            diag.add(diag::Diagnostic(
+                                "Extending a parameterized derived type requires all kind "
+                                "parameters to have default values",
+                                diag::Level::Error, diag::Stage::Semantic, {
+                                    diag::Label("", {x.base.base.loc})}));
+                            throw SemanticAbort();
+                        }
+                        default_kind_vals.push_back(kval);
+                    }
+                    Vec<ASR::dimension_t> empty_dims;
+                    empty_dims.reserve(al, 0);
+                    ASR::symbol_t* type_decl = nullptr;
+                    instantiate_pdt_by_values(x.base.base.loc, parent_sym_name,
+                        default_kind_vals, false, false, empty_dims, type_decl,
+                        ASR::abiType::Source, false);
+                    if (type_decl) {
+                        parent_sym = type_decl;
+                    }
+                }
+            }
         }
 
         // Parameterized Derived Type: store as template for later monomorphization
