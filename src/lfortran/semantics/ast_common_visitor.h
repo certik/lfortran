@@ -7078,6 +7078,14 @@ public:
                 if (it != sentinel_to_actual.end()) t->m_kind = it->second;
                 break;
             }
+            case ASR::ttypeType::StructType: {
+                ASR::StructType_t* st = ASR::down_cast<ASR::StructType_t>(base_type);
+                for (size_t i = 0; i < st->n_data_member_types; i++) {
+                    replace_sentinel_kinds(st->m_data_member_types[i],
+                        sentinel_to_actual);
+                }
+                break;
+            }
             default:
                 break;
         }
@@ -7248,10 +7256,20 @@ public:
         // get a placeholder ExternalSymbol with m_external=nullptr during
         // template construction because the struct is not yet defined.
         // Now that the monomorphized struct exists, point them to it.
+        // Also handle the case where the deferred struct declaration mechanism
+        // already resolved the placeholder to the template struct itself.
         for (auto& item : new_scope->get_scope()) {
             if (!ASR::is_a<ASR::Variable_t>(*item.second)) continue;
             ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(item.second);
             if (var->m_type_declaration == nullptr) continue;
+            ASR::symbol_t* td_orig = ASRUtils::symbol_get_past_external(
+                var->m_type_declaration);
+            if (td_orig == pdt_sym_orig) {
+                // type_declaration points to the PDT template;
+                // redirect to the monomorphized struct
+                var->m_type_declaration = struct_sym;
+                continue;
+            }
             if (!ASR::is_a<ASR::ExternalSymbol_t>(*var->m_type_declaration)) continue;
             ASR::ExternalSymbol_t* ext = ASR::down_cast<ASR::ExternalSymbol_t>(
                 var->m_type_declaration);
