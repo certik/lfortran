@@ -12,7 +12,7 @@ Traceback (most recent call last):
     compiler_options.symtab_only, compiler_options, lm);
 [2m  File "[0m[1m[35m$DIR/src/lfortran/semantics/ast_to_asr.cpp[39m[0m[2m", line 115[0m
     if (res.ok) {
-[2m  File "[0m[1m[35m$DIR/src/lfortran/semantics/ast_body_visitor.cpp[39m[0m[2m", line 8361[0m
+[2m  File "[0m[1m[35m$DIR/src/lfortran/semantics/ast_body_visitor.cpp[39m[0m[2m", line 8365[0m
     b.is_body_visitor = true;
 [2m  File "[0m[1m[35m$DIR/src/lfortran/semantics/ast_body_visitor.cpp[39m[0m[2m", line 244[0m
     visit_ast(*x.m_items[i]);
