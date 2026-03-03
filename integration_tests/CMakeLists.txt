@@ -1491,6 +1491,7 @@ RUN(NAME intrinsics_421 LABELS gfortran llvm) # count(mask, dim) with variable d
 RUN(NAME intrinsics_422 LABELS gfortran llvm fortran) # this_image
 RUN(NAME intrinsics_423 LABELS gfortran llvm fortran) # num_images
 RUN(NAME intrinsics_424 LABELS gfortran llvm) # co_sum
+RUN(NAME intrinsics_425 LABELS gfortran llvm) # co_sum with optional args
 
 RUN(NAME la_constants LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # LAPACK constants
 
