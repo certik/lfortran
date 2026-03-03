@@ -7196,6 +7196,48 @@ public:
             replace_sentinel_kinds(var->m_type, sentinel_to_actual);
         }
 
+        // Build data member names (same as template)
+        Vec<char*> new_data_member_names;
+        new_data_member_names.reserve(al, pdt_struct->n_members);
+        for (size_t i = 0; i < pdt_struct->n_members; i++) {
+            new_data_member_names.push_back(al, pdt_struct->m_members[i]);
+        }
+
+        // Create the Struct node early and register it in pdt_scope so that
+        // recursive calls (self-referential PDT members) can find it.
+        Vec<char*> pdt_final_proc_names;
+        pdt_final_proc_names.reserve(al, 0);
+        tmp = ASR::make_Struct_t(al, loc, new_scope,
+            s2c(al, monomorphized_name), nullptr,
+            nullptr, 0,
+            new_data_member_names.p, new_data_member_names.size(),
+            pdt_final_proc_names.p, pdt_final_proc_names.size(),
+            ASR::abiType::Source, dflt_access, false, pdt_struct->m_is_abstract,
+            nullptr, 0, nullptr, pdt_struct->m_parent, nullptr, 0);
+
+        ASR::symbol_t* struct_sym = ASR::down_cast<ASR::symbol_t>(tmp);
+        ASR::Struct_t* struct_t = ASR::down_cast<ASR::Struct_t>(struct_sym);
+        pdt_scope->add_symbol(monomorphized_name, struct_sym);
+
+        // Resolve placeholder ExternalSymbol type declarations.
+        // Self-referential PDT members (e.g. type(t(k)), allocatable :: next)
+        // get a placeholder ExternalSymbol with m_external=nullptr during
+        // template construction because the struct is not yet defined.
+        // Now that the monomorphized struct exists, point them to it.
+        for (auto& item : new_scope->get_scope()) {
+            if (!ASR::is_a<ASR::Variable_t>(*item.second)) continue;
+            ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(item.second);
+            if (var->m_type_declaration == nullptr) continue;
+            if (!ASR::is_a<ASR::ExternalSymbol_t>(*var->m_type_declaration)) continue;
+            ASR::ExternalSymbol_t* ext = ASR::down_cast<ASR::ExternalSymbol_t>(
+                var->m_type_declaration);
+            if (ext->m_external != nullptr) continue;
+            std::string placeholder_name = ext->m_original_name;
+            if (placeholder_name == pdt_name) {
+                var->m_type_declaration = struct_sym;
+            }
+        }
+
         // Recursively instantiate inner PDT members that were deferred during
         // template construction.
         SymbolTable* saved_scope = current_scope;
@@ -7241,14 +7283,11 @@ public:
         }
         current_scope = saved_scope;
 
-        // Build data member names (same as template)
-        Vec<char*> new_data_member_names;
-        new_data_member_names.reserve(al, pdt_struct->n_members);
-        for (size_t i = 0; i < pdt_struct->n_members; i++) {
-            new_data_member_names.push_back(al, pdt_struct->m_members[i]);
-        }
+        // Update struct signature now that member types are fully resolved
+        struct_t->m_struct_signature = ASRUtils::make_StructType_t_util(
+            al, loc, struct_sym, true);
 
-        // Compute struct dependencies
+        // Compute struct dependencies (after inner members are resolved)
         SetChar struct_dependencies;
         struct_dependencies.reserve(al, 1);
         for (auto& item : new_scope->get_scope()) {
@@ -7271,23 +7310,8 @@ public:
                 struct_dependencies.push_back(al, aggregate_type_name);
             }
         }
-
-        Vec<char*> pdt_final_proc_names;
-        pdt_final_proc_names.reserve(al, 0);
-        tmp = ASR::make_Struct_t(al, loc, new_scope,
-            s2c(al, monomorphized_name), nullptr,
-            struct_dependencies.p, struct_dependencies.size(),
-            new_data_member_names.p, new_data_member_names.size(),
-            pdt_final_proc_names.p, pdt_final_proc_names.size(),
-            ASR::abiType::Source, dflt_access, false, pdt_struct->m_is_abstract,
-            nullptr, 0, nullptr, pdt_struct->m_parent, nullptr, 0);
-
-        ASR::symbol_t* struct_sym = ASR::down_cast<ASR::symbol_t>(tmp);
-        ASR::ttype_t* struct_signature = ASRUtils::make_StructType_t_util(
-            al, loc, struct_sym, true);
-        ASR::Struct_t* struct_t = ASR::down_cast<ASR::Struct_t>(struct_sym);
-        struct_t->m_struct_signature = struct_signature;
-        pdt_scope->add_symbol(monomorphized_name, struct_sym);
+        struct_t->m_dependencies = struct_dependencies.p;
+        struct_t->n_dependencies = struct_dependencies.size();
 
         // If the monomorphized struct was created in a different scope (e.g.
         // the module scope) from the calling scope, create an ExternalSymbol
