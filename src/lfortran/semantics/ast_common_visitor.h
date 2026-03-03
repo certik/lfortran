@@ -7181,6 +7181,20 @@ public:
         ASRUtils::SymbolDuplicator duplicator(al);
         duplicator.duplicate_SymbolTable(pdt_struct->m_symtab, new_scope);
 
+        // Copy StructMethodDeclarations from template (skipped by SymbolDuplicator)
+        for (auto& item : pdt_struct->m_symtab->get_scope()) {
+            if (ASR::is_a<ASR::StructMethodDeclaration_t>(*item.second)) {
+                ASR::StructMethodDeclaration_t* smd =
+                    ASR::down_cast<ASR::StructMethodDeclaration_t>(item.second);
+                ASR::asr_t* new_smd = ASR::make_StructMethodDeclaration_t(
+                    al, loc, new_scope, smd->m_name, smd->m_self_argument,
+                    smd->m_proc_name, smd->m_proc, smd->m_abi,
+                    smd->m_is_deferred, smd->m_is_nopass);
+                new_scope->add_symbol(item.first,
+                    ASR::down_cast<ASR::symbol_t>(new_smd));
+            }
+        }
+
         // Update kind parameter variables with actual concrete values
         for (auto& kv : kind_values) {
             ASR::symbol_t* kp_sym = new_scope->get_symbol(kv.first);
@@ -8027,7 +8041,10 @@ public:
                     // Mark as polymorphic (class) rather than concrete (type)
                     ASR::StructType_t* stype = ASR::down_cast<ASR::StructType_t>(
                         ASRUtils::extract_type(type));
-                    stype->m_is_cstruct = false;
+                    type = ASRUtils::TYPE(ASR::make_StructType_t(al, loc,
+                        stype->m_data_member_types, stype->n_data_member_types,
+                        stype->m_member_function_types, stype->n_member_function_types,
+                        false, stype->m_is_unlimited_polymorphic));
                 } else {
                     type_declaration = v;
                     type = ASRUtils::make_StructType_t_util(al, loc, v, false);

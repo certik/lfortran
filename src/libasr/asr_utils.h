@@ -5450,6 +5450,10 @@ class SymbolDuplicator {
                 new_symbol_name = generic_procedure->m_name;
                 break;
             }
+            case ASR::symbolType::StructMethodDeclaration: {
+                // Handled separately (e.g. during PDT instantiation)
+                break;
+            }
             default: {
                 throw LCompilersException("Duplicating ASR::symbolType::" +
                         std::to_string(symbol->type) + " is not supported yet.");

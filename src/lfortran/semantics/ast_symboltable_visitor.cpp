@@ -545,6 +545,8 @@ public:
         SymbolTable *parent_scope = current_scope;
         current_scope = al.make_new<SymbolTable>(parent_scope);
         generic_procedures.clear();
+        class_procedures.clear();
+        generic_class_procedures.clear();
         current_module_dependencies.reserve(al, 4);
         Vec<size_t> procedure_decl_indices; procedure_decl_indices.reserve(al, 0);
         if (compiler_options.implicit_typing) {
@@ -659,6 +661,8 @@ public:
         handle_save();
         // Build : Functions --> GenericProcedure(Interface) -> funcCall expression to GenericProcedure.
         add_generic_procedures();
+        add_class_procedures();
+        add_generic_class_procedures();
         evaluate_postponed_calls_to_genericProcedure();
         resolve_proc_pointer_placeholders();
         resolve_pending_proc_ptr_inits();
@@ -2378,6 +2382,11 @@ public:
                 }
             }
 
+            // Process type-bound procedures (contains block)
+            for (size_t i = 0; i < x.n_contains; i++) {
+                visit_procedure_decl(*x.m_contains[i]);
+            }
+
             is_derived_type = false;
 
             tmp = ASR::make_Struct_t(al, x.base.base.loc, current_scope,
@@ -3316,9 +3325,18 @@ public:
         var_type = ASRUtils::type_get_past_pointer(var_type);
         if (ASRUtils::is_class_type(var_type)) {
             ASR::symbol_t* var_type_clss_sym = ASRUtils::symbol_get_past_external(ASRUtils::get_struct_sym_from_struct_expr(var_expr));
+            ASR::Struct_t* clss = ASR::down_cast<ASR::Struct_t>(clss_sym);
             while (var_type_clss_sym) {
                 if (var_type_clss_sym == clss_sym) {
                     return true;
+                }
+                // For PDT templates, the argument may use a monomorphized version
+                if (clss->n_kind_params > 0) {
+                    std::string tpl_prefix = std::string(clss->m_name) + "_";
+                    std::string arg_name = ASRUtils::symbol_name(var_type_clss_sym);
+                    if (arg_name.substr(0, tpl_prefix.size()) == tpl_prefix) {
+                        return true;
+                    }
                 }
                 var_type_clss_sym = ASR::down_cast<ASR::Struct_t>(var_type_clss_sym)->m_parent;
             }
@@ -3521,6 +3539,23 @@ public:
                     is_deferred, is_nopass);
                 ASR::symbol_t *cls_proc_sym = ASR::down_cast<ASR::symbol_t>(v);
                 clss->m_symtab->add_symbol(pname.first, cls_proc_sym);
+
+                // For PDT templates, propagate to existing monomorphized structs
+                if (clss->n_kind_params > 0) {
+                    std::string tpl_name = std::string(clss->m_name) + "_";
+                    for (auto& item : proc_scope->get_scope()) {
+                        if (!ASR::is_a<ASR::Struct_t>(*item.second)) continue;
+                        if (item.first.substr(0, tpl_name.size()) != tpl_name) continue;
+                        ASR::Struct_t* mono = ASR::down_cast<ASR::Struct_t>(item.second);
+                        if (mono->m_symtab->get_symbol(pname.first) != nullptr) continue;
+                        ASR::asr_t *mv = ASR::make_StructMethodDeclaration_t(al, loc,
+                            mono->m_symtab, name, pass_arg_name,
+                            proc_name, proc_sym, ASR::abiType::Source,
+                            is_deferred, is_nopass);
+                        mono->m_symtab->add_symbol(pname.first,
+                            ASR::down_cast<ASR::symbol_t>(mv));
+                    }
+                }
             }
         }
     }
