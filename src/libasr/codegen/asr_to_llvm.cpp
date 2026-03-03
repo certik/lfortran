@@ -5098,6 +5098,23 @@ public:
         finish_module_init_function_prototype(x);
 
         visit_procedures(x);
+
+        // If this is a submodule loaded from .smod (not the source being
+        // compiled), mark its functions as LinkOnceODR so they don't
+        // conflict with the strong definitions from the submodule's own
+        // object file.
+        if (x.m_parent_module && x.m_loaded_from_mod) {
+            for (auto &sym: functions) {
+                uint32_t h = get_hash((ASR::asr_t*)sym);
+                if (llvm_symtab_fn.find(h) != llvm_symtab_fn.end()) {
+                    llvm::Function *F = llvm_symtab_fn[h];
+                    if (!F->isDeclaration()) {
+                        F->setLinkage(llvm::Function::LinkOnceODRLinkage);
+                    }
+                }
+            }
+        }
+
         mangle_prefix = "";
         current_scope = current_scope_copy;
     }

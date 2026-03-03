@@ -2556,6 +2556,17 @@ static inline bool main_program_present(const ASR::TranslationUnit_t &unit)
     return false;
 }
 
+static inline bool submodule_present(const ASR::TranslationUnit_t &unit)
+{
+    for (auto &a : unit.m_symtab->get_scope()) {
+        if (ASR::is_a<ASR::Module_t>(*a.second)) {
+            ASR::Module_t *m = ASR::down_cast<ASR::Module_t>(a.second);
+            if (m->m_parent_module) return true;
+        }
+    }
+    return false;
+}
+
 static inline bool global_function_present(const ASR::TranslationUnit_t &unit)
 {
     bool contains_global_function = false;
