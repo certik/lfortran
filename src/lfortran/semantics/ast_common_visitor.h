@@ -7093,37 +7093,55 @@ public:
     {
         if (!type) return;
 
-        ASR::ttype_t* base_type = type;
-        if (ASR::is_a<ASR::Pointer_t>(*base_type)) {
-            base_type = ASR::down_cast<ASR::Pointer_t>(base_type)->m_type;
-        } else if (ASR::is_a<ASR::Allocatable_t>(*base_type)) {
-            base_type = ASR::down_cast<ASR::Allocatable_t>(base_type)->m_type;
-        }
-        base_type = ASRUtils::type_get_past_array(base_type);
-
-        switch (base_type->type) {
+        switch (type->type) {
+            case ASR::ttypeType::Pointer: {
+                replace_sentinel_kinds(
+                    ASR::down_cast<ASR::Pointer_t>(type)->m_type,
+                    sentinel_to_actual);
+                break;
+            }
+            case ASR::ttypeType::Allocatable: {
+                replace_sentinel_kinds(
+                    ASR::down_cast<ASR::Allocatable_t>(type)->m_type,
+                    sentinel_to_actual);
+                break;
+            }
+            case ASR::ttypeType::Array: {
+                replace_sentinel_kinds(
+                    ASR::down_cast<ASR::Array_t>(type)->m_type,
+                    sentinel_to_actual);
+                break;
+            }
             case ASR::ttypeType::Integer: {
-                ASR::Integer_t* t = ASR::down_cast<ASR::Integer_t>(base_type);
+                ASR::Integer_t* t = ASR::down_cast<ASR::Integer_t>(type);
                 auto it = sentinel_to_actual.find(t->m_kind);
                 if (it != sentinel_to_actual.end()) t->m_kind = it->second;
                 break;
             }
             case ASR::ttypeType::Real: {
-                ASR::Real_t* t = ASR::down_cast<ASR::Real_t>(base_type);
+                ASR::Real_t* t = ASR::down_cast<ASR::Real_t>(type);
                 auto it = sentinel_to_actual.find(t->m_kind);
                 if (it != sentinel_to_actual.end()) t->m_kind = it->second;
                 break;
             }
             case ASR::ttypeType::Complex: {
-                ASR::Complex_t* t = ASR::down_cast<ASR::Complex_t>(base_type);
+                ASR::Complex_t* t = ASR::down_cast<ASR::Complex_t>(type);
                 auto it = sentinel_to_actual.find(t->m_kind);
                 if (it != sentinel_to_actual.end()) t->m_kind = it->second;
                 break;
             }
             case ASR::ttypeType::Logical: {
-                ASR::Logical_t* t = ASR::down_cast<ASR::Logical_t>(base_type);
+                ASR::Logical_t* t = ASR::down_cast<ASR::Logical_t>(type);
                 auto it = sentinel_to_actual.find(t->m_kind);
                 if (it != sentinel_to_actual.end()) t->m_kind = it->second;
+                break;
+            }
+            case ASR::ttypeType::StructType: {
+                ASR::StructType_t* t = ASR::down_cast<ASR::StructType_t>(type);
+                for (size_t i = 0; i < t->n_data_member_types; i++) {
+                    replace_sentinel_kinds(t->m_data_member_types[i],
+                        sentinel_to_actual);
+                }
                 break;
             }
             default:
@@ -7301,9 +7319,16 @@ public:
         for (auto& item : new_scope->get_scope()) {
             if (!ASR::is_a<ASR::Variable_t>(*item.second)) continue;
             if (kind_values.find(item.first) != kind_values.end()) continue;
+            ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(item.second);
             auto key = std::make_pair(pdt_struct->m_symtab, item.first);
             auto pit = m_pdt_pending_members.find(key);
-            if (pit == m_pdt_pending_members.end()) continue;
+            if (pit == m_pdt_pending_members.end()) {
+                if (ASRUtils::symbol_get_past_external(var->m_type_declaration)
+                        == pdt_sym_orig) {
+                    self_recursive_members.push_back(item.first);
+                }
+                continue;
+            }
             const std::string& inner_name = pit->second.first;
             const std::vector<int64_t>& sent_args = pit->second.second;
             // Map each arg to its actual value:
@@ -7328,7 +7353,6 @@ public:
                 loc, inner_name, actual_inner,
                 false, false, empty_dims, inner_sym_decl,
                 ASR::abiType::Source, false);
-            ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(item.second);
             var->m_type = rewrap_pdt_member_type(var->m_type, inner_type, var->base.base.loc);
             var->m_type_declaration = inner_sym_decl;
         }
@@ -7557,8 +7581,8 @@ public:
                 if (param_sym && ASR::is_a<ASR::Variable_t>(*param_sym)) {
                     ASR::Variable_t* pv = ASR::down_cast<ASR::Variable_t>(param_sym);
                     if (pv->m_symbolic_value) {
-                        kind_val = ASR::down_cast<ASR::IntegerConstant_t>(
-                            ASRUtils::expr_value(pv->m_symbolic_value))->m_n;
+                        kind_val = ASRUtils::extract_kind<SemanticAbort>(
+                            pv->m_symbolic_value, loc, diag);
                     }
                 }
                 if (kind_val < 0) {
@@ -8016,8 +8040,8 @@ public:
                                         if (kp_s && ASR::is_a<ASR::Variable_t>(*kp_s)) {
                                             ASR::Variable_t* kp_v = ASR::down_cast<ASR::Variable_t>(kp_s);
                                             if (kp_v->m_symbolic_value) {
-                                                def_val = ASR::down_cast<ASR::IntegerConstant_t>(
-                                                    ASRUtils::expr_value(kp_v->m_symbolic_value))->m_n;
+                                                def_val = ASRUtils::extract_kind<SemanticAbort>(
+                                                    kp_v->m_symbolic_value, loc, diag);
                                             }
                                         }
                                         if (def_val < 0) {
