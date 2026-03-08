@@ -227,7 +227,7 @@ namespace LCompilers::CommandLineInterface {
         app.add_flag("--rtlib", compiler_options.rtlib, "Include the full runtime library in the LLVM output")->group(group_backend_codegen_options);
         app.add_flag("--separate-compilation", compiler_options.separate_compilation, "Generate object code into .o files")->group(group_backend_codegen_options);
         app.add_flag("--static", opts.static_link, "Create a static executable")->group(group_backend_codegen_options);
-        app.add_flag("--shared", opts.shared_link, "Create a shared executable")->group(group_backend_codegen_options);
+        app.add_flag("--shared", opts.shared_link, "Create a shared library")->group(group_backend_codegen_options);
         app.add_flag("--linker", opts.linker, "Specify the linker to be used, available options: clang or gcc")->capture_default_str()->group(group_backend_codegen_options);
         app.add_flag("--linker-path", opts.linker_path, "Use the linker from this path")->capture_default_str()->group(group_backend_codegen_options);
         app.add_option("--target", compiler_options.target, "Generate code for the given target")->capture_default_str()->group(group_backend_codegen_options);
@@ -315,8 +315,29 @@ namespace LCompilers::CommandLineInterface {
             handle_help_category(app, help_arg);
         }
 
+        // Rewrite single-dash multi-char flags that compilers accept
+        // but CLI11 does not support (e.g. -shared -> --shared)
+        for (auto &a : args) {
+            if (a == "-shared")  { a = "--shared";  continue; }
+            if (a == "-static")  { a = "--static";  continue; }
+        }
+
         if (argv != nullptr) {
-            app.parse(argc, argv);
+            // Build a mutable copy of argv with the same rewrites
+            std::vector<std::string> argv_strs;
+            argv_strs.reserve(argc);
+            for (int i = 0; i < argc; ++i) {
+                std::string a = argv[i];
+                if (a == "-shared")  a = "--shared";
+                if (a == "-static")  a = "--static";
+                argv_strs.push_back(std::move(a));
+            }
+            std::vector<const char*> new_argv;
+            new_argv.reserve(argc);
+            for (const auto &s : argv_strs) {
+                new_argv.push_back(s.c_str());
+            }
+            app.parse(argc, new_argv.data());
         } else {
             app.parse(args);
         }
