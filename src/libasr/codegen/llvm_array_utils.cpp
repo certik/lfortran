@@ -210,6 +210,13 @@ namespace LCompilers {
                     array_key += "desc";
                 }
             }
+            // Disambiguate same-named struct types from different scopes
+            // by including the LLVM struct type name in the cache key
+            if (auto *st = llvm::dyn_cast<llvm::StructType>(el_type)) {
+                if (st->hasName()) {
+                    array_key += "." + st->getName().str();
+                }
+            }
             if( tkr2array.find(array_key) != tkr2array.end() ) {
                 if( get_pointer ) {
                     return tkr2array[array_key].first->getPointerTo();
