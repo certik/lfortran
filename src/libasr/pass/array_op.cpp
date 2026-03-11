@@ -1438,6 +1438,35 @@ class ArrayOpVisitor: public ASR::CallReplacerOnExpressionsVisitor<ArrayOpVisito
             return ;
         }
 
+        // Unlimited polymorphic array assignment must be handled as a
+        // whole-array bulk copy (vptr + data buffer), not element-wise,
+        // because Fortran does not allow polymorphic element-wise assignment.
+        // Only applies when the source is also a descriptor array (not a
+        // fixed-size ArrayConstant from allocate(source=...)).
+        {
+            ASR::ttype_t* tgt_base_type = ASRUtils::type_get_past_allocatable(
+                ASRUtils::type_get_past_pointer(ASRUtils::expr_type(xx.m_target)));
+            ASR::ttype_t* val_base_type = ASRUtils::type_get_past_allocatable(
+                ASRUtils::type_get_past_pointer(ASRUtils::expr_type(xx.m_value)));
+            if (ASRUtils::is_unlimited_polymorphic_type(tgt_base_type) &&
+                    ASRUtils::is_allocatable(ASRUtils::expr_type(xx.m_target)) &&
+                    ASRUtils::is_array(val_base_type) &&
+                    ASRUtils::extract_physical_type(val_base_type) ==
+                        ASR::array_physical_typeType::DescriptorArray) {
+                Vec<ASR::expr_t*> dealloc_vars;
+                dealloc_vars.reserve(al, 1);
+                dealloc_vars.push_back(al, const_cast<ASR::expr_t*>(x.m_target));
+                pass_result.push_back(al, ASRUtils::STMT(
+                    ASR::make_ImplicitDeallocate_t(al, loc,
+                        dealloc_vars.p, dealloc_vars.size())));
+                ASR::stmt_t* assign_stmt = ASRUtils::STMT(
+                    ASRUtils::make_Assignment_t_util(al, loc,
+                        x.m_target, x.m_value, x.m_overloaded, false, false));
+                pass_result.push_back(al, assign_stmt);
+                return;
+            }
+        }
+
         if (ASRUtils::is_array(ASRUtils::expr_type(xx.m_value))) {
             bool per_assign_realloc = xx.m_realloc_lhs ||
                 should_auto_realloc_component_assignment(xx.m_target);
