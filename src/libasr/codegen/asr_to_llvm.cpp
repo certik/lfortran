@@ -13815,6 +13815,10 @@ public:
                 tmp = builder->CreateZExt(tmp, llvm_utils->getIntType(a_kind));
                 break;
             }
+            case (ASR::cast_kindType::LogicalToLogical) : {
+                // Logicals are i1 in LLVM IR regardless of kind; no conversion needed
+                break;
+            }
             case (ASR::cast_kindType::RealToReal) : {
                 int arg_kind = -1, dest_kind = -1;
                 extract_kinds(x, arg_kind, dest_kind);
@@ -17046,11 +17050,10 @@ public:
                     if (logical_val->getType()->isPointerTy()) {
                         logical_val = llvm_utils->CreateLoad2(llvm::Type::getInt1Ty(context), logical_val);
                     }
-                    llvm::Value* logical_i32 = builder->CreateZExt(
-                        logical_val, llvm::Type::getInt32Ty(context));
-                    llvm::Value* logical_ptr = llvm_utils->CreateAlloca(
-                        *builder, llvm::Type::getInt32Ty(context));
-                    builder->CreateStore(logical_i32, logical_ptr);
+                    llvm::Type* int_type = llvm::Type::getIntNTy(context, kind * 8);
+                    llvm::Value* logical_ext = builder->CreateZExt(logical_val, int_type);
+                    llvm::Value* logical_ptr = llvm_utils->CreateAlloca(*builder, int_type);
+                    builder->CreateStore(logical_ext, logical_ptr);
                     args.push_back(logical_ptr);
                     continue;
                 } else {
