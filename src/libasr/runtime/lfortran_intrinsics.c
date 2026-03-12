@@ -6039,7 +6039,7 @@ LFORTRAN_API void _lfortran_read_array_int8(int8_t *p, int array_size, int32_t u
     }
 }
 
-LFORTRAN_API void _lfortran_read_array_logical(bool *p, int array_size, int32_t unit_num, int32_t *iostat)
+LFORTRAN_API void _lfortran_read_array_logical(bool *p, int array_size, int kind, int32_t unit_num, int32_t *iostat)
 {
     if (iostat) *iostat = 0;
 
@@ -6072,10 +6072,9 @@ LFORTRAN_API void _lfortran_read_array_logical(bool *p, int array_size, int32_t 
                 exit(1);
             }
         }
-        // Each logical element is stored as int32_t (4 bytes) in binary files
         for (int i = 0; i < array_size; i++) {
-            int32_t temp = 0;
-            if (fread(&temp, sizeof(int32_t), 1, filep) != 1) {
+            int64_t temp = 0;
+            if (fread(&temp, kind, 1, filep) != 1) {
                 if (iostat) { *iostat = feof(filep) ? -1 : 1; return; }
                 fprintf(stderr, "Error: Failed to read logical array from binary file.\n");
                 exit(1);

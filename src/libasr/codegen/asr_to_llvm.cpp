@@ -14402,6 +14402,9 @@ public:
                     if(runtime_func_name == "_lfortran_read_array_char"){
                         types.insert(types.begin()+1, llvm::Type::getInt64Ty(context));
                     }
+                    if(runtime_func_name == "_lfortran_read_array_logical"){
+                        types.insert(types.begin()+2, llvm::Type::getInt32Ty(context));
+                    }
                     llvm::FunctionType *function_type = llvm::FunctionType::get(
                         llvm::Type::getVoidTy(context), types, false);
                     fn = llvm::Function::Create(function_type,
@@ -14838,7 +14841,13 @@ public:
                                     size = builder->CreateIntCast(size, llvm::Type::getInt32Ty(context), true);
 
                                     llvm::Function* fn = get_read_function(arr_type);
-                                    builder->CreateCall(fn, {section_ptr, size, unit_val, iostat});
+                                    if (ASR::is_a<ASR::Logical_t>(*elem_type)) {
+                                        int a_kind = ASRUtils::extract_kind_from_ttype_t(elem_type);
+                                        llvm::Value* kind_val = llvm::ConstantInt::get(context, llvm::APInt(32, a_kind));
+                                        builder->CreateCall(fn, {section_ptr, size, kind_val, unit_val, iostat});
+                                    } else {
+                                        builder->CreateCall(fn, {section_ptr, size, unit_val, iostat});
+                                    }
                                     continue;
                                 }
 
@@ -14893,7 +14902,13 @@ public:
 
                                 // Call array read function
                                 llvm::Function* fn = get_read_function(arr_type);
-                                builder->CreateCall(fn, {section_ptr, size, unit_val, iostat});
+                                if (ASR::is_a<ASR::Logical_t>(*elem_type)) {
+                                    int a_kind = ASRUtils::extract_kind_from_ttype_t(elem_type);
+                                    llvm::Value* kind_val = llvm::ConstantInt::get(context, llvm::APInt(32, a_kind));
+                                    builder->CreateCall(fn, {section_ptr, size, kind_val, unit_val, iostat});
+                                } else {
+                                    builder->CreateCall(fn, {section_ptr, size, unit_val, iostat});
+                                }
                                 continue;
                             }
                         }
@@ -15095,6 +15110,14 @@ public:
                             llvm_utils->get_stringArray_data(type, original_array_representation),
                             llvm_utils->get_stringArray_length(type, original_array_representation),
                             tmp, unit_val, iostat});
+                        tmp = nullptr;
+                    } else if (ASR::is_a<ASR::Logical_t>(*ASRUtils::type_get_past_array(
+                            ASRUtils::type_get_past_allocatable_pointer(type)))) {
+                        int a_kind = ASRUtils::extract_kind_from_ttype_t(
+                            ASRUtils::type_get_past_array(
+                                ASRUtils::type_get_past_allocatable_pointer(type)));
+                        llvm::Value* kind_val = llvm::ConstantInt::get(context, llvm::APInt(32, a_kind));
+                        builder->CreateCall(fn, {arr, tmp, kind_val, unit_val, iostat});
                         tmp = nullptr;
                     } else {
                         builder->CreateCall(fn, {arr, tmp, unit_val, iostat});
@@ -16546,8 +16569,9 @@ public:
                         src_ptr = builder->CreateBitCast(src_ptr, i8_ptr_ty);
                     }
 
-                    llvm::Value* tmp_i32_arr = llvm_utils->CreateAlloca(
-                        *builder, llvm::Type::getInt32Ty(context), array_size_val);
+                    llvm::Type* kind_int_type = llvm::Type::getIntNTy(context, kind * 8);
+                    llvm::Value* tmp_kind_arr = llvm_utils->CreateAlloca(
+                        *builder, kind_int_type, array_size_val);
 
                     llvm::BasicBlock *loop_head = llvm::BasicBlock::Create(
                         context, "logical_expand_head", builder->GetInsertBlock()->getParent());
@@ -16561,7 +16585,7 @@ public:
                     builder->CreateStore(
                         llvm::ConstantInt::get(context, llvm::APInt(32, 0)), idx_ptr);
                     builder->CreateBr(loop_head);
-                    
+
                     builder->SetInsertPoint(loop_head);
                     llvm::Value* idx = llvm_utils->CreateLoad2(
                         llvm::Type::getInt32Ty(context), idx_ptr);
@@ -16574,18 +16598,17 @@ public:
                         llvm::Type::getInt8Ty(context), src_ptr, idx);
                     llvm::Value* elem_i8 = llvm_utils->CreateLoad2(
                         llvm::Type::getInt8Ty(context), src_elem_ptr);
-                    llvm::Value* elem_i32 = builder->CreateZExt(
-                        elem_i8, llvm::Type::getInt32Ty(context));
+                    llvm::Value* elem_ext = builder->CreateZExt(elem_i8, kind_int_type);
                     llvm::Value* dst_elem_ptr = builder->CreateGEP(
-                        llvm::Type::getInt32Ty(context), tmp_i32_arr, idx);
-                    builder->CreateStore(elem_i32, dst_elem_ptr);
+                        kind_int_type, tmp_kind_arr, idx);
+                    builder->CreateStore(elem_ext, dst_elem_ptr);
                     llvm::Value* next_idx = builder->CreateAdd(
                         idx, llvm::ConstantInt::get(context, llvm::APInt(32, 1)));
                     builder->CreateStore(next_idx, idx_ptr);
                     builder->CreateBr(loop_head);
-                    
+
                     builder->SetInsertPoint(loop_end);
-                    args.push_back(tmp_i32_arr);
+                    args.push_back(tmp_kind_arr);
                     continue;
                 } else if (ASRUtils::is_array(ASRUtils::expr_type(m_values[i]))) {
                     ASR::ArraySize_t* array_size = ASR::down_cast2<ASR::ArraySize_t>(ASR::make_ArraySize_t(al, m_values[i]->base.loc,
