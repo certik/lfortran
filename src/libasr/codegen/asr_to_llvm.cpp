@@ -16561,6 +16561,16 @@ public:
                             llvm::Type *llvm_type = llvm_utils->get_type_from_ttype_t_util(m_values[i],
                                 ASRUtils::extract_type(arr_t), module.get());
                             tmp = llvm_utils->CreateLoad2(llvm_type->getPointerTo(), tmp);
+                        } else {
+                            ASR::array_physical_typeType phys = ASRUtils::extract_physical_type(arr_t);
+                            if (phys == ASR::array_physical_typeType::DescriptorArray) {
+                                llvm::Value* data_ptr = arr_descr->get_pointer_to_data(
+                                    m_values[i], ASRUtils::type_get_past_allocatable_pointer(arr_t),
+                                    tmp, module.get());
+                                llvm::Type* el_type = llvm_utils->get_type_from_ttype_t_util(
+                                    m_values[i], ASRUtils::extract_type(arr_t), module.get());
+                                tmp = llvm_utils->CreateLoad2(el_type->getPointerTo(), data_ptr);
+                            }
                         }
                     }
                     llvm::Value* src_ptr = tmp;
