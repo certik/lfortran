@@ -8875,7 +8875,8 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(Allocator& al, 
     void LLVMStruct::allocate_array_of_unlimited_polymorphic_type(
             ASR::Struct_t* class_symbol, ASR::StructType_t* /*struct_type*/,
             llvm::Value* array_data_ptr, llvm::Value* size,
-            ASR::ttype_t* alloc_type, bool realloc, llvm::Module* module) {
+            ASR::ttype_t* alloc_type, bool realloc, llvm::Module* module,
+            llvm::Value* string_len) {
         LCOMPILERS_ASSERT(class_symbol && array_data_ptr && size && alloc_type);
 
         llvm::Type* const llvm_class_type = llvm_utils->getClassType(class_symbol);
@@ -8883,6 +8884,7 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(Allocator& al, 
         // Get the LLVM type for the element type
         int kind = ASRUtils::extract_kind_from_ttype_t(alloc_type);
         llvm::Type* llvm_element_type = nullptr;
+        bool is_string_type = false;
         if (ASR::is_a<ASR::Integer_t>(*alloc_type)) {
             llvm_element_type = llvm_utils->getIntType(kind);
         } else if (ASR::is_a<ASR::Real_t>(*alloc_type)) {
@@ -8893,6 +8895,7 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(Allocator& al, 
             llvm_element_type = llvm::Type::getInt8Ty(context);
         } else if (ASR::is_a<ASR::String_t>(*alloc_type)) {
             llvm_element_type = llvm_utils->string_descriptor;
+            is_string_type = true;
         } else {
             throw LCompilers::CodeGenError("Unsupported type-spec for unlimited polymorphic array allocation");
         }
@@ -8929,6 +8932,55 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(Allocator& al, 
         }
         builder->CreateMemSet(data_mem, llvm::ConstantInt::get(context, llvm::APInt(8, 0)),
             total_bytes, llvm::MaybeAlign());
+
+        // Step 2b: For string types, initialize each string descriptor
+        if (is_string_type && string_len) {
+            llvm::Value* str_len_i64 = llvm_utils->convert_kind(
+                string_len, llvm::Type::getInt64Ty(context));
+            llvm::Value* num_elements = llvm_utils->convert_kind(
+                size, llvm::Type::getInt64Ty(context));
+            // Allocate contiguous character data for all elements
+            llvm::Value* char_data_bytes = builder->CreateMul(num_elements, str_len_i64);
+            llvm::Value* char_data = LLVM::lfortran_malloc(context, *module, *builder, char_data_bytes);
+            builder->CreateMemSet(char_data, llvm::ConstantInt::get(context, llvm::APInt(8, 32)),
+                char_data_bytes, llvm::MaybeAlign());
+            // Cast data_mem to string_descriptor*
+            llvm::Value* desc_array = builder->CreateBitCast(
+                data_mem, llvm_utils->string_descriptor->getPointerTo());
+            // Loop: initialize each descriptor
+            llvm::Value* idx = builder->CreateAlloca(llvm::Type::getInt64Ty(context));
+            builder->CreateStore(llvm::ConstantInt::get(context, llvm::APInt(64, 0)), idx);
+            llvm::BasicBlock* loop_head = llvm::BasicBlock::Create(context, "str_init.head",
+                builder->GetInsertBlock()->getParent());
+            llvm::BasicBlock* loop_body = llvm::BasicBlock::Create(context, "str_init.body",
+                builder->GetInsertBlock()->getParent());
+            llvm::BasicBlock* loop_end = llvm::BasicBlock::Create(context, "str_init.end",
+                builder->GetInsertBlock()->getParent());
+            builder->CreateBr(loop_head);
+            builder->SetInsertPoint(loop_head);
+            llvm::Value* cur_idx = builder->CreateLoad(llvm::Type::getInt64Ty(context), idx);
+            builder->CreateCondBr(
+                builder->CreateICmpSLT(cur_idx, num_elements), loop_body, loop_end);
+            builder->SetInsertPoint(loop_body);
+            llvm::Value* desc_ptr = builder->CreateInBoundsGEP(
+                llvm_utils->string_descriptor, desc_array, cur_idx);
+            // Set data pointer: char_data + idx * str_len
+            llvm::Value* offset = builder->CreateMul(cur_idx, str_len_i64);
+            llvm::Value* elem_data = builder->CreateInBoundsGEP(
+                llvm::Type::getInt8Ty(context), char_data, offset);
+            llvm::Value* data_ptr_field = llvm_utils->create_gep2(
+                llvm_utils->string_descriptor, desc_ptr, 0);
+            builder->CreateStore(elem_data, data_ptr_field);
+            // Set length
+            llvm::Value* len_field = llvm_utils->create_gep2(
+                llvm_utils->string_descriptor, desc_ptr, 1);
+            builder->CreateStore(str_len_i64, len_field);
+            // Increment index
+            builder->CreateStore(
+                builder->CreateAdd(cur_idx, llvm::ConstantInt::get(context, llvm::APInt(64, 1))), idx);
+            builder->CreateBr(loop_head);
+            builder->SetInsertPoint(loop_end);
+        }
 
         // Step 3: Store data pointer in wrapper
         if (llvm_utils->compiler_options.new_classes) {

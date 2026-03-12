@@ -2089,7 +2089,8 @@ class ASRToLLVMVisitor;
             void allocate_array_of_unlimited_polymorphic_type(
                 ASR::Struct_t* class_symbol, ASR::StructType_t* struct_type,
                 llvm::Value* array_data_ptr, llvm::Value* size,
-                ASR::ttype_t* alloc_type, bool realloc, llvm::Module* module);
+                ASR::ttype_t* alloc_type, bool realloc, llvm::Module* module,
+                llvm::Value* string_len = nullptr);
     };
 
     class LLVMTuple {
