@@ -1115,7 +1115,7 @@ namespace LCompilers {
                     return_type = get_StringType(return_var_type0);
                     break;
                 case (ASR::ttypeType::Logical) : {
-                    int a_kind = down_cast<ASR::Logical_t>(return_var_type0)->m_kind;
+                    int a_kind = ASR::down_cast<ASR::Logical_t>(return_var_type0)->m_kind;
                     return_type = getIntType(a_kind);
                     break;
                 }
