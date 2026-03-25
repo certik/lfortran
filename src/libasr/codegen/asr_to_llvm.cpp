@@ -14067,6 +14067,14 @@ public:
             this->visit_expr_wrapper(x.m_value, true);
             return;
         }
+        // FunctionToFunction: cast between different procedure signatures.
+        // Handle before the general load logic because pointer-to-function
+        // types need special loading that the generic ptr_loads=2 path
+        // does not handle correctly.
+        if (x.m_kind == ASR::cast_kindType::FunctionToFunction) {
+            this->visit_expr_wrapper(x.m_arg, true);
+            return;
+        }
         // Visit with appropriate load
         if (ASRUtils::is_string_only(expr_type(x.m_arg))) {
             this->visit_expr_load_wrapper(x.m_arg, 0);
@@ -18628,20 +18636,6 @@ public:
                         builder->CreateStore(tmp, ptr_to_tmp);
                         tmp = ptr_to_tmp;
                     }
-                    // Bitcast procedure pointer if types don't match (implicit interface)
-                    // Only for procedure values passed by value (not intent inout/out or pointer)
-                    if (orig_arg && ASR::is_a<ASR::FunctionType_t>(*arg->m_type) &&
-                            ASR::is_a<ASR::FunctionType_t>(*orig_arg->m_type) &&
-                            orig_arg_intent != ASR::intentType::InOut &&
-                            orig_arg_intent != ASR::intentType::Out &&
-                            !ASRUtils::is_pointer(orig_arg->m_type)) {
-                        llvm::Type* expected_type = llvm_utils->get_type_from_ttype_t_util(
-                            ASRUtils::EXPR(ASR::make_Var_t(al, orig_arg->base.base.loc, &orig_arg->base)),
-                            orig_arg->m_type, module.get());
-                        if (tmp->getType() != expected_type) {
-                            tmp = builder->CreateBitCast(tmp, expected_type);
-                        }
-                    }
                 } else if (ASR::is_a<ASR::Function_t>(*var_sym)) {
                     ASR::Function_t* fn = ASR::down_cast<ASR::Function_t>(var_sym);
                     uint32_t h = get_hash((ASR::asr_t*)fn);
@@ -18706,15 +18700,6 @@ public:
                     ASRUtils::type_get_past_allocatable(
                         ASRUtils::expr_type(x.m_args[i].m_value)))) ) {
                 this->visit_expr_wrapper(x.m_args[i].m_value, true);
-                if (orig_arg && ASR::is_a<ASR::FunctionType_t>(
-                        *ASRUtils::type_get_past_pointer(orig_arg->m_type))) {
-                    llvm::Type* expected_type = llvm_utils->get_type_from_ttype_t_util(
-                        ASRUtils::EXPR(ASR::make_Var_t(al, orig_arg->base.base.loc, &orig_arg->base)),
-                        orig_arg->m_type, module.get());
-                    if (tmp->getType() != expected_type) {
-                        tmp = builder->CreateBitCast(tmp, expected_type);
-                    }
-                }
             } else {
                 ASR::ttype_t* arg_type = expr_type(x.m_args[i].m_value);
                 this->visit_expr_wrapper(x.m_args[i].m_value);
@@ -20571,6 +20556,13 @@ public:
             // make_SubroutineCall_t_util).  Let convert_call_args handle
             // all args including self with proper class wrapping.
             args = convert_call_args(x, false);
+            for (size_t i = 0; i < args.size(); i++) {
+                if (i < fntype->getNumParams() &&
+                        args[i]->getType() != fntype->getParamType(i)) {
+                    args[i] = builder->CreateBitCast(
+                        args[i], fntype->getParamType(i));
+                }
+            }
             tmp = builder->CreateCall(fntype, callee, args);
             return ;
         }
@@ -21176,6 +21168,13 @@ public:
             args = convert_call_args(x, false);
             llvm::FunctionType* fntype = llvm_utils->get_function_type(
                 *func, module.get());
+            for (size_t i = 0; i < args.size(); i++) {
+                if (i < fntype->getNumParams() &&
+                        args[i]->getType() != fntype->getParamType(i)) {
+                    args[i] = builder->CreateBitCast(
+                        args[i], fntype->getParamType(i));
+                }
+            }
             tmp = builder->CreateCall(fntype, callee, args);
             return ;
         }

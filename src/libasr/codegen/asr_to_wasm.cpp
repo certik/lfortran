@@ -3270,6 +3270,8 @@ class ASRToWASMVisitor : public ASR::BaseVisitor<ASRToWASMVisitor> {
                 }
                 break;
             }
+            case (ASR::cast_kindType::FunctionToFunction):
+                break;
             default:
                 throw CodeGenError("Cast kind not implemented");
         }

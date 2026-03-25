@@ -1667,8 +1667,26 @@ namespace LCompilers {
                     ASR::Function_t* fn = ASR::down_cast<ASR::Function_t>(
                         ASRUtils::symbol_get_past_external(type_declaration));
                     llvm_type = get_function_type(*fn, module)->getPointerTo();
-                } else {
+                } else if ( arg_expr ) {
                     llvm_type = get_function_type(*ASRUtils::get_function_from_expr(arg_expr), module)->getPointerTo();
+                } else {
+                    ASR::FunctionType_t* ft = ASR::down_cast<ASR::FunctionType_t>(asr_type);
+                    llvm::Type* return_type;
+                    if (ft->m_return_var_type != nullptr) {
+                        return_type = get_type_from_ttype_t_util(
+                            (ASR::expr_t*)nullptr, ft->m_return_var_type, module);
+                    } else {
+                        return_type = llvm::Type::getVoidTy(context);
+                    }
+                    std::vector<llvm::Type*> arg_types;
+                    for (size_t i = 0; i < ft->n_arg_types; i++) {
+                        llvm::Type* arg_t = get_type_from_ttype_t_util(
+                            (ASR::expr_t*)nullptr, ft->m_arg_types[i], module);
+                        arg_types.push_back(arg_t->getPointerTo());
+                    }
+                    llvm::FunctionType* fn_type = llvm::FunctionType::get(
+                        return_type, arg_types, false);
+                    llvm_type = fn_type->getPointerTo();
                 }
                 break;
             }

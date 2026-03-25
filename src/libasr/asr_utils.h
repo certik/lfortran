@@ -7280,6 +7280,19 @@ static inline void Call_t_body(Allocator& al, ASR::symbol_t* a_name,
                     al, arg->base.loc, arg, one, end, one, section_type, nullptr));
             }
         }
+        // Cast FunctionType arguments when actual and formal signatures differ
+        if (ASR::is_a<ASR::FunctionType_t>(*arg_type) &&
+            ASR::is_a<ASR::FunctionType_t>(*orig_arg_type)) {
+            ASR::FunctionType_t* arg_ft = ASR::down_cast<ASR::FunctionType_t>(arg_type);
+            ASR::FunctionType_t* orig_ft = ASR::down_cast<ASR::FunctionType_t>(orig_arg_type);
+            if (arg_ft->n_arg_types != orig_ft->n_arg_types) {
+                a_args[i].m_value = ASRUtils::EXPR(ASR::make_Cast_t(
+                    al, arg->base.loc, arg,
+                    ASR::cast_kindType::FunctionToFunction,
+                    func_type->m_arg_types[i], nullptr, nullptr));
+                continue;
+            }
+        }
         if( !ASRUtils::is_intrinsic_symbol(a_name_) &&
             !(ASRUtils::is_class_type(ASRUtils::type_get_past_array(arg_type)) ||
               ASRUtils::is_class_type(ASRUtils::type_get_past_array(orig_arg_type))) &&

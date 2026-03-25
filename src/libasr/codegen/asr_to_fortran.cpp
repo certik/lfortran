@@ -2720,7 +2720,8 @@ public:
         if (x.m_kind == ASR::cast_kindType::IntegerToLogical ||
             x.m_kind == ASR::cast_kindType::ClassToStruct ||
             x.m_kind == ASR::cast_kindType::ClassToClass ||
-            x.m_kind == ASR::cast_kindType::ClassToIntrinsic) {
+            x.m_kind == ASR::cast_kindType::ClassToIntrinsic ||
+            x.m_kind == ASR::cast_kindType::FunctionToFunction) {
             return;
         }
 

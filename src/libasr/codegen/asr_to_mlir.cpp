@@ -528,6 +528,8 @@ public:
                 }
                 tmp = builder->create<mlir::LLVM::SIToFPOp>(loc, type, tmp);
                 break;
+            } case (ASR::cast_kindType::FunctionToFunction): {
+                break;
             } default: {
                 throw CodeGenError("Cast of kind: `"+
                     std::to_string(x.m_kind) +"` is not supported yet",

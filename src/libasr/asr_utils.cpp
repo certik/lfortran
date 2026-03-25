@@ -771,6 +771,10 @@ const ASR::Function_t* get_function_from_expr(ASR::expr_t* expr) {
             }
             return nullptr;
         }
+        case ASR::exprType::Cast: {
+            ASR::Cast_t* c = ASR::down_cast<ASR::Cast_t>(expr);
+            return get_function_from_expr(c->m_arg);
+        }
         case ASR::exprType::PointerNullConstant: {
             // PointerNullConstant is a special case where it does not have a function
             // associated with it, so we return nullptr.
