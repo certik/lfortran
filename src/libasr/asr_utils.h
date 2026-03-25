@@ -6785,6 +6785,17 @@ inline std::string fetch_ArrayConstant_value(void *data, ASR::ttype_t* type, int
             new_char[len] = '\0';
             return '\"' + std::string(new_char) + '\"';
         }
+        case ASR::ttypeType::StructType: {
+            ASR::expr_t** struct_data = (ASR::expr_t**)data;
+            ASR::StructConstant_t* sc = ASR::down_cast<ASR::StructConstant_t>(struct_data[i]);
+            std::string result = std::string(ASRUtils::symbol_name(sc->m_dt_sym)) + "(";
+            for (size_t j = 0; j < sc->n_args; j++) {
+                if (j > 0) result += ", ";
+                result += "...";
+            }
+            result += ")";
+            return result;
+        }
         default:
             throw LCompilersException("Unsupported type for array constant.");
     }
@@ -6876,6 +6887,10 @@ inline ASR::expr_t* fetch_ArrayConstant_value_helper(Allocator &al, const Locati
             value = EXPR(ASR::make_StringConstant_t(al, loc,
                                 s2c(al, str), type));
             return value;
+        }
+        case ASR::ttypeType::StructType: {
+            ASR::expr_t** struct_data = (ASR::expr_t**)data;
+            return struct_data[i];
         }
         default:
             throw LCompilersException("Unsupported type for array constant.");
@@ -7071,6 +7086,8 @@ inline ASR::asr_t* make_ArrayConstructor_t_util(Allocator &al, const Location &a
                                 ASR::is_a<ASR::LogicalConstant_t>(*a_args[0]) ||
                                 ASR::is_a<ASR::StringConstant_t>(*a_args[0]) ||
                                 ASR::is_a<ASR::StructConstant_t>(*a_args[0]) ||
+                                (ASR::is_a<ASR::StructConstructor_t>(*a_args[0]) &&
+                                    ASR::down_cast<ASR::StructConstructor_t>(a_args[0])->m_value != nullptr) ||
                                 ASR::is_a<ASR::IntegerUnaryMinus_t>(*a_args[0]) ||
                                 ASR::is_a<ASR::RealUnaryMinus_t>(*a_args[0]));
     if( n_args > 0 ) {
