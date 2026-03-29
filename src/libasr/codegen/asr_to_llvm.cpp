@@ -5772,6 +5772,35 @@ public:
             } else {
                 builder->CreateStore(null_value, ptr);
             }
+            // For class pointer variables, create an i1 flag to track
+            // whether the class wrapper was self-allocated (owned) or
+            // borrowed from another variable via pointer association.
+            if (ASR::is_a<ASR::Pointer_t>(*v->m_type) &&
+                    ASRUtils::is_class_type(ASRUtils::type_get_past_pointer(v->m_type))) {
+                uint32_t v_h = get_hash((ASR::asr_t*)v);
+                llvm::Value* owned_flag = llvm_utils->CreateAlloca(
+                    *builder, llvm::Type::getInt1Ty(context), nullptr,
+                    std::string(v->m_name) + "_wrapper_owned");
+                builder->CreateStore(
+                    llvm::ConstantInt::getFalse(context), owned_flag);
+                llvm_utils->class_ptr_wrapper_owned[v_h] = owned_flag;
+            }
+        }
+    }
+
+    // Set the wrapper-ownership flag for a class pointer variable.
+    // `owned=true` when the compiler heap-allocates a new wrapper,
+    // `owned=false` when the pointer borrows a wrapper from another variable.
+    void set_class_ptr_wrapper_owned(ASR::expr_t* target_expr, bool owned) {
+        if (!ASR::is_a<ASR::Var_t>(*target_expr)) return;
+        ASR::Variable_t* var = ASRUtils::EXPR2VAR(target_expr);
+        uint32_t v_h = get_hash((ASR::asr_t*)var);
+        auto it = llvm_utils->class_ptr_wrapper_owned.find(v_h);
+        if (it != llvm_utils->class_ptr_wrapper_owned.end()) {
+            builder->CreateStore(
+                owned ? llvm::ConstantInt::getTrue(context)
+                      : llvm::ConstantInt::getFalse(context),
+                it->second);
         }
     }
 
@@ -8794,6 +8823,8 @@ public:
                         x.m_target, target_type, module.get());
                     llvm_value = builder->CreateBitCast(llvm_value, target_llvm_type);
                     builder->CreateStore(llvm_value, llvm_target);
+                    // Wrapper is borrowed — mark as not owned
+                    set_class_ptr_wrapper_owned(x.m_target, false);
                 } else if (is_target_class) {
                     // check_and_allocate_scalar(x.m_target, x.m_value, value_type, true);
                     llvm::Type* target_llvm_type = llvm_utils->get_type_from_ttype_t_util(
@@ -8815,6 +8846,8 @@ public:
                             wrapper_ptr = builder->CreateBitCast(wrapper_ptr, target_llvm_type->getPointerTo());
                             builder->CreateStore(wrapper_ptr, llvm_target);
                         }, []() {});
+                    // Wrapper is self-allocated — mark as owned
+                    set_class_ptr_wrapper_owned(x.m_target, true);
                     llvm_target = llvm_utils->CreateLoad2(target_llvm_type->getPointerTo(), llvm_target);
 
                     // Store vptr

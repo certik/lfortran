@@ -287,6 +287,7 @@ class ASRToLLVMVisitor;
 
             CompilerOptions &compiler_options;
             std::map<uint64_t, llvm::Value*> &llvm_symtab; // llvm_symtab_value
+            std::map<uint64_t, llvm::Value*> class_ptr_wrapper_owned; // i1 alloca per class pointer var
 
 
             llvm::StructType *complex_type_4, *complex_type_8;
@@ -1034,6 +1035,32 @@ class ASRToLLVMVisitor;
                 auto* arr_t = ASR::down_cast<ASR::Array_t>(v->m_type);
                 if(arr_t->m_physical_type == ASR::PointerArray
                         && ASRUtils::extract_type(arr_t->m_type)->type == ASR::String) {
+                    return;
+                }
+            }
+
+            // Class pointer variables with a StructType wrapper: only free
+            // the wrapper if the ownership flag says it was self-allocated.
+            if (ASRUtils::is_pointer(v->m_type)) {
+                auto* t_past = ASRUtils::type_get_past_pointer(v->m_type);
+                if (ASR::is_a<ASR::StructType_t>(*t_past) && ASRUtils::is_class_type(t_past)) {
+                    uint32_t v_h = get_hash((ASR::asr_t*)v);
+                    auto it = llvm_utils_->class_ptr_wrapper_owned.find(v_h);
+                    if (it != llvm_utils_->class_ptr_wrapper_owned.end()) {
+                        insert_BB_for_readability(
+                            (std::string("Finalize_Variable_") + v->m_name).c_str());
+                        auto const llvm_var = get_llvm_var(v);
+                        auto* const struct_sym = get_struct_sym(v);
+                        llvm::Value* owned = builder_->CreateLoad(
+                            llvm::Type::getInt1Ty(builder_->getContext()),
+                            it->second);
+                        llvm_utils_->create_if_else(owned, [&](){
+                            check_if_allocated_then_finalize(
+                                llvm_var, t_past, struct_sym, [&](){
+                                    llvm_utils_->lfortran_free_nocheck(llvm_var);
+                                });
+                        }, [](){}, "class_ptr_owned_free");
+                    }
                     return;
                 }
             }
@@ -1901,12 +1928,16 @@ class ASRToLLVMVisitor;
                     return in_struct 
                         && (   ASRUtils::extract_physical_type(t_past) == ASR::DescriptorArray
                             || ASRUtils::extract_physical_type(t_past) == ASR::AssumedRankArray);
+                case ASR::StructType:
+                    // Class pointer variables have a heap-allocated class
+                    // wrapper that must be freed at scope exit.
+                    // For struct members, the wrapper is not owned here.
+                    return !in_struct && ASRUtils::is_class_type(t_past);
                 case ASR::Integer:
                 case ASR::Real:
                 case ASR::Complex:
                 case ASR::UnsignedInteger:
                 case ASR::Logical:
-                case ASR::StructType:
                 case ASR::List:
                 case ASR::Dict:
                 case ASR::Tuple:
