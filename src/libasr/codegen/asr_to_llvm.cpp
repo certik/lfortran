@@ -8735,6 +8735,8 @@ public:
                             wrapper_ptr = builder->CreateBitCast(wrapper_ptr, target_llvm_type->getPointerTo());
                             builder->CreateStore(wrapper_ptr, llvm_target);
                         }, []() {});
+                    // Wrapper is self-allocated — mark as owned
+                    set_class_ptr_wrapper_owned(x.m_target, true);
                     target_ptr = llvm_utils->CreateLoad2(target_llvm_type->getPointerTo(), llvm_target);
                 }
                 struct_api->store_intrinsic_type_vptr(value_type,
