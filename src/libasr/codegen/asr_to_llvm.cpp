@@ -8319,7 +8319,27 @@ public:
         ASR::ArraySection_t* target_section = ASR::down_cast<ASR::ArraySection_t>(x.m_target);
         
         // Get the base pointer variable from the target section
-        [[maybe_unused]] ASR::Variable_t* ptr_var = ASRUtils::EXPR2VAR(target_section->m_v);
+        ASR::Variable_t* ptr_var = ASRUtils::EXPR2VAR(target_section->m_v);
+        uint64_t var_h = get_hash((ASR::asr_t*)ptr_var);
+
+        // Get or create a boolean flag that tracks whether the current
+        // descriptor in this pointer variable is heap-allocated.
+        llvm::Value* heap_flag;
+        auto flag_it = llvm_utils->heap_descriptor_ptr_flags.find(var_h);
+        if (flag_it == llvm_utils->heap_descriptor_ptr_flags.end()) {
+            llvm::BasicBlock* cur_bb = builder->GetInsertBlock();
+            llvm::BasicBlock* entry = &cur_bb->getParent()->getEntryBlock();
+            llvm::IRBuilder<> entry_builder(entry, entry->getFirstInsertionPt());
+            heap_flag = entry_builder.CreateAlloca(
+                llvm::Type::getInt1Ty(context), nullptr,
+                std::string(ptr_var->m_name) + "_heap_desc");
+            entry_builder.CreateStore(
+                llvm::ConstantInt::getFalse(context), heap_flag);
+            llvm_utils->heap_descriptor_ptr_flags[var_h] = heap_flag;
+        } else {
+            heap_flag = flag_it->second;
+        }
+
         ASR::ttype_t* value_type = ASRUtils::expr_type(x.m_value);
         
         // Get the llvm values
@@ -8496,8 +8516,29 @@ public:
             current_stride = builder->CreateMul(current_stride, size);
         }
         
+        // Free the previously heap-allocated descriptor (if any) to avoid
+        // a memory leak when the pointer is re-associated.
+        {
+            llvm::Value* is_heap = builder->CreateLoad(
+                llvm::Type::getInt1Ty(context), heap_flag);
+            llvm::Function* cur_fn = builder->GetInsertBlock()->getParent();
+            llvm::BasicBlock* free_bb = llvm::BasicBlock::Create(
+                context, "free_old_desc", cur_fn);
+            llvm::BasicBlock* cont_bb = llvm::BasicBlock::Create(
+                context, "free_old_done", cur_fn);
+            builder->CreateCondBr(is_heap, free_bb, cont_bb);
+            builder->SetInsertPoint(free_bb);
+            llvm::Value* old_desc = llvm_utils->CreateLoad2(
+                new_desc->getType(), target_desc);
+            llvm_utils->lfortran_free_nocheck(old_desc);
+            builder->CreateBr(cont_bb);
+            builder->SetInsertPoint(cont_bb);
+        }
+
         // Store the new descriptor to the target pointer
         builder->CreateStore(new_desc, target_desc);
+        builder->CreateStore(
+            llvm::ConstantInt::getTrue(context), heap_flag);
     }
 
     void handle_array_section_association_to_pointer(const ASR::Associate_t& x) {

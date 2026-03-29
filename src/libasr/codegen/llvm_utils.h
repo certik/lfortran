@@ -288,6 +288,9 @@ class ASRToLLVMVisitor;
             CompilerOptions &compiler_options;
             std::map<uint64_t, llvm::Value*> &llvm_symtab; // llvm_symtab_value
             std::map<uint64_t, llvm::Value*> class_ptr_wrapper_owned; // i1 alloca per class pointer var
+            // Boolean flag alloca per pointer variable that tracks whether the
+            // current descriptor was heap-allocated (by pointer bounds remapping).
+            std::map<uint64_t, llvm::Value*> heap_descriptor_ptr_flags;
 
 
             llvm::StructType *complex_type_4, *complex_type_8;
@@ -1023,6 +1026,25 @@ class ASRToLLVMVisitor;
         }
 
         void finalize_variable(ASR::Variable_t* const v){
+            // Free heap-allocated descriptors from pointer bounds remapping.
+            // Only for local variables — arguments are owned by the caller
+            // and must not be freed at subroutine exit.
+            if (v->m_intent == ASR::Local) {
+                uint64_t v_h = get_hash((ASR::asr_t*)v);
+                auto it = llvm_utils_->heap_descriptor_ptr_flags.find(v_h);
+                if (it != llvm_utils_->heap_descriptor_ptr_flags.end()) {
+                    insert_BB_for_readability(
+                        (std::string("Finalize_Variable_") + v->m_name).c_str());
+                    llvm::Value* heap_flag = it->second;
+                    llvm::Value* is_heap = builder_->CreateLoad(
+                        llvm::Type::getInt1Ty(builder_->getContext()), heap_flag);
+                    llvm_utils_->create_if_else(is_heap, [&](){
+                        auto const llvm_var = get_llvm_var(v);
+                        llvm_utils_->lfortran_free_nocheck(llvm_var);
+                    }, [](){}, "free_ptr_desc");
+                    return;
+                }
+            }
             if(not_finalizable_variable(v)) return;
             if(!is_finalizable_type(v->m_type, get_struct_sym(v), false)) return;
             LCOMPILERS_ASSERT_MSG(!is_struct_symtab(v->m_parent_symtab), "Struct members don't use this function")
