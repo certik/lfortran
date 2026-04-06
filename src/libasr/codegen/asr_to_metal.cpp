@@ -136,6 +136,12 @@ public:
     // device buffers and must keep device address space.
     std::set<std::string> vla_workspace_names;
 
+    // Names of allocatable array variables in kernel/block scope that
+    // are NOT kernel args and NOT VLA workspaces. These are emitted as
+    // fixed-size thread-local arrays and should be treated as
+    // thread-space for pointer tracking purposes during prescan.
+    std::set<std::string> prescan_local_allocs;
+
     // Tracks function names already emitted across all kernels in the
     // current translation unit, preventing duplicate definitions when
     // multiple kernels call the same module function.
@@ -390,6 +396,24 @@ public:
                         func_allocs, func_param_copies);
                     break;
                 }
+                case ASR::stmtType::AssociateBlockCall: {
+                    ASR::AssociateBlock_t *ab =
+                        ASR::down_cast<ASR::AssociateBlock_t>(
+                            ASR::down_cast<ASR::AssociateBlockCall_t>(
+                                stmts[i])->m_m);
+                    scan_stmts_recursive(ab->m_body, ab->n_body,
+                        func_allocs, func_param_copies);
+                    break;
+                }
+                case ASR::stmtType::BlockCall: {
+                    ASR::Block_t *block =
+                        ASR::down_cast<ASR::Block_t>(
+                            ASR::down_cast<ASR::BlockCall_t>(
+                                stmts[i])->m_m);
+                    scan_stmts_recursive(block->m_body, block->n_body,
+                        func_allocs, func_param_copies);
+                    break;
+                }
                 default:
                     break;
             }
@@ -425,6 +449,24 @@ public:
                         if_s->n_orelse, changed);
                     break;
                 }
+                case ASR::stmtType::AssociateBlockCall: {
+                    ASR::AssociateBlock_t *ab =
+                        ASR::down_cast<ASR::AssociateBlock_t>(
+                            ASR::down_cast<ASR::AssociateBlockCall_t>(
+                                stmts[i])->m_m);
+                    propagate_stmts_recursive(ab->m_body, ab->n_body,
+                        changed);
+                    break;
+                }
+                case ASR::stmtType::BlockCall: {
+                    ASR::Block_t *block =
+                        ASR::down_cast<ASR::Block_t>(
+                            ASR::down_cast<ASR::BlockCall_t>(
+                                stmts[i])->m_m);
+                    propagate_stmts_recursive(block->m_body,
+                        block->n_body, changed);
+                    break;
+                }
                 default:
                     break;
             }
@@ -442,6 +484,7 @@ public:
         ptr_to_local_alloc.clear();
         kernel_arg_names.clear();
         vla_workspace_names.clear();
+        prescan_local_allocs.clear();
         // Collect kernel argument names (device buffer parameters)
         for (size_t i = 0; i < kf.n_args; i++) {
             ASR::Var_t *v = ASR::down_cast<ASR::Var_t>(kf.m_args[i]);
@@ -471,6 +514,12 @@ public:
                     }
                 }
             }
+        }
+        // Also include kernel-scope VLA workspaces (from
+        // current_vla_infos, which covers allocatable arrays with
+        // runtime Allocate dimensions). These get device buffers.
+        for (const auto &ws : current_vla_infos) {
+            vla_workspace_names.insert(ws.var_name);
         }
         // Step 1: For each function in kernel scope, find Allocate
         // stmts and record param_index → size. Also detect assignments
@@ -598,11 +647,51 @@ public:
                 }
             }
         }
-        // Step 2: Recursively scan all kernel body statements
+        // Step 2: Identify local allocatable arrays that will be
+        // emitted as fixed-size thread-local arrays. Any allocatable
+        // Array variable in the kernel (or its blocks) that is not a
+        // kernel argument and not a VLA workspace is thread-local.
+        // This must happen BEFORE scanning statements so that
+        // Associate handlers can correctly tag pointer variables
+        // pointing to local allocatables as thread-space.
+        auto mark_local_allocs = [&](SymbolTable *symtab) {
+            for (auto &item : symtab->get_scope()) {
+                if (!ASR::is_a<ASR::Variable_t>(*item.second))
+                    continue;
+                ASR::Variable_t *var =
+                    ASR::down_cast<ASR::Variable_t>(item.second);
+                if (!ASRUtils::is_allocatable(var->m_type)) continue;
+                ASR::ttype_t *inner =
+                    ASRUtils::type_get_past_allocatable(var->m_type);
+                if (!ASR::is_a<ASR::Array_t>(*inner)) continue;
+                std::string vname(var->m_name);
+                if (kernel_arg_names.count(vname)) continue;
+                if (vla_workspace_names.count(vname)) continue;
+                prescan_local_allocs.insert(vname);
+            }
+        };
+        mark_local_allocs(kf.m_symtab);
+        for (size_t bi = 0; bi < kf.n_body; bi++) {
+            if (kf.m_body[bi]->type == ASR::stmtType::BlockCall) {
+                ASR::Block_t *block =
+                    ASR::down_cast<ASR::Block_t>(
+                        ASR::down_cast<ASR::BlockCall_t>(
+                            kf.m_body[bi])->m_m);
+                mark_local_allocs(block->m_symtab);
+            } else if (kf.m_body[bi]->type ==
+                    ASR::stmtType::AssociateBlockCall) {
+                ASR::AssociateBlock_t *ab =
+                    ASR::down_cast<ASR::AssociateBlock_t>(
+                        ASR::down_cast<ASR::AssociateBlockCall_t>(
+                            kf.m_body[bi])->m_m);
+                mark_local_allocs(ab->m_symtab);
+            }
+        }
+        // Step 3: Recursively scan all kernel body statements
         // (including inside WhileLoops, DoLoops, If blocks)
         scan_stmts_recursive(kf.m_body, kf.n_body, func_allocs,
             func_param_copies);
-        // Step 3: Scan blocks in kernel body for the same
+        // Step 4: Scan blocks in kernel body for the same
         for (size_t bi = 0; bi < kf.n_body; bi++) {
             if (kf.m_body[bi]->type == ASR::stmtType::BlockCall) {
                 ASR::Block_t *block = ASR::down_cast<ASR::Block_t>(
@@ -620,7 +709,7 @@ public:
                     func_allocs, func_param_copies);
             }
         }
-        // Step 4: Propagate sizes through assignments
+        // Step 5: Propagate sizes through assignments
         // (if a = b and b has known size, a gets same size)
         bool changed = true;
         while (changed) {
@@ -783,19 +872,31 @@ public:
                     }
                     // A non-allocatable, non-kernel-arg, non-VLA local
                     // array is in thread space (FixedSizeArray temps).
-                    // Allocatable locals and VLA workspaces are backed
-                    // by device buffers, so leave those as device.
+                    // Local allocatable arrays that were resolved to
+                    // fixed-size thread-local arrays (in
+                    // local_alloc_arrays) are also thread-space.
+                    // VLA workspaces backed by device buffers stay
+                    // device.
                     if (!kernel_arg_names.count(val)) {
-                        ASR::symbol_t *val_sym =
-                            ASR::down_cast<ASR::Var_t>(
-                                assoc->m_value)->m_v;
-                        if (ASR::is_a<ASR::Variable_t>(*val_sym)) {
-                            ASR::ttype_t *vt =
-                                ASR::down_cast<ASR::Variable_t>(
-                                    val_sym)->m_type;
-                            if (!ASRUtils::is_allocatable(vt) &&
-                                    !vla_workspace_names.count(val)) {
-                                ptr_to_local_alloc.insert(tgt);
+                        if (!vla_workspace_names.count(val) &&
+                                (local_alloc_arrays.count(val) ||
+                                alloc_array_sizes.count(val) ||
+                                alloc_array_size_exprs.count(val))) {
+                            ptr_to_local_alloc.insert(tgt);
+                        } else {
+                            ASR::symbol_t *val_sym =
+                                ASR::down_cast<ASR::Var_t>(
+                                    assoc->m_value)->m_v;
+                            if (ASR::is_a<ASR::Variable_t>(*val_sym)) {
+                                ASR::ttype_t *vt =
+                                    ASR::down_cast<ASR::Variable_t>(
+                                        val_sym)->m_type;
+                                if (prescan_local_allocs.count(val) ||
+                                        (!ASRUtils::is_allocatable(vt)
+                                        && !vla_workspace_names.count(
+                                            val))) {
+                                    ptr_to_local_alloc.insert(tgt);
+                                }
                             }
                         }
                     }
@@ -840,18 +941,34 @@ public:
                             ASR::down_cast<ASR::Var_t>(
                                 as->m_v)->m_v);
                         if (!kernel_arg_names.count(base)) {
-                            ASR::symbol_t *base_sym =
-                                ASR::down_cast<ASR::Var_t>(
-                                    as->m_v)->m_v;
-                            if (ASR::is_a<ASR::Variable_t>(
-                                    *base_sym)) {
-                                ASR::ttype_t *bt =
-                                    ASR::down_cast<ASR::Variable_t>(
-                                        base_sym)->m_type;
-                                if (!ASRUtils::is_allocatable(bt) &&
-                                        !vla_workspace_names.count(
-                                            base)) {
-                                    ptr_to_local_alloc.insert(tgt);
+                            // Sections of pointer-to-local or
+                            // local-alloc arrays are thread-space.
+                            if (!vla_workspace_names.count(base) &&
+                                    (ptr_to_local_alloc.count(base) ||
+                                    local_alloc_arrays.count(base) ||
+                                    alloc_array_sizes.count(base) ||
+                                    alloc_array_size_exprs.count(
+                                        base))) {
+                                ptr_to_local_alloc.insert(tgt);
+                            } else {
+                                ASR::symbol_t *base_sym =
+                                    ASR::down_cast<ASR::Var_t>(
+                                        as->m_v)->m_v;
+                                if (ASR::is_a<ASR::Variable_t>(
+                                        *base_sym)) {
+                                    ASR::ttype_t *bt =
+                                        ASR::down_cast<
+                                            ASR::Variable_t>(
+                                                base_sym)->m_type;
+                                    if (prescan_local_allocs.count(
+                                                base) ||
+                                            (!ASRUtils::is_allocatable(
+                                                bt) &&
+                                            !vla_workspace_names
+                                                .count(base))) {
+                                        ptr_to_local_alloc.insert(
+                                            tgt);
+                                    }
                                 }
                             }
                         }
@@ -1048,6 +1165,78 @@ public:
             }
         } else {
             src << "/* unknown array size */";
+        }
+    }
+
+    // Emit array size arguments for a function call. For
+    // DescriptorArray formal parameters with null dimension lengths,
+    // emits per-dimension sizes; otherwise emits a single total size.
+    void emit_array_size_args_for_call(ASR::expr_t *actual_arg,
+            ASR::Function_t *fn, size_t arg_idx) {
+        if (fn && arg_idx < fn->n_args) {
+            ASR::Variable_t *farg = ASR::down_cast<ASR::Variable_t>(
+                ASR::down_cast<ASR::Var_t>(fn->m_args[arg_idx])->m_v);
+            ASR::ttype_t *ftype = farg->m_type;
+            if (ASR::is_a<ASR::Array_t>(*ftype)) {
+                ASR::Array_t *farr = ASR::down_cast<ASR::Array_t>(ftype);
+                if (farr->m_physical_type
+                        == ASR::array_physical_typeType::DescriptorArray) {
+                    bool has_null = false;
+                    for (size_t d = 0; d < farr->n_dims; d++) {
+                        if (!farr->m_dims[d].m_length) {
+                            has_null = true;
+                            break;
+                        }
+                    }
+                    if (has_null) {
+                        emit_per_dim_sizes_for_call(actual_arg, farr);
+                        return;
+                    }
+                }
+            }
+        }
+        emit_array_size_expr(actual_arg);
+    }
+
+    // Emit per-dimension size arguments at a call site for a
+    // DescriptorArray formal parameter with null dimension lengths.
+    void emit_per_dim_sizes_for_call(ASR::expr_t *actual_arg,
+            ASR::Array_t *formal_arr) {
+        // Unwrap ArrayPhysicalCast
+        if (ASR::is_a<ASR::ArrayPhysicalCast_t>(*actual_arg)) {
+            actual_arg = ASR::down_cast<ASR::ArrayPhysicalCast_t>(
+                actual_arg)->m_arg;
+        }
+        ASR::ttype_t *atype = ASRUtils::expr_type(actual_arg);
+        ASR::ttype_t *inner = ASRUtils::type_get_past_allocatable(atype);
+        bool first_dim = true;
+        if (ASR::is_a<ASR::Array_t>(*inner)) {
+            ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(inner);
+            // Emit each dimension's length
+            for (size_t d = 0; d < formal_arr->n_dims; d++) {
+                if (!first_dim) src << ", ";
+                first_dim = false;
+                if (d < arr->n_dims && arr->m_dims[d].m_length) {
+                    visit_expr(arr->m_dims[d].m_length);
+                } else if (ASR::is_a<ASR::Var_t>(*actual_arg)) {
+                    // Assumed-shape: use __size_var_dimN from kernel
+                    std::string vname = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(actual_arg)->m_v);
+                    auto dit = func_array_size_params.find(
+                        vname + "__dim" + std::to_string(d + 1));
+                    if (dit != func_array_size_params.end()) {
+                        src << dit->second;
+                    } else {
+                        src << "__size_" << vname << "_dim"
+                            << (d + 1);
+                    }
+                } else {
+                    src << "0";
+                }
+            }
+        } else {
+            // Fallback: single total size
+            emit_array_size_expr(actual_arg);
         }
     }
 
@@ -1599,9 +1788,47 @@ public:
                 }
                 src << addr_space << " "
                     << elem_type << "* " << arg->m_name;
-                std::string size_name = std::string("__size_") + arg->m_name;
-                src << ", int " << size_name;
-                func_array_size_params[std::string(arg->m_name)] = size_name;
+                // For DescriptorArray (assumed-shape) params with null
+                // dimension lengths, emit per-dimension size params so
+                // that emit_array_section_pointer and
+                // emit_linearized_index can resolve strides.
+                bool desc_per_dim = false;
+                if (arr->m_physical_type
+                        == ASR::array_physical_typeType::DescriptorArray) {
+                    bool has_null = false;
+                    for (size_t d = 0; d < arr->n_dims; d++) {
+                        if (!arr->m_dims[d].m_length) {
+                            has_null = true;
+                            break;
+                        }
+                    }
+                    if (has_null && arr->n_dims > 0) {
+                        desc_per_dim = true;
+                        std::string aname(arg->m_name);
+                        for (size_t d = 0; d < arr->n_dims; d++) {
+                            std::string dim_name = "__size_" + aname
+                                + "_dim" + std::to_string(d + 1);
+                            src << ", int " << dim_name;
+                            func_array_size_params[aname + "__dim"
+                                + std::to_string(d + 1)] = dim_name;
+                        }
+                        // Register total size as the product
+                        std::string total = "__size_" + aname + "_dim1";
+                        for (size_t d = 1; d < arr->n_dims; d++) {
+                            total += " * __size_" + aname + "_dim"
+                                + std::to_string(d + 1);
+                        }
+                        func_array_size_params[aname] = "("
+                            + total + ")";
+                    }
+                }
+                if (!desc_per_dim) {
+                    std::string size_name = std::string("__size_")
+                        + arg->m_name;
+                    src << ", int " << size_name;
+                    func_array_size_params[std::string(arg->m_name)]
+                        = size_name;
+                }
                 if (use_thread) {
                     func_array_params.insert(std::string(arg->m_name));
                 }
@@ -1793,6 +2020,12 @@ public:
         local_alloc_arrays.clear();
         ptr_section_sizes.clear();
 
+        // Analyze blocks in the kernel body for VLAs (arrays with
+        // non-constant dimensions) using the shared GPU utility.
+        // This must happen before prescan_alloc_sizes so the prescan
+        // can identify VLA workspace variables.
+        current_vla_infos = analyze_gpu_vla_workspaces(x);
+
         // Pre-scan Allocate statements to determine sizes
         // for local allocatable array variables.
         prescan_alloc_sizes(x);
@@ -1894,9 +2127,7 @@ public:
             args.push_back({arg_name, type, is_array_type(type), is_st, sn});
         }
 
-        // Analyze blocks in the kernel body for VLAs (arrays with
-        // non-constant dimensions) using the shared GPU utility.
-        current_vla_infos = analyze_gpu_vla_workspaces(x);
+        // VLA workspace analysis already done above (before prescan)
 
         bool packed_mode = gpu_kernel_needs_buffer_packing(x);
 
@@ -2907,10 +3138,26 @@ public:
                             }
                         }
                         visit_expr(sc->m_args[i].m_value);
-                        if (is_array_type(arg_type)
-                                && !ASRUtils::is_allocatable(arg_type)) {
+                        // Only add size args when the formal param
+                        // is an array (not for allocatable out params
+                        // or scalar params of elemental functions).
+                        bool formal_is_array = false;
+                        if (fn && i < fn->n_args) {
+                            ASR::Variable_t *farg =
+                                ASR::down_cast<ASR::Variable_t>(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        fn->m_args[i])->m_v);
+                            formal_is_array =
+                                is_array_type(farg->m_type);
+                        } else {
+                            formal_is_array =
+                                is_array_type(arg_type)
+                                && !ASRUtils::is_allocatable(arg_type);
+                        }
+                        if (formal_is_array) {
                             src << ", ";
-                            emit_array_size_expr(sc->m_args[i].m_value);
+                            emit_array_size_args_for_call(
+                                sc->m_args[i].m_value, fn, i);
                         } else if (is_struct_type(arg_type)) {
                             emit_struct_member_args_interleaved(
                                 sc->m_args[i].m_value);
@@ -3327,10 +3574,34 @@ public:
                             if (!first_arg) src << ", ";
                             first_arg = false;
                             visit_expr(fc->m_args[i].m_value);
-                            if (is_array_type(arg_type)) {
+                            // Only add size/struct args when the
+                            // function's formal parameter actually
+                            // expects an array or struct. Elemental
+                            // functions have scalar params even when
+                            // called with array arguments.
+                            bool formal_is_array = false;
+                            bool formal_is_struct = false;
+                            if (fn && i < fn->n_args) {
+                                ASR::Variable_t *farg =
+                                    ASR::down_cast<ASR::Variable_t>(
+                                        ASR::down_cast<ASR::Var_t>(
+                                            fn->m_args[i])->m_v);
+                                formal_is_array =
+                                    is_array_type(farg->m_type);
+                                formal_is_struct =
+                                    is_struct_type(farg->m_type);
+                            } else {
+                                formal_is_array =
+                                    is_array_type(arg_type);
+                                formal_is_struct =
+                                    is_struct_type(arg_type);
+                            }
+                            if (formal_is_array) {
                                 src << ", ";
-                                emit_array_size_expr(fc->m_args[i].m_value);
-                            } else if (is_struct_type(arg_type)) {
+                                emit_array_size_args_for_call(
+                                    fc->m_args[i].m_value,
+                                    fn, i);
+                            } else if (formal_is_struct) {
                                 emit_struct_member_args_interleaved(
                                     fc->m_args[i].m_value);
                             }
