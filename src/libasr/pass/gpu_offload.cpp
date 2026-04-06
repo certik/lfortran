@@ -545,6 +545,9 @@ class GpuOffloadVisitor : public ASR::StatementWalkVisitor<GpuOffloadVisitor>
 public:
     PassOptions pass_options;
     ASR::TranslationUnit_t &tu;
+    // Scalar variables that receive the result of an inlined all()
+    // reduction. These need to be passed back from the GPU kernel.
+    std::set<std::string> all_reduction_targets;
 
     GpuOffloadVisitor(Allocator &al, PassOptions pass_options_,
                       ASR::TranslationUnit_t &tu_)
@@ -1281,6 +1284,17 @@ public:
                 new_body.push_back(al, ASRUtils::STMT(
                     ASR::make_Assignment_t(al, loc, asgn->m_target,
                         new_value, nullptr, false, false)));
+                // Track non-array scalar targets as reduction liveouts
+                if (ASR::is_a<ASR::Var_t>(*asgn->m_target)) {
+                    ASR::ttype_t *tgt_type =
+                        ASRUtils::expr_type(asgn->m_target);
+                    if (!ASRUtils::is_array(tgt_type)) {
+                        all_reduction_targets.insert(
+                            ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    asgn->m_target)->m_v));
+                    }
+                }
             } else {
                 new_body.push_back(al, stmt);
             }
@@ -3929,6 +3943,7 @@ public:
         }
 
         // Inline IntrinsicArrayFunction All before kernel extraction
+        all_reduction_targets.clear();
         inline_intrinsic_all(const_cast<ASR::DoConcurrentLoop_t&>(x));
 
         // Inline IntrinsicArrayFunction MatMul before kernel extraction
@@ -4271,17 +4286,18 @@ public:
         }
 
         // Identify which symbols are local temporaries (assigned scalar, non-array)
-        // vs kernel parameters (arrays or read-only scalars)
+        // vs kernel parameters (arrays or read-only scalars).
+        // Assigned scalars are kernel-local unless they are reduction
+        // targets from inlined all() — those need to be communicated back
+        // to the host via 1-element array device buffers.
         std::set<std::string> local_scalar_names;
         for (auto &name : assigned_vars) {
             if (loop_var_set.count(name)) continue;
+            if (all_reduction_targets.count(name)) continue;
             auto it = involved_syms.find(name);
             if (it != involved_syms.end()) {
                 ASR::ttype_t *type = it->second.first;
                 if (!ASRUtils::is_array(type)) {
-                    // Check if this variable is used as an array argument too
-                    // (e.g., a scalar that's also passed). For simplicity, only
-                    // treat as local if it's a simple scalar temp.
                     local_scalar_names.insert(name);
                 }
             }
@@ -4290,6 +4306,74 @@ public:
         // Remove local scalars from involved_syms (they become kernel locals)
         for (auto &name : local_scalar_names) {
             involved_syms.erase(name);
+        }
+
+        // Wrap liveout scalars (assigned user variables still in
+        // involved_syms) in 1-element FixedSizeArrays so they can be
+        // passed as writable device buffers and read back after the kernel.
+        struct LiveoutScalarInfo {
+            std::string orig_name;
+            std::string buf_name;
+            ASR::symbol_t *host_buf_sym;
+            ASR::symbol_t *orig_scalar_sym;
+            ASR::ttype_t *scalar_type;
+        };
+        std::vector<LiveoutScalarInfo> liveout_scalars;
+        {
+            ASR::ttype_t *int4_type = ASRUtils::TYPE(
+                ASR::make_Integer_t(al, loc, 4));
+            std::vector<std::string> liveout_names;
+            for (auto &name : assigned_vars) {
+                if (loop_var_set.count(name)) continue;
+                if (local_scalar_names.count(name)) continue;
+                auto it = involved_syms.find(name);
+                if (it != involved_syms.end()) {
+                    ASR::ttype_t *type = it->second.first;
+                    if (!ASRUtils::is_array(type)) {
+                        liveout_names.push_back(name);
+                    }
+                }
+            }
+            for (auto &name : liveout_names) {
+                auto it = involved_syms.find(name);
+                ASR::ttype_t *scalar_type = it->second.first;
+                ASR::symbol_t *orig_sym = current_scope->resolve_symbol(name);
+
+                ASR::dimension_t dim;
+                dim.loc = loc;
+                dim.m_start = ASRUtils::EXPR(
+                    ASR::make_IntegerConstant_t(al, loc, 1, int4_type,
+                        ASR::integerbozType::Decimal));
+                dim.m_length = ASRUtils::EXPR(
+                    ASR::make_IntegerConstant_t(al, loc, 1, int4_type,
+                        ASR::integerbozType::Decimal));
+                Vec<ASR::dimension_t> dims_vec;
+                dims_vec.reserve(al, 1);
+                dims_vec.push_back(al, dim);
+                ASR::ttype_t *arr_type = ASRUtils::TYPE(
+                    ASR::make_Array_t(al, loc,
+                        ASRUtils::duplicate_type(al, scalar_type),
+                        dims_vec.p, 1,
+                        ASR::array_physical_typeType::FixedSizeArray));
+
+                std::string buf_name = current_scope->get_unique_name(
+                    "__gpu_buf_" + name);
+                ASR::symbol_t *buf_sym = ASR::down_cast<ASR::symbol_t>(
+                    ASRUtils::make_Variable_t_util(al, loc, current_scope,
+                        s2c(al, buf_name), nullptr, 0,
+                        ASR::intentType::Local, nullptr, nullptr,
+                        ASR::storage_typeType::Default,
+                        ASRUtils::duplicate_type(al, arr_type),
+                        nullptr, ASR::abiType::Source,
+                        ASR::accessType::Public,
+                        ASR::presenceType::Required, false));
+                current_scope->add_symbol(buf_name, buf_sym);
+
+                it->second.first = arr_type;
+
+                liveout_scalars.push_back(
+                    {name, buf_name, buf_sym, orig_sym, scalar_type});
+            }
         }
 
         // Decompose struct variables with allocatable array members.
@@ -4398,7 +4482,21 @@ public:
 
             ASR::call_arg_t carg;
             carg.loc = loc;
-            carg.m_value = ASRUtils::EXPR(ASR::make_Var_t(al, loc, orig_sym));
+            // For liveout scalars, use the host-side 1-element array
+            // buffer as the call arg so it's passed as a device buffer
+            bool is_liveout = false;
+            for (auto &ls : liveout_scalars) {
+                if (ls.orig_name == sym_name) {
+                    carg.m_value = ASRUtils::EXPR(
+                        ASR::make_Var_t(al, loc, ls.host_buf_sym));
+                    is_liveout = true;
+                    break;
+                }
+            }
+            if (!is_liveout) {
+                carg.m_value = ASRUtils::EXPR(
+                    ASR::make_Var_t(al, loc, orig_sym));
+            }
             call_args.push_back(al, carg);
         }
 
@@ -6398,9 +6496,38 @@ public:
         }
 
         // 7. Replace DoConcurrentLoop with GpuKernelLaunch + GpuSync
-        pass_result.reserve(al, pre_launch_stmts.n + 2);
+        // Account for liveout scalar copies: one pre-launch + one post-sync each
+        pass_result.reserve(al,
+            pre_launch_stmts.n + liveout_scalars.size() + 2 + liveout_scalars.size());
         for (size_t pi = 0; pi < pre_launch_stmts.n; pi++) {
             pass_result.push_back(al, pre_launch_stmts.p[pi]);
+        }
+
+        // Copy liveout scalars into their 1-element array buffers
+        // before the kernel launch so the buffer has the initial value
+        for (auto &ls : liveout_scalars) {
+            ASR::expr_t *buf_var = ASRUtils::EXPR(
+                ASR::make_Var_t(al, loc, ls.host_buf_sym));
+            ASR::expr_t *scalar_var = ASRUtils::EXPR(
+                ASR::make_Var_t(al, loc, ls.orig_scalar_sym));
+            ASR::expr_t *idx_one = ASRUtils::EXPR(
+                ASR::make_IntegerConstant_t(al, loc, 1, int_type,
+                    ASR::integerbozType::Decimal));
+            Vec<ASR::array_index_t> ai_args;
+            ai_args.reserve(al, 1);
+            ASR::array_index_t ai;
+            ai.loc = loc;
+            ai.m_left = nullptr;
+            ai.m_right = idx_one;
+            ai.m_step = nullptr;
+            ai_args.push_back(al, ai);
+            ASR::expr_t *buf_item = ASRUtils::EXPR(
+                ASR::make_ArrayItem_t(al, loc, buf_var,
+                    ai_args.p, 1, ls.scalar_type,
+                    ASR::arraystorageType::ColMajor, nullptr));
+            pass_result.push_back(al, ASRUtils::STMT(
+                ASR::make_Assignment_t(al, loc, buf_item, scalar_var,
+                    nullptr, false, false)));
         }
 
         ASR::expr_t *block_size_const = ASRUtils::EXPR(
@@ -6447,6 +6574,33 @@ public:
 
         pass_result.push_back(al, ASRUtils::STMT(
             ASR::make_GpuSync_t(al, loc)));
+
+        // Copy liveout scalar results back from the 1-element array
+        // buffers after the kernel has completed
+        for (auto &ls : liveout_scalars) {
+            ASR::expr_t *buf_var = ASRUtils::EXPR(
+                ASR::make_Var_t(al, loc, ls.host_buf_sym));
+            ASR::expr_t *scalar_var = ASRUtils::EXPR(
+                ASR::make_Var_t(al, loc, ls.orig_scalar_sym));
+            ASR::expr_t *idx_one = ASRUtils::EXPR(
+                ASR::make_IntegerConstant_t(al, loc, 1, int_type,
+                    ASR::integerbozType::Decimal));
+            Vec<ASR::array_index_t> ai_args;
+            ai_args.reserve(al, 1);
+            ASR::array_index_t ai;
+            ai.loc = loc;
+            ai.m_left = nullptr;
+            ai.m_right = idx_one;
+            ai.m_step = nullptr;
+            ai_args.push_back(al, ai);
+            ASR::expr_t *buf_item = ASRUtils::EXPR(
+                ASR::make_ArrayItem_t(al, loc, buf_var,
+                    ai_args.p, 1, ls.scalar_type,
+                    ASR::arraystorageType::ColMajor, nullptr));
+            pass_result.push_back(al, ASRUtils::STMT(
+                ASR::make_Assignment_t(al, loc, scalar_var, buf_item,
+                    nullptr, false, false)));
+        }
     }
 };
 
