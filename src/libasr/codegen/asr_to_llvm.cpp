@@ -12024,6 +12024,65 @@ public:
         in_block_context = true;
         declare_vars(*associate_block);
         in_block_context = false;
+
+        // For expression-valued associates (e.g., nv => v * 2.0),
+        // the variable is Pointer-typed but declare_vars only
+        // null-initializes it.  Allocate backing storage so the
+        // body assignment can store through the pointer.
+        // Simple associations (e.g., v => tensor%v) appear as
+        // Associate nodes in the body and set the pointer correctly;
+        // those are skipped.
+        {
+            // Collect variables that are targets of Associate nodes
+            // (simple associations that will be set up correctly).
+            std::set<uint32_t> simple_assoc_vars;
+            for (size_t i = 0; i < associate_block->n_body; i++) {
+                if (!ASR::is_a<ASR::Associate_t>(
+                        *associate_block->m_body[i]))
+                    continue;
+                ASR::Associate_t *assoc = ASR::down_cast<
+                    ASR::Associate_t>(associate_block->m_body[i]);
+                if (!ASR::is_a<ASR::Var_t>(*assoc->m_target)) continue;
+                ASR::symbol_t *sym = ASR::down_cast<ASR::Var_t>(
+                    assoc->m_target)->m_v;
+                simple_assoc_vars.insert(
+                    get_hash((ASR::asr_t*)ASRUtils::symbol_get_past_external(sym)));
+            }
+            // Allocate backing storage for Pointer-typed variables
+            // NOT covered by Associate nodes (expression associates).
+            for (auto &item : associate_block->m_symtab->get_scope()) {
+                if (!ASR::is_a<ASR::Variable_t>(*item.second)) continue;
+                ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(
+                    item.second);
+                if (!ASR::is_a<ASR::Pointer_t>(*v->m_type)) continue;
+                if (ASRUtils::is_array(ASR::down_cast<ASR::Pointer_t>(
+                        v->m_type)->m_type)) continue;
+                uint32_t h = get_hash((ASR::asr_t*)v);
+                if (simple_assoc_vars.count(h)) continue;
+                if (llvm_symtab.find(h) == llvm_symtab.end()) continue;
+                llvm::Value *ptr_var = llvm_symtab[h];
+                llvm::AllocaInst *alloca_inst =
+                    llvm::dyn_cast<llvm::AllocaInst>(ptr_var);
+                if (!alloca_inst) continue;
+                llvm::Type *ptr_type = alloca_inst->getAllocatedType();
+                if (!ptr_type->isPointerTy()) continue;
+#if LLVM_VERSION_MAJOR >= 17
+                ASR::ttype_t *pointee_type =
+                    ASR::down_cast<ASR::Pointer_t>(v->m_type)->m_type;
+                llvm::Type *elem_type =
+                    llvm_utils->get_type_from_ttype_t_util(
+                        nullptr, pointee_type, module.get());
+#else
+                llvm::Type *elem_type =
+                    ptr_type->getPointerElementType();
+#endif
+                llvm::Value *backing = builder->CreateAlloca(
+                    elem_type, nullptr,
+                    std::string(v->m_name) + ".tmp");
+                builder->CreateStore(backing, ptr_var);
+            }
+        }
+
         for (size_t i = 0; i < associate_block->n_body; i++) {
             this->visit_stmt(*(associate_block->m_body[i]));
         }
