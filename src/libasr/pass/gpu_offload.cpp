@@ -642,9 +642,11 @@ public:
     // Recursively remap ExternalSymbol targets and Variable
     // m_type_declarations inside `scope` (and all nested child scopes)
     // so they reference the kernel-scope struct copies instead of the
-    // original module definitions.
+    // original module definitions.  Also redirect ExternalSymbols that
+    // point to functions already duplicated into the kernel scope.
     void fixup_struct_refs_in_scope(SymbolTable *scope,
-            SymbolTable *kernel_scope) {
+            SymbolTable *kernel_scope,
+            char *kernel_fn_name = nullptr) {
         for (auto &item : scope->get_scope()) {
             if (ASR::is_a<ASR::ExternalSymbol_t>(*item.second)) {
                 ASR::ExternalSymbol_t *es =
@@ -669,7 +671,31 @@ public:
                                 ASR::down_cast<ASR::Struct_t>(ks)
                                     ->m_symtab->get_symbol(
                                         es->m_original_name);
-                            if (nt) es->m_external = nt;
+                            if (nt) {
+                                es->m_external = nt;
+                                // The member now lives in the kernel's
+                                // struct copy; update m_module_name to
+                                // the struct name (the verifier checks
+                                // that it matches the containing scope).
+                                es->m_module_name = ASR::down_cast<
+                                    ASR::Struct_t>(ks)->m_name;
+                            }
+                        }
+                    }
+                }
+                // If the ExternalSymbol references a function that has
+                // been duplicated into the kernel scope, redirect to the
+                // kernel-scope copy so that Call_t_body checks use the
+                // fixed-up formal parameter types.
+                if (ASR::is_a<ASR::Function_t>(*target)) {
+                    std::string fn =
+                        ASRUtils::symbol_name(target);
+                    ASR::symbol_t *ks =
+                        kernel_scope->get_symbol(fn);
+                    if (ks && ASR::is_a<ASR::Function_t>(*ks)) {
+                        es->m_external = ks;
+                        if (kernel_fn_name) {
+                            es->m_module_name = kernel_fn_name;
                         }
                     }
                 }
@@ -703,7 +729,8 @@ public:
                     item.second)->m_symtab;
             }
             if (nested) {
-                fixup_struct_refs_in_scope(nested, kernel_scope);
+                fixup_struct_refs_in_scope(nested, kernel_scope,
+                    kernel_fn_name);
             }
         }
     }
@@ -5170,7 +5197,8 @@ public:
                             fixup_struct_refs_in_scope(
                                 ASR::down_cast<ASR::Function_t>(dup)
                                     ->m_symtab,
-                                kernel_scope);
+                                kernel_scope,
+                                s2c(al, kernel_name));
                         }
                     }
                 } else if (ASR::is_a<ASR::ExternalSymbol_t>(*func_sym) &&
@@ -5534,7 +5562,7 @@ public:
                 ASR::Function_t *dfunc = ASR::down_cast<ASR::Function_t>(
                     item.second);
                 fixup_struct_refs_in_scope(dfunc->m_symtab,
-                    kernel_scope);
+                    kernel_scope, s2c(al, kernel_name));
             }
         }
 

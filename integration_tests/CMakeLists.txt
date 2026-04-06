@@ -4316,3 +4316,4 @@ RUN(NAME gpu_metal_161 LABELS gfortran llvm metal EXTRAFILES gpu_metal_161_mod.f
 RUN(NAME gpu_metal_162 LABELS gfortran llvm metal)
 RUN(NAME gpu_metal_163 LABELS gfortran llvm metal)
 RUN(NAME gpu_metal_164 LABELS gfortran llvm metal)
+RUN(NAME gpu_metal_165 LABELS gfortran metal)
