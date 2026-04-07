@@ -858,6 +858,28 @@ inline std::vector<GpuVlaWorkspace> analyze_gpu_vla_workspaces(
 // array to a struct array member.  Returns a map from
 // "struct_name.member_name" to the per-element size (number of elements)
 // determined by the VLA workspace dimensions.
+// Helper: compute compile-time size of a FixedSizeArray type.
+// Returns 0 if the type is not a FixedSizeArray or has non-constant dims.
+inline int64_t get_fixed_size_array_size(ASR::ttype_t *t) {
+    ASR::ttype_t *past = ASRUtils::type_get_past_allocatable(t);
+    if (!ASR::is_a<ASR::Array_t>(*past)) return 0;
+    ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(past);
+    if (arr->m_physical_type != ASR::array_physical_typeType::FixedSizeArray)
+        return 0;
+    int64_t sz = 1;
+    for (size_t d = 0; d < arr->n_dims; d++) {
+        if (arr->m_dims[d].m_length &&
+                ASR::is_a<ASR::IntegerConstant_t>(
+                    *arr->m_dims[d].m_length)) {
+            sz *= ASR::down_cast<ASR::IntegerConstant_t>(
+                arr->m_dims[d].m_length)->m_n;
+        } else {
+            return 0;
+        }
+    }
+    return sz;
+}
+
 inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
         const ASR::GpuKernelFunction_t &kernel,
         const std::vector<GpuVlaWorkspace> &vla_workspaces) {
@@ -866,6 +888,12 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
     for (auto &ws : vla_workspaces) {
         ws_by_name[ws.var_name] = &ws;
     }
+    // Track known member sizes for local struct variables so that
+    // sizes can propagate through chains of function calls
+    // (e.g., inner writes to temp%vals, outer copies temp to res(i)).
+    // Key: "local_var.member", Value: compile-time element count.
+    std::map<std::string, int64_t> local_struct_sizes;
+
     for (size_t si = 0; si < kernel.n_body; si++) {
         ASR::stmt_t *stmt = kernel.m_body[si];
         if (stmt->type == ASR::stmtType::Assignment) {
@@ -917,7 +945,75 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
             if (!ASR::is_a<ASR::Function_t>(*fn_sym)) continue;
             ASR::Function_t *fn =
                 ASR::down_cast<ASR::Function_t>(fn_sym);
-            // Find which actual args are struct array elements
+
+            // Phase 1: Track sizes written to local struct vars
+            // through function calls (e.g., inner(x(i), temp) where
+            // inner body does obj%vals = [x]).
+            for (size_t ai = 0; ai < sc->n_args; ai++) {
+                if (!sc->m_args[ai].m_value) continue;
+                if (!ASR::is_a<ASR::Var_t>(
+                        *sc->m_args[ai].m_value)) continue;
+                ASR::ttype_t *act_type =
+                    ASRUtils::expr_type(sc->m_args[ai].m_value);
+                if (!ASR::is_a<ASR::StructType_t>(
+                        *ASRUtils::extract_type(act_type)))
+                    continue;
+                std::string local_name = ASRUtils::symbol_name(
+                    ASR::down_cast<ASR::Var_t>(
+                        sc->m_args[ai].m_value)->m_v);
+                if (ai >= fn->n_args) continue;
+                ASR::Variable_t *formal =
+                    ASR::down_cast<ASR::Variable_t>(
+                        ASR::down_cast<ASR::Var_t>(
+                            fn->m_args[ai])->m_v);
+                if (formal->m_intent != ASR::intentType::Out
+                        && formal->m_intent
+                            != ASR::intentType::InOut)
+                    continue;
+                std::string formal_name(formal->m_name);
+                // Scan function body for formal%member = rhs
+                for (size_t fi = 0; fi < fn->n_body; fi++) {
+                    if (fn->m_body[fi]->type !=
+                            ASR::stmtType::Assignment) continue;
+                    ASR::Assignment_t *fa =
+                        ASR::down_cast<ASR::Assignment_t>(
+                            fn->m_body[fi]);
+                    if (!ASR::is_a<ASR::StructInstanceMember_t>(
+                            *fa->m_target)) continue;
+                    ASR::StructInstanceMember_t *fsm =
+                        ASR::down_cast<ASR::StructInstanceMember_t>(
+                            fa->m_target);
+                    if (!ASR::is_a<ASR::Var_t>(*fsm->m_v)) continue;
+                    std::string tgt_name = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(
+                            fsm->m_v)->m_v);
+                    if (tgt_name != formal_name) continue;
+                    std::string mem_name = ASRUtils::symbol_name(
+                        ASRUtils::symbol_get_past_external(
+                            fsm->m_m));
+                    std::string lkey =
+                        local_name + "." + mem_name;
+                    if (local_struct_sizes.count(lkey)) continue;
+                    // Check if RHS is a local var with
+                    // FixedSizeArray type
+                    if (ASR::is_a<ASR::Var_t>(*fa->m_value)) {
+                        ASR::Variable_t *rhs_var =
+                            ASR::down_cast<ASR::Variable_t>(
+                                ASRUtils::symbol_get_past_external(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        fa->m_value)->m_v));
+                        int64_t fsz =
+                            get_fixed_size_array_size(
+                                rhs_var->m_type);
+                        if (fsz > 0) {
+                            local_struct_sizes[lkey] = fsz;
+                        }
+                    }
+                }
+            }
+
+            // Phase 2: Find struct array elements (ArrayItem) and
+            // trace writes through function bodies.
             for (size_t ai = 0; ai < sc->n_args; ai++) {
                 if (!sc->m_args[ai].m_value) continue;
                 if (!ASR::is_a<ASR::ArrayItem_t>(
@@ -948,92 +1044,162 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                     ASR::Assignment_t *fa =
                         ASR::down_cast<ASR::Assignment_t>(
                             fn->m_body[fi]);
-                    if (!ASR::is_a<ASR::StructInstanceMember_t>(
-                            *fa->m_target)) continue;
-                    ASR::StructInstanceMember_t *fsm =
-                        ASR::down_cast<ASR::StructInstanceMember_t>(
-                            fa->m_target);
-                    // Check target struct var matches the formal
-                    if (!ASR::is_a<ASR::Var_t>(*fsm->m_v)) continue;
-                    std::string tgt_name = ASRUtils::symbol_name(
-                        ASR::down_cast<ASR::Var_t>(
-                            fsm->m_v)->m_v);
-                    if (tgt_name != formal_name) continue;
-                    std::string mem_name = ASRUtils::symbol_name(
-                        ASRUtils::symbol_get_past_external(
-                            fsm->m_m));
-                    std::string key = arr_name + "." + mem_name;
-                    if (result.count(key)) continue;
-                    // RHS is a Var — find its size from the actual
-                    // argument at the call site
-                    if (!ASR::is_a<ASR::Var_t>(*fa->m_value))
-                        continue;
-                    std::string rhs_name = ASRUtils::symbol_name(
-                        ASR::down_cast<ASR::Var_t>(
-                            fa->m_value)->m_v);
-                    // Find which formal param index this is
-                    for (size_t pi = 0; pi < fn->n_args; pi++) {
-                        ASR::Variable_t *fp =
-                            ASR::down_cast<ASR::Variable_t>(
-                                ASR::down_cast<ASR::Var_t>(
-                                    fn->m_args[pi])->m_v);
-                        if (std::string(fp->m_name) != rhs_name)
+                    if (ASR::is_a<ASR::StructInstanceMember_t>(
+                            *fa->m_target)) {
+                        ASR::StructInstanceMember_t *fsm =
+                            ASR::down_cast<
+                                ASR::StructInstanceMember_t>(
+                                    fa->m_target);
+                        // Check target struct var matches the formal
+                        if (!ASR::is_a<ASR::Var_t>(*fsm->m_v))
                             continue;
-                        if (pi >= sc->n_args) break;
-                        // Get the actual arg's size
-                        ASR::expr_t *actual =
-                            sc->m_args[pi].m_value;
-                        if (!actual) break;
-                        ASR::ttype_t *at =
-                            ASRUtils::expr_type(actual);
-                        ASR::ttype_t *past =
-                            ASRUtils::type_get_past_allocatable(at);
-                        if (!ASR::is_a<ASR::Array_t>(*past)) break;
-                        ASR::Array_t *arr =
-                            ASR::down_cast<ASR::Array_t>(past);
-                        int64_t sz = 1;
-                        bool all_c = true;
-                        for (size_t d = 0; d < arr->n_dims; d++) {
-                            if (arr->m_dims[d].m_length &&
-                                    ASR::is_a<ASR::IntegerConstant_t>(
-                                        *arr->m_dims[d].m_length)) {
-                                sz *= ASR::down_cast<
-                                    ASR::IntegerConstant_t>(
-                                    arr->m_dims[d].m_length)->m_n;
-                            } else {
-                                all_c = false;
-                                break;
-                            }
-                        }
-                        if (all_c && sz > 0) {
-                            result[key] = sz;
-                        } else if (!all_c &&
-                                ASR::is_a<ASR::Var_t>(*actual)) {
-                            std::string act_name =
-                                ASRUtils::symbol_name(
+                        std::string tgt_name =
+                            ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    fsm->m_v)->m_v);
+                        if (tgt_name != formal_name) continue;
+                        std::string mem_name =
+                            ASRUtils::symbol_name(
+                                ASRUtils::symbol_get_past_external(
+                                    fsm->m_m));
+                        std::string key =
+                            arr_name + "." + mem_name;
+                        if (result.count(key)) continue;
+                        // RHS is a Var — find its size from the
+                        // actual argument at the call site
+                        if (!ASR::is_a<ASR::Var_t>(*fa->m_value))
+                            continue;
+                        std::string rhs_name =
+                            ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    fa->m_value)->m_v);
+                        // Find which formal param index this is
+                        for (size_t pi = 0;
+                                pi < fn->n_args; pi++) {
+                            ASR::Variable_t *fp =
+                                ASR::down_cast<ASR::Variable_t>(
                                     ASR::down_cast<ASR::Var_t>(
-                                        actual)->m_v);
-                            auto ws_it2 =
-                                ws_by_name.find(act_name);
-                            if (ws_it2 != ws_by_name.end()) {
-                                int64_t ws_sz = 1;
-                                bool ws_all_c = true;
-                                for (auto &dim :
-                                        ws_it2->second->dims) {
-                                    if (dim.is_constant) {
-                                        ws_sz *=
-                                            dim.constant_value;
-                                    } else {
-                                        ws_all_c = false;
-                                        break;
+                                        fn->m_args[pi])->m_v);
+                            if (std::string(fp->m_name) != rhs_name)
+                                continue;
+                            if (pi >= sc->n_args) break;
+                            // Get the actual arg's size
+                            ASR::expr_t *actual =
+                                sc->m_args[pi].m_value;
+                            if (!actual) break;
+                            ASR::ttype_t *at =
+                                ASRUtils::expr_type(actual);
+                            ASR::ttype_t *past =
+                                ASRUtils::type_get_past_allocatable(
+                                    at);
+                            if (!ASR::is_a<ASR::Array_t>(*past))
+                                break;
+                            ASR::Array_t *arr =
+                                ASR::down_cast<ASR::Array_t>(past);
+                            int64_t sz = 1;
+                            bool all_c = true;
+                            for (size_t d = 0;
+                                    d < arr->n_dims; d++) {
+                                if (arr->m_dims[d].m_length &&
+                                        ASR::is_a<
+                                            ASR::IntegerConstant_t>(
+                                            *arr->m_dims[d]
+                                                .m_length)) {
+                                    sz *= ASR::down_cast<
+                                        ASR::IntegerConstant_t>(
+                                        arr->m_dims[d]
+                                            .m_length)->m_n;
+                                } else {
+                                    all_c = false;
+                                    break;
+                                }
+                            }
+                            if (all_c && sz > 0) {
+                                result[key] = sz;
+                            } else if (!all_c &&
+                                    ASR::is_a<ASR::Var_t>(
+                                        *actual)) {
+                                std::string act_name =
+                                    ASRUtils::symbol_name(
+                                        ASR::down_cast<ASR::Var_t>(
+                                            actual)->m_v);
+                                auto ws_it2 =
+                                    ws_by_name.find(act_name);
+                                if (ws_it2 != ws_by_name.end()) {
+                                    int64_t ws_sz = 1;
+                                    bool ws_all_c = true;
+                                    for (auto &dim :
+                                            ws_it2->second->dims) {
+                                        if (dim.is_constant) {
+                                            ws_sz *=
+                                                dim.constant_value;
+                                        } else {
+                                            ws_all_c = false;
+                                            break;
+                                        }
+                                    }
+                                    if (ws_all_c && ws_sz > 0) {
+                                        result[key] = ws_sz;
                                     }
                                 }
-                                if (ws_all_c && ws_sz > 0) {
-                                    result[key] = ws_sz;
+                            }
+                            break;
+                        }
+                    } else if (ASR::is_a<ASR::Var_t>(
+                            *fa->m_target)) {
+                        // Full struct assignment: out_formal =
+                        // in_formal. Propagate member sizes from
+                        // the source struct (which may be a local
+                        // var with known member sizes).
+                        std::string tgt_name =
+                            ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    fa->m_target)->m_v);
+                        if (tgt_name != formal_name) continue;
+                        if (!ASR::is_a<ASR::Var_t>(*fa->m_value))
+                            continue;
+                        std::string src_name =
+                            ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    fa->m_value)->m_v);
+                        // Find the actual arg for the source
+                        for (size_t pi = 0;
+                                pi < fn->n_args; pi++) {
+                            ASR::Variable_t *fp =
+                                ASR::down_cast<ASR::Variable_t>(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        fn->m_args[pi])->m_v);
+                            if (std::string(fp->m_name) != src_name)
+                                continue;
+                            if (pi >= sc->n_args) break;
+                            ASR::expr_t *actual =
+                                sc->m_args[pi].m_value;
+                            if (!actual) break;
+                            // Source is a local struct var: look
+                            // up its member sizes
+                            if (ASR::is_a<ASR::Var_t>(*actual)) {
+                                std::string act_name =
+                                    ASRUtils::symbol_name(
+                                        ASR::down_cast<ASR::Var_t>(
+                                            actual)->m_v);
+                                for (auto &ls :
+                                        local_struct_sizes) {
+                                    if (ls.first.compare(
+                                            0, act_name.size() + 1,
+                                            act_name + ".") == 0) {
+                                        std::string mem =
+                                            ls.first.substr(
+                                                act_name.size() + 1);
+                                        std::string key =
+                                            arr_name + "." + mem;
+                                        if (!result.count(key)) {
+                                            result[key] = ls.second;
+                                        }
+                                    }
                                 }
                             }
+                            break;
                         }
-                        break;
                     }
                 }
             }
