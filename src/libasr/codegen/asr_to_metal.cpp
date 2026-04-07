@@ -57,6 +57,41 @@ public:
     }
 };
 
+// Returns true if `name` is a lowered intrinsic whose FunctionCall is
+// intercepted by the Metal codegen and replaced with a native Metal
+// equivalent.  These must NOT be emitted as device helper functions
+// because their bodies call _lfortran_* runtime symbols unavailable on GPU.
+inline bool is_metal_intercepted_intrinsic(const std::string &name) {
+    static const char *prefixes[] = {
+        "_lcompilers_real_",
+        "_lcompilers_dble_",
+        "_lcompilers_int_",
+        "_lcompilers_nint_",
+        "_lcompilers_sqrt_",
+        "_lcompilers_abs_",
+        "_lcompilers_sin_",
+        "_lcompilers_cos_",
+        "_lcompilers_exp_",
+        "_lcompilers_erf_",
+        "_lcompilers_erfc_",
+        "_lcompilers_mod_",
+        "_lcompilers_optimization_mod_",
+        "_lcompilers_min_",
+        "_lcompilers_min0_",
+        "_lcompilers_max_",
+        "_lcompilers_max0_",
+        "_lcompilers_merge_",
+    };
+    for (const char *p : prefixes) {
+        if (name.find(p) == 0) {
+            // _lcompilers_erfc_scaled_* is NOT intercepted
+            if (name.find("_lcompilers_erfc_scaled_") == 0) return false;
+            return true;
+        }
+    }
+    return false;
+}
+
 class ASRToMetalVisitor
 {
 public:
@@ -2491,6 +2526,7 @@ public:
                             if (kernel_funcs.count(callee)) continue;
                             if (emitted_funcs.count(callee)) continue;
                             if (new_funcs.count(callee)) continue;
+                            if (is_metal_intercepted_intrinsic(callee)) continue;
                             // Look up in parent scopes
                             SymbolTable *scope = x.m_symtab->parent;
                             while (scope) {
