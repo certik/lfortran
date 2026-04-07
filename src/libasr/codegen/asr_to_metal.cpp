@@ -195,6 +195,19 @@ public:
     // string as the index (e.g., a loop variable name).
     std::string array_elem_index_var;
 
+    // Address space for the current function overload being emitted.
+    // Set to "thread" or "device" by emit_function_def_impl; used by
+    // variable declaration code to match local pointer address spaces
+    // to the function's overload.
+    std::string current_func_addr_space = "device";
+
+    // True when the current function being emitted has only input
+    // array parameters (no Out/InOut). Set by emit_function_def_impl.
+    // Used by variable declaration code to determine whether local
+    // pointer-to-array variables should follow the function's address
+    // space overload.
+    bool current_func_all_input_arrays = false;
+
     ASRToMetalVisitor(CompilerOptions &co_) : indent_level(0), co(co_) {}
 
     // C++ keywords and alternative operator tokens are reserved identifiers
@@ -286,7 +299,11 @@ public:
                     src << get_indent() << "thread " << metal_type(arr->m_type)
                         << "* " << sanitize_metal_name(vname) << ";\n";
                 } else {
-                    src << get_indent() << "device " << metal_type(arr->m_type)
+                    std::string ptr_addr = (in_inline_function
+                        && current_func_all_input_arrays)
+                        ? current_func_addr_space : "device";
+                    src << get_indent() << ptr_addr << " "
+                        << metal_type(arr->m_type)
                         << "* " << sanitize_metal_name(vname) << ";\n";
                 }
                 return;
@@ -2065,12 +2082,44 @@ public:
     // Emit a Fortran function as a Metal inline function.
     // When out_addr_space is "thread", PointerArray Out params use thread.
     // When "device", they use device address space.
+    // Check if ALL array params in a function are input-only (In intent).
+    // For such functions (e.g., lowered intrinsics like _lcompilers_Sum_*),
+    // all array params can safely use variable address space.
+    bool func_all_arrays_input_only(ASR::Function_t *fn) {
+        bool has_array = false;
+        for (size_t i = 0; i < fn->n_args; i++) {
+            ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(
+                ASR::down_cast<ASR::Var_t>(fn->m_args[i])->m_v);
+            if (is_array_type(arg->m_type)) {
+                ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
+                    arg->m_type);
+                if (arr->m_physical_type
+                        == ASR::array_physical_typeType::PointerArray
+                    || arr->m_physical_type
+                        == ASR::array_physical_typeType::DescriptorArray) {
+                    has_array = true;
+                    if (arg->m_intent != ASR::intentType::In) {
+                        return false;
+                    }
+                }
+            } else if (ASRUtils::is_allocatable(arg->m_type)) {
+                if (arg->m_intent != ASR::intentType::In) {
+                    return false;
+                }
+            }
+        }
+        return has_array;
+    }
+
     void emit_function_def_impl(ASR::Function_t *fn,
             const std::string &metal_name,
             const std::string &out_addr_space) {
         func_array_size_params.clear();
         func_array_data_params.clear();
         func_array_params.clear();
+        current_func_addr_space = out_addr_space;
+        bool all_arrays_input_only = func_all_arrays_input_only(fn);
+        current_func_all_input_arrays = all_arrays_input_only;
         ASR::FunctionType_t *ftype = ASR::down_cast<ASR::FunctionType_t>(
             fn->m_function_signature);
         std::string ret_type = "void";
@@ -2158,16 +2207,23 @@ public:
                 ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(arg->m_type);
                 // FixedSizeArray and PointerArray out params (from
                 // subroutine_from_function) receive local thread-space
-                // temporaries; DescriptorArray params receive device
-                // buffer pointers from the kernel.
-                bool use_thread = (arr->m_physical_type
+                // temporaries.  For functions where ALL array params
+                // are input-only (e.g., lowered intrinsics like
+                // _lcompilers_Sum_*), PointerArray/DescriptorArray In
+                // params also use variable address space so both
+                // thread and device overloads are generated.
+                bool use_variable_addr = (arr->m_physical_type
                     == ASR::array_physical_typeType::FixedSizeArray)
                     || (arr->m_physical_type
                     == ASR::array_physical_typeType::PointerArray
                     && (arg->m_intent == ASR::intentType::Out
-                        || arg->m_intent == ASR::intentType::InOut));
-                std::string addr_space = use_thread ? out_addr_space
-                    : "device";
+                        || arg->m_intent == ASR::intentType::InOut
+                        || all_arrays_input_only))
+                    || (arr->m_physical_type
+                    == ASR::array_physical_typeType::DescriptorArray
+                    && all_arrays_input_only);
+                std::string addr_space = use_variable_addr
+                    ? out_addr_space : "device";
                 std::string elem_type;
                 if (is_struct_type(arr->m_type)) {
                     elem_type = get_struct_name(arg);
@@ -2217,7 +2273,12 @@ public:
                     func_array_size_params[std::string(arg->m_name)]
                         = size_name;
                 }
-                if (use_thread) {
+                if (arr->m_physical_type
+                        == ASR::array_physical_typeType::FixedSizeArray
+                    || (arr->m_physical_type
+                        == ASR::array_physical_typeType::PointerArray
+                        && (arg->m_intent == ASR::intentType::Out
+                            || arg->m_intent == ASR::intentType::InOut))) {
                     func_array_params.insert(std::string(arg->m_name));
                 }
             } else if (ASRUtils::is_allocatable(arg->m_type)) {
@@ -2283,6 +2344,7 @@ public:
             }
         }
         // Declare local variables (non-argument, non-return, non-parameter)
+        in_inline_function = true;
         {
             std::set<std::string> arg_names;
             for (size_t i = 0; i < fn->n_args; i++) {
@@ -2425,7 +2487,6 @@ public:
                 }
             }
         }
-        in_inline_function = true;
         for (size_t i = 0; i < fn->n_body; i++) {
             visit_stmt(fn->m_body[i]);
         }
@@ -2443,9 +2504,10 @@ public:
         func_array_params.clear();
     }
 
-    // Check if a function has any PointerArray Out/InOut parameter
-    // that needs an address space overload (both thread and device).
+    // Check if a function has any array parameter that needs an
+    // address space overload (both thread and device).
     bool func_needs_device_overload(ASR::Function_t *fn) {
+        bool all_input = func_all_arrays_input_only(fn);
         for (size_t i = 0; i < fn->n_args; i++) {
             ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(
                 ASR::down_cast<ASR::Var_t>(fn->m_args[i])->m_v);
@@ -2457,7 +2519,11 @@ public:
                     || (arr->m_physical_type
                         == ASR::array_physical_typeType::PointerArray
                         && (arg->m_intent == ASR::intentType::Out
-                            || arg->m_intent == ASR::intentType::InOut))) {
+                            || arg->m_intent == ASR::intentType::InOut
+                            || all_input))
+                    || (arr->m_physical_type
+                        == ASR::array_physical_typeType::DescriptorArray
+                        && all_input)) {
                     return true;
                 }
             } else if (ASRUtils::is_allocatable(arg->m_type)) {
