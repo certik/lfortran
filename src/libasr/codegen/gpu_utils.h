@@ -1027,6 +1027,116 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
     return result;
 }
 
+// Find struct member VLA writes whose size is determined at runtime from
+// another struct array member (e.g., b(i)%v = x where x comes from a(i)%v).
+// Returns a map from target "struct.member" key to source "struct.member" key.
+inline std::map<std::string, std::string> find_struct_member_vla_runtime_sources(
+        const ASR::GpuKernelFunction_t &kernel) {
+    std::map<std::string, std::string> result;
+    for (size_t si = 0; si < kernel.n_body; si++) {
+        ASR::stmt_t *stmt = kernel.m_body[si];
+        if (stmt->type != ASR::stmtType::SubroutineCall) continue;
+        ASR::SubroutineCall_t *sc =
+            ASR::down_cast<ASR::SubroutineCall_t>(stmt);
+        ASR::symbol_t *fn_sym =
+            ASRUtils::symbol_get_past_external(sc->m_name);
+        if (!ASR::is_a<ASR::Function_t>(*fn_sym)) continue;
+        ASR::Function_t *fn =
+            ASR::down_cast<ASR::Function_t>(fn_sym);
+        // Find which actual args are struct array elements (output)
+        for (size_t ai = 0; ai < sc->n_args; ai++) {
+            if (!sc->m_args[ai].m_value) continue;
+            if (!ASR::is_a<ASR::ArrayItem_t>(
+                    *sc->m_args[ai].m_value)) continue;
+            ASR::ArrayItem_t *arr_item =
+                ASR::down_cast<ASR::ArrayItem_t>(
+                    sc->m_args[ai].m_value);
+            ASR::ttype_t *elem_type = arr_item->m_type;
+            if (!ASR::is_a<ASR::StructType_t>(
+                    *ASRUtils::extract_type(elem_type)))
+                continue;
+            if (!ASR::is_a<ASR::Var_t>(*arr_item->m_v)) continue;
+            std::string arr_name = ASRUtils::symbol_name(
+                ASR::down_cast<ASR::Var_t>(
+                    arr_item->m_v)->m_v);
+            if (ai >= fn->n_args) continue;
+            ASR::Variable_t *formal =
+                ASR::down_cast<ASR::Variable_t>(
+                    ASR::down_cast<ASR::Var_t>(
+                        fn->m_args[ai])->m_v);
+            std::string formal_name(formal->m_name);
+            // Scan function body for formal%member = some_param
+            for (size_t fi = 0; fi < fn->n_body; fi++) {
+                if (fn->m_body[fi]->type !=
+                        ASR::stmtType::Assignment) continue;
+                ASR::Assignment_t *fa =
+                    ASR::down_cast<ASR::Assignment_t>(
+                        fn->m_body[fi]);
+                if (!ASR::is_a<ASR::StructInstanceMember_t>(
+                        *fa->m_target)) continue;
+                ASR::StructInstanceMember_t *fsm =
+                    ASR::down_cast<ASR::StructInstanceMember_t>(
+                        fa->m_target);
+                if (!ASR::is_a<ASR::Var_t>(*fsm->m_v)) continue;
+                std::string tgt_name = ASRUtils::symbol_name(
+                    ASR::down_cast<ASR::Var_t>(
+                        fsm->m_v)->m_v);
+                if (tgt_name != formal_name) continue;
+                std::string mem_name = ASRUtils::symbol_name(
+                    ASRUtils::symbol_get_past_external(
+                        fsm->m_m));
+                std::string tgt_key = arr_name + "." + mem_name;
+                if (result.count(tgt_key)) continue;
+                // RHS is a Var — find its actual arg
+                if (!ASR::is_a<ASR::Var_t>(*fa->m_value))
+                    continue;
+                std::string rhs_name = ASRUtils::symbol_name(
+                    ASR::down_cast<ASR::Var_t>(
+                        fa->m_value)->m_v);
+                for (size_t pi = 0; pi < fn->n_args; pi++) {
+                    ASR::Variable_t *fp =
+                        ASR::down_cast<ASR::Variable_t>(
+                            ASR::down_cast<ASR::Var_t>(
+                                fn->m_args[pi])->m_v);
+                    if (std::string(fp->m_name) != rhs_name)
+                        continue;
+                    if (pi >= sc->n_args) break;
+                    ASR::expr_t *actual =
+                        sc->m_args[pi].m_value;
+                    if (!actual) break;
+                    // Check if actual is a StructInstanceMember
+                    // of a struct array element (e.g., a(i)%v)
+                    if (!ASR::is_a<ASR::StructInstanceMember_t>(
+                            *actual)) break;
+                    ASR::StructInstanceMember_t *src_sm =
+                        ASR::down_cast<ASR::StructInstanceMember_t>(
+                            actual);
+                    std::string src_mem = ASRUtils::symbol_name(
+                        ASRUtils::symbol_get_past_external(
+                            src_sm->m_m));
+                    if (ASR::is_a<ASR::ArrayItem_t>(
+                            *src_sm->m_v)) {
+                        ASR::ArrayItem_t *src_ai =
+                            ASR::down_cast<ASR::ArrayItem_t>(
+                                src_sm->m_v);
+                        if (ASR::is_a<ASR::Var_t>(
+                                *src_ai->m_v)) {
+                            std::string src_arr =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        src_ai->m_v)->m_v);
+                            result[tgt_key] =
+                                src_arr + "." + src_mem;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    return result;
+}
+
 } // namespace LCompilers
 
 #endif // LFORTRAN_GPU_UTILS_H

@@ -1546,6 +1546,9 @@ public:
                         src << "__size_" << vname << "_dim"
                             << (d + 1);
                     }
+                } else if (ASR::is_a<ASR::StructInstanceMember_t>(
+                        *actual_arg)) {
+                    emit_struct_member_array_size(actual_arg);
                 } else {
                     src << "0";
                 }
@@ -4175,17 +4178,44 @@ public:
                         // But if the local var is already a fixed-size array
                         // (local_alloc_arrays), it decays to a pointer
                         // automatically, so skip the '&'.
+                        // Also skip '&' when the arg is a StructInstanceMember
+                        // that resolves to a data-pointer expression (already
+                        // a pointer from __data + __offsets indexing).
                         if (ASRUtils::is_allocatable(arg_type)) {
-                            bool is_local_arr = false;
+                            bool skip_addr = false;
                             if (ASR::is_a<ASR::Var_t>(
                                     *sc->m_args[i].m_value)) {
                                 std::string aname = ASRUtils::symbol_name(
                                     ASR::down_cast<ASR::Var_t>(
                                         sc->m_args[i].m_value)->m_v);
-                                is_local_arr =
+                                skip_addr =
                                     local_alloc_arrays.count(aname) > 0;
+                            } else if (ASR::is_a<ASR::StructInstanceMember_t>(
+                                    *sc->m_args[i].m_value)) {
+                                ASR::StructInstanceMember_t *sm =
+                                    ASR::down_cast<ASR::StructInstanceMember_t>(
+                                        sc->m_args[i].m_value);
+                                std::string mem_name = ASRUtils::symbol_name(
+                                    ASRUtils::symbol_get_past_external(sm->m_m));
+                                if (ASR::is_a<ASR::ArrayItem_t>(*sm->m_v)) {
+                                    ASR::ArrayItem_t *ai =
+                                        ASR::down_cast<ASR::ArrayItem_t>(sm->m_v);
+                                    if (ASR::is_a<ASR::Var_t>(*ai->m_v)) {
+                                        std::string arr_name = ASRUtils::symbol_name(
+                                            ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
+                                        std::string key = arr_name + "." + mem_name;
+                                        skip_addr =
+                                            func_array_data_params.count(key) > 0;
+                                    }
+                                } else if (ASR::is_a<ASR::Var_t>(*sm->m_v)) {
+                                    std::string sname = ASRUtils::symbol_name(
+                                        ASR::down_cast<ASR::Var_t>(sm->m_v)->m_v);
+                                    std::string key = sname + "." + mem_name;
+                                    skip_addr =
+                                        func_array_data_params.count(key) > 0;
+                                }
                             }
-                            if (!is_local_arr) {
+                            if (!skip_addr) {
                                 src << "&";
                             }
                         }
