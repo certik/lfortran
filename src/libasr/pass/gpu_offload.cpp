@@ -6043,11 +6043,65 @@ public:
         //   k = flat + 1  (last dim)
         //   guard: flat_idx >= m*n*k → return
 
-        // Create kernel-scope versions of start/end for each dimension
+        // Create kernel-scope versions of start/end for each dimension.
+        // Instead of duplicating host expressions (which may contain
+        // ArrayBound/ArraySize on allocatable arrays that cannot be
+        // correctly evaluated in the kernel scope), pass the loop
+        // bounds as pre-computed scalar parameters from the host.
         std::vector<ASR::expr_t*> kernel_starts, kernel_ends;
         for (size_t d = 0; d < n_dims; d++) {
-            kernel_starts.push_back(dup_expr_to_scope(dim_info[d].host_start, kernel_scope));
-            kernel_ends.push_back(dup_expr_to_scope(dim_info[d].host_end, kernel_scope));
+            ASR::expr_t *host_start = dim_info[d].host_start;
+            ASR::expr_t *host_end = dim_info[d].host_end;
+            bool start_is_const = ASR::is_a<ASR::IntegerConstant_t>(*host_start);
+            bool end_is_const = ASR::is_a<ASR::IntegerConstant_t>(*host_end);
+
+            if (start_is_const) {
+                kernel_starts.push_back(dup_expr_to_scope(host_start, kernel_scope));
+            } else {
+                std::string name = "__loop_start_" + std::to_string(d);
+                ASR::symbol_t *param = ASR::down_cast<ASR::symbol_t>(
+                    ASRUtils::make_Variable_t_util(al, loc, kernel_scope,
+                        s2c(al, name), nullptr, 0,
+                        ASR::intentType::InOut, nullptr, nullptr,
+                        ASR::storage_typeType::Default,
+                        ASRUtils::duplicate_type(al, int_type),
+                        nullptr, ASR::abiType::Source,
+                        ASR::accessType::Public,
+                        ASR::presenceType::Required, false));
+                kernel_scope->add_symbol(name, param);
+                kernel_args.push_back(al,
+                    ASRUtils::EXPR(ASR::make_Var_t(al, loc, param)));
+                ASR::call_arg_t carg;
+                carg.loc = loc;
+                carg.m_value = host_start;
+                call_args.push_back(al, carg);
+                kernel_starts.push_back(
+                    ASRUtils::EXPR(ASR::make_Var_t(al, loc, param)));
+            }
+
+            if (end_is_const) {
+                kernel_ends.push_back(dup_expr_to_scope(host_end, kernel_scope));
+            } else {
+                std::string name = "__loop_end_" + std::to_string(d);
+                ASR::symbol_t *param = ASR::down_cast<ASR::symbol_t>(
+                    ASRUtils::make_Variable_t_util(al, loc, kernel_scope,
+                        s2c(al, name), nullptr, 0,
+                        ASR::intentType::InOut, nullptr, nullptr,
+                        ASR::storage_typeType::Default,
+                        ASRUtils::duplicate_type(al, int_type),
+                        nullptr, ASR::abiType::Source,
+                        ASR::accessType::Public,
+                        ASR::presenceType::Required, false));
+                kernel_scope->add_symbol(name, param);
+                kernel_args.push_back(al,
+                    ASRUtils::EXPR(ASR::make_Var_t(al, loc, param)));
+                ASR::call_arg_t carg;
+                carg.loc = loc;
+                carg.m_value = host_end;
+                call_args.push_back(al, carg);
+                kernel_ends.push_back(
+                    ASRUtils::EXPR(ASR::make_Var_t(al, loc, param)));
+            }
         }
 
         // Decompose StructInstanceMember references in kernel head
