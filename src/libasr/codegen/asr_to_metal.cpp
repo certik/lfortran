@@ -2422,6 +2422,12 @@ public:
                             alloc->m_args[ai]);
                         if (sz > 0) {
                             alloc_array_sizes[vname] = sz;
+                        } else if (!alloc_array_size_exprs.count(vname)) {
+                            std::string sz_expr = compute_alloc_size_expr(
+                                alloc->m_args[ai]);
+                            if (!sz_expr.empty()) {
+                                alloc_array_size_exprs[vname] = sz_expr;
+                            }
                         }
                     }
                 } else if (fn->m_body[i]->type ==
@@ -3499,9 +3505,9 @@ public:
                             visit_expr(a->m_value);
                             src << "[__copy_i]";
                         } else {
-                            array_elem_index = -2;
+                            array_elem_index_var = "__copy_i";
                             visit_expr(a->m_value);
-                            array_elem_index = -1;
+                            array_elem_index_var.clear();
                         }
                         src << ";\n";
                     } else {
@@ -3652,6 +3658,63 @@ public:
                                     src << get_indent() << "}\n";
                                     handled = true;
                                 }
+                            }
+                        }
+                        if (!handled && ASR::is_a<ASR::Var_t>(*sm->m_v)) {
+                            std::string sname =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        sm->m_v)->m_v);
+                            std::string key = sname + "." + mem_name;
+                            auto data_it =
+                                func_array_data_params.find(key);
+                            auto size_it =
+                                func_array_size_params.find(key);
+                            if (data_it !=
+                                    func_array_data_params.end() &&
+                                size_it !=
+                                    func_array_size_params.end()) {
+                                std::string rname =
+                                    ASRUtils::symbol_name(
+                                        ASR::down_cast<ASR::Var_t>(
+                                            a->m_value)->m_v);
+                                auto sit =
+                                    alloc_array_sizes.find(rname);
+                                auto seit =
+                                    alloc_array_size_exprs.find(rname);
+                                if (sit !=
+                                        alloc_array_sizes.end()) {
+                                    int64_t sz = sit->second;
+                                    for (int64_t ei = 0;
+                                            ei < sz; ei++) {
+                                        src << data_it->second
+                                            << "[" << ei << "] = ";
+                                        visit_expr(a->m_value);
+                                        src << "[" << ei << "];\n";
+                                        if (ei + 1 < sz)
+                                            src << get_indent();
+                                    }
+                                } else if (seit !=
+                                        alloc_array_size_exprs.end()) {
+                                    src << "for (int __copy_i = 0;"
+                                        << " __copy_i < ("
+                                        << seit->second
+                                        << "); __copy_i++) "
+                                        << data_it->second
+                                        << "[__copy_i] = ";
+                                    visit_expr(a->m_value);
+                                    src << "[__copy_i];\n";
+                                } else {
+                                    src << "for (int __copy_i = 0;"
+                                        << " __copy_i < "
+                                        << size_it->second
+                                        << "; __copy_i++) "
+                                        << data_it->second
+                                        << "[__copy_i] = ";
+                                    visit_expr(a->m_value);
+                                    src << "[__copy_i];\n";
+                                }
+                                handled = true;
                             }
                         }
                         if (!handled) {
@@ -4977,6 +5040,11 @@ public:
                     auto it = func_array_data_params.find(key);
                     if (it != func_array_data_params.end()) {
                         src << it->second;
+                        if (array_elem_index >= 0) {
+                            src << "[" << array_elem_index << "]";
+                        } else if (!array_elem_index_var.empty()) {
+                            src << "[" << array_elem_index_var << "]";
+                        }
                         break;
                     }
                 } else if (ASR::is_a<ASR::ArrayItem_t>(*sm->m_v)) {
