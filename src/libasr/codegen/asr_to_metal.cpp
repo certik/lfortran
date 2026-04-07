@@ -2180,7 +2180,11 @@ public:
 
     void emit_function_def_impl(ASR::Function_t *fn,
             const std::string &metal_name,
-            const std::string &out_addr_space) {
+            const std::string &out_addr_space,
+            const std::string &struct_out_addr_space_override = "") {
+        std::string struct_out_addr_space =
+            struct_out_addr_space_override.empty()
+            ? out_addr_space : struct_out_addr_space_override;
         func_array_size_params.clear();
         func_array_data_params.clear();
         func_array_params.clear();
@@ -2206,11 +2210,11 @@ public:
                 if (!first) src << ", ";
                 first = false;
                 // Out/InOut struct args are passed by reference
-                // using device address space since they typically
-                // originate from device buffer arrays in kernels
+                // using the struct address space (which may differ
+                // from the array address space in mixed overloads)
                 if (arg->m_intent == ASR::intentType::Out ||
                     arg->m_intent == ASR::intentType::InOut) {
-                    src << out_addr_space << " " << get_struct_name(arg) << "& "
+                    src << struct_out_addr_space << " " << get_struct_name(arg) << "& "
                         << arg->m_name;
                 } else {
                     src << get_struct_name(arg) << " " << arg->m_name;
@@ -2777,13 +2781,64 @@ public:
         return false;
     }
 
+    // Check if a function needs a mixed address-space overload where
+    // array parameters use thread space but struct Out/InOut parameters
+    // use device space.  This happens when a device-context function
+    // calls another function passing a thread-local array constant
+    // together with a device struct out-parameter.
+    bool func_needs_mixed_overload(ASR::Function_t *fn) {
+        bool has_variable_addr_array = false;
+        bool has_struct_out = false;
+        bool all_input = func_all_arrays_input_only(fn);
+        ASR::FunctionType_t *ftype = ASR::down_cast<ASR::FunctionType_t>(
+            fn->m_function_signature);
+        for (size_t i = 0; i < fn->n_args; i++) {
+            ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(
+                ASR::down_cast<ASR::Var_t>(fn->m_args[i])->m_v);
+            if (is_array_type(arg->m_type)) {
+                ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
+                    arg->m_type);
+                if ((arr->m_physical_type
+                        == ASR::array_physical_typeType::FixedSizeArray)
+                    || (arr->m_physical_type
+                        == ASR::array_physical_typeType::PointerArray
+                        && (arg->m_intent == ASR::intentType::Out
+                            || arg->m_intent == ASR::intentType::InOut
+                            || all_input))
+                    || (arr->m_physical_type
+                        == ASR::array_physical_typeType::DescriptorArray
+                        && all_input)) {
+                    has_variable_addr_array = true;
+                }
+            } else if (ASRUtils::is_allocatable(arg->m_type)) {
+                has_variable_addr_array = true;
+            }
+            if (ftype->m_arg_types[i] &&
+                    ASR::is_a<ASR::StructType_t>(
+                        *ASRUtils::extract_type(
+                            ftype->m_arg_types[i]))
+                    && !is_array_type(arg->m_type)
+                    && (arg->m_intent == ASR::intentType::Out
+                        || arg->m_intent == ASR::intentType::InOut)) {
+                has_struct_out = true;
+            }
+        }
+        return has_variable_addr_array && has_struct_out;
+    }
+
     // Emit a function with both thread and device overloads for
-    // array out parameters when needed.
+    // array out parameters when needed.  When a function has both
+    // variable-address-space array params and struct Out/InOut params,
+    // also emit a mixed overload (thread arrays + device struct out)
+    // to handle calls from device context with thread-local temps.
     void emit_function_def(ASR::Function_t *fn,
             const std::string &metal_name) {
         emit_function_def_impl(fn, metal_name, "thread");
         if (func_needs_device_overload(fn)) {
             emit_function_def_impl(fn, metal_name, "device");
+            if (func_needs_mixed_overload(fn)) {
+                emit_function_def_impl(fn, metal_name, "thread", "device");
+            }
         }
     }
 
