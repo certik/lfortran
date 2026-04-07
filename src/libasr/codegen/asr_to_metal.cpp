@@ -1472,6 +1472,20 @@ public:
                         vname + "__dim" + std::to_string(d + 1));
                     if (dit != func_array_size_params.end()) {
                         src << dit->second;
+                    } else if (local_alloc_arrays.count(vname)) {
+                        auto ait = alloc_array_sizes.find(vname);
+                        if (ait != alloc_array_sizes.end()) {
+                            src << ait->second;
+                        } else {
+                            auto eit = alloc_array_size_exprs.find(
+                                vname);
+                            if (eit != alloc_array_size_exprs.end()) {
+                                src << eit->second;
+                            } else {
+                                src << "__size_" << vname << "_dim"
+                                    << (d + 1);
+                            }
+                        }
                     } else {
                         src << "__size_" << vname << "_dim"
                             << (d + 1);
