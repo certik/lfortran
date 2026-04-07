@@ -3591,10 +3591,12 @@ public:
                     if (vla_it != current_vla_infos.end()) {
                         // Get the element type string from the variable
                         std::string elem_type_str = "float";
-                        if (ASR::is_a<ASR::Array_t>(*v->m_type)) {
+                        ASR::ttype_t *vtype =
+                            ASRUtils::type_get_past_allocatable(v->m_type);
+                        if (ASR::is_a<ASR::Array_t>(*vtype)) {
                             elem_type_str = metal_type(
                                 ASR::down_cast<ASR::Array_t>(
-                                    v->m_type)->m_type);
+                                    vtype)->m_type);
                         }
                         // Emit a device pointer into the per-thread slice
                         src << get_indent() << "device "
@@ -3604,6 +3606,14 @@ public:
                         if (vla_it->dims.size() == 1) {
                             if (vla_it->dims[0].is_constant) {
                                 src << vla_it->dims[0].constant_value;
+                            } else if (vla_it->dims[0].is_struct_member_size) {
+                                std::string key =
+                                    vla_it->dims[0].struct_member_key;
+                                auto dot = key.find('.');
+                                std::string arr_name = key.substr(0, dot);
+                                std::string mem_name = key.substr(dot + 1);
+                                src << "__sizes_" << arr_name << "_"
+                                    << mem_name << "[0]";
                             } else {
                                 visit_expr(vla_it->dims[0].dim_expr);
                             }
@@ -3614,6 +3624,14 @@ public:
                                 if (d > 0) src << " * ";
                                 if (vla_it->dims[d].is_constant) {
                                     src << vla_it->dims[d].constant_value;
+                                } else if (vla_it->dims[d].is_struct_member_size) {
+                                    std::string key =
+                                        vla_it->dims[d].struct_member_key;
+                                    auto dot = key.find('.');
+                                    std::string arr_name = key.substr(0, dot);
+                                    std::string mem_name = key.substr(dot + 1);
+                                    src << "__sizes_" << arr_name << "_"
+                                        << mem_name << "[0]";
                                 } else {
                                     visit_expr(vla_it->dims[d].dim_expr);
                                 }
@@ -3621,6 +3639,42 @@ public:
                             src << ")";
                         }
                         src << ";\n";
+                        local_alloc_arrays.insert(vname);
+                        // Record the size expression for alloc-assign
+                        // and copy-loop codegen
+                        {
+                            std::stringstream size_ss;
+                            for (size_t d = 0;
+                                    d < vla_it->dims.size(); d++) {
+                                if (d > 0) size_ss << " * ";
+                                if (vla_it->dims[d].is_constant) {
+                                    size_ss << vla_it->dims[d]
+                                        .constant_value;
+                                } else if (vla_it->dims[d]
+                                        .is_struct_member_size) {
+                                    std::string key =
+                                        vla_it->dims[d].struct_member_key;
+                                    auto dot = key.find('.');
+                                    std::string arr_name =
+                                        key.substr(0, dot);
+                                    std::string mem_name =
+                                        key.substr(dot + 1);
+                                    size_ss << "__sizes_" << arr_name
+                                        << "_" << mem_name << "[0]";
+                                } else {
+                                    std::stringstream tmp;
+                                    tmp << src.str();
+                                    src.str("");
+                                    visit_expr(
+                                        vla_it->dims[d].dim_expr);
+                                    size_ss << src.str();
+                                    src.str("");
+                                    src << tmp.str();
+                                }
+                            }
+                            alloc_array_size_exprs[vname] =
+                                size_ss.str();
+                        }
                     } else {
                         emit_local_var_decl(v);
                     }
