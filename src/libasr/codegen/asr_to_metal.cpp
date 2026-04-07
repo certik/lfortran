@@ -2614,6 +2614,26 @@ public:
                             if (emitted_funcs.count(callee)) continue;
                             if (new_funcs.count(callee)) continue;
                             if (is_metal_intercepted_intrinsic(callee)) continue;
+                            // Check the helper function's own scope for
+                            // ExternalSymbol entries (e.g. type-bound
+                            // procedures referenced as 1_t_get_v)
+                            ASR::symbol_t *local_sym =
+                                fn->m_symtab->get_symbol(callee);
+                            if (local_sym &&
+                                    ASR::is_a<ASR::ExternalSymbol_t>(
+                                        *local_sym)) {
+                                ASR::Function_t *resolved =
+                                    resolve_function(local_sym);
+                                if (resolved) {
+                                    std::string rname(resolved->m_name);
+                                    if (!kernel_funcs.count(rname) &&
+                                            !emitted_funcs.count(rname) &&
+                                            !new_funcs.count(rname)) {
+                                        new_funcs[rname] = resolved;
+                                    }
+                                    continue;
+                                }
+                            }
                             // Look up in parent scopes
                             SymbolTable *scope = x.m_symtab->parent;
                             while (scope) {
@@ -2653,9 +2673,22 @@ public:
                         call_collector.visit_stmt(*fn->m_body[i]);
                     }
                     for (auto &callee : call_collector.called) {
-                        if (kernel_funcs.count(callee) &&
-                                !in_stack.count(callee)) {
-                            topo_sort(callee);
+                        std::string resolved_callee = callee;
+                        ASR::symbol_t *lsym =
+                            fn->m_symtab->get_symbol(callee);
+                        if (lsym &&
+                                ASR::is_a<ASR::ExternalSymbol_t>(
+                                    *lsym)) {
+                            ASR::Function_t *rfn =
+                                resolve_function(lsym);
+                            if (rfn) {
+                                resolved_callee =
+                                    std::string(rfn->m_name);
+                            }
+                        }
+                        if (kernel_funcs.count(resolved_callee) &&
+                                !in_stack.count(resolved_callee)) {
+                            topo_sort(resolved_callee);
                         }
                     }
                 }
