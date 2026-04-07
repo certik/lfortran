@@ -2835,23 +2835,51 @@ public:
                     std::string tname = ASRUtils::symbol_name(
                         ASR::down_cast<ASR::Var_t>(a->m_target)->m_v);
                     auto sit = alloc_array_sizes.find(tname);
-                    int64_t sz = (sit != alloc_array_sizes.end())
-                        ? sit->second : 1;
+                    auto eit = alloc_array_size_exprs.find(tname);
                     bool rhs_is_simple_var = ASR::is_a<ASR::Var_t>(
                         *a->m_value);
-                    for (int64_t ei = 0; ei < sz; ei++) {
+                    if (sit != alloc_array_sizes.end()) {
+                        int64_t sz = sit->second;
+                        for (int64_t ei = 0; ei < sz; ei++) {
+                            visit_expr(a->m_target);
+                            src << "[" << ei << "] = ";
+                            if (rhs_is_simple_var) {
+                                visit_expr(a->m_value);
+                                src << "[" << ei << "]";
+                            } else {
+                                array_elem_index = ei;
+                                visit_expr(a->m_value);
+                                array_elem_index = -1;
+                            }
+                            src << ";\n";
+                            if (ei + 1 < sz) src << get_indent();
+                        }
+                    } else if (eit != alloc_array_size_exprs.end()) {
+                        src << "for (int __copy_i = 0; __copy_i < ("
+                            << eit->second << "); __copy_i++) ";
                         visit_expr(a->m_target);
-                        src << "[" << ei << "] = ";
+                        src << "[__copy_i] = ";
                         if (rhs_is_simple_var) {
                             visit_expr(a->m_value);
-                            src << "[" << ei << "]";
+                            src << "[__copy_i]";
                         } else {
-                            array_elem_index = ei;
+                            array_elem_index = -2;
                             visit_expr(a->m_value);
                             array_elem_index = -1;
                         }
                         src << ";\n";
-                        if (ei + 1 < sz) src << get_indent();
+                    } else {
+                        visit_expr(a->m_target);
+                        src << "[0] = ";
+                        if (rhs_is_simple_var) {
+                            visit_expr(a->m_value);
+                            src << "[0]";
+                        } else {
+                            array_elem_index = 0;
+                            visit_expr(a->m_value);
+                            array_elem_index = -1;
+                        }
+                        src << ";\n";
                     }
                 } else if (!target_is_local_alloc && rhs_is_local_alloc) {
                     if (target_is_array_buffer) {
@@ -2861,14 +2889,28 @@ public:
                         std::string rname = ASRUtils::symbol_name(
                             ASR::down_cast<ASR::Var_t>(a->m_value)->m_v);
                         auto sit = alloc_array_sizes.find(rname);
-                        int64_t sz = (sit != alloc_array_sizes.end())
-                            ? sit->second : 1;
-                        for (int64_t ei = 0; ei < sz; ei++) {
+                        auto eit = alloc_array_size_exprs.find(rname);
+                        if (sit != alloc_array_sizes.end()) {
+                            int64_t sz = sit->second;
+                            for (int64_t ei = 0; ei < sz; ei++) {
+                                visit_expr(a->m_target);
+                                src << "[" << ei << "] = ";
+                                visit_expr(a->m_value);
+                                src << "[" << ei << "];\n";
+                                if (ei + 1 < sz) src << get_indent();
+                            }
+                        } else if (eit != alloc_array_size_exprs.end()) {
+                            src << "for (int __copy_i = 0; __copy_i < ("
+                                << eit->second << "); __copy_i++) ";
                             visit_expr(a->m_target);
-                            src << "[" << ei << "] = ";
+                            src << "[__copy_i] = ";
                             visit_expr(a->m_value);
-                            src << "[" << ei << "];\n";
-                            if (ei + 1 < sz) src << get_indent();
+                            src << "[__copy_i];\n";
+                        } else {
+                            visit_expr(a->m_target);
+                            src << "[0] = ";
+                            visit_expr(a->m_value);
+                            src << "[0];\n";
                         }
                     } else if (ASR::is_a<ASR::StructInstanceMember_t>(
                                 *a->m_target)) {
