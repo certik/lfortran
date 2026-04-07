@@ -2358,6 +2358,137 @@ public:
                         new_body.push_back(al, stmt);
                         continue;
                     }
+
+                    // If arr_arg is a FunctionCall returning an
+                    // allocatable copy of a struct member (e.g.,
+                    // sum(vals(x)) where vals returns x%v), resolve
+                    // to the actual struct member access (x%v) so the
+                    // sum loop iterates directly over the member data
+                    // without allocating a temporary array.
+                    if (ASR::is_a<ASR::FunctionCall_t>(*arr_arg)) {
+                        ASR::FunctionCall_t *fc2 =
+                            ASR::down_cast<ASR::FunctionCall_t>(
+                                arr_arg);
+                        ASR::symbol_t *fn_sym2 =
+                            ASRUtils::symbol_get_past_external(
+                                fc2->m_name);
+                        if (ASR::is_a<ASR::Function_t>(*fn_sym2)) {
+                            ASR::Function_t *fn2 =
+                                ASR::down_cast<ASR::Function_t>(
+                                    fn_sym2);
+                            if (fn2->m_return_var &&
+                                    ASR::is_a<ASR::Var_t>(
+                                        *fn2->m_return_var)) {
+                                std::string ret_name2 =
+                                    ASRUtils::symbol_name(
+                                        ASR::down_cast<ASR::Var_t>(
+                                            fn2->m_return_var)->m_v);
+                                for (size_t bi = 0;
+                                        bi < fn2->n_body; bi++) {
+                                    if (!ASR::is_a<ASR::Assignment_t>(
+                                            *fn2->m_body[bi]))
+                                        continue;
+                                    ASR::Assignment_t *ba =
+                                        ASR::down_cast<
+                                            ASR::Assignment_t>(
+                                                fn2->m_body[bi]);
+                                    if (!ASR::is_a<ASR::Var_t>(
+                                            *ba->m_target))
+                                        continue;
+                                    std::string tname =
+                                        ASRUtils::symbol_name(
+                                            ASR::down_cast<
+                                                ASR::Var_t>(
+                                                    ba->m_target)
+                                                ->m_v);
+                                    if (tname != ret_name2) continue;
+                                    if (!ASR::is_a<
+                                            ASR::StructInstanceMember_t>(
+                                                *ba->m_value))
+                                        continue;
+                                    ASR::StructInstanceMember_t *sim =
+                                        ASR::down_cast<
+                                            ASR::StructInstanceMember_t>(
+                                                ba->m_value);
+                                    if (!ASR::is_a<ASR::Var_t>(
+                                            *sim->m_v))
+                                        continue;
+                                    ASR::symbol_t *param_sym2 =
+                                        ASR::down_cast<ASR::Var_t>(
+                                            sim->m_v)->m_v;
+                                    int pidx = -1;
+                                    for (size_t pi = 0;
+                                            pi < fn2->n_args; pi++) {
+                                        if (ASR::is_a<ASR::Var_t>(
+                                                *fn2->m_args[pi]) &&
+                                            ASR::down_cast<ASR::Var_t>(
+                                                fn2->m_args[pi])
+                                                ->m_v == param_sym2) {
+                                            pidx = (int)pi;
+                                            break;
+                                        }
+                                    }
+                                    if (pidx < 0 ||
+                                        (size_t)pidx >= fc2->n_args ||
+                                        !fc2->m_args[pidx].m_value)
+                                        break;
+                                    ASR::expr_t *actual =
+                                        fc2->m_args[pidx].m_value;
+                                    // Create ExternalSymbol for the
+                                    // struct member in the caller scope
+                                    ASR::symbol_t *orig_mem =
+                                        ASRUtils::
+                                            symbol_get_past_external(
+                                                sim->m_m);
+                                    std::string mem_name =
+                                        ASRUtils::symbol_name(orig_mem);
+                                    SymbolTable *mem_st =
+                                        ASRUtils::
+                                            symbol_parent_symtab(
+                                                orig_mem);
+                                    ASR::symbol_t *struct_sym2 =
+                                        ASR::down_cast<ASR::symbol_t>(
+                                            mem_st->asr_owner);
+                                    std::string sname =
+                                        ASRUtils::symbol_name(
+                                            struct_sym2);
+                                    std::string ext_name =
+                                        var_scope->get_unique_name(
+                                            "1_" + sname + "_"
+                                            + mem_name);
+                                    ASR::symbol_t *ext_sym =
+                                        ASR::down_cast<ASR::symbol_t>(
+                                            ASR::make_ExternalSymbol_t(
+                                                al, loc, var_scope,
+                                                s2c(al, ext_name),
+                                                orig_mem,
+                                                s2c(al, sname),
+                                                nullptr, 0,
+                                                s2c(al, mem_name),
+                                                ASR::accessType::
+                                                    Public));
+                                    var_scope->add_symbol(
+                                        ext_name, ext_sym);
+                                    arr_arg = ASRUtils::EXPR(
+                                        ASR::make_StructInstanceMember_t(
+                                            al, loc, actual, ext_sym,
+                                            sim->m_type, nullptr));
+                                    arr_type =
+                                        ASRUtils::
+                                            type_get_past_allocatable_pointer(
+                                                ASRUtils::expr_type(
+                                                    arr_arg));
+                                    dims = nullptr;
+                                    rank =
+                                        ASRUtils::
+                                            extract_dimensions_from_ttype(
+                                                arr_type, dims);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     base_arr = arr_arg;
                     for (int d = 0; d < rank; d++) {
                         loop_vars.push_back(
@@ -4100,6 +4231,51 @@ public:
 
         // Inline IntrinsicArrayFunction Sum before kernel extraction
         inline_intrinsic_sum(const_cast<ASR::DoConcurrentLoop_t&>(x));
+
+        // Also inline Sum in helper functions called from the
+        // DoConcurrent body. This ensures that sum(f(x)) patterns
+        // inside helper functions are expanded into loops before
+        // kernel extraction, avoiding allocatable temporaries that
+        // cannot be represented as VLAs in Metal shaders.
+        {
+            GpuFunctionCollector sum_fc;
+            for (size_t i = 0; i < x.n_body; i++) {
+                sum_fc.visit_stmt(*x.m_body[i]);
+            }
+            bool sum_added = true;
+            while (sum_added) {
+                sum_added = false;
+                GpuFunctionCollector sum_tc;
+                for (auto &[fn_name, fn_sym] : sum_fc.functions) {
+                    ASR::symbol_t *resolved =
+                        ASRUtils::symbol_get_past_external(fn_sym);
+                    if (ASR::is_a<ASR::Function_t>(*resolved)) {
+                        ASR::Function_t *fn =
+                            ASR::down_cast<ASR::Function_t>(resolved);
+                        for (size_t i = 0; i < fn->n_body; i++) {
+                            sum_tc.visit_stmt(*fn->m_body[i]);
+                        }
+                    }
+                }
+                for (auto &[name, sym] : sum_tc.functions) {
+                    if (sum_fc.functions.find(name) ==
+                            sum_fc.functions.end()) {
+                        sum_fc.functions[name] = sym;
+                        sum_added = true;
+                    }
+                }
+            }
+            for (auto &[fn_name, fn_sym] : sum_fc.functions) {
+                ASR::symbol_t *resolved =
+                    ASRUtils::symbol_get_past_external(fn_sym);
+                if (ASR::is_a<ASR::Function_t>(*resolved)) {
+                    ASR::Function_t *fn =
+                        ASR::down_cast<ASR::Function_t>(resolved);
+                    inline_sum_in_stmts(fn->m_body, fn->n_body,
+                        fn->m_symtab);
+                }
+            }
+        }
 
         // Inline IntrinsicArrayFunction Transpose before kernel extraction
         inline_intrinsic_transpose(const_cast<ASR::DoConcurrentLoop_t&>(x));
