@@ -2326,17 +2326,45 @@ public:
                         ASR::down_cast<ASR::Assignment_t>(
                             fn->m_body[i]);
                     if (!ASR::is_a<ASR::Var_t>(*asgn->m_target)) continue;
-                    if (!ASR::is_a<ASR::Var_t>(*asgn->m_value)) continue;
+                    ASR::expr_t *val = asgn->m_value;
+                    // Unwrap ArrayPhysicalCast to reach the underlying Var
+                    while (ASR::is_a<ASR::ArrayPhysicalCast_t>(*val)) {
+                        val = ASR::down_cast<ASR::ArrayPhysicalCast_t>(
+                            val)->m_arg;
+                    }
+                    if (!ASR::is_a<ASR::Var_t>(*val)) continue;
                     std::string tgt_name = ASRUtils::symbol_name(
                         ASR::down_cast<ASR::Var_t>(
                             asgn->m_target)->m_v);
                     std::string val_name = ASRUtils::symbol_name(
-                        ASR::down_cast<ASR::Var_t>(
-                            asgn->m_value)->m_v);
+                        ASR::down_cast<ASR::Var_t>(val)->m_v);
                     auto fit = local_fixed_sizes.find(val_name);
                     if (fit != local_fixed_sizes.end() &&
                             !alloc_array_sizes.count(tgt_name)) {
                         alloc_array_sizes[tgt_name] = fit->second;
+                    }
+                    // Propagate size info when a local pointer is
+                    // assigned from a function parameter whose size
+                    // is tracked (e.g. temp = assumed_shape_param).
+                    auto spit = func_array_size_params.find(val_name);
+                    if (spit != func_array_size_params.end() &&
+                            !func_array_size_params.count(tgt_name)) {
+                        func_array_size_params[tgt_name] = spit->second;
+                        // Collect per-dimension size entries to add
+                        std::vector<std::pair<std::string, std::string>>
+                            new_entries;
+                        std::string prefix = val_name + "__dim";
+                        for (auto &entry : func_array_size_params) {
+                            if (entry.first.find(prefix) == 0) {
+                                std::string suffix = entry.first.substr(
+                                    val_name.size());
+                                new_entries.push_back(
+                                    {tgt_name + suffix, entry.second});
+                            }
+                        }
+                        for (auto &e : new_entries) {
+                            func_array_size_params[e.first] = e.second;
+                        }
                     }
                 }
             }
@@ -2443,6 +2471,49 @@ public:
                 if (emitted_funcs.count(fn_name)) continue;
                 if (kernel_funcs.count(fn_name)) continue;
                 kernel_funcs[fn_name] = fn;
+            }
+            // Discover functions from parent scopes (e.g. lowered
+            // intrinsics like _lcompilers_Sum_* created at the
+            // TranslationUnit level by the intrinsic_function pass).
+            // Walk helper function bodies to find callees not yet in
+            // kernel_funcs and resolve them through the scope chain.
+            {
+                bool found_new = true;
+                while (found_new) {
+                    found_new = false;
+                    std::map<std::string, ASR::Function_t*> new_funcs;
+                    for (auto &[fn_name, fn] : kernel_funcs) {
+                        GpuFuncCallCollector call_collector;
+                        for (size_t i = 0; i < fn->n_body; i++) {
+                            call_collector.visit_stmt(*fn->m_body[i]);
+                        }
+                        for (auto &callee : call_collector.called) {
+                            if (kernel_funcs.count(callee)) continue;
+                            if (emitted_funcs.count(callee)) continue;
+                            if (new_funcs.count(callee)) continue;
+                            // Look up in parent scopes
+                            SymbolTable *scope = x.m_symtab->parent;
+                            while (scope) {
+                                ASR::symbol_t *sym = scope->get_symbol(callee);
+                                if (sym) {
+                                    sym = ASRUtils::symbol_get_past_external(sym);
+                                    if (ASR::is_a<ASR::Function_t>(*sym)) {
+                                        new_funcs[callee] =
+                                            ASR::down_cast<ASR::Function_t>(sym);
+                                    }
+                                    break;
+                                }
+                                scope = scope->parent;
+                            }
+                        }
+                    }
+                    if (!new_funcs.empty()) {
+                        found_new = true;
+                        for (auto &[n, f] : new_funcs) {
+                            kernel_funcs[n] = f;
+                        }
+                    }
+                }
             }
             std::vector<std::string> sorted_funcs;
             std::set<std::string> visited, in_stack;
@@ -3068,7 +3139,6 @@ public:
         switch (stmt->type) {
             case ASR::stmtType::Assignment: {
                 ASR::Assignment_t *a = ASR::down_cast<ASR::Assignment_t>(stmt);
-
                 // Track struct-from-array-element assignments for
                 // correct data pointer offsetting in function calls.
                 // Pattern: local_struct = arr(i) where arr is array-of-struct
@@ -3116,6 +3186,52 @@ public:
                             }
                             struct_from_array_elem[tgt_name] =
                                 {arr_name, idx_ss.str()};
+                        }
+                    }
+                }
+
+                // Track pointer aliases: when a local pointer is
+                // assigned from a variable whose array size is known
+                // (e.g. temp = assumed_shape_param), propagate size
+                // info so that later emit_array_size_expr and
+                // ArrayBound lookups succeed.
+                if (ASR::is_a<ASR::Var_t>(*a->m_target)) {
+                    ASR::expr_t *val = a->m_value;
+                    while (ASR::is_a<ASR::ArrayPhysicalCast_t>(*val)) {
+                        val = ASR::down_cast<ASR::ArrayPhysicalCast_t>(
+                            val)->m_arg;
+                    }
+                    if (ASR::is_a<ASR::Var_t>(*val)) {
+                        std::string tgt_name = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(
+                                a->m_target)->m_v);
+                        std::string val_name = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(val)->m_v);
+                        if (!func_array_size_params.count(tgt_name)) {
+                            auto spit =
+                                func_array_size_params.find(val_name);
+                            if (spit != func_array_size_params.end()) {
+                                func_array_size_params[tgt_name]
+                                    = spit->second;
+                                std::vector<std::pair<std::string,
+                                    std::string>> new_entries;
+                                std::string pfx = val_name + "__dim";
+                                for (auto &entry :
+                                        func_array_size_params) {
+                                    if (entry.first.find(pfx) == 0) {
+                                        std::string sfx =
+                                            entry.first.substr(
+                                                val_name.size());
+                                        new_entries.push_back(
+                                            {tgt_name + sfx,
+                                             entry.second});
+                                    }
+                                }
+                                for (auto &e : new_entries) {
+                                    func_array_size_params[e.first]
+                                        = e.second;
+                                }
+                            }
                         }
                     }
                 }
@@ -3952,10 +4068,17 @@ public:
                     }
                     // For pointer-to-local-alloc associations, record
                     // the allocatable's size for later use
-                    if (ASR::is_a<ASR::Var_t>(*assoc->m_value)) {
+                    ASR::expr_t *assoc_val = assoc->m_value;
+                    while (ASR::is_a<ASR::ArrayPhysicalCast_t>(
+                            *assoc_val)) {
+                        assoc_val =
+                            ASR::down_cast<ASR::ArrayPhysicalCast_t>(
+                                assoc_val)->m_arg;
+                    }
+                    if (ASR::is_a<ASR::Var_t>(*assoc_val)) {
                         std::string val_name = ASRUtils::symbol_name(
                             ASR::down_cast<ASR::Var_t>(
-                                assoc->m_value)->m_v);
+                                assoc_val)->m_v);
                         auto sit = alloc_array_sizes.find(val_name);
                         if (sit != alloc_array_sizes.end()) {
                             ptr_section_sizes[tgt_name] =
@@ -3966,6 +4089,37 @@ public:
                             if (eit != alloc_array_size_exprs.end()) {
                                 ptr_section_sizes[tgt_name] =
                                     eit->second;
+                            }
+                        }
+                        // Propagate func_array_size_params so that
+                        // temp pointers aliased to function params
+                        // inherit their size metadata.
+                        if (!func_array_size_params.count(tgt_name)) {
+                            auto spit =
+                                func_array_size_params.find(val_name);
+                            if (spit !=
+                                    func_array_size_params.end()) {
+                                func_array_size_params[tgt_name]
+                                    = spit->second;
+                                std::vector<std::pair<std::string,
+                                    std::string>> new_entries;
+                                std::string pfx =
+                                    val_name + "__dim";
+                                for (auto &entry :
+                                        func_array_size_params) {
+                                    if (entry.first.find(pfx) == 0) {
+                                        std::string sfx =
+                                            entry.first.substr(
+                                                val_name.size());
+                                        new_entries.push_back(
+                                            {tgt_name + sfx,
+                                             entry.second});
+                                    }
+                                }
+                                for (auto &e : new_entries) {
+                                    func_array_size_params[e.first]
+                                        = e.second;
+                                }
                             }
                         }
                     }
@@ -4191,6 +4345,39 @@ public:
                                             }
                                         }
                                         }
+                                    }
+                                } else if (ASR::is_a<ASR::ArrayPhysicalCast_t>(*ab->m_v)) {
+                                    // Unwrap ArrayPhysicalCast to get
+                                    // the underlying Var
+                                    ASR::expr_t *inner = ab->m_v;
+                                    while (ASR::is_a<ASR::ArrayPhysicalCast_t>(*inner)) {
+                                        inner = ASR::down_cast<ASR::ArrayPhysicalCast_t>(inner)->m_arg;
+                                    }
+                                    if (ASR::is_a<ASR::Var_t>(*inner)) {
+                                        std::string vname = ASRUtils::symbol_name(
+                                            ASR::down_cast<ASR::Var_t>(inner)->m_v);
+                                        auto pit = ptr_section_sizes.find(vname);
+                                        if (pit != ptr_section_sizes.end()) {
+                                            src << pit->second;
+                                        } else {
+                                            std::string dim_key = vname
+                                                + "__dim"
+                                                + std::to_string(dim_idx + 1);
+                                            auto dpit =
+                                                func_array_size_params.find(dim_key);
+                                            if (dpit != func_array_size_params.end()) {
+                                                src << dpit->second;
+                                            } else {
+                                                auto fpit = func_array_size_params.find(vname);
+                                                if (fpit != func_array_size_params.end()) {
+                                                    src << fpit->second;
+                                                } else {
+                                                    src << "/* unknown ubound for cast('" << vname << "') */";
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        src << "/* unknown ubound (cast non-var) */";
                                     }
                                 } else {
                                     src << "/* unknown ubound */";
