@@ -1729,31 +1729,75 @@ public:
                 ASR::Struct_t *st =
                     ASR::down_cast<ASR::Struct_t>(st_sym);
                 std::string arr_name(arr_var->m_name);
-                // Compute 0-based index string
+                // Compute linearized 0-based index string
                 std::string idx_str = "0";
-                if (ai->n_args == 1) {
-                    ASR::expr_t *idx = ai->m_args[0].m_right
-                        ? ai->m_args[0].m_right
-                        : ai->m_args[0].m_left;
-                    if (idx) {
-                        ASR::Array_t *arr_t = nullptr;
-                        ASR::ttype_t *arr_type =
-                            ASRUtils::type_get_past_allocatable(
-                                ASRUtils::expr_type(ai->m_v));
-                        if (ASR::is_a<ASR::Array_t>(*arr_type)) {
-                            arr_t = ASR::down_cast<ASR::Array_t>(
-                                arr_type);
-                        }
-                        std::string lb = get_lower_bound_str(arr_t, 0);
-                        std::stringstream idx_ss;
-                        {
-                            std::stringstream saved;
-                            saved.swap(src);
+                if (ai->n_args >= 1) {
+                    ASR::Array_t *arr_t = nullptr;
+                    ASR::ttype_t *arr_type =
+                        ASRUtils::type_get_past_allocatable(
+                            ASRUtils::expr_type(ai->m_v));
+                    if (ASR::is_a<ASR::Array_t>(*arr_type)) {
+                        arr_t = ASR::down_cast<ASR::Array_t>(
+                            arr_type);
+                    }
+                    std::stringstream idx_ss;
+                    {
+                        std::stringstream saved;
+                        saved.swap(src);
+                        bool first = true;
+                        std::string stride = "1";
+                        for (size_t d = 0; d < ai->n_args; d++) {
+                            ASR::expr_t *idx = ai->m_args[d].m_right
+                                ? ai->m_args[d].m_right
+                                : ai->m_args[d].m_left;
+                            if (!idx) continue;
+                            if (!first) idx_ss << " + ";
+                            first = false;
+                            src.str("");
+                            src.clear();
                             visit_expr(idx);
-                            idx_ss << "((int)(" << src.str()
-                                   << ") - (" << lb << "))";
-                            saved.swap(src);
+                            std::string lb =
+                                get_lower_bound_str(arr_t, d);
+                            if (stride == "1") {
+                                idx_ss << "((int)(" << src.str()
+                                       << ") - (" << lb << "))";
+                            } else {
+                                idx_ss << "(" << stride
+                                       << " * ((int)(" << src.str()
+                                       << ") - (" << lb << ")))";
+                            }
+                            if (arr_t && d < arr_t->n_dims) {
+                                ASR::expr_t *dim_len =
+                                    arr_t->m_dims[d].m_length;
+                                std::string len_str = "0";
+                                if (dim_len &&
+                                        ASR::is_a<ASR::IntegerConstant_t>(
+                                            *dim_len)) {
+                                    len_str = std::to_string(
+                                        ASR::down_cast<
+                                            ASR::IntegerConstant_t>(
+                                                dim_len)->m_n);
+                                } else if (dim_len &&
+                                        ASR::is_a<ASR::Var_t>(
+                                            *dim_len)) {
+                                    len_str = ASRUtils::symbol_name(
+                                        ASR::down_cast<ASR::Var_t>(
+                                            dim_len)->m_v);
+                                } else if (!arr_name.empty()) {
+                                    len_str = "__size_" + arr_name
+                                        + "_dim" + std::to_string(
+                                            d + 1);
+                                }
+                                if (stride == "1") {
+                                    stride = len_str;
+                                } else {
+                                    stride = "(" + stride + " * "
+                                        + len_str + ")";
+                                }
+                            }
                         }
+                        saved.swap(src);
+                        if (first) idx_ss << "0";
                         idx_str = idx_ss.str();
                     }
                 }
@@ -3321,34 +3365,74 @@ public:
                             ASRUtils::expr_type(ai->m_v);
                         if (is_struct_type(arr_type) &&
                                 is_array_type(arr_type) &&
-                                ai->n_args == 1) {
-                            // Capture the 0-based index expression
+                                ai->n_args >= 1) {
+                            // Capture the linearized 0-based index
                             std::stringstream idx_ss;
-                            ASR::expr_t *idx_expr =
-                                ai->m_args[0].m_right
-                                ? ai->m_args[0].m_right
-                                : ai->m_args[0].m_left;
-                            if (idx_expr) {
-                                // Temporarily emit into a separate stream
-                                std::stringstream saved;
-                                saved.swap(src);
-                                visit_expr(idx_expr);
-                                ASR::Array_t *sa_arr = nullptr;
-                                ASR::ttype_t *sa_inner =
-                                    ASRUtils::type_get_past_allocatable(
-                                        arr_type);
-                                if (ASR::is_a<ASR::Array_t>(*sa_inner)) {
-                                    sa_arr = ASR::down_cast<ASR::Array_t>(
-                                        sa_inner);
-                                }
-                                std::string lb = get_lower_bound_str(
-                                    sa_arr, 0);
-                                idx_ss << "((int)(" << src.str()
-                                       << ") - (" << lb << "))";
-                                saved.swap(src);
-                            } else {
-                                idx_ss << "0";
+                            ASR::Array_t *sa_arr = nullptr;
+                            ASR::ttype_t *sa_inner =
+                                ASRUtils::type_get_past_allocatable(
+                                    arr_type);
+                            if (ASR::is_a<ASR::Array_t>(*sa_inner)) {
+                                sa_arr = ASR::down_cast<ASR::Array_t>(
+                                    sa_inner);
                             }
+                            std::stringstream saved;
+                            saved.swap(src);
+                            bool first = true;
+                            std::string stride = "1";
+                            for (size_t d = 0; d < ai->n_args; d++) {
+                                ASR::expr_t *idx_expr =
+                                    ai->m_args[d].m_right
+                                    ? ai->m_args[d].m_right
+                                    : ai->m_args[d].m_left;
+                                if (!idx_expr) continue;
+                                if (!first) idx_ss << " + ";
+                                first = false;
+                                src.str("");
+                                src.clear();
+                                visit_expr(idx_expr);
+                                std::string lb =
+                                    get_lower_bound_str(sa_arr, d);
+                                if (stride == "1") {
+                                    idx_ss << "((int)(" << src.str()
+                                           << ") - (" << lb << "))";
+                                } else {
+                                    idx_ss << "(" << stride
+                                           << " * ((int)(" << src.str()
+                                           << ") - (" << lb << ")))";
+                                }
+                                if (sa_arr && d < sa_arr->n_dims) {
+                                    ASR::expr_t *dim_len =
+                                        sa_arr->m_dims[d].m_length;
+                                    std::string len_str = "0";
+                                    if (dim_len &&
+                                            ASR::is_a<ASR::IntegerConstant_t>(
+                                                *dim_len)) {
+                                        len_str = std::to_string(
+                                            ASR::down_cast<
+                                                ASR::IntegerConstant_t>(
+                                                    dim_len)->m_n);
+                                    } else if (dim_len &&
+                                            ASR::is_a<ASR::Var_t>(
+                                                *dim_len)) {
+                                        len_str = ASRUtils::symbol_name(
+                                            ASR::down_cast<ASR::Var_t>(
+                                                dim_len)->m_v);
+                                    } else if (!arr_name.empty()) {
+                                        len_str = "__size_" + arr_name
+                                            + "_dim" + std::to_string(
+                                                d + 1);
+                                    }
+                                    if (stride == "1") {
+                                        stride = len_str;
+                                    } else {
+                                        stride = "(" + stride + " * "
+                                            + len_str + ")";
+                                    }
+                                }
+                            }
+                            saved.swap(src);
+                            if (first) idx_ss << "0";
                             struct_from_array_elem[tgt_name] =
                                 {arr_name, idx_ss.str()};
                         }

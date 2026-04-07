@@ -19539,9 +19539,22 @@ public:
                                                 desc_type
                                                     ->getPointerTo());
                                         // Store descriptor ptr in
-                                        // struct field
-                                        builder->CreateStore(
-                                            new_desc, fp);
+                                        // struct field (cast if
+                                        // desc_type differs from
+                                        // the struct's field type)
+                                        {
+                                            llvm::Type *fp_el =
+                                                fp->getType()
+                                                    ->getPointerElementType();
+                                            llvm::Value *sd =
+                                                (new_desc->getType()
+                                                    != fp_el)
+                                                ? builder
+                                                    ->CreatePointerCast(
+                                                        new_desc, fp_el)
+                                                : new_desc;
+                                            builder->CreateStore(sd, fp);
+                                        }
                                         // Initialize descriptor
                                         arr_descr
                                             ->fill_dimension_descriptor(
@@ -19630,8 +19643,19 @@ public:
                                                 desc_mem,
                                                 desc_type
                                                     ->getPointerTo());
-                                        builder->CreateStore(
-                                            new_desc, fp);
+                                        {
+                                            llvm::Type *fp_el =
+                                                fp->getType()
+                                                    ->getPointerElementType();
+                                            llvm::Value *sd =
+                                                (new_desc->getType()
+                                                    != fp_el)
+                                                ? builder
+                                                    ->CreatePointerCast(
+                                                        new_desc, fp_el)
+                                                : new_desc;
+                                            builder->CreateStore(sd, fp);
+                                        }
                                         arr_descr
                                             ->fill_dimension_descriptor(
                                                 desc_type, new_desc, 1);
@@ -19676,15 +19700,175 @@ public:
                                             extent_ptr);
                                         dps.push_back(new_dp);
                                     } else {
-                                        llvm::Value *ne =
+                                        // Check if descriptor pointer
+                                        // is null (unallocated member).
+                                        llvm::Value *dp_null =
+                                            builder->CreateICmpEQ(dp,
+                                                llvm::ConstantPointerNull
+                                                    ::get(llvm::cast<
+                                                        llvm::PointerType>(
+                                                            dp->getType())));
+                                        llvm::Function *cur_fn =
+                                            builder->GetInsertBlock()
+                                                ->getParent();
+                                        llvm::BasicBlock *bb_alloc =
+                                            llvm::BasicBlock::Create(
+                                                context, "desc.valid",
+                                                cur_fn);
+                                        llvm::BasicBlock *bb_null =
+                                            llvm::BasicBlock::Create(
+                                                context, "desc.null",
+                                                cur_fn);
+                                        llvm::BasicBlock *bb_merge =
+                                            llvm::BasicBlock::Create(
+                                                context, "desc.merge",
+                                                cur_fn);
+                                        builder->CreateCondBr(
+                                            dp_null, bb_null, bb_alloc);
+                                        // Allocated path: read size
+                                        // from descriptor
+                                        builder->SetInsertPoint(bb_alloc);
+                                        llvm::Value *ne_alloc =
                                             arr_descr->get_array_size(
                                                 desc_type, dp,
                                                 nullptr, 4);
-                                        llvm::Value *ne64 =
+                                        llvm::Value *ne64_alloc =
                                             builder->CreateSExtOrTrunc(
-                                                ne, i64);
-                                        szs.push_back(ne64);
-                                        dps.push_back(raw);
+                                                ne_alloc, i64);
+                                        llvm::BasicBlock *bb_alloc_end =
+                                            builder->GetInsertBlock();
+                                        builder->CreateBr(bb_merge);
+                                        // Null path: look for a
+                                        // matching size from another
+                                        // struct array of the same type
+                                        builder->SetInsertPoint(bb_null);
+                                        llvm::Value *ne64_null = nullptr;
+                                        std::string mem_suffix =
+                                            std::string(".")
+                                            + st->m_members[m];
+                                        for (auto &entry :
+                                                struct_member_first_sizes) {
+                                            if (entry.first != sm_key &&
+                                                    entry.first.size() >=
+                                                        mem_suffix.size() &&
+                                                    entry.first.compare(
+                                                        entry.first.size()
+                                                        - mem_suffix.size(),
+                                                        mem_suffix.size(),
+                                                        mem_suffix) == 0) {
+                                                ne64_null =
+                                                    builder
+                                                        ->CreateSExtOrTrunc(
+                                                            entry.second,
+                                                            i64);
+                                                break;
+                                            }
+                                        }
+                                        if (!ne64_null) {
+                                            ne64_null =
+                                                llvm::ConstantInt::get(
+                                                    i64, 0);
+                                        }
+                                        // Allocate a descriptor and data
+                                        // buffer for unallocated member
+                                        llvm::DataLayout dl_n(
+                                            module.get());
+                                        uint64_t desc_sz_n =
+                                            dl_n.getTypeAllocSize(
+                                                desc_type);
+                                        llvm::FunctionType *mft_n =
+                                            llvm::FunctionType::get(
+                                                i8_ptr, {i64}, false);
+                                        llvm::Function *mfn_n =
+                                            get_gpu_runtime_func(
+                                                "malloc", mft_n);
+                                        llvm::Value *desc_mem_n =
+                                            builder->CreateCall(mfn_n,
+                                                {llvm::ConstantInt::get(
+                                                    i64, desc_sz_n)});
+                                        llvm::Value *new_desc_n =
+                                            builder->CreatePointerCast(
+                                                desc_mem_n,
+                                                desc_type
+                                                    ->getPointerTo());
+                                        // Cast to match the struct
+                                        // field's pointer type (may
+                                        // differ from desc_type when
+                                        // the element is a struct)
+                                        llvm::Type *fp_el =
+                                            fp->getType()
+                                                ->getPointerElementType();
+                                        llvm::Value *store_desc_n =
+                                            (new_desc_n->getType()
+                                                != fp_el)
+                                            ? builder->CreatePointerCast(
+                                                new_desc_n, fp_el)
+                                            : new_desc_n;
+                                        builder->CreateStore(
+                                            store_desc_n, fp);
+                                        arr_descr
+                                            ->fill_dimension_descriptor(
+                                                desc_type, new_desc_n,
+                                                1);
+                                        llvm::Value *alloc_bytes_n =
+                                            builder->CreateMul(ne64_null,
+                                                llvm::ConstantInt::get(
+                                                    i64, me_size));
+                                        llvm::Value *new_dp_n =
+                                            builder->CreateCall(
+                                                mfn_n, {alloc_bytes_n});
+                                        llvm::Value *new_dpp_n =
+                                            arr_descr
+                                                ->get_pointer_to_data(
+                                                    desc_type,
+                                                    new_desc_n);
+                                        builder->CreateStore(
+                                            builder->CreatePointerCast(
+                                                new_dp_n,
+                                                mem_el_llvm
+                                                    ->getPointerTo()),
+                                            new_dpp_n);
+                                        llvm::Value *dim_des_arr_n =
+                                            arr_descr
+                                                ->get_pointer_to_dimension_descriptor_array(
+                                                    desc_type,
+                                                    new_desc_n);
+                                        llvm::Value *dim0_n =
+                                            arr_descr
+                                                ->get_pointer_to_dimension_descriptor(
+                                                    dim_des_arr_n,
+                                                    llvm::ConstantInt::get(
+                                                        i32, 0));
+                                        llvm::Value *extent_ptr_n =
+                                            arr_descr
+                                                ->get_dimension_size(
+                                                    dim0_n, false);
+                                        builder->CreateStore(
+                                            builder->CreateSExtOrTrunc(
+                                                ne64_null,
+                                                llvm::Type::getInt64Ty(
+                                                    context)),
+                                            extent_ptr_n);
+                                        llvm::BasicBlock *bb_null_end =
+                                            builder->GetInsertBlock();
+                                        builder->CreateBr(bb_merge);
+                                        // Merge: PHI for size and data
+                                        builder->SetInsertPoint(bb_merge);
+                                        llvm::PHINode *ne64_phi =
+                                            builder->CreatePHI(i64, 2);
+                                        ne64_phi->addIncoming(
+                                            ne64_alloc, bb_alloc_end);
+                                        ne64_phi->addIncoming(
+                                            ne64_null, bb_null_end);
+                                        llvm::PHINode *raw_phi =
+                                            builder->CreatePHI(
+                                                i8_ptr, 2);
+                                        raw_phi->addIncoming(
+                                            raw, bb_alloc_end);
+                                        raw_phi->addIncoming(
+                                            new_dp_n, bb_null_end);
+                                        szs.push_back(ne64_phi);
+                                        dps.push_back(raw_phi);
                                     }
                                     tot = builder->CreateAdd(
                                         tot, szs.back());
