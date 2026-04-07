@@ -1979,6 +1979,27 @@ public:
             if (found) return found;
             return find_sum_in_expr(cmp->m_right);
         }
+        if (ASR::is_a<ASR::IntrinsicElementalFunction_t>(*expr)) {
+            auto *ief = ASR::down_cast<ASR::IntrinsicElementalFunction_t>(expr);
+            for (size_t i = 0; i < ief->n_args; i++) {
+                auto *found = find_sum_in_expr(ief->m_args[i]);
+                if (found) return found;
+            }
+        }
+        if (ASR::is_a<ASR::FunctionCall_t>(*expr)) {
+            auto *fc = ASR::down_cast<ASR::FunctionCall_t>(expr);
+            for (size_t i = 0; i < fc->n_args; i++) {
+                auto *found = find_sum_in_expr(fc->m_args[i].m_value);
+                if (found) return found;
+            }
+        }
+        if (ASR::is_a<ASR::ArrayConstructor_t>(*expr)) {
+            auto *ac = ASR::down_cast<ASR::ArrayConstructor_t>(expr);
+            for (size_t i = 0; i < ac->n_args; i++) {
+                auto *found = find_sum_in_expr(ac->m_args[i]);
+                if (found) return found;
+            }
+        }
         return nullptr;
     }
 
@@ -2034,6 +2055,28 @@ public:
             if (replace_sum_in_expr(cmp->m_left, target, replacement))
                 return true;
             return replace_sum_in_expr(cmp->m_right, target, replacement);
+        }
+        if (ASR::is_a<ASR::IntrinsicElementalFunction_t>(*expr)) {
+            auto *ief = ASR::down_cast<ASR::IntrinsicElementalFunction_t>(expr);
+            for (size_t i = 0; i < ief->n_args; i++) {
+                if (replace_sum_in_expr(ief->m_args[i], target, replacement))
+                    return true;
+            }
+        }
+        if (ASR::is_a<ASR::FunctionCall_t>(*expr)) {
+            auto *fc = ASR::down_cast<ASR::FunctionCall_t>(expr);
+            for (size_t i = 0; i < fc->n_args; i++) {
+                if (replace_sum_in_expr(fc->m_args[i].m_value, target,
+                        replacement))
+                    return true;
+            }
+        }
+        if (ASR::is_a<ASR::ArrayConstructor_t>(*expr)) {
+            auto *ac = ASR::down_cast<ASR::ArrayConstructor_t>(expr);
+            for (size_t i = 0; i < ac->n_args; i++) {
+                if (replace_sum_in_expr(ac->m_args[i], target, replacement))
+                    return true;
+            }
         }
         return false;
     }
