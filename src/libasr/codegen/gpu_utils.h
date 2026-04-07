@@ -289,6 +289,93 @@ inline bool find_arg_var_in_expr(ASR::expr_t *expr,
     return false;
 }
 
+// Try to resolve an ArraySize expression through Associate statements
+// to find a kernel argument that determines the dimension size.
+// Handles the pattern: ArraySize(temp, dim) where temp is associated
+// with ArraySection(array_arg, [start:end:step, ...]).
+// When start == 1 and step == 1, the section size equals end, and we
+// look for a kernel arg reference in end.
+inline bool try_resolve_array_size_to_arg_var(
+        ASR::expr_t *dim_expr,
+        ASR::stmt_t **body, size_t n_body,
+        const std::vector<std::string> &arg_names,
+        size_t &arg_index) {
+    if (!ASR::is_a<ASR::ArraySize_t>(*dim_expr)) return false;
+    ASR::ArraySize_t *as = ASR::down_cast<ASR::ArraySize_t>(dim_expr);
+    if (!as->m_v || !ASR::is_a<ASR::Var_t>(*as->m_v)) return false;
+
+    std::string var_name = ASRUtils::symbol_name(
+        ASR::down_cast<ASR::Var_t>(as->m_v)->m_v);
+    int64_t target_dim = 1;
+    if (as->m_dim) {
+        if (!try_eval_int_constant(as->m_dim, target_dim)) return false;
+    }
+
+    for (size_t i = 0; i < n_body; i++) {
+        if (!ASR::is_a<ASR::Associate_t>(*body[i])) continue;
+        ASR::Associate_t *assoc =
+            ASR::down_cast<ASR::Associate_t>(body[i]);
+        if (!ASR::is_a<ASR::Var_t>(*assoc->m_target)) continue;
+        std::string tname = ASRUtils::symbol_name(
+            ASR::down_cast<ASR::Var_t>(assoc->m_target)->m_v);
+        if (tname != var_name) continue;
+        if (!ASR::is_a<ASR::ArraySection_t>(*assoc->m_value))
+            return false;
+        ASR::ArraySection_t *sec =
+            ASR::down_cast<ASR::ArraySection_t>(assoc->m_value);
+        int range_dim = 0;
+        for (size_t d = 0; d < sec->n_args; d++) {
+            ASR::array_index_t &idx = sec->m_args[d];
+            if (idx.m_left == nullptr) continue;
+            range_dim++;
+            if (range_dim == target_dim) {
+                int64_t start_val = 0;
+                bool start_is_one =
+                    try_eval_int_constant(idx.m_left, start_val)
+                    && start_val == 1;
+                int64_t stride_val = 1;
+                bool step_is_one = true;
+                if (idx.m_step) {
+                    int64_t sv;
+                    step_is_one =
+                        try_eval_int_constant(idx.m_step, sv) && sv == 1;
+                }
+                if (start_is_one && step_is_one && idx.m_right) {
+                    return find_arg_var_in_expr(
+                        idx.m_right, arg_names, arg_index);
+                }
+                return false;
+            }
+        }
+        return false;
+    }
+
+    // No Associate found — try tracing through an Allocate whose
+    // dimension is itself an ArraySize that can be resolved.
+    ASR::Allocate_t *alloc = find_allocate_for_var(
+        body, n_body, var_name);
+    if (alloc) {
+        for (size_t ai = 0; ai < alloc->n_args; ai++) {
+            if (!alloc->m_args[ai].m_a) continue;
+            if (!ASR::is_a<ASR::Var_t>(*alloc->m_args[ai].m_a))
+                continue;
+            std::string aname = ASRUtils::symbol_name(
+                ASR::down_cast<ASR::Var_t>(
+                    alloc->m_args[ai].m_a)->m_v);
+            if (aname != var_name) continue;
+            ASR::alloc_arg_t &targ = alloc->m_args[ai];
+            if (target_dim < 1 || (size_t)target_dim > targ.n_dims)
+                return false;
+            ASR::expr_t *inner_dim =
+                targ.m_dims[target_dim - 1].m_length;
+            if (!inner_dim) return false;
+            return try_resolve_array_size_to_arg_var(
+                inner_dim, body, n_body, arg_names, arg_index);
+        }
+    }
+    return false;
+}
+
 // Scan kernel-scope Allocatable(Array) variables for VLA workspaces.
 inline void scan_kernel_scope_alloc_vlas(
         const ASR::GpuKernelFunction_t &kernel,
@@ -364,6 +451,10 @@ inline void scan_kernel_scope_alloc_vlas(
                     vd.call_arg_index = 0;
                     size_t idx = 0;
                     if (find_arg_var_in_expr(dim, arg_names, idx)) {
+                        vd.call_arg_index = idx;
+                    } else if (try_resolve_array_size_to_arg_var(
+                                   dim, kernel.m_body, kernel.n_body,
+                                   arg_names, idx)) {
                         vd.call_arg_index = idx;
                     }
                 }

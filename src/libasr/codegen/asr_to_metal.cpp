@@ -156,6 +156,9 @@ public:
     // element index in visit_expr. Used for element-wise array
     // operations (comparisons, etc.) inside assignment loops.
     int64_t array_elem_index = -1;
+    // When non-empty, array/pointer Var nodes use this runtime expression
+    // string as the index (e.g., a loop variable name).
+    std::string array_elem_index_var;
 
     ASRToMetalVisitor(CompilerOptions &co_) : indent_level(0), co(co_) {}
 
@@ -271,6 +274,21 @@ public:
                     local_alloc_arrays.insert(vname);
                     if (all_const) {
                         alloc_array_sizes[vname] = total_const_size;
+                    } else {
+                        std::stringstream save;
+                        save << src.str();
+                        src.str("");
+                        for (size_t d = 0; d < vla_it->dims.size(); d++) {
+                            if (d > 0) src << " * ";
+                            if (vla_it->dims[d].is_constant) {
+                                src << vla_it->dims[d].constant_value;
+                            } else {
+                                visit_expr(vla_it->dims[d].dim_expr);
+                            }
+                        }
+                        alloc_array_size_exprs[vname] = src.str();
+                        src.str("");
+                        src << save.str();
                     }
                     return;
                 }
@@ -2887,9 +2905,8 @@ public:
                                                 a->m_value)->m_v);
                                     auto sit =
                                         alloc_array_sizes.find(rname);
-                                    int64_t sz =
-                                        (sit != alloc_array_sizes.end())
-                                        ? sit->second : 1;
+                                    auto seit =
+                                        alloc_array_size_exprs.find(rname);
                                     // Emit index expression
                                     std::stringstream idx_ss;
                                     {
@@ -2909,13 +2926,39 @@ public:
                                     src << get_indent() << "int __off = "
                                         << off_it->second << "["
                                         << idx_ss.str() << "];\n";
-                                    for (int64_t ei = 0; ei < sz; ei++) {
+                                    if (sit != alloc_array_sizes.end()) {
+                                        int64_t sz = sit->second;
+                                        for (int64_t ei = 0; ei < sz; ei++) {
+                                            src << get_indent()
+                                                << data_it->second
+                                                << "[__off + " << ei
+                                                << "] = ";
+                                            visit_expr(a->m_value);
+                                            src << "[" << ei << "];\n";
+                                        }
+                                    } else if (seit !=
+                                            alloc_array_size_exprs.end()) {
+                                        std::string loop_var = "__ei";
+                                        src << get_indent() << "for (int "
+                                            << loop_var << " = 0; "
+                                            << loop_var << " < "
+                                            << seit->second << "; "
+                                            << loop_var << "++) {\n";
+                                        indent_level++;
                                         src << get_indent()
                                             << data_it->second
-                                            << "[__off + " << ei
+                                            << "[__off + " << loop_var
                                             << "] = ";
                                         visit_expr(a->m_value);
-                                        src << "[" << ei << "];\n";
+                                        src << "[" << loop_var << "];\n";
+                                        indent_level--;
+                                        src << get_indent() << "}\n";
+                                    } else {
+                                        src << get_indent()
+                                            << data_it->second
+                                            << "[__off + 0] = ";
+                                        visit_expr(a->m_value);
+                                        src << "[0];\n";
                                     }
                                     indent_level--;
                                     src << get_indent() << "}\n";
@@ -3083,16 +3126,40 @@ public:
                     std::string tname = ASRUtils::symbol_name(
                         ASR::down_cast<ASR::Var_t>(a->m_target)->m_v);
                     auto sit = alloc_array_sizes.find(tname);
-                    int64_t sz = (sit != alloc_array_sizes.end())
-                        ? sit->second : 1;
-                    for (int64_t ei = 0; ei < sz; ei++) {
+                    auto eit = alloc_array_size_exprs.find(tname);
+                    if (sit != alloc_array_sizes.end()) {
+                        int64_t sz = sit->second;
+                        for (int64_t ei = 0; ei < sz; ei++) {
+                            visit_expr(a->m_target);
+                            src << "[" << ei << "] = ";
+                            array_elem_index = ei;
+                            visit_expr(a->m_value);
+                            array_elem_index = -1;
+                            src << ";\n";
+                            if (ei + 1 < sz) src << get_indent();
+                        }
+                    } else if (eit != alloc_array_size_exprs.end()) {
+                        std::string loop_var = "__ei";
+                        src << "for (int " << loop_var << " = 0; "
+                            << loop_var << " < " << eit->second
+                            << "; " << loop_var << "++) {\n";
+                        indent_level++;
+                        src << get_indent();
                         visit_expr(a->m_target);
-                        src << "[" << ei << "] = ";
-                        array_elem_index = ei;
+                        src << "[" << loop_var << "] = ";
+                        array_elem_index_var = loop_var;
+                        visit_expr(a->m_value);
+                        array_elem_index_var.clear();
+                        src << ";\n";
+                        indent_level--;
+                        src << get_indent() << "}\n";
+                    } else {
+                        visit_expr(a->m_target);
+                        src << "[0] = ";
+                        array_elem_index = 0;
                         visit_expr(a->m_value);
                         array_elem_index = -1;
                         src << ";\n";
-                        if (ei + 1 < sz) src << get_indent();
                     }
                 } else {
                     if (deref_target) {
@@ -3425,6 +3492,12 @@ public:
                     ASR::ttype_t *inner = ASRUtils::type_get_past_allocatable_pointer(vtype);
                     if (ASR::is_a<ASR::Array_t>(*inner)) {
                         src << "[" << array_elem_index << "]";
+                    }
+                } else if (!array_elem_index_var.empty()) {
+                    ASR::ttype_t *vtype = ASRUtils::expr_type(expr);
+                    ASR::ttype_t *inner = ASRUtils::type_get_past_allocatable_pointer(vtype);
+                    if (ASR::is_a<ASR::Array_t>(*inner)) {
+                        src << "[" << array_elem_index_var << "]";
                     }
                 }
                 break;
