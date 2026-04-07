@@ -162,6 +162,20 @@ public:
 
     ASRToMetalVisitor(CompilerOptions &co_) : indent_level(0), co(co_) {}
 
+    // C++ alternative operator tokens are reserved identifiers in Metal
+    // shading language. Fortran allows them as user-defined names, so we
+    // must rename them when emitting Metal/C++ code.
+    static std::string sanitize_metal_name(const std::string &name) {
+        static const std::set<std::string> cpp_alt_tokens = {
+            "and", "and_eq", "bitand", "bitor", "compl",
+            "not", "not_eq", "or", "or_eq", "xor", "xor_eq"
+        };
+        if (cpp_alt_tokens.count(name)) {
+            return "_lfortran_" + name;
+        }
+        return name;
+    }
+
     std::string get_indent() {
         return std::string(indent_level * 4, ' ');
     }
@@ -1924,7 +1938,7 @@ public:
         if (fn->m_return_var) {
             ret_type = metal_type(ASRUtils::expr_type(fn->m_return_var));
         }
-        src << "inline " << ret_type << " " << metal_name << "(";
+        src << "inline " << ret_type << " " << sanitize_metal_name(metal_name) << "(";
         bool first = true;
         for (size_t i = 0; i < fn->n_args; i++) {
             ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(
@@ -2086,7 +2100,7 @@ public:
         if (fn->m_return_var) {
             ASR::Variable_t *rv = ASR::down_cast<ASR::Variable_t>(
                 ASR::down_cast<ASR::Var_t>(fn->m_return_var)->m_v);
-            src << get_indent() << ret_type << " " << rv->m_name << ";\n";
+            src << get_indent() << ret_type << " " << sanitize_metal_name(rv->m_name) << ";\n";
         }
         // Declare Parameter (constant) variables from the function scope
         for (auto &item : fn->m_symtab->get_scope()) {
@@ -2234,7 +2248,7 @@ public:
         if (fn->m_return_var) {
             ASR::Variable_t *rv = ASR::down_cast<ASR::Variable_t>(
                 ASR::down_cast<ASR::Var_t>(fn->m_return_var)->m_v);
-            src << get_indent() << "return " << rv->m_name << ";\n";
+            src << get_indent() << "return " << sanitize_metal_name(rv->m_name) << ";\n";
         }
         indent_level--;
         src << "}\n\n";
@@ -3714,7 +3728,7 @@ public:
                     ? std::string(fn->m_name)
                     : std::string(ASRUtils::symbol_name(
                           ASRUtils::symbol_get_past_external(sc->m_name)));
-                src << get_indent() << call_name << "(";
+                src << get_indent() << sanitize_metal_name(call_name) << "(";
                 bool first_arg = true;
                 for (size_t i = 0; i < sc->n_args; i++) {
                     if (sc->m_args[i].m_value) {
@@ -3845,7 +3859,7 @@ public:
             }
             case ASR::exprType::Var: {
                 ASR::Var_t *v = ASR::down_cast<ASR::Var_t>(expr);
-                src << ASRUtils::symbol_name(v->m_v);
+                src << sanitize_metal_name(ASRUtils::symbol_name(v->m_v));
                 if (array_elem_index >= 0) {
                     ASR::ttype_t *vtype = ASRUtils::expr_type(expr);
                     ASR::ttype_t *inner = ASRUtils::type_get_past_allocatable_pointer(vtype);
@@ -4175,7 +4189,7 @@ public:
                     // Resolve to actual function name
                     ASR::Function_t *fn = resolve_function(fc->m_name);
                     std::string call_name = fn ? std::string(fn->m_name) : fn_name;
-                    src << call_name << "(";
+                    src << sanitize_metal_name(call_name) << "(";
                     bool first_arg = true;
                     for (size_t i = 0; i < fc->n_args; i++) {
                         if (fc->m_args[i].m_value) {
