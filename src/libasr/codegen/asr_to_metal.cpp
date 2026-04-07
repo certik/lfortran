@@ -301,16 +301,22 @@ public:
                 base_type)->m_type;
             if (ASR::is_a<ASR::Array_t>(*ptr_inner)) {
                 ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(ptr_inner);
+                std::string elem_type;
+                if (is_struct_type(arr->m_type)) {
+                    elem_type = get_struct_name(var);
+                } else {
+                    elem_type = metal_type(arr->m_type);
+                }
                 std::string vname(var->m_name);
                 if (ptr_to_local_alloc.count(vname)) {
-                    src << get_indent() << "thread " << metal_type(arr->m_type)
+                    src << get_indent() << "thread " << elem_type
                         << "* " << sanitize_metal_name(vname) << ";\n";
                 } else {
                     std::string ptr_addr = (in_inline_function
                         && current_func_all_input_arrays)
                         ? current_func_addr_space : "device";
                     src << get_indent() << ptr_addr << " "
-                        << metal_type(arr->m_type)
+                        << elem_type
                         << "* " << sanitize_metal_name(vname) << ";\n";
                 }
                 return;
@@ -3587,26 +3593,235 @@ public:
                             ASR::Struct_t *st = get_struct_decl(var);
                             if (st) {
                                 std::string vname(var->m_name);
-                                // Find the kernel call that consumes
-                                // this temp as In, and extract the Out
-                                // arg's data/size buffers.
-                                // Pattern: call f(temp, dest) where
-                                // temp is In, dest is Out struct.
+                                // Scan for Associate or Assignment
+                                // of the form temp => ArrayItem/
+                                // ArraySection(arr, ...) to find the
+                                // source array for this temp.
+                                std::string source_arr_name;
+                                std::string source_idx_expr;
+                                std::function<void(ASR::stmt_t**,
+                                    size_t)> scan_source =
+                                    [&](ASR::stmt_t **stmts,
+                                        size_t n) {
+                                    if (!source_arr_name.empty())
+                                        return;
+                                    for (size_t si = 0; si < n; si++) {
+                                        ASR::stmt_t *s = stmts[si];
+                                        if (s->type == ASR::stmtType::Assignment) {
+                                            ASR::Assignment_t *asgn =
+                                                ASR::down_cast<ASR::Assignment_t>(s);
+                                            if (!ASR::is_a<ASR::Var_t>(*asgn->m_target))
+                                                continue;
+                                            std::string tgt = ASRUtils::symbol_name(
+                                                ASR::down_cast<ASR::Var_t>(
+                                                    asgn->m_target)->m_v);
+                                            if (tgt != vname) continue;
+                                            if (ASR::is_a<ASR::ArrayItem_t>(*asgn->m_value)) {
+                                                ASR::ArrayItem_t *ai =
+                                                    ASR::down_cast<ASR::ArrayItem_t>(
+                                                        asgn->m_value);
+                                                if (ASR::is_a<ASR::Var_t>(*ai->m_v)) {
+                                                    source_arr_name = ASRUtils::symbol_name(
+                                                        ASR::down_cast<ASR::Var_t>(
+                                                            ai->m_v)->m_v);
+                                                    ASR::Array_t *sa = nullptr;
+                                                    ASR::ttype_t *sat =
+                                                        ASRUtils::type_get_past_allocatable(
+                                                            ASRUtils::expr_type(ai->m_v));
+                                                    if (ASR::is_a<ASR::Array_t>(*sat))
+                                                        sa = ASR::down_cast<ASR::Array_t>(sat);
+                                                    std::stringstream saved_s;
+                                                    saved_s.swap(src);
+                                                    std::vector<std::string> contribs;
+                                                    std::string cum_stride = "1";
+                                                    for (size_t d = 0; d < ai->n_args; d++) {
+                                                        ASR::expr_t *ie = ai->m_args[d].m_right
+                                                            ? ai->m_args[d].m_right
+                                                            : ai->m_args[d].m_left;
+                                                        if (ie) {
+                                                            src.str(""); src.clear();
+                                                            visit_expr(ie);
+                                                            std::string lb =
+                                                                get_lower_bound_str(sa, d);
+                                                            std::string c = "((int)(" +
+                                                                src.str() + ") - (" + lb + "))";
+                                                            if (cum_stride != "1")
+                                                                c = cum_stride + " * " + c;
+                                                            contribs.push_back(c);
+                                                        }
+                                                        if (sa && d < sa->n_dims
+                                                            && sa->m_dims[d].m_length) {
+                                                            ASR::expr_t *dl =
+                                                                sa->m_dims[d].m_length;
+                                                            std::string ds;
+                                                            if (ASR::is_a<
+                                                                ASR::IntegerConstant_t>(*dl))
+                                                                ds = std::to_string(
+                                                                    ASR::down_cast<
+                                                                    ASR::IntegerConstant_t>(
+                                                                        dl)->m_n);
+                                                            else {
+                                                                src.str(""); src.clear();
+                                                                visit_expr(dl);
+                                                                ds = src.str();
+                                                            }
+                                                            cum_stride = (cum_stride == "1")
+                                                                ? ds : "(" + cum_stride +
+                                                                " * " + ds + ")";
+                                                        }
+                                                    }
+                                                    if (contribs.empty()) {
+                                                        source_idx_expr = "0";
+                                                    } else {
+                                                        source_idx_expr = contribs[0];
+                                                        for (size_t ci = 1;
+                                                                ci < contribs.size(); ci++)
+                                                            source_idx_expr += " + " +
+                                                                contribs[ci];
+                                                    }
+                                                    saved_s.swap(src);
+                                                }
+                                            }
+                                        } else if (s->type == ASR::stmtType::Associate) {
+                                            ASR::Associate_t *assoc =
+                                                ASR::down_cast<ASR::Associate_t>(s);
+                                            if (!ASR::is_a<ASR::Var_t>(*assoc->m_target))
+                                                continue;
+                                            std::string tgt = ASRUtils::symbol_name(
+                                                ASR::down_cast<ASR::Var_t>(
+                                                    assoc->m_target)->m_v);
+                                            if (tgt != vname) continue;
+                                            ASR::expr_t *val = assoc->m_value;
+                                            ASR::expr_t *arr_v = nullptr;
+                                            ASR::array_index_t *aidxs = nullptr;
+                                            size_t n_aidxs = 0;
+                                            bool is_section = false;
+                                            if (ASR::is_a<ASR::ArrayItem_t>(*val)) {
+                                                ASR::ArrayItem_t *ai =
+                                                    ASR::down_cast<ASR::ArrayItem_t>(val);
+                                                arr_v = ai->m_v;
+                                                aidxs = ai->m_args;
+                                                n_aidxs = ai->n_args;
+                                            } else if (ASR::is_a<ASR::ArraySection_t>(
+                                                    *val)) {
+                                                ASR::ArraySection_t *as =
+                                                    ASR::down_cast<ASR::ArraySection_t>(
+                                                        val);
+                                                arr_v = as->m_v;
+                                                aidxs = as->m_args;
+                                                n_aidxs = as->n_args;
+                                                is_section = true;
+                                            }
+                                            if (arr_v && ASR::is_a<ASR::Var_t>(*arr_v)) {
+                                                source_arr_name = ASRUtils::symbol_name(
+                                                    ASR::down_cast<ASR::Var_t>(
+                                                        arr_v)->m_v);
+                                                ASR::Array_t *sa = nullptr;
+                                                ASR::ttype_t *sat =
+                                                    ASRUtils::type_get_past_allocatable(
+                                                        ASRUtils::expr_type(arr_v));
+                                                if (ASR::is_a<ASR::Array_t>(*sat))
+                                                    sa = ASR::down_cast<ASR::Array_t>(sat);
+                                                std::stringstream saved_s;
+                                                saved_s.swap(src);
+                                                std::vector<std::string> contribs;
+                                                std::string cum_stride = "1";
+                                                for (size_t d = 0; d < n_aidxs; d++) {
+                                                    ASR::expr_t *ie = nullptr;
+                                                    if (is_section) {
+                                                        if (!aidxs[d].m_left
+                                                            && aidxs[d].m_right
+                                                            && !aidxs[d].m_step)
+                                                            ie = aidxs[d].m_right;
+                                                        else if (aidxs[d].m_left)
+                                                            ie = aidxs[d].m_left;
+                                                    } else {
+                                                        ie = aidxs[d].m_right
+                                                            ? aidxs[d].m_right
+                                                            : aidxs[d].m_left;
+                                                    }
+                                                    if (ie) {
+                                                        src.str(""); src.clear();
+                                                        visit_expr(ie);
+                                                        std::string lb =
+                                                            get_lower_bound_str(sa, d);
+                                                        std::string c = "((int)(" +
+                                                            src.str() + ") - (" + lb + "))";
+                                                        if (cum_stride != "1")
+                                                            c = cum_stride + " * " + c;
+                                                        contribs.push_back(c);
+                                                    }
+                                                    if (sa && d < sa->n_dims
+                                                        && sa->m_dims[d].m_length) {
+                                                        ASR::expr_t *dl =
+                                                            sa->m_dims[d].m_length;
+                                                        std::string ds;
+                                                        if (ASR::is_a<
+                                                            ASR::IntegerConstant_t>(*dl))
+                                                            ds = std::to_string(
+                                                                ASR::down_cast<
+                                                                ASR::IntegerConstant_t>(
+                                                                    dl)->m_n);
+                                                        else {
+                                                            src.str(""); src.clear();
+                                                            visit_expr(dl);
+                                                            ds = src.str();
+                                                        }
+                                                        cum_stride = (cum_stride == "1")
+                                                            ? ds : "(" + cum_stride +
+                                                            " * " + ds + ")";
+                                                    }
+                                                }
+                                                if (contribs.empty()) {
+                                                    source_idx_expr = "0";
+                                                } else {
+                                                    source_idx_expr = contribs[0];
+                                                    for (size_t ci = 1;
+                                                            ci < contribs.size(); ci++)
+                                                        source_idx_expr += " + " +
+                                                            contribs[ci];
+                                                }
+                                                saved_s.swap(src);
+                                            }
+                                        } else if (s->type ==
+                                            ASR::stmtType::WhileLoop) {
+                                            ASR::WhileLoop_t *wl =
+                                                ASR::down_cast<ASR::WhileLoop_t>(s);
+                                            scan_source(wl->m_body, wl->n_body);
+                                        } else if (s->type ==
+                                            ASR::stmtType::DoLoop) {
+                                            ASR::DoLoop_t *dl =
+                                                ASR::down_cast<ASR::DoLoop_t>(s);
+                                            scan_source(dl->m_body, dl->n_body);
+                                        } else if (s->type == ASR::stmtType::If) {
+                                            ASR::If_t *ifs =
+                                                ASR::down_cast<ASR::If_t>(s);
+                                            scan_source(ifs->m_body, ifs->n_body);
+                                            scan_source(ifs->m_orelse, ifs->n_orelse);
+                                        }
+                                    }
+                                };
+                                scan_source(x.m_body, x.n_body);
+
+                                // Also scan SubroutineCalls recursively
+                                // for destination array.
                                 std::string dest_arr_name;
                                 std::string dest_idx_expr;
-                                for (size_t si = 0;
-                                        si < x.n_body; si++) {
-                                    if (x.m_body[si]->type !=
-                                        ASR::stmtType::SubroutineCall)
-                                        continue;
+                                std::function<void(ASR::stmt_t**,
+                                    size_t)> scan_calls =
+                                    [&](ASR::stmt_t **stmts,
+                                        size_t n) {
+                                    if (!dest_arr_name.empty()) return;
+                                    for (size_t si = 0; si < n; si++) {
+                                        ASR::stmt_t *s = stmts[si];
+                                        if (s->type ==
+                                            ASR::stmtType::SubroutineCall) {
                                     ASR::SubroutineCall_t *sc =
                                         ASR::down_cast<
-                                            ASR::SubroutineCall_t>(
-                                                x.m_body[si]);
+                                            ASR::SubroutineCall_t>(s);
                                     ASR::Function_t *cfn =
                                         resolve_function(sc->m_name);
                                     if (!cfn) continue;
-                                    // Find temp as In arg
                                     size_t t_idx = SIZE_MAX;
                                     for (size_t a = 0;
                                             a < sc->n_args &&
@@ -3637,7 +3852,6 @@ public:
                                         }
                                     }
                                     if (t_idx == SIZE_MAX) continue;
-                                    // Find Out struct ArrayItem arg
                                     for (size_t a = 0;
                                             a < sc->n_args &&
                                             a < cfn->n_args; a++) {
@@ -3672,7 +3886,6 @@ public:
                                                 ASR::down_cast<
                                                     ASR::Var_t>(
                                                     ai->m_v)->m_v);
-                                        // Build index expression
                                         ASR::Array_t *da = nullptr;
                                         ASR::ttype_t *dt =
                                             ASRUtils::
@@ -3706,7 +3919,34 @@ public:
                                         break;
                                     }
                                     if (!dest_arr_name.empty()) break;
-                                }
+                                        } else if (s->type ==
+                                            ASR::stmtType::WhileLoop) {
+                                            ASR::WhileLoop_t *wl =
+                                                ASR::down_cast<
+                                                    ASR::WhileLoop_t>(s);
+                                            scan_calls(wl->m_body,
+                                                wl->n_body);
+                                        } else if (s->type ==
+                                            ASR::stmtType::DoLoop) {
+                                            ASR::DoLoop_t *dl =
+                                                ASR::down_cast<
+                                                    ASR::DoLoop_t>(s);
+                                            scan_calls(dl->m_body,
+                                                dl->n_body);
+                                        } else if (s->type ==
+                                            ASR::stmtType::If) {
+                                            ASR::If_t *ifs =
+                                                ASR::down_cast<
+                                                    ASR::If_t>(s);
+                                            scan_calls(ifs->m_body,
+                                                ifs->n_body);
+                                            scan_calls(ifs->m_orelse,
+                                                ifs->n_orelse);
+                                        }
+                                    }
+                                };
+                                scan_calls(x.m_body, x.n_body);
+
                                 for (size_t m = 0;
                                         m < st->n_members; m++) {
                                     ASR::symbol_t *mem =
@@ -3733,7 +3973,57 @@ public:
                                         st->m_members[m]);
                                     std::string key = vname + "."
                                         + mem_name;
-                                    if (!dest_arr_name.empty()) {
+                                    if (!source_arr_name.empty()) {
+                                        std::string skey =
+                                            source_arr_name + "."
+                                            + mem_name;
+                                        auto dit =
+                                            func_array_data_params
+                                            .find(skey);
+                                        auto oit =
+                                            struct_array_offset_params
+                                            .find(skey);
+                                        auto sit =
+                                            struct_array_sizes_params
+                                            .find(skey);
+                                        if (dit !=
+                                            func_array_data_params
+                                            .end() &&
+                                            oit !=
+                                            struct_array_offset_params
+                                            .end()) {
+                                            func_array_data_params[
+                                                key] =
+                                                dit->second + " + "
+                                                + oit->second + "["
+                                                + source_idx_expr
+                                                + "]";
+                                        } else if (dit !=
+                                            func_array_data_params
+                                            .end()) {
+                                            func_array_data_params[
+                                                key] = dit->second;
+                                        } else {
+                                            func_array_data_params[
+                                                key] = "__data_"
+                                                + source_arr_name + "_"
+                                                + mem_name;
+                                        }
+                                        if (sit !=
+                                            struct_array_sizes_params
+                                            .end()) {
+                                            func_array_size_params[
+                                                key] =
+                                                sit->second + "["
+                                                + source_idx_expr
+                                                + "]";
+                                        } else {
+                                            func_array_size_params[
+                                                key] = "__size_"
+                                                + source_arr_name + "_"
+                                                + mem_name;
+                                        }
+                                    } else if (!dest_arr_name.empty()) {
                                         std::string dkey =
                                             dest_arr_name + "."
                                             + mem_name;
@@ -3787,7 +4077,7 @@ public:
                                                 key] = sv;
                                         }
                                     } else {
-                                        // No destination found;
+                                        // No source/dest found;
                                         // declare local size var and
                                         // fallback data name.
                                         std::string sv =
@@ -4928,6 +5218,22 @@ public:
                             }
                             if (!skip_addr) {
                                 src << "&";
+                            }
+                        }
+                        // Dereference pointer-to-struct args when
+                        // the formal param expects a struct by value.
+                        if (fn && i < fn->n_args
+                            && ASR::is_a<ASR::Pointer_t>(*arg_type)) {
+                            ASR::Variable_t *farg =
+                                ASR::down_cast<ASR::Variable_t>(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        fn->m_args[i])->m_v);
+                            ASR::ttype_t *ft =
+                                ASRUtils::type_get_past_allocatable(
+                                    farg->m_type);
+                            if (!ASR::is_a<ASR::Pointer_t>(*ft)
+                                && is_struct_type(ft)) {
+                                src << "*";
                             }
                         }
                         visit_expr(sc->m_args[i].m_value);
