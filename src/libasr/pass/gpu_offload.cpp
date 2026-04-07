@@ -1967,6 +1967,18 @@ public:
             return find_sum_in_expr(
                 ASR::down_cast<ASR::ArrayPhysicalCast_t>(expr)->m_arg);
         }
+        if (ASR::is_a<ASR::RealCompare_t>(*expr)) {
+            auto *cmp = ASR::down_cast<ASR::RealCompare_t>(expr);
+            auto *found = find_sum_in_expr(cmp->m_left);
+            if (found) return found;
+            return find_sum_in_expr(cmp->m_right);
+        }
+        if (ASR::is_a<ASR::IntegerCompare_t>(*expr)) {
+            auto *cmp = ASR::down_cast<ASR::IntegerCompare_t>(expr);
+            auto *found = find_sum_in_expr(cmp->m_left);
+            if (found) return found;
+            return find_sum_in_expr(cmp->m_right);
+        }
         return nullptr;
     }
 
@@ -2010,6 +2022,18 @@ public:
             return replace_sum_in_expr(
                 ASR::down_cast<ASR::ArrayPhysicalCast_t>(expr)->m_arg,
                 target, replacement);
+        }
+        if (ASR::is_a<ASR::RealCompare_t>(*expr)) {
+            auto *cmp = ASR::down_cast<ASR::RealCompare_t>(expr);
+            if (replace_sum_in_expr(cmp->m_left, target, replacement))
+                return true;
+            return replace_sum_in_expr(cmp->m_right, target, replacement);
+        }
+        if (ASR::is_a<ASR::IntegerCompare_t>(*expr)) {
+            auto *cmp = ASR::down_cast<ASR::IntegerCompare_t>(expr);
+            if (replace_sum_in_expr(cmp->m_left, target, replacement))
+                return true;
+            return replace_sum_in_expr(cmp->m_right, target, replacement);
         }
         return false;
     }
