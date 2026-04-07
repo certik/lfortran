@@ -1638,6 +1638,86 @@ public:
                 var = ASR::down_cast<ASR::Variable_t>(sym);
                 var_name = var->m_name;
             }
+        } else if (ASR::is_a<ASR::ArrayItem_t>(*expr)) {
+            // Handle array-of-struct element: a(i)
+            ASR::ArrayItem_t *ai = ASR::down_cast<ASR::ArrayItem_t>(expr);
+            if (ASR::is_a<ASR::Var_t>(*ai->m_v)) {
+                ASR::symbol_t *arr_sym =
+                    ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v;
+                arr_sym = ASRUtils::symbol_get_past_external(arr_sym);
+                if (!ASR::is_a<ASR::Variable_t>(*arr_sym)) return;
+                ASR::Variable_t *arr_var =
+                    ASR::down_cast<ASR::Variable_t>(arr_sym);
+                if (!arr_var->m_type_declaration) return;
+                ASR::symbol_t *st_sym =
+                    ASRUtils::symbol_get_past_external(
+                        arr_var->m_type_declaration);
+                if (!ASR::is_a<ASR::Struct_t>(*st_sym)) return;
+                ASR::Struct_t *st =
+                    ASR::down_cast<ASR::Struct_t>(st_sym);
+                std::string arr_name(arr_var->m_name);
+                // Compute 0-based index string
+                std::string idx_str = "0";
+                if (ai->n_args == 1) {
+                    ASR::expr_t *idx = ai->m_args[0].m_right
+                        ? ai->m_args[0].m_right
+                        : ai->m_args[0].m_left;
+                    if (idx) {
+                        ASR::Array_t *arr_t = nullptr;
+                        ASR::ttype_t *arr_type =
+                            ASRUtils::type_get_past_allocatable(
+                                ASRUtils::expr_type(ai->m_v));
+                        if (ASR::is_a<ASR::Array_t>(*arr_type)) {
+                            arr_t = ASR::down_cast<ASR::Array_t>(
+                                arr_type);
+                        }
+                        std::string lb = get_lower_bound_str(arr_t, 0);
+                        std::stringstream idx_ss;
+                        {
+                            std::stringstream saved;
+                            saved.swap(src);
+                            visit_expr(idx);
+                            idx_ss << "((int)(" << src.str()
+                                   << ") - (" << lb << "))";
+                            saved.swap(src);
+                        }
+                        idx_str = idx_ss.str();
+                    }
+                }
+                for (size_t m = 0; m < st->n_members; m++) {
+                    ASR::symbol_t *mem =
+                        st->m_symtab->get_symbol(st->m_members[m]);
+                    if (!mem || !ASR::is_a<ASR::Variable_t>(*mem))
+                        continue;
+                    ASR::Variable_t *mv =
+                        ASR::down_cast<ASR::Variable_t>(mem);
+                    if (!ASRUtils::is_allocatable(mv->m_type)) continue;
+                    ASR::ttype_t *inner =
+                        ASRUtils::type_get_past_allocatable(mv->m_type);
+                    if (!ASR::is_a<ASR::Array_t>(*inner)) continue;
+                    std::string key = arr_name + "."
+                        + st->m_members[m];
+                    auto dit = func_array_data_params.find(key);
+                    auto oit = struct_array_offset_params.find(key);
+                    if (dit != func_array_data_params.end() &&
+                            oit != struct_array_offset_params.end()) {
+                        src << ", " << dit->second << " + "
+                            << oit->second << "[" << idx_str << "]";
+                    } else {
+                        src << ", __data_" << arr_name << "_"
+                            << st->m_members[m];
+                    }
+                    auto sit = struct_array_sizes_params.find(key);
+                    if (sit != struct_array_sizes_params.end()) {
+                        src << ", " << sit->second
+                            << "[" << idx_str << "]";
+                    } else {
+                        src << ", __size_" << arr_name << "_"
+                            << st->m_members[m];
+                    }
+                }
+                return;
+            }
         }
         if (!var || !var->m_type_declaration) return;
         ASR::symbol_t *st_sym =
@@ -3486,6 +3566,41 @@ public:
                         array_elem_index = 0;
                         visit_expr(a->m_value);
                         array_elem_index = -1;
+                        src << ";\n";
+                    }
+                } else if (ASR::is_a<ASR::StructInstanceMember_t>(
+                            *a->m_target) && rhs_is_array_or_alloc) {
+                    // Target is a struct member backed by a data pointer
+                    // param (e.g., r%v -> __data_r_v). Copy element-wise
+                    // using the size param instead of pointer assignment.
+                    ASR::StructInstanceMember_t *sm =
+                        ASR::down_cast<ASR::StructInstanceMember_t>(
+                            a->m_target);
+                    std::string mem_name = ASRUtils::symbol_name(
+                        ASRUtils::symbol_get_past_external(sm->m_m));
+                    std::string size_expr;
+                    if (ASR::is_a<ASR::Var_t>(*sm->m_v)) {
+                        std::string sname = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(sm->m_v)->m_v);
+                        std::string key = sname + "." + mem_name;
+                        auto dit = func_array_data_params.find(key);
+                        auto spit = func_array_size_params.find(key);
+                        if (dit != func_array_data_params.end() &&
+                                spit != func_array_size_params.end()) {
+                            size_expr = spit->second;
+                        }
+                    }
+                    if (!size_expr.empty()) {
+                        src << "for (int __copy_i = 0; __copy_i < "
+                            << size_expr << "; __copy_i++) ";
+                        visit_expr(a->m_target);
+                        src << "[__copy_i] = ";
+                        visit_expr(a->m_value);
+                        src << "[__copy_i];\n";
+                    } else {
+                        visit_expr(a->m_target);
+                        src << " = ";
+                        visit_expr(a->m_value);
                         src << ";\n";
                     }
                 } else {

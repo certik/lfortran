@@ -853,43 +853,150 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
     }
     for (size_t si = 0; si < kernel.n_body; si++) {
         ASR::stmt_t *stmt = kernel.m_body[si];
-        if (stmt->type != ASR::stmtType::Assignment) continue;
-        ASR::Assignment_t *asgn =
-            ASR::down_cast<ASR::Assignment_t>(stmt);
-        if (!ASR::is_a<ASR::StructInstanceMember_t>(*asgn->m_target))
-            continue;
-        if (!ASR::is_a<ASR::Var_t>(*asgn->m_value)) continue;
-        ASR::StructInstanceMember_t *sm =
-            ASR::down_cast<ASR::StructInstanceMember_t>(
-                asgn->m_target);
-        std::string mem_name = ASRUtils::symbol_name(
-            ASRUtils::symbol_get_past_external(sm->m_m));
-        std::string struct_name;
-        if (ASR::is_a<ASR::ArrayItem_t>(*sm->m_v)) {
-            ASR::ArrayItem_t *ai =
-                ASR::down_cast<ASR::ArrayItem_t>(sm->m_v);
-            if (ASR::is_a<ASR::Var_t>(*ai->m_v)) {
-                struct_name = ASRUtils::symbol_name(
-                    ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
+        if (stmt->type == ASR::stmtType::Assignment) {
+            ASR::Assignment_t *asgn =
+                ASR::down_cast<ASR::Assignment_t>(stmt);
+            if (!ASR::is_a<ASR::StructInstanceMember_t>(*asgn->m_target))
+                continue;
+            if (!ASR::is_a<ASR::Var_t>(*asgn->m_value)) continue;
+            ASR::StructInstanceMember_t *sm =
+                ASR::down_cast<ASR::StructInstanceMember_t>(
+                    asgn->m_target);
+            std::string mem_name = ASRUtils::symbol_name(
+                ASRUtils::symbol_get_past_external(sm->m_m));
+            std::string struct_name;
+            if (ASR::is_a<ASR::ArrayItem_t>(*sm->m_v)) {
+                ASR::ArrayItem_t *ai =
+                    ASR::down_cast<ASR::ArrayItem_t>(sm->m_v);
+                if (ASR::is_a<ASR::Var_t>(*ai->m_v)) {
+                    struct_name = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
+                }
             }
-        }
-        if (struct_name.empty()) continue;
-        std::string val_name = ASRUtils::symbol_name(
-            ASR::down_cast<ASR::Var_t>(asgn->m_value)->m_v);
-        auto ws_it = ws_by_name.find(val_name);
-        if (ws_it == ws_by_name.end()) continue;
-        int64_t per_elem = 1;
-        bool all_const = true;
-        for (auto &dim : ws_it->second->dims) {
-            if (dim.is_constant) {
-                per_elem *= dim.constant_value;
-            } else {
-                all_const = false;
-                break;
+            if (struct_name.empty()) continue;
+            std::string val_name = ASRUtils::symbol_name(
+                ASR::down_cast<ASR::Var_t>(asgn->m_value)->m_v);
+            auto ws_it = ws_by_name.find(val_name);
+            if (ws_it == ws_by_name.end()) continue;
+            int64_t per_elem = 1;
+            bool all_const = true;
+            for (auto &dim : ws_it->second->dims) {
+                if (dim.is_constant) {
+                    per_elem *= dim.constant_value;
+                } else {
+                    all_const = false;
+                    break;
+                }
             }
-        }
-        if (all_const && per_elem > 0) {
-            result[struct_name + "." + mem_name] = per_elem;
+            if (all_const && per_elem > 0) {
+                result[struct_name + "." + mem_name] = per_elem;
+            }
+        } else if (stmt->type == ASR::stmtType::SubroutineCall) {
+            // Look through subroutine calls for writes to struct
+            // allocatable members (e.g., construct(x, a(i)) where
+            // the function body does r%v = x).
+            ASR::SubroutineCall_t *sc =
+                ASR::down_cast<ASR::SubroutineCall_t>(stmt);
+            ASR::symbol_t *fn_sym =
+                ASRUtils::symbol_get_past_external(sc->m_name);
+            if (!ASR::is_a<ASR::Function_t>(*fn_sym)) continue;
+            ASR::Function_t *fn =
+                ASR::down_cast<ASR::Function_t>(fn_sym);
+            // Find which actual args are struct array elements
+            for (size_t ai = 0; ai < sc->n_args; ai++) {
+                if (!sc->m_args[ai].m_value) continue;
+                if (!ASR::is_a<ASR::ArrayItem_t>(
+                        *sc->m_args[ai].m_value)) continue;
+                ASR::ArrayItem_t *arr_item =
+                    ASR::down_cast<ASR::ArrayItem_t>(
+                        sc->m_args[ai].m_value);
+                ASR::ttype_t *elem_type = arr_item->m_type;
+                if (!ASR::is_a<ASR::StructType_t>(
+                        *ASRUtils::extract_type(elem_type)))
+                    continue;
+                if (!ASR::is_a<ASR::Var_t>(*arr_item->m_v)) continue;
+                std::string arr_name = ASRUtils::symbol_name(
+                    ASR::down_cast<ASR::Var_t>(
+                        arr_item->m_v)->m_v);
+                // Get the formal parameter name for this arg
+                if (ai >= fn->n_args) continue;
+                ASR::Variable_t *formal =
+                    ASR::down_cast<ASR::Variable_t>(
+                        ASR::down_cast<ASR::Var_t>(
+                            fn->m_args[ai])->m_v);
+                std::string formal_name(formal->m_name);
+                // Scan function body for assignments to
+                // formal%member = some_array_param
+                for (size_t fi = 0; fi < fn->n_body; fi++) {
+                    if (fn->m_body[fi]->type !=
+                            ASR::stmtType::Assignment) continue;
+                    ASR::Assignment_t *fa =
+                        ASR::down_cast<ASR::Assignment_t>(
+                            fn->m_body[fi]);
+                    if (!ASR::is_a<ASR::StructInstanceMember_t>(
+                            *fa->m_target)) continue;
+                    ASR::StructInstanceMember_t *fsm =
+                        ASR::down_cast<ASR::StructInstanceMember_t>(
+                            fa->m_target);
+                    // Check target struct var matches the formal
+                    if (!ASR::is_a<ASR::Var_t>(*fsm->m_v)) continue;
+                    std::string tgt_name = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(
+                            fsm->m_v)->m_v);
+                    if (tgt_name != formal_name) continue;
+                    std::string mem_name = ASRUtils::symbol_name(
+                        ASRUtils::symbol_get_past_external(
+                            fsm->m_m));
+                    std::string key = arr_name + "." + mem_name;
+                    if (result.count(key)) continue;
+                    // RHS is a Var — find its size from the actual
+                    // argument at the call site
+                    if (!ASR::is_a<ASR::Var_t>(*fa->m_value))
+                        continue;
+                    std::string rhs_name = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(
+                            fa->m_value)->m_v);
+                    // Find which formal param index this is
+                    for (size_t pi = 0; pi < fn->n_args; pi++) {
+                        ASR::Variable_t *fp =
+                            ASR::down_cast<ASR::Variable_t>(
+                                ASR::down_cast<ASR::Var_t>(
+                                    fn->m_args[pi])->m_v);
+                        if (std::string(fp->m_name) != rhs_name)
+                            continue;
+                        if (pi >= sc->n_args) break;
+                        // Get the actual arg's size
+                        ASR::expr_t *actual =
+                            sc->m_args[pi].m_value;
+                        if (!actual) break;
+                        ASR::ttype_t *at =
+                            ASRUtils::expr_type(actual);
+                        ASR::ttype_t *past =
+                            ASRUtils::type_get_past_allocatable(at);
+                        if (!ASR::is_a<ASR::Array_t>(*past)) break;
+                        ASR::Array_t *arr =
+                            ASR::down_cast<ASR::Array_t>(past);
+                        int64_t sz = 1;
+                        bool all_c = true;
+                        for (size_t d = 0; d < arr->n_dims; d++) {
+                            if (arr->m_dims[d].m_length &&
+                                    ASR::is_a<ASR::IntegerConstant_t>(
+                                        *arr->m_dims[d].m_length)) {
+                                sz *= ASR::down_cast<
+                                    ASR::IntegerConstant_t>(
+                                    arr->m_dims[d].m_length)->m_n;
+                            } else {
+                                all_c = false;
+                                break;
+                            }
+                        }
+                        if (all_c && sz > 0) {
+                            result[key] = sz;
+                        }
+                        break;
+                    }
+                }
+            }
         }
     }
     return result;
