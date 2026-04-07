@@ -338,7 +338,6 @@ inline bool try_resolve_array_size_to_arg_var(
                 bool start_is_one =
                     try_eval_int_constant(idx.m_left, start_val)
                     && start_val == 1;
-                int64_t stride_val = 1;
                 bool step_is_one = true;
                 if (idx.m_step) {
                     int64_t sv;
@@ -348,6 +347,22 @@ inline bool try_resolve_array_size_to_arg_var(
                 if (start_is_one && step_is_one && idx.m_right) {
                     return find_arg_var_in_expr(
                         idx.m_right, arg_names, arg_index);
+                }
+                // When the section spans a full dimension (e.g.
+                // m(lbound(m,1):ubound(m,1):1, ...)), the size
+                // equals the array's dimension size.  Look for the
+                // __dim_<base>_<d> kernel arg directly.
+                if (step_is_one && ASR::is_a<ASR::Var_t>(*sec->m_v)) {
+                    std::string base_name = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(sec->m_v)->m_v);
+                    std::string dim_arg = "__dim_" + base_name
+                        + "_" + std::to_string(d);
+                    for (size_t a = 0; a < arg_names.size(); a++) {
+                        if (arg_names[a] == dim_arg) {
+                            arg_index = a;
+                            return true;
+                        }
+                    }
                 }
                 return false;
             }

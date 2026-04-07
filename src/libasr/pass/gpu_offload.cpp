@@ -5138,10 +5138,36 @@ public:
                     k_arr->m_dims[d].m_length = ASRUtils::EXPR(
                         ASR::make_Var_t(al, loc, dim_sym));
                     if (!k_arr->m_dims[d].m_start) {
-                        k_arr->m_dims[d].m_start = ASRUtils::EXPR(
-                            ASR::make_IntegerConstant_t(al, loc, 1,
+                        // Pass lower bound as kernel parameter
+                        std::string lb_name = "__lb_" + di.param_name
+                            + "_" + std::to_string(d);
+                        ASR::symbol_t *lb_sym = ASR::down_cast<ASR::symbol_t>(
+                            ASRUtils::make_Variable_t_util(al, loc, kernel_scope,
+                                s2c(al, lb_name), nullptr, 0,
+                                ASR::intentType::InOut, nullptr, nullptr,
+                                ASR::storage_typeType::Default,
+                                ASRUtils::duplicate_type(al, int_type_dim),
+                                nullptr, ASR::abiType::Source,
+                                ASR::accessType::Public,
+                                ASR::presenceType::Required, false));
+                        kernel_scope->add_symbol(lb_name, lb_sym);
+                        kernel_args.push_back(al,
+                            ASRUtils::EXPR(ASR::make_Var_t(al, loc, lb_sym)));
+                        // Host-side value: lbound(struct%member, dim=d+1)
+                        ASR::expr_t *lb_dim_expr = ASRUtils::EXPR(
+                            ASR::make_IntegerConstant_t(al, loc, (int64_t)(d + 1),
+                                int_type_dim, ASR::integerbozType::Decimal));
+                        ASR::expr_t *host_lb = ASRUtils::EXPR(
+                            ASR::make_ArrayBound_t(al, loc,
+                                host_member_expr, lb_dim_expr,
                                 int_type_dim,
-                                ASR::integerbozType::Decimal));
+                                ASR::arrayboundType::LBound, nullptr));
+                        ASR::call_arg_t lb_carg;
+                        lb_carg.loc = loc;
+                        lb_carg.m_value = host_lb;
+                        call_args.push_back(al, lb_carg);
+                        k_arr->m_dims[d].m_start = ASRUtils::EXPR(
+                            ASR::make_Var_t(al, loc, lb_sym));
                     }
                 }
             }
@@ -5197,9 +5223,36 @@ public:
                 k_arr->m_dims[d].m_length = ASRUtils::EXPR(
                     ASR::make_Var_t(al, loc, dim_sym));
                 if (!k_arr->m_dims[d].m_start) {
-                    k_arr->m_dims[d].m_start = ASRUtils::EXPR(
-                        ASR::make_IntegerConstant_t(al, loc, 1,
+                    // Pass lower bound as kernel parameter
+                    std::string lb_name = "__lb_" + sym_name + "_"
+                        + std::to_string(d);
+                    ASR::symbol_t *lb_sym = ASR::down_cast<ASR::symbol_t>(
+                        ASRUtils::make_Variable_t_util(al, loc, kernel_scope,
+                            s2c(al, lb_name), nullptr, 0,
+                            ASR::intentType::InOut, nullptr, nullptr,
+                            ASR::storage_typeType::Default,
+                            ASRUtils::duplicate_type(al, int_type_dim),
+                            nullptr, ASR::abiType::Source,
+                            ASR::accessType::Public,
+                            ASR::presenceType::Required, false));
+                    kernel_scope->add_symbol(lb_name, lb_sym);
+                    kernel_args.push_back(al,
+                        ASRUtils::EXPR(ASR::make_Var_t(al, loc, lb_sym)));
+                    // Host-side value: lbound(arr, dim=d+1)
+                    ASR::expr_t *lb_dim_expr = ASRUtils::EXPR(
+                        ASR::make_IntegerConstant_t(al, loc, (int64_t)(d + 1),
                             int_type_dim, ASR::integerbozType::Decimal));
+                    ASR::expr_t *host_lb = ASRUtils::EXPR(
+                        ASR::make_ArrayBound_t(al, loc,
+                            ASRUtils::EXPR(ASR::make_Var_t(al, loc, orig_sym)),
+                            lb_dim_expr, int_type_dim,
+                            ASR::arrayboundType::LBound, nullptr));
+                    ASR::call_arg_t lb_carg;
+                    lb_carg.loc = loc;
+                    lb_carg.m_value = host_lb;
+                    call_args.push_back(al, lb_carg);
+                    k_arr->m_dims[d].m_start = ASRUtils::EXPR(
+                        ASR::make_Var_t(al, loc, lb_sym));
                 }
             }
         }
