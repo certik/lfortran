@@ -2932,6 +2932,30 @@ public:
                     return ASRUtils::EXPR(ASR::make_IntegerBinOp_t(al,
                         loc, elementize_rhs(ib->m_left), ib->m_op,
                         elementize_rhs(ib->m_right), et, nullptr));
+                } else if (ASR::is_a<ASR::RealCompare_t>(*e)) {
+                    ASR::RealCompare_t *rc =
+                        ASR::down_cast<ASR::RealCompare_t>(e);
+                    ASR::ttype_t *et = ASRUtils::extract_type(
+                        ASRUtils::expr_type(e));
+                    return ASRUtils::EXPR(ASR::make_RealCompare_t(al,
+                        loc, elementize_rhs(rc->m_left), rc->m_op,
+                        elementize_rhs(rc->m_right), et, nullptr));
+                } else if (ASR::is_a<ASR::IntegerCompare_t>(*e)) {
+                    ASR::IntegerCompare_t *ic =
+                        ASR::down_cast<ASR::IntegerCompare_t>(e);
+                    ASR::ttype_t *et = ASRUtils::extract_type(
+                        ASRUtils::expr_type(e));
+                    return ASRUtils::EXPR(ASR::make_IntegerCompare_t(al,
+                        loc, elementize_rhs(ic->m_left), ic->m_op,
+                        elementize_rhs(ic->m_right), et, nullptr));
+                } else if (ASR::is_a<ASR::LogicalCompare_t>(*e)) {
+                    ASR::LogicalCompare_t *lc =
+                        ASR::down_cast<ASR::LogicalCompare_t>(e);
+                    ASR::ttype_t *et = ASRUtils::extract_type(
+                        ASRUtils::expr_type(e));
+                    return ASRUtils::EXPR(ASR::make_LogicalCompare_t(al,
+                        loc, elementize_rhs(lc->m_left), lc->m_op,
+                        elementize_rhs(lc->m_right), et, nullptr));
                 } else if (ASR::is_a<ASR::IntrinsicElementalFunction_t>(
                         *e)) {
                     ASR::IntrinsicElementalFunction_t *f =
@@ -3724,26 +3748,31 @@ public:
                         ASRUtils::expr_type(e));
                     return ASRUtils::EXPR(ASR::make_IntegerUnaryMinus_t(al, loc,
                         elementize(u->m_arg), elem_type, nullptr));
-                } else if (ASR::is_a<ASR::FunctionCall_t>(*e)) {
-                    ASR::FunctionCall_t *fc =
-                        ASR::down_cast<ASR::FunctionCall_t>(e);
-                    Vec<ASR::call_arg_t> new_args;
-                    new_args.reserve(al, fc->n_args);
-                    for (size_t i = 0; i < fc->n_args; i++) {
-                        ASR::call_arg_t arg;
-                        arg.loc = fc->m_args[i].loc;
-                        arg.m_value = fc->m_args[i].m_value
-                            ? elementize(fc->m_args[i].m_value)
-                            : nullptr;
-                        new_args.push_back(al, arg);
-                    }
+                } else if (ASR::is_a<ASR::RealCompare_t>(*e)) {
+                    ASR::RealCompare_t *rc =
+                        ASR::down_cast<ASR::RealCompare_t>(e);
                     ASR::ttype_t *elem_type = ASRUtils::extract_type(
                         ASRUtils::expr_type(e));
-                    return ASRUtils::EXPR(
-                        ASR::make_FunctionCall_t(al, loc,
-                            fc->m_name, fc->m_original_name,
-                            new_args.p, new_args.n, elem_type,
-                            fc->m_value, fc->m_dt));
+                    return ASRUtils::EXPR(ASR::make_RealCompare_t(al, loc,
+                        elementize(rc->m_left), rc->m_op,
+                        elementize(rc->m_right), elem_type, nullptr));
+                } else if (ASR::is_a<ASR::IntegerCompare_t>(*e)) {
+                    ASR::IntegerCompare_t *ic =
+                        ASR::down_cast<ASR::IntegerCompare_t>(e);
+                    ASR::ttype_t *elem_type = ASRUtils::extract_type(
+                        ASRUtils::expr_type(e));
+                    return ASRUtils::EXPR(ASR::make_IntegerCompare_t(al, loc,
+                        elementize(ic->m_left), ic->m_op,
+                        elementize(ic->m_right), elem_type, nullptr));
+                } else if (ASR::is_a<ASR::LogicalCompare_t>(*e)) {
+                    ASR::LogicalCompare_t *lc =
+                        ASR::down_cast<ASR::LogicalCompare_t>(e);
+                    ASR::ttype_t *elem_type = ASRUtils::extract_type(
+                        ASRUtils::expr_type(e));
+                    return ASRUtils::EXPR(ASR::make_LogicalCompare_t(al, loc,
+                        elementize(lc->m_left), lc->m_op,
+                        elementize(lc->m_right), elem_type, nullptr));
+                } else if (ASR::is_a<ASR::FunctionCall_t>(*e)) {
                 } else if (ASR::is_a<ASR::ArrayBroadcast_t>(*e)) {
                     return ASR::down_cast<ASR::ArrayBroadcast_t>(e)->m_array;
                 } else if (ASR::is_a<ASR::ArrayPhysicalCast_t>(*e)) {
