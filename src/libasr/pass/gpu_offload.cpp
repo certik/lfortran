@@ -4397,6 +4397,23 @@ public:
             involved_syms.erase(name);
         }
 
+        // Collect optional variables from involved_syms. When an optional
+        // argument is used inside a do concurrent body guarded by present(),
+        // the kernel launch and all buffer setup must be skipped when the
+        // argument is not present, otherwise the host will segfault trying
+        // to read a null descriptor.
+        std::vector<ASR::symbol_t*> optional_syms;
+        for (auto &[sym_name, sym_info] : involved_syms) {
+            ASR::symbol_t *sym = this->current_scope->resolve_symbol(sym_name);
+            if (!sym) continue;
+            ASR::symbol_t *resolved = ASRUtils::symbol_get_past_external(sym);
+            if (!ASR::is_a<ASR::Variable_t>(*resolved)) continue;
+            ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(resolved);
+            if (var->m_presence == ASR::presenceType::Optional) {
+                optional_syms.push_back(sym);
+            }
+        }
+
         // Wrap liveout scalars (assigned user variables still in
         // involved_syms) in 1-element FixedSizeArrays so they can be
         // passed as writable device buffers and read back after the kernel.
@@ -6670,11 +6687,14 @@ public:
         }
 
         // 7. Replace DoConcurrentLoop with GpuKernelLaunch + GpuSync
-        // Account for liveout scalar copies: one pre-launch + one post-sync each
-        pass_result.reserve(al,
+        // Collect all launch-related statements into a temporary Vec.
+        // If any involved variable is optional, wrap them in a
+        // present() guard so the host never reads a null descriptor.
+        Vec<ASR::stmt_t*> launch_stmts;
+        launch_stmts.reserve(al,
             pre_launch_stmts.n + liveout_scalars.size() + 2 + liveout_scalars.size());
         for (size_t pi = 0; pi < pre_launch_stmts.n; pi++) {
-            pass_result.push_back(al, pre_launch_stmts.p[pi]);
+            launch_stmts.push_back(al, pre_launch_stmts.p[pi]);
         }
 
         // Copy liveout scalars into their 1-element array buffers
@@ -6699,7 +6719,7 @@ public:
                 ASR::make_ArrayItem_t(al, loc, buf_var,
                     ai_args.p, 1, ls.scalar_type,
                     ASR::arraystorageType::ColMajor, nullptr));
-            pass_result.push_back(al, ASRUtils::STMT(
+            launch_stmts.push_back(al, ASRUtils::STMT(
                 ASR::make_Assignment_t(al, loc, buf_item, scalar_var,
                     nullptr, false, false)));
         }
@@ -6740,13 +6760,13 @@ public:
             ASR::make_IntegerBinOp_t(al, loc, grid_padded, ASR::binopType::Div,
                 block_size_const, int_type, nullptr));
 
-        pass_result.push_back(al, ASRUtils::STMT(
+        launch_stmts.push_back(al, ASRUtils::STMT(
             ASR::make_GpuKernelLaunch_t(al, loc,
                 ASR::down_cast<ASR::symbol_t>(kernel_func),
                 grid_size, block_size_const,
                 call_args.p, call_args.n)));
 
-        pass_result.push_back(al, ASRUtils::STMT(
+        launch_stmts.push_back(al, ASRUtils::STMT(
             ASR::make_GpuSync_t(al, loc)));
 
         // Copy liveout scalar results back from the 1-element array
@@ -6771,9 +6791,51 @@ public:
                 ASR::make_ArrayItem_t(al, loc, buf_var,
                     ai_args.p, 1, ls.scalar_type,
                     ASR::arraystorageType::ColMajor, nullptr));
-            pass_result.push_back(al, ASRUtils::STMT(
+            launch_stmts.push_back(al, ASRUtils::STMT(
                 ASR::make_Assignment_t(al, loc, scalar_var, buf_item,
                     nullptr, false, false)));
+        }
+
+        // If any involved variable is optional, wrap the whole kernel
+        // launch block in if(present(v1) .and. present(v2) ...) so
+        // the host never tries to read a null descriptor or compute
+        // ArraySize on an absent argument.
+        if (!optional_syms.empty()) {
+            ASR::ttype_t *log_type = ASRUtils::TYPE(
+                ASR::make_Logical_t(al, loc, 4));
+            ASR::expr_t *guard = nullptr;
+            for (ASR::symbol_t *opt_sym : optional_syms) {
+                Vec<ASR::expr_t*> present_args;
+                present_args.reserve(al, 1);
+                present_args.push_back(al, ASRUtils::EXPR(
+                    ASR::make_Var_t(al, loc, opt_sym)));
+                ASR::expr_t *present_call = ASRUtils::EXPR(
+                    ASR::make_IntrinsicElementalFunction_t(al, loc,
+                        static_cast<int64_t>(
+                            ASRUtils::IntrinsicElementalFunctions::Present),
+                        present_args.p, present_args.n, 0,
+                        log_type, nullptr));
+                if (guard == nullptr) {
+                    guard = present_call;
+                } else {
+                    guard = ASRUtils::EXPR(
+                        ASR::make_LogicalBinOp_t(al, loc, guard,
+                            ASR::logicalbinopType::And, present_call,
+                            log_type, nullptr));
+                }
+            }
+            Vec<ASR::stmt_t*> empty_else;
+            empty_else.reserve(al, 0);
+            pass_result.reserve(al, 1);
+            pass_result.push_back(al, ASRUtils::STMT(
+                ASR::make_If_t(al, loc, nullptr, guard,
+                    launch_stmts.p, launch_stmts.n,
+                    empty_else.p, empty_else.n)));
+        } else {
+            pass_result.reserve(al, launch_stmts.n);
+            for (size_t i = 0; i < launch_stmts.n; i++) {
+                pass_result.push_back(al, launch_stmts.p[i]);
+            }
         }
     }
 };
