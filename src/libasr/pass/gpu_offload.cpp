@@ -3274,6 +3274,22 @@ public:
                 } else if (ASR::is_a<ASR::IntegerUnaryMinus_t>(*e)) {
                     find_array_section(
                         ASR::down_cast<ASR::IntegerUnaryMinus_t>(e)->m_arg);
+                } else if (ASR::is_a<ASR::RealCompare_t>(*e)) {
+                    ASR::RealCompare_t *rc = ASR::down_cast<ASR::RealCompare_t>(e);
+                    find_array_section(rc->m_left);
+                    find_array_section(rc->m_right);
+                } else if (ASR::is_a<ASR::IntegerCompare_t>(*e)) {
+                    ASR::IntegerCompare_t *ic = ASR::down_cast<ASR::IntegerCompare_t>(e);
+                    find_array_section(ic->m_left);
+                    find_array_section(ic->m_right);
+                } else if (ASR::is_a<ASR::LogicalCompare_t>(*e)) {
+                    ASR::LogicalCompare_t *lc = ASR::down_cast<ASR::LogicalCompare_t>(e);
+                    find_array_section(lc->m_left);
+                    find_array_section(lc->m_right);
+                } else if (ASR::is_a<ASR::LogicalBinOp_t>(*e)) {
+                    ASR::LogicalBinOp_t *lb = ASR::down_cast<ASR::LogicalBinOp_t>(e);
+                    find_array_section(lb->m_left);
+                    find_array_section(lb->m_right);
                 } else if (ASR::is_a<ASR::ArrayBroadcast_t>(*e)) {
                     ASR::ArrayBroadcast_t *ab = ASR::down_cast<ASR::ArrayBroadcast_t>(e);
                     find_array_section(ab->m_array);
