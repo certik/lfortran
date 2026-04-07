@@ -162,15 +162,21 @@ public:
 
     ASRToMetalVisitor(CompilerOptions &co_) : indent_level(0), co(co_) {}
 
-    // C++ alternative operator tokens are reserved identifiers in Metal
-    // shading language. Fortran allows them as user-defined names, so we
-    // must rename them when emitting Metal/C++ code.
+    // C++ keywords and alternative operator tokens are reserved identifiers
+    // in Metal shading language. Fortran allows them as user-defined names,
+    // so we must rename them when emitting Metal/C++ code.
     static std::string sanitize_metal_name(const std::string &name) {
-        static const std::set<std::string> cpp_alt_tokens = {
+        static const std::set<std::string> cpp_reserved = {
             "and", "and_eq", "bitand", "bitor", "compl",
-            "not", "not_eq", "or", "or_eq", "xor", "xor_eq"
+            "not", "not_eq", "or", "or_eq", "xor", "xor_eq",
+            "true", "false", "bool", "class", "new", "delete",
+            "this", "throw", "try", "catch", "template",
+            "typename", "namespace", "using", "virtual",
+            "private", "protected", "public", "operator",
+            "friend", "inline", "register", "volatile",
+            "mutable", "explicit", "export"
         };
-        if (cpp_alt_tokens.count(name)) {
+        if (cpp_reserved.count(name)) {
             return "_lfortran_" + name;
         }
         return name;
@@ -243,10 +249,10 @@ public:
                 std::string vname(var->m_name);
                 if (ptr_to_local_alloc.count(vname)) {
                     src << get_indent() << "thread " << metal_type(arr->m_type)
-                        << "* " << vname << ";\n";
+                        << "* " << sanitize_metal_name(vname) << ";\n";
                 } else {
                     src << get_indent() << "device " << metal_type(arr->m_type)
-                        << "* " << vname << ";\n";
+                        << "* " << sanitize_metal_name(vname) << ";\n";
                 }
                 return;
             }
@@ -325,7 +331,7 @@ public:
                 }
             }
             src << get_indent() << elem_type << " "
-                << var->m_name;
+                << sanitize_metal_name(std::string(var->m_name));
             if (is_alloc) {
                 // Use pre-scanned compile-time size, runtime
                 // expression, or fallback
@@ -357,10 +363,10 @@ public:
             src << ";\n";
         } else if (is_struct_type(base_type)) {
             src << get_indent() << get_struct_name(var) << " "
-                << var->m_name << ";\n";
+                << sanitize_metal_name(std::string(var->m_name)) << ";\n";
         } else {
             src << get_indent() << metal_type(type) << " "
-                << var->m_name << ";\n";
+                << sanitize_metal_name(std::string(var->m_name)) << ";\n";
         }
     }
 
@@ -2122,7 +2128,8 @@ public:
                     }
                 }
                 src << get_indent() << "const "
-                    << metal_type(arr->m_type) << " " << var->m_name
+                    << metal_type(arr->m_type) << " "
+                    << sanitize_metal_name(std::string(var->m_name))
                     << "[" << total << "] = {";
                 if (ASR::is_a<ASR::ArrayConstant_t>(*var->m_value)) {
                     ASR::ArrayConstant_t *ac =
@@ -2137,7 +2144,7 @@ public:
                 src << "};\n";
             } else {
                 src << get_indent() << "const " << metal_type(var->m_type)
-                    << " " << var->m_name << " = ";
+                    << " " << sanitize_metal_name(std::string(var->m_name)) << " = ";
                 visit_expr(var->m_value);
                 src << ";\n";
             }
@@ -2923,7 +2930,8 @@ public:
                             }
                             src << get_indent() << "const "
                                 << metal_type(arr->m_type) << " "
-                                << var->m_name << "[" << total
+                                << sanitize_metal_name(std::string(var->m_name))
+                                << "[" << total
                                 << "] = {";
                             if (ASR::is_a<ASR::ArrayConstant_t>(
                                     *var->m_value)) {
@@ -2943,7 +2951,7 @@ public:
                         } else {
                             src << get_indent() << "const "
                                 << metal_type(var->m_type) << " "
-                                << var->m_name << " = ";
+                                << sanitize_metal_name(std::string(var->m_name)) << " = ";
                             visit_expr(var->m_value);
                             src << ";\n";
                         }
