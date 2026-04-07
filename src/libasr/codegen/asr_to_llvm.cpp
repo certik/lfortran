@@ -19150,6 +19150,9 @@ public:
             int field_idx;
         };
         std::vector<StructMemberWriteBack> struct_writebacks;
+        // Map "arr.member" -> first element's size (LLVM value)
+        // for VLA workspace allocation of function-call result temps.
+        std::map<std::string, llvm::Value*> struct_member_first_sizes;
 
         int buffer_idx = 0;
 
@@ -19711,6 +19714,13 @@ public:
                                      desc_type, arr_llvm,
                                      struct_llvm, arg_val,
                                      field_idx});
+                                // Save first element's size for VLA
+                                // workspace allocation of function-call
+                                // result temps that depend on this member.
+                                if (!szs.empty()) {
+                                    struct_member_first_sizes[sm_key] =
+                                        szs[0];
+                                }
                                 field_idx++;
                             }
                         }
@@ -20363,6 +20373,17 @@ public:
                         per_thread_elems = builder->CreateMul(
                             per_thread_elems,
                             llvm::ConstantInt::get(i64, dim.constant_value));
+                    } else if (dim.is_struct_member_size) {
+                        // Read size from the struct member's first
+                        // element size, saved during decomposition.
+                        auto sit = struct_member_first_sizes.find(
+                            dim.struct_member_key);
+                        if (sit != struct_member_first_sizes.end()) {
+                            per_thread_elems = builder->CreateMul(
+                                per_thread_elems,
+                                builder->CreateIntCast(
+                                    sit->second, i64, true));
+                        }
                     } else {
                         llvm::Value *dim_val =
                             call_arg_values[dim.call_arg_index];

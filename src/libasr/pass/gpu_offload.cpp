@@ -3004,7 +3004,9 @@ public:
                 }
                 // Fallback: if still array-typed, wrap with ArrayItem
                 ASR::ttype_t *e_type = ASRUtils::expr_type(e);
-                if (ASR::is_a<ASR::Array_t>(*e_type)) {
+                ASR::ttype_t *e_type_inner =
+                    ASRUtils::type_get_past_allocatable(e_type);
+                if (ASR::is_a<ASR::Array_t>(*e_type_inner)) {
                     Vec<ASR::array_index_t> rhs_args;
                     rhs_args.reserve(al, range_dims.size());
                     for (size_t ri = 0; ri < range_dims.size(); ri++) {

@@ -15,6 +15,11 @@ struct GpuVlaDim {
     int64_t constant_value;
     size_t call_arg_index;
     ASR::expr_t *dim_expr; // original ASR dimension expression
+    // When true, size is read from a struct member's allocatable
+    // array size, resolved at dispatch time from the struct array's
+    // per-element sizes. struct_member_key is "arr_name.member_name".
+    bool is_struct_member_size = false;
+    std::string struct_member_key;
 };
 
 // Describes a VLA workspace buffer required by a GPU kernel.
@@ -382,6 +387,12 @@ inline void scan_kernel_scope_alloc_vlas(
         const std::vector<std::string> &arg_names,
         int &buffer_idx,
         std::vector<GpuVlaWorkspace> &result) {
+    // Build a set of kernel arg names for quick lookup
+    std::set<std::string> arg_set(arg_names.begin(), arg_names.end());
+    // Collect already-handled var names from result
+    std::set<std::string> handled_names;
+    for (auto &ws : result) handled_names.insert(ws.var_name);
+
     for (auto &item : kernel.m_symtab->get_scope()) {
         if (!ASR::is_a<ASR::Variable_t>(*item.second)) continue;
         ASR::Variable_t *var =
@@ -390,82 +401,156 @@ inline void scan_kernel_scope_alloc_vlas(
         ASR::ttype_t *inner =
             ASRUtils::type_get_past_allocatable(var->m_type);
         if (!ASR::is_a<ASR::Array_t>(*inner)) continue;
+        std::string vname(var->m_name);
+        if (arg_set.count(vname)) continue;
+        if (handled_names.count(vname)) continue;
         ASR::Allocate_t *alloc = find_allocate_for_var(
-            kernel.m_body, kernel.n_body, std::string(var->m_name));
-        if (!alloc) continue;
-        ASR::alloc_arg_t *target_arg = nullptr;
-        for (size_t ai = 0; ai < alloc->n_args; ai++) {
-            if (!alloc->m_args[ai].m_a) continue;
-            if (!ASR::is_a<ASR::Var_t>(*alloc->m_args[ai].m_a)) continue;
-            std::string aname = ASRUtils::symbol_name(
-                ASR::down_cast<ASR::Var_t>(
-                    alloc->m_args[ai].m_a)->m_v);
-            if (aname == std::string(var->m_name)) {
-                target_arg = &alloc->m_args[ai];
-                break;
-            }
-        }
-        if (!target_arg) continue;
-        bool has_runtime_dim = false;
-        for (size_t d = 0; d < target_arg->n_dims; d++) {
-            ASR::dimension_t &dim = target_arg->m_dims[d];
-            if (dim.m_length &&
-                    !ASR::is_a<ASR::IntegerConstant_t>(*dim.m_length)) {
-                has_runtime_dim = true;
-                break;
-            }
-        }
-        if (!has_runtime_dim) continue;
-        ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(inner);
-        GpuVlaWorkspace ws;
-        ws.var_name = var->m_name;
-        ws.buffer_index = buffer_idx++;
-        if (ASR::is_a<ASR::Real_t>(*arr->m_type)) {
-            ws.elem_size = ASR::down_cast<ASR::Real_t>(
-                arr->m_type)->m_kind;
-        } else if (ASR::is_a<ASR::Integer_t>(*arr->m_type)) {
-            ws.elem_size = ASR::down_cast<ASR::Integer_t>(
-                arr->m_type)->m_kind;
-        } else {
-            ws.elem_size = 4;
-        }
-        for (size_t d = 0; d < target_arg->n_dims; d++) {
-            ASR::expr_t *dim = target_arg->m_dims[d].m_length;
-            GpuVlaDim vd;
-            vd.dim_expr = dim;
-            if (dim && ASR::is_a<ASR::IntegerConstant_t>(*dim)) {
-                vd.is_constant = true;
-                vd.constant_value =
-                    ASR::down_cast<ASR::IntegerConstant_t>(dim)->m_n;
-                vd.call_arg_index = 0;
-            } else if (dim) {
-                int64_t const_val;
-                if (try_resolve_alloc_dim_constant(
-                        dim, kernel.m_body, kernel.n_body, const_val)) {
-                    vd.is_constant = true;
-                    vd.constant_value = const_val;
-                    vd.call_arg_index = 0;
-                } else {
-                    vd.is_constant = false;
-                    vd.constant_value = 0;
-                    vd.call_arg_index = 0;
-                    size_t idx = 0;
-                    if (find_arg_var_in_expr(dim, arg_names, idx)) {
-                        vd.call_arg_index = idx;
-                    } else if (try_resolve_array_size_to_arg_var(
-                                   dim, kernel.m_body, kernel.n_body,
-                                   arg_names, idx)) {
-                        vd.call_arg_index = idx;
-                    }
+            kernel.m_body, kernel.n_body, vname);
+        if (alloc) {
+            // Has Allocate: existing logic
+            ASR::alloc_arg_t *target_arg = nullptr;
+            for (size_t ai = 0; ai < alloc->n_args; ai++) {
+                if (!alloc->m_args[ai].m_a) continue;
+                if (!ASR::is_a<ASR::Var_t>(*alloc->m_args[ai].m_a))
+                    continue;
+                std::string aname = ASRUtils::symbol_name(
+                    ASR::down_cast<ASR::Var_t>(
+                        alloc->m_args[ai].m_a)->m_v);
+                if (aname == vname) {
+                    target_arg = &alloc->m_args[ai];
+                    break;
                 }
-            } else {
-                vd.is_constant = true;
-                vd.constant_value = 1;
-                vd.call_arg_index = 0;
             }
+            if (!target_arg) continue;
+            bool has_runtime_dim = false;
+            for (size_t d = 0; d < target_arg->n_dims; d++) {
+                ASR::dimension_t &dim = target_arg->m_dims[d];
+                if (dim.m_length &&
+                        !ASR::is_a<ASR::IntegerConstant_t>(
+                            *dim.m_length)) {
+                    has_runtime_dim = true;
+                    break;
+                }
+            }
+            if (!has_runtime_dim) continue;
+            ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(inner);
+            GpuVlaWorkspace ws;
+            ws.var_name = vname;
+            ws.buffer_index = buffer_idx++;
+            if (ASR::is_a<ASR::Real_t>(*arr->m_type)) {
+                ws.elem_size = ASR::down_cast<ASR::Real_t>(
+                    arr->m_type)->m_kind;
+            } else if (ASR::is_a<ASR::Integer_t>(*arr->m_type)) {
+                ws.elem_size = ASR::down_cast<ASR::Integer_t>(
+                    arr->m_type)->m_kind;
+            } else {
+                ws.elem_size = 4;
+            }
+            for (size_t d = 0; d < target_arg->n_dims; d++) {
+                ASR::expr_t *dim = target_arg->m_dims[d].m_length;
+                GpuVlaDim vd;
+                vd.dim_expr = dim;
+                if (dim && ASR::is_a<ASR::IntegerConstant_t>(*dim)) {
+                    vd.is_constant = true;
+                    vd.constant_value =
+                        ASR::down_cast<ASR::IntegerConstant_t>(
+                            dim)->m_n;
+                    vd.call_arg_index = 0;
+                } else if (dim) {
+                    int64_t const_val;
+                    if (try_resolve_alloc_dim_constant(
+                            dim, kernel.m_body, kernel.n_body,
+                            const_val)) {
+                        vd.is_constant = true;
+                        vd.constant_value = const_val;
+                        vd.call_arg_index = 0;
+                    } else {
+                        vd.is_constant = false;
+                        vd.constant_value = 0;
+                        vd.call_arg_index = 0;
+                        size_t idx = 0;
+                        if (find_arg_var_in_expr(dim, arg_names, idx)) {
+                            vd.call_arg_index = idx;
+                        } else if (try_resolve_array_size_to_arg_var(
+                                dim, kernel.m_body, kernel.n_body,
+                                arg_names, idx)) {
+                            vd.call_arg_index = idx;
+                        }
+                    }
+                } else {
+                    vd.is_constant = true;
+                    vd.constant_value = 1;
+                    vd.call_arg_index = 0;
+                }
+                ws.dims.push_back(vd);
+            }
+            result.push_back(std::move(ws));
+        } else {
+            // No Allocate: this is likely a function-call result temp
+            // whose size depends on a struct member's allocatable array.
+            // Find the first struct array kernel arg with an allocatable
+            // array member to determine the size.
+            std::string struct_key;
+            for (size_t ai = 0; ai < kernel.n_args; ai++) {
+                ASR::Var_t *av = ASR::down_cast<ASR::Var_t>(
+                    kernel.m_args[ai]);
+                ASR::Variable_t *avar =
+                    ASR::down_cast<ASR::Variable_t>(
+                        ASRUtils::symbol_get_past_external(
+                            av->m_v));
+                ASR::ttype_t *atype =
+                    ASRUtils::type_get_past_allocatable(avar->m_type);
+                if (!ASR::is_a<ASR::Array_t>(*atype)) continue;
+                ASR::Array_t *arr_t =
+                    ASR::down_cast<ASR::Array_t>(atype);
+                if (!ASR::is_a<ASR::StructType_t>(*arr_t->m_type))
+                    continue;
+                if (!avar->m_type_declaration) continue;
+                ASR::symbol_t *decl_sym =
+                    ASRUtils::symbol_get_past_external(
+                        avar->m_type_declaration);
+                if (!ASR::is_a<ASR::Struct_t>(*decl_sym)) continue;
+                ASR::Struct_t *stype =
+                    ASR::down_cast<ASR::Struct_t>(decl_sym);
+                for (auto &mem : stype->m_symtab->get_scope()) {
+                    if (!ASR::is_a<ASR::Variable_t>(*mem.second))
+                        continue;
+                    ASR::Variable_t *mv =
+                        ASR::down_cast<ASR::Variable_t>(mem.second);
+                    if (!ASRUtils::is_allocatable(mv->m_type)) continue;
+                    ASR::ttype_t *mt =
+                        ASRUtils::type_get_past_allocatable(mv->m_type);
+                    if (!ASR::is_a<ASR::Array_t>(*mt)) continue;
+                    struct_key = std::string(avar->m_name)
+                        + "." + std::string(mv->m_name);
+                    break;
+                }
+                if (!struct_key.empty()) break;
+            }
+            if (struct_key.empty()) continue;
+            ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(inner);
+            GpuVlaWorkspace ws;
+            ws.var_name = vname;
+            ws.buffer_index = buffer_idx++;
+            if (ASR::is_a<ASR::Real_t>(*arr->m_type)) {
+                ws.elem_size = ASR::down_cast<ASR::Real_t>(
+                    arr->m_type)->m_kind;
+            } else if (ASR::is_a<ASR::Integer_t>(*arr->m_type)) {
+                ws.elem_size = ASR::down_cast<ASR::Integer_t>(
+                    arr->m_type)->m_kind;
+            } else {
+                ws.elem_size = 4;
+            }
+            GpuVlaDim vd;
+            vd.dim_expr = nullptr;
+            vd.is_constant = false;
+            vd.constant_value = 0;
+            vd.call_arg_index = 0;
+            vd.is_struct_member_size = true;
+            vd.struct_member_key = struct_key;
             ws.dims.push_back(vd);
+            result.push_back(std::move(ws));
         }
-        result.push_back(std::move(ws));
     }
 }
 
@@ -495,7 +580,40 @@ inline int count_gpu_vla_workspaces(const ASR::GpuKernelFunction_t &kernel) {
         }
     }
     // Also count kernel-scope Allocatable(Array) variables with
-    // runtime-dependent Allocate dimensions
+    // runtime-dependent Allocate dimensions or no Allocate (func temps)
+    std::set<std::string> arg_name_set;
+    for (size_t i = 0; i < kernel.n_args; i++) {
+        ASR::Var_t *v = ASR::down_cast<ASR::Var_t>(kernel.m_args[i]);
+        arg_name_set.insert(std::string(ASRUtils::symbol_name(
+            ASRUtils::symbol_get_past_external(v->m_v))));
+    }
+    bool has_struct_alloc_member = false;
+    for (size_t ai = 0; ai < kernel.n_args; ai++) {
+        ASR::Var_t *av = ASR::down_cast<ASR::Var_t>(kernel.m_args[ai]);
+        ASR::Variable_t *avar = ASR::down_cast<ASR::Variable_t>(
+            ASRUtils::symbol_get_past_external(av->m_v));
+        ASR::ttype_t *atype =
+            ASRUtils::type_get_past_allocatable(avar->m_type);
+        if (!ASR::is_a<ASR::Array_t>(*atype)) continue;
+        ASR::Array_t *arr_t = ASR::down_cast<ASR::Array_t>(atype);
+        if (!ASR::is_a<ASR::StructType_t>(*arr_t->m_type)) continue;
+        if (!avar->m_type_declaration) continue;
+        ASR::symbol_t *decl_sym =
+            ASRUtils::symbol_get_past_external(
+                avar->m_type_declaration);
+        if (!ASR::is_a<ASR::Struct_t>(*decl_sym)) continue;
+        ASR::Struct_t *stype =
+            ASR::down_cast<ASR::Struct_t>(decl_sym);
+        for (auto &mem : stype->m_symtab->get_scope()) {
+            if (!ASR::is_a<ASR::Variable_t>(*mem.second)) continue;
+            ASR::Variable_t *mv =
+                ASR::down_cast<ASR::Variable_t>(mem.second);
+            if (!ASRUtils::is_allocatable(mv->m_type)) continue;
+            has_struct_alloc_member = true;
+            break;
+        }
+        if (has_struct_alloc_member) break;
+    }
     for (auto &item : kernel.m_symtab->get_scope()) {
         if (!ASR::is_a<ASR::Variable_t>(*item.second)) continue;
         ASR::Variable_t *var =
@@ -504,9 +622,14 @@ inline int count_gpu_vla_workspaces(const ASR::GpuKernelFunction_t &kernel) {
         ASR::ttype_t *inner =
             ASRUtils::type_get_past_allocatable(var->m_type);
         if (!ASR::is_a<ASR::Array_t>(*inner)) continue;
+        std::string vname(var->m_name);
+        if (arg_name_set.count(vname)) continue;
         ASR::Allocate_t *alloc = find_allocate_for_var(
-            kernel.m_body, kernel.n_body, std::string(var->m_name));
-        if (!alloc) continue;
+            kernel.m_body, kernel.n_body, vname);
+        if (!alloc) {
+            if (has_struct_alloc_member) count++;
+            continue;
+        }
         for (size_t ai = 0; ai < alloc->n_args; ai++) {
             if (!alloc->m_args[ai].m_a) continue;
             if (!ASR::is_a<ASR::Var_t>(*alloc->m_args[ai].m_a))

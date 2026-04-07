@@ -265,6 +265,15 @@ public:
                         if (vla_it->dims[d].is_constant) {
                             src << vla_it->dims[d].constant_value;
                             total_const_size *= vla_it->dims[d].constant_value;
+                        } else if (vla_it->dims[d].is_struct_member_size) {
+                            std::string key =
+                                vla_it->dims[d].struct_member_key;
+                            auto dot = key.find('.');
+                            std::string arr_name = key.substr(0, dot);
+                            std::string mem_name = key.substr(dot + 1);
+                            src << "__sizes_" << arr_name << "_"
+                                << mem_name << "[0]";
+                            all_const = false;
                         } else {
                             visit_expr(vla_it->dims[d].dim_expr);
                             all_const = false;
@@ -282,6 +291,14 @@ public:
                             if (d > 0) src << " * ";
                             if (vla_it->dims[d].is_constant) {
                                 src << vla_it->dims[d].constant_value;
+                            } else if (vla_it->dims[d].is_struct_member_size) {
+                                std::string key =
+                                    vla_it->dims[d].struct_member_key;
+                                auto dot = key.find('.');
+                                std::string arr_name = key.substr(0, dot);
+                                std::string mem_name = key.substr(dot + 1);
+                                src << "__sizes_" << arr_name << "_"
+                                    << mem_name << "[0]";
                             } else {
                                 visit_expr(vla_it->dims[d].dim_expr);
                             }
@@ -392,33 +409,43 @@ public:
             const std::map<std::string,
                 std::map<size_t, int64_t>> &func_allocs,
             const std::map<std::string,
-                std::map<size_t, size_t>> &func_param_copies) {
+                std::map<size_t, size_t>> &func_param_copies,
+            const std::map<std::string,
+                std::map<size_t, std::pair<size_t, std::string>>>
+                &func_struct_deps = {},
+            const std::map<std::string, std::string>
+                &struct_origin_array = {}) {
         for (size_t i = 0; i < n; i++) {
             scan_stmt_for_alloc_sizes(stmts[i], func_allocs,
-                func_param_copies);
+                func_param_copies, func_struct_deps,
+                struct_origin_array);
             // Recurse into nested control flow
             switch (stmts[i]->type) {
                 case ASR::stmtType::WhileLoop: {
                     ASR::WhileLoop_t *wl =
                         ASR::down_cast<ASR::WhileLoop_t>(stmts[i]);
                     scan_stmts_recursive(wl->m_body, wl->n_body,
-                        func_allocs, func_param_copies);
+                        func_allocs, func_param_copies,
+                        func_struct_deps, struct_origin_array);
                     break;
                 }
                 case ASR::stmtType::DoLoop: {
                     ASR::DoLoop_t *dl =
                         ASR::down_cast<ASR::DoLoop_t>(stmts[i]);
                     scan_stmts_recursive(dl->m_body, dl->n_body,
-                        func_allocs, func_param_copies);
+                        func_allocs, func_param_copies,
+                        func_struct_deps, struct_origin_array);
                     break;
                 }
                 case ASR::stmtType::If: {
                     ASR::If_t *if_s =
                         ASR::down_cast<ASR::If_t>(stmts[i]);
                     scan_stmts_recursive(if_s->m_body, if_s->n_body,
-                        func_allocs, func_param_copies);
+                        func_allocs, func_param_copies,
+                        func_struct_deps, struct_origin_array);
                     scan_stmts_recursive(if_s->m_orelse, if_s->n_orelse,
-                        func_allocs, func_param_copies);
+                        func_allocs, func_param_copies,
+                        func_struct_deps, struct_origin_array);
                     break;
                 }
                 case ASR::stmtType::AssociateBlockCall: {
@@ -427,7 +454,8 @@ public:
                             ASR::down_cast<ASR::AssociateBlockCall_t>(
                                 stmts[i])->m_m);
                     scan_stmts_recursive(ab->m_body, ab->n_body,
-                        func_allocs, func_param_copies);
+                        func_allocs, func_param_copies,
+                        func_struct_deps, struct_origin_array);
                     break;
                 }
                 case ASR::stmtType::BlockCall: {
@@ -436,7 +464,8 @@ public:
                             ASR::down_cast<ASR::BlockCall_t>(
                                 stmts[i])->m_m);
                     scan_stmts_recursive(block->m_body, block->n_body,
-                        func_allocs, func_param_copies);
+                        func_allocs, func_param_copies,
+                        func_struct_deps, struct_origin_array);
                     break;
                 }
                 default:
@@ -555,6 +584,12 @@ public:
         // inherits the same size as the in param at the call site).
         std::map<std::string, std::map<size_t, int64_t>> func_allocs;
         std::map<std::string, std::map<size_t, size_t>> func_param_copies;
+        // Maps fn_name -> {out_param_idx -> (in_param_idx, member_name)}
+        // for assignments like out_param = in_param%member where member
+        // is an allocatable array. Used to resolve dynamic sizes at call sites.
+        std::map<std::string,
+            std::map<size_t, std::pair<size_t, std::string>>>
+            func_struct_member_deps;
         for (auto &item : kf.m_symtab->get_scope()) {
             if (!ASR::is_a<ASR::Function_t>(*item.second)) continue;
             ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(
@@ -630,43 +665,80 @@ public:
                         ASR::down_cast<ASR::Assignment_t>(
                             fn->m_body[si]);
                     if (!ASR::is_a<ASR::Var_t>(*asgn->m_target)) continue;
-                    if (!ASR::is_a<ASR::Var_t>(*asgn->m_value)) continue;
                     std::string tgt_name = ASRUtils::symbol_name(
                         ASR::down_cast<ASR::Var_t>(
                             asgn->m_target)->m_v);
-                    std::string val_name = ASRUtils::symbol_name(
-                        ASR::down_cast<ASR::Var_t>(
-                            asgn->m_value)->m_v);
                     if (!param_names.count(tgt_name)) continue;
-                    auto fit = local_fixed_sizes.find(val_name);
-                    if (fit != local_fixed_sizes.end()) {
-                        for (size_t pi = 0; pi < fn->n_args; pi++) {
-                            ASR::Variable_t *pv =
-                                ASR::down_cast<ASR::Variable_t>(
-                                    ASR::down_cast<ASR::Var_t>(
-                                        fn->m_args[pi])->m_v);
-                            if (std::string(pv->m_name) == tgt_name) {
-                                if (!func_allocs[fn_name].count(pi)) {
-                                    func_allocs[fn_name][pi] =
-                                        fit->second;
+                    if (ASR::is_a<ASR::Var_t>(*asgn->m_value)) {
+                        std::string val_name = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(
+                                asgn->m_value)->m_v);
+                        auto fit = local_fixed_sizes.find(val_name);
+                        if (fit != local_fixed_sizes.end()) {
+                            for (size_t pi = 0; pi < fn->n_args; pi++) {
+                                ASR::Variable_t *pv =
+                                    ASR::down_cast<ASR::Variable_t>(
+                                        ASR::down_cast<ASR::Var_t>(
+                                            fn->m_args[pi])->m_v);
+                                if (std::string(pv->m_name) == tgt_name) {
+                                    if (!func_allocs[fn_name].count(pi)) {
+                                        func_allocs[fn_name][pi] =
+                                            fit->second;
+                                    }
+                                    break;
                                 }
-                                break;
+                            }
+                        } else if (param_names.count(val_name)) {
+                            size_t tgt_idx = SIZE_MAX, val_idx = SIZE_MAX;
+                            for (size_t pi = 0; pi < fn->n_args; pi++) {
+                                std::string pname(ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        fn->m_args[pi])->m_v));
+                                if (pname == tgt_name) tgt_idx = pi;
+                                if (pname == val_name) val_idx = pi;
+                            }
+                            if (tgt_idx != SIZE_MAX && val_idx != SIZE_MAX) {
+                                func_param_copies[fn_name][tgt_idx] =
+                                    val_idx;
                             }
                         }
-                    } else if (param_names.count(val_name)) {
-                        // out_param = in_param: the out param inherits
-                        // the size of the in param at the call site.
-                        size_t tgt_idx = SIZE_MAX, val_idx = SIZE_MAX;
-                        for (size_t pi = 0; pi < fn->n_args; pi++) {
-                            std::string pname(ASRUtils::symbol_name(
-                                ASR::down_cast<ASR::Var_t>(
-                                    fn->m_args[pi])->m_v));
-                            if (pname == tgt_name) tgt_idx = pi;
-                            if (pname == val_name) val_idx = pi;
-                        }
-                        if (tgt_idx != SIZE_MAX && val_idx != SIZE_MAX) {
-                            func_param_copies[fn_name][tgt_idx] =
-                                val_idx;
+                    } else if (ASR::is_a<ASR::StructInstanceMember_t>(
+                                *asgn->m_value)) {
+                        // out_param = in_param%member: the out param
+                        // inherits the size of the struct member.
+                        ASR::StructInstanceMember_t *sm =
+                            ASR::down_cast<ASR::StructInstanceMember_t>(
+                                asgn->m_value);
+                        if (ASR::is_a<ASR::Var_t>(*sm->m_v)) {
+                            std::string struct_name =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        sm->m_v)->m_v);
+                            if (param_names.count(struct_name)) {
+                                std::string mem_name =
+                                    ASRUtils::symbol_name(
+                                        ASRUtils::symbol_get_past_external(
+                                            sm->m_m));
+                                size_t tgt_idx = SIZE_MAX;
+                                size_t struct_idx = SIZE_MAX;
+                                for (size_t pi = 0;
+                                        pi < fn->n_args; pi++) {
+                                    std::string pname(
+                                        ASRUtils::symbol_name(
+                                            ASR::down_cast<ASR::Var_t>(
+                                                fn->m_args[pi])->m_v));
+                                    if (pname == tgt_name)
+                                        tgt_idx = pi;
+                                    if (pname == struct_name)
+                                        struct_idx = pi;
+                                }
+                                if (tgt_idx != SIZE_MAX &&
+                                        struct_idx != SIZE_MAX) {
+                                    func_struct_member_deps[fn_name]
+                                        [tgt_idx] = {struct_idx,
+                                                     mem_name};
+                                }
+                            }
                         }
                     }
                 }
@@ -712,10 +784,69 @@ public:
                 mark_local_allocs(ab->m_symtab);
             }
         }
+        // Step 2b: Build struct origin map. When a local struct temp
+        // is assigned from an ArrayItem (e.g., temp = arr(i)), record
+        // the source array name so we can resolve member sizes later.
+        std::map<std::string, std::string> struct_origin_array;
+        std::function<void(ASR::stmt_t**, size_t)>
+            scan_struct_origins =
+            [&](ASR::stmt_t **stmts, size_t n) {
+            for (size_t si = 0; si < n; si++) {
+                ASR::stmt_t *s = stmts[si];
+                if (s->type == ASR::stmtType::Assignment) {
+                    ASR::Assignment_t *asgn =
+                        ASR::down_cast<ASR::Assignment_t>(s);
+                    if (!ASR::is_a<ASR::Var_t>(*asgn->m_target))
+                        continue;
+                    std::string tgt = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(
+                            asgn->m_target)->m_v);
+                    if (ASR::is_a<ASR::ArrayItem_t>(
+                            *asgn->m_value)) {
+                        ASR::ArrayItem_t *ai =
+                            ASR::down_cast<ASR::ArrayItem_t>(
+                                asgn->m_value);
+                        if (ASR::is_a<ASR::Var_t>(*ai->m_v)) {
+                            std::string arr_name =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        ai->m_v)->m_v);
+                            struct_origin_array[tgt] = arr_name;
+                        }
+                    }
+                } else if (s->type == ASR::stmtType::WhileLoop) {
+                    ASR::WhileLoop_t *wl =
+                        ASR::down_cast<ASR::WhileLoop_t>(s);
+                    scan_struct_origins(wl->m_body, wl->n_body);
+                } else if (s->type == ASR::stmtType::DoLoop) {
+                    ASR::DoLoop_t *dl =
+                        ASR::down_cast<ASR::DoLoop_t>(s);
+                    scan_struct_origins(dl->m_body, dl->n_body);
+                } else if (s->type == ASR::stmtType::If) {
+                    ASR::If_t *ifs =
+                        ASR::down_cast<ASR::If_t>(s);
+                    scan_struct_origins(ifs->m_body, ifs->n_body);
+                    scan_struct_origins(
+                        ifs->m_orelse, ifs->n_orelse);
+                }
+            }
+        };
+        scan_struct_origins(kf.m_body, kf.n_body);
+        for (size_t bi = 0; bi < kf.n_body; bi++) {
+            if (kf.m_body[bi]->type == ASR::stmtType::BlockCall) {
+                ASR::Block_t *block =
+                    ASR::down_cast<ASR::Block_t>(
+                        ASR::down_cast<ASR::BlockCall_t>(
+                            kf.m_body[bi])->m_m);
+                scan_struct_origins(block->m_body,
+                    block->n_body);
+            }
+        }
         // Step 3: Recursively scan all kernel body statements
         // (including inside WhileLoops, DoLoops, If blocks)
         scan_stmts_recursive(kf.m_body, kf.n_body, func_allocs,
-            func_param_copies);
+            func_param_copies, func_struct_member_deps,
+            struct_origin_array);
         // Step 4: Scan blocks in kernel body for the same
         for (size_t bi = 0; bi < kf.n_body; bi++) {
             if (kf.m_body[bi]->type == ASR::stmtType::BlockCall) {
@@ -723,7 +854,8 @@ public:
                     ASR::down_cast<ASR::BlockCall_t>(
                         kf.m_body[bi])->m_m);
                 scan_stmts_recursive(block->m_body, block->n_body,
-                    func_allocs, func_param_copies);
+                    func_allocs, func_param_copies,
+                    func_struct_member_deps, struct_origin_array);
             } else if (kf.m_body[bi]->type ==
                     ASR::stmtType::AssociateBlockCall) {
                 ASR::AssociateBlock_t *ab =
@@ -731,7 +863,8 @@ public:
                         ASR::down_cast<ASR::AssociateBlockCall_t>(
                             kf.m_body[bi])->m_m);
                 scan_stmts_recursive(ab->m_body, ab->n_body,
-                    func_allocs, func_param_copies);
+                    func_allocs, func_param_copies,
+                    func_struct_member_deps, struct_origin_array);
             }
         }
         // Step 5: Propagate sizes through assignments
@@ -765,7 +898,12 @@ public:
             const std::map<std::string,
                 std::map<size_t, int64_t>> &func_allocs,
             const std::map<std::string,
-                std::map<size_t, size_t>> &func_param_copies) {
+                std::map<size_t, size_t>> &func_param_copies,
+            const std::map<std::string,
+                std::map<size_t, std::pair<size_t, std::string>>>
+                &func_struct_deps = {},
+            const std::map<std::string, std::string>
+                &struct_origin_array = {}) {
         if (stmt->type == ASR::stmtType::SubroutineCall) {
             ASR::SubroutineCall_t *sc =
                 ASR::down_cast<ASR::SubroutineCall_t>(stmt);
@@ -842,6 +980,68 @@ public:
                                 alloc_array_size_exprs[out_name] =
                                     eit->second;
                             }
+                        }
+                    }
+                }
+            }
+            // out_param = struct_param%member: resolve size from
+            // the struct member's sizes buffer at the call site.
+            auto mit = func_struct_deps.find(fn_name);
+            if (mit != func_struct_deps.end()) {
+                for (auto &[out_idx, dep] : mit->second) {
+                    size_t struct_idx = dep.first;
+                    std::string mem_name = dep.second;
+                    if (out_idx >= sc->n_args ||
+                            struct_idx >= sc->n_args) continue;
+                    ASR::expr_t *out_actual =
+                        sc->m_args[out_idx].m_value;
+                    if (!out_actual ||
+                        !ASR::is_a<ASR::Var_t>(*out_actual)) continue;
+                    std::string out_name = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(out_actual)->m_v);
+                    if (alloc_array_sizes.count(out_name) ||
+                            alloc_array_size_exprs.count(out_name))
+                        continue;
+                    // Find the actual struct argument to get its
+                    // array name for the sizes buffer lookup.
+                    ASR::expr_t *struct_actual =
+                        sc->m_args[struct_idx].m_value;
+                    if (!struct_actual) continue;
+                    // Check if struct arg is an ArrayItem (arr(i))
+                    if (ASR::is_a<ASR::ArrayItem_t>(*struct_actual)) {
+                        ASR::ArrayItem_t *ai =
+                            ASR::down_cast<ASR::ArrayItem_t>(
+                                struct_actual);
+                        if (ASR::is_a<ASR::Var_t>(*ai->m_v)) {
+                            std::string arr_name =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        ai->m_v)->m_v);
+                            std::string sizes_key =
+                                "__sizes_" + arr_name + "_"
+                                + mem_name;
+                            alloc_array_size_exprs[out_name] =
+                                sizes_key + "[0]";
+                        }
+                    } else if (ASR::is_a<ASR::Var_t>(*struct_actual)) {
+                        std::string sname = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(
+                                struct_actual)->m_v);
+                        // If this struct was copied from an array
+                        // element (e.g., temp = arr(i)), use the
+                        // source array's sizes buffer.
+                        auto oit = struct_origin_array.find(sname);
+                        if (oit != struct_origin_array.end()) {
+                            std::string sizes_key =
+                                "__sizes_" + oit->second + "_"
+                                + mem_name;
+                            alloc_array_size_exprs[out_name] =
+                                sizes_key + "[0]";
+                        } else {
+                            std::string size_key =
+                                "__size_" + sname + "_" + mem_name;
+                            alloc_array_size_exprs[out_name] =
+                                size_key;
                         }
                     }
                 }
@@ -3103,6 +3303,39 @@ public:
                                 src << "[0];\n";
                             }
                         }
+                    } else if (ASR::is_a<ASR::StructInstanceMember_t>(
+                                *a->m_value)) {
+                        ASR::StructInstanceMember_t *sm =
+                            ASR::down_cast<ASR::StructInstanceMember_t>(
+                                a->m_value);
+                        std::string mem_name = ASRUtils::symbol_name(
+                            ASRUtils::symbol_get_past_external(sm->m_m));
+                        std::string size_expr;
+                        if (ASR::is_a<ASR::Var_t>(*sm->m_v)) {
+                            std::string sname = ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    sm->m_v)->m_v);
+                            std::string key = sname + "." + mem_name;
+                            auto spit =
+                                func_array_size_params.find(key);
+                            if (spit != func_array_size_params.end()) {
+                                size_expr = spit->second;
+                            }
+                        }
+                        if (!size_expr.empty()) {
+                            src << "for (int __copy_i = 0; __copy_i < "
+                                << size_expr << "; __copy_i++) ";
+                            visit_expr(a->m_target);
+                            src << "[__copy_i] = ";
+                            visit_expr(a->m_value);
+                            src << "[__copy_i];\n";
+                        } else {
+                            src << "*";
+                            visit_expr(a->m_target);
+                            src << " = ";
+                            visit_expr(a->m_value);
+                            src << "[0];\n";
+                        }
                     } else {
                         src << "*";
                         visit_expr(a->m_target);
@@ -4111,6 +4344,55 @@ public:
                     if (it != func_array_data_params.end()) {
                         src << it->second;
                         break;
+                    }
+                } else if (ASR::is_a<ASR::ArrayItem_t>(*sm->m_v)) {
+                    // Array-of-struct: arr(i)%member as whole array
+                    // Emit pointer: __data_arr_member + __offsets_arr_member[idx]
+                    ASR::ArrayItem_t *arr_ai =
+                        ASR::down_cast<ASR::ArrayItem_t>(sm->m_v);
+                    if (ASR::is_a<ASR::Var_t>(*arr_ai->m_v)) {
+                        std::string arr_name = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(
+                                arr_ai->m_v)->m_v);
+                        std::string key = arr_name + "." + mem_name;
+                        auto dit = func_array_data_params.find(key);
+                        auto oit =
+                            struct_array_offset_params.find(key);
+                        if (dit != func_array_data_params.end() &&
+                                oit != struct_array_offset_params.end()) {
+                            src << "(" << dit->second << " + "
+                                << oit->second << "[";
+                            if (arr_ai->n_args == 1) {
+                                ASR::expr_t *idx =
+                                    arr_ai->m_args[0].m_right
+                                    ? arr_ai->m_args[0].m_right
+                                    : arr_ai->m_args[0].m_left;
+                                if (idx) {
+                                    ASR::Array_t *idx_arr = nullptr;
+                                    ASR::ttype_t *idx_arr_type =
+                                        ASRUtils::type_get_past_allocatable(
+                                            ASRUtils::expr_type(
+                                                arr_ai->m_v));
+                                    if (ASR::is_a<ASR::Array_t>(
+                                            *idx_arr_type)) {
+                                        idx_arr =
+                                            ASR::down_cast<ASR::Array_t>(
+                                                idx_arr_type);
+                                    }
+                                    std::string lb =
+                                        get_lower_bound_str(idx_arr, 0);
+                                    src << "((int)(";
+                                    visit_expr(idx);
+                                    src << ") - (" << lb << "))";
+                                } else {
+                                    src << "0";
+                                }
+                            } else {
+                                src << "0";
+                            }
+                            src << "])";
+                            break;
+                        }
                     }
                 }
                 visit_expr(sm->m_v);
