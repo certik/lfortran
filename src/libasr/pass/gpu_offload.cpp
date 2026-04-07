@@ -447,6 +447,30 @@ public:
 // Collects StructInstanceMember references to allocatable array members
 // in the do concurrent body. Used to decompose struct-typed kernel
 // parameters into separate flat array buffers for Metal.
+// Collects all variable names referenced (read) in a set of statements.
+// Used to determine which variables are live after a do concurrent loop.
+class PostLoopVarCollector : public ASR::BaseWalkVisitor<PostLoopVarCollector> {
+public:
+    std::set<std::string> &referenced_vars;
+    PostLoopVarCollector(std::set<std::string> &rv) : referenced_vars(rv) {}
+    void visit_Var(const ASR::Var_t &x) {
+        referenced_vars.insert(ASRUtils::symbol_name(x.m_v));
+    }
+    void visit_BlockCall(const ASR::BlockCall_t &x) {
+        ASR::Block_t *block = ASR::down_cast<ASR::Block_t>(x.m_m);
+        for (size_t i = 0; i < block->n_body; i++) {
+            visit_stmt(*block->m_body[i]);
+        }
+    }
+    void visit_AssociateBlockCall(const ASR::AssociateBlockCall_t &x) {
+        ASR::AssociateBlock_t *ab = ASR::down_cast<ASR::AssociateBlock_t>(
+            x.m_m);
+        for (size_t i = 0; i < ab->n_body; i++) {
+            visit_stmt(*ab->m_body[i]);
+        }
+    }
+};
+
 class GpuAllocStructMemberCollector :
     public ASR::BaseWalkVisitor<GpuAllocStructMemberCollector> {
 public:
@@ -4288,12 +4312,64 @@ public:
         // Identify which symbols are local temporaries (assigned scalar, non-array)
         // vs kernel parameters (arrays or read-only scalars).
         // Assigned scalars are kernel-local unless they are reduction
-        // targets from inlined all() — those need to be communicated back
+        // targets from inlined all(), or are referenced after the do
+        // concurrent loop (liveout) — those need to be communicated back
         // to the host via 1-element array device buffers.
+
+        // Collect variables referenced in statements after this do concurrent
+        // in the parent body, to identify liveout scalars.
+        std::set<std::string> post_loop_vars;
+        {
+            ASR::stmt_t **parent_body = nullptr;
+            size_t parent_n_body = 0;
+            SymbolTable *scope = current_scope;
+            while (scope && scope->asr_owner) {
+                if (scope->asr_owner->type == ASR::asrType::symbol) {
+                    ASR::symbol_t *owner_sym = ASR::down_cast<ASR::symbol_t>(
+                        scope->asr_owner);
+                    if (ASR::is_a<ASR::Program_t>(*owner_sym)) {
+                        ASR::Program_t *prog = ASR::down_cast<ASR::Program_t>(
+                            owner_sym);
+                        parent_body = prog->m_body;
+                        parent_n_body = prog->n_body;
+                        break;
+                    } else if (ASR::is_a<ASR::Function_t>(*owner_sym)) {
+                        ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(
+                            owner_sym);
+                        parent_body = fn->m_body;
+                        parent_n_body = fn->n_body;
+                        break;
+                    } else if (ASR::is_a<ASR::Block_t>(*owner_sym)) {
+                        ASR::Block_t *blk = ASR::down_cast<ASR::Block_t>(
+                            owner_sym);
+                        parent_body = blk->m_body;
+                        parent_n_body = blk->n_body;
+                        break;
+                    }
+                }
+                scope = scope->parent;
+            }
+            if (parent_body) {
+                bool found_dc = false;
+                for (size_t si = 0; si < parent_n_body; si++) {
+                    if (!found_dc) {
+                        if (parent_body[si]->base.loc.first == loc.first &&
+                                parent_body[si]->base.loc.last == loc.last) {
+                            found_dc = true;
+                        }
+                        continue;
+                    }
+                    PostLoopVarCollector plvc(post_loop_vars);
+                    plvc.visit_stmt(*parent_body[si]);
+                }
+            }
+        }
+
         std::set<std::string> local_scalar_names;
         for (auto &name : assigned_vars) {
             if (loop_var_set.count(name)) continue;
             if (all_reduction_targets.count(name)) continue;
+            if (post_loop_vars.count(name)) continue;
             auto it = involved_syms.find(name);
             if (it != involved_syms.end()) {
                 ASR::ttype_t *type = it->second.first;

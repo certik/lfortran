@@ -1067,14 +1067,15 @@ public:
             if (idx_expr) {
                 if (!first_dim) src << " + ";
                 first_dim = false;
+                std::string lb = get_lower_bound_str(arr, d);
                 if (stride == "1") {
                     src << "((int)(";
                     visit_expr(idx_expr);
-                    src << ") - 1)";
+                    src << ") - (" << lb << "))";
                 } else {
                     src << "(" << stride << " * ((int)(";
                     visit_expr(idx_expr);
-                    src << ") - 1))";
+                    src << ") - (" << lb << ")))";
                 }
             }
             // Compute section extent for range dims
@@ -1290,9 +1291,18 @@ public:
                             ? arr_ai->m_args[0].m_right
                             : arr_ai->m_args[0].m_left;
                         if (idx) {
+                            ASR::Array_t *idx_arr = nullptr;
+                            ASR::ttype_t *idx_arr_type =
+                                ASRUtils::type_get_past_allocatable(
+                                    ASRUtils::expr_type(arr_ai->m_v));
+                            if (ASR::is_a<ASR::Array_t>(*idx_arr_type)) {
+                                idx_arr = ASR::down_cast<ASR::Array_t>(
+                                    idx_arr_type);
+                            }
+                            std::string lb = get_lower_bound_str(idx_arr, 0);
                             src << "((int)(";
                             visit_expr(idx);
-                            src << ") - 1)";
+                            src << ") - (" << lb << "))";
                         } else {
                             src << "0";
                         }
@@ -2772,8 +2782,18 @@ public:
                                 std::stringstream saved;
                                 saved.swap(src);
                                 visit_expr(idx_expr);
+                                ASR::Array_t *sa_arr = nullptr;
+                                ASR::ttype_t *sa_inner =
+                                    ASRUtils::type_get_past_allocatable(
+                                        arr_type);
+                                if (ASR::is_a<ASR::Array_t>(*sa_inner)) {
+                                    sa_arr = ASR::down_cast<ASR::Array_t>(
+                                        sa_inner);
+                                }
+                                std::string lb = get_lower_bound_str(
+                                    sa_arr, 0);
                                 idx_ss << "((int)(" << src.str()
-                                       << ") - 1)";
+                                       << ") - (" << lb << "))";
                                 saved.swap(src);
                             } else {
                                 idx_ss << "0";
@@ -2959,8 +2979,18 @@ public:
                                             ? ai->m_args[0].m_right
                                             : ai->m_args[0].m_left;
                                         visit_expr(idx_expr);
+                                        ASR::Array_t *sa2_arr = nullptr;
+                                        ASR::ttype_t *sa2_inner =
+                                            ASRUtils::type_get_past_allocatable(
+                                                ASRUtils::expr_type(ai->m_v));
+                                        if (ASR::is_a<ASR::Array_t>(*sa2_inner)) {
+                                            sa2_arr = ASR::down_cast<ASR::Array_t>(
+                                                sa2_inner);
+                                        }
+                                        std::string lb = get_lower_bound_str(
+                                            sa2_arr, 0);
                                         idx_ss << "((int)(" << src.str()
-                                               << ") - 1)";
+                                               << ") - (" << lb << "))";
                                         saved.swap(src);
                                     }
                                     src << "{\n";
@@ -3950,9 +3980,19 @@ public:
                                         ? arr_ai->m_args[0].m_right
                                         : arr_ai->m_args[0].m_left;
                                     if (arr_idx) {
+                                        ASR::Array_t *struct_arr = nullptr;
+                                        ASR::ttype_t *struct_arr_type =
+                                            ASRUtils::type_get_past_allocatable(
+                                                ASRUtils::expr_type(arr_ai->m_v));
+                                        if (ASR::is_a<ASR::Array_t>(*struct_arr_type)) {
+                                            struct_arr = ASR::down_cast<ASR::Array_t>(
+                                                struct_arr_type);
+                                        }
+                                        std::string lb = get_lower_bound_str(
+                                            struct_arr, 0);
                                         src << "((int)(";
                                         visit_expr(arr_idx);
-                                        src << ") - 1)";
+                                        src << ") - (" << lb << "))";
                                     } else {
                                         src << "0";
                                     }
@@ -3967,9 +4007,19 @@ public:
                                         ? ai->m_args[0].m_right
                                         : ai->m_args[0].m_left;
                                     if (mem_idx) {
+                                        ASR::Array_t *mem_arr = nullptr;
+                                        ASR::ttype_t *mem_arr_type =
+                                            ASRUtils::type_get_past_allocatable(
+                                                ASRUtils::expr_type(ai->m_v));
+                                        if (ASR::is_a<ASR::Array_t>(*mem_arr_type)) {
+                                            mem_arr = ASR::down_cast<ASR::Array_t>(
+                                                mem_arr_type);
+                                        }
+                                        std::string lb = get_lower_bound_str(
+                                            mem_arr, 0);
                                         src << "((int)(";
                                         visit_expr(mem_idx);
-                                        src << ") - 1)";
+                                        src << ") - (" << lb << "))";
                                     } else {
                                         src << "0";
                                     }
@@ -3994,13 +4044,20 @@ public:
                 ASR::ttype_t *arr_type = ASRUtils::expr_type(ai->m_v);
 
                 if (ai->n_args == 1) {
-                    // 1D: simple index - 1
+                    // 1D: simple index - lower_bound
                     ASR::expr_t *idx = ai->m_args[0].m_right ?
                         ai->m_args[0].m_right : ai->m_args[0].m_left;
                     if (idx) {
+                        ASR::Array_t *arr_1d = nullptr;
+                        ASR::ttype_t *inner_1d =
+                            ASRUtils::type_get_past_allocatable(arr_type);
+                        if (ASR::is_a<ASR::Array_t>(*inner_1d)) {
+                            arr_1d = ASR::down_cast<ASR::Array_t>(inner_1d);
+                        }
+                        std::string lb = get_lower_bound_str(arr_1d, 0);
                         src << "((int)(";
                         visit_expr(idx);
-                        src << ") - 1)";
+                        src << ") - (" << lb << "))";
                     } else {
                         src << "0";
                     }
@@ -4135,9 +4192,23 @@ public:
         }
     }
 
+    std::string get_lower_bound_str(ASR::Array_t *arr, size_t d) {
+        if (arr && d < arr->n_dims && arr->m_dims[d].m_start) {
+            ASR::expr_t *start = arr->m_dims[d].m_start;
+            if (ASR::is_a<ASR::IntegerConstant_t>(*start)) {
+                return std::to_string(
+                    ASR::down_cast<ASR::IntegerConstant_t>(start)->m_n);
+            } else if (ASR::is_a<ASR::Var_t>(*start)) {
+                return ASRUtils::symbol_name(
+                    ASR::down_cast<ASR::Var_t>(start)->m_v);
+            }
+        }
+        return "1";
+    }
+
     void emit_linearized_index(ASR::ArrayItem_t *ai,
                                ASR::ttype_t *arr_type) {
-        // Column-major linearization: index = sum_d( (idx_d - 1) * stride_d )
+        // Column-major linearization: index = sum_d( (idx_d - lb_d) * stride_d )
         // stride_0 = 1, stride_1 = dim[0], stride_2 = dim[0]*dim[1], ...
         // Strides are built as string expressions to handle variable dims.
         ASR::Array_t *arr = nullptr;
@@ -4159,14 +4230,15 @@ public:
             if (!idx) continue;
             if (!first) src << " + ";
             first = false;
+            std::string lb = get_lower_bound_str(arr, d);
             if (stride == "1") {
                 src << "((int)(";
                 visit_expr(idx);
-                src << ") - 1)";
+                src << ") - (" << lb << "))";
             } else {
                 src << "(" << stride << " * ((int)(";
                 visit_expr(idx);
-                src << ") - 1))";
+                src << ") - (" << lb << ")))";
             }
             if (arr && d < arr->n_dims) {
                 ASR::expr_t *dim_len = arr->m_dims[d].m_length;
