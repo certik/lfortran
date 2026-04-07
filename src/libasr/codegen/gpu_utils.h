@@ -146,8 +146,19 @@ inline bool try_eval_int_constant(ASR::expr_t *e, int64_t &val) {
     return false;
 }
 
+// Forward declaration for mutual recursion with
+// try_resolve_array_size_via_associate.
+inline bool try_resolve_alloc_dim_constant(
+        ASR::expr_t *dim,
+        ASR::stmt_t **body, size_t n_body,
+        int64_t &result);
+
 // Try to resolve ArraySize(ptr_var, dim) to a constant by tracing an
 // Associate statement back to an ArraySection with constant bounds.
+// If no Associate is found, traces through Allocate statements to
+// resolve transitively (e.g. ArraySize(temp_merge) → temp_merge is
+// allocated with ArraySize(temp_compare) → temp_compare is associated
+// with a constant-bounds ArraySection).
 inline bool try_resolve_array_size_via_associate(
         ASR::ArraySize_t *as,
         ASR::stmt_t **body, size_t n_body,
@@ -191,6 +202,30 @@ inline bool try_resolve_array_size_via_associate(
             }
         }
         return false;
+    }
+    // No Associate found — try tracing through an Allocate statement
+    // for the same variable.  If its allocation dimension for
+    // `target_dim` is itself resolvable to a constant, use that.
+    ASR::Allocate_t *alloc = find_allocate_for_var(
+        body, n_body, var_name);
+    if (alloc) {
+        for (size_t ai = 0; ai < alloc->n_args; ai++) {
+            if (!alloc->m_args[ai].m_a) continue;
+            if (!ASR::is_a<ASR::Var_t>(*alloc->m_args[ai].m_a)) continue;
+            std::string aname = ASRUtils::symbol_name(
+                ASR::down_cast<ASR::Var_t>(
+                    alloc->m_args[ai].m_a)->m_v);
+            if (aname != var_name) continue;
+            ASR::alloc_arg_t &targ = alloc->m_args[ai];
+            if (target_dim < 1 ||
+                    (size_t)target_dim > targ.n_dims)
+                return false;
+            ASR::expr_t *dim_expr =
+                targ.m_dims[target_dim - 1].m_length;
+            if (!dim_expr) return false;
+            return try_resolve_alloc_dim_constant(
+                dim_expr, body, n_body, result);
+        }
     }
     return false;
 }
@@ -527,6 +562,62 @@ inline std::vector<GpuVlaWorkspace> analyze_gpu_vla_workspaces(
     // subroutine_from_function pass with runtime-sized array sections).
     scan_kernel_scope_alloc_vlas(kernel, arg_names, buffer_idx, result);
 
+    return result;
+}
+
+// Scan a kernel body for alloc-assign statements that write a VLA workspace
+// array to a struct array member.  Returns a map from
+// "struct_name.member_name" to the per-element size (number of elements)
+// determined by the VLA workspace dimensions.
+inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
+        const ASR::GpuKernelFunction_t &kernel,
+        const std::vector<GpuVlaWorkspace> &vla_workspaces) {
+    std::map<std::string, int64_t> result;
+    std::map<std::string, const GpuVlaWorkspace*> ws_by_name;
+    for (auto &ws : vla_workspaces) {
+        ws_by_name[ws.var_name] = &ws;
+    }
+    for (size_t si = 0; si < kernel.n_body; si++) {
+        ASR::stmt_t *stmt = kernel.m_body[si];
+        if (stmt->type != ASR::stmtType::Assignment) continue;
+        ASR::Assignment_t *asgn =
+            ASR::down_cast<ASR::Assignment_t>(stmt);
+        if (!ASR::is_a<ASR::StructInstanceMember_t>(*asgn->m_target))
+            continue;
+        if (!ASR::is_a<ASR::Var_t>(*asgn->m_value)) continue;
+        ASR::StructInstanceMember_t *sm =
+            ASR::down_cast<ASR::StructInstanceMember_t>(
+                asgn->m_target);
+        std::string mem_name = ASRUtils::symbol_name(
+            ASRUtils::symbol_get_past_external(sm->m_m));
+        std::string struct_name;
+        if (ASR::is_a<ASR::ArrayItem_t>(*sm->m_v)) {
+            ASR::ArrayItem_t *ai =
+                ASR::down_cast<ASR::ArrayItem_t>(sm->m_v);
+            if (ASR::is_a<ASR::Var_t>(*ai->m_v)) {
+                struct_name = ASRUtils::symbol_name(
+                    ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
+            }
+        }
+        if (struct_name.empty()) continue;
+        std::string val_name = ASRUtils::symbol_name(
+            ASR::down_cast<ASR::Var_t>(asgn->m_value)->m_v);
+        auto ws_it = ws_by_name.find(val_name);
+        if (ws_it == ws_by_name.end()) continue;
+        int64_t per_elem = 1;
+        bool all_const = true;
+        for (auto &dim : ws_it->second->dims) {
+            if (dim.is_constant) {
+                per_elem *= dim.constant_value;
+            } else {
+                all_const = false;
+                break;
+            }
+        }
+        if (all_const && per_elem > 0) {
+            result[struct_name + "." + mem_name] = per_elem;
+        }
+    }
     return result;
 }
 

@@ -255,16 +255,23 @@ public:
                     src << get_indent() << "device " << elem_type
                         << "* " << vname << " = __vla_" << vname
                         << " + __thread_id * (";
+                    int64_t total_const_size = 1;
+                    bool all_const = true;
                     for (size_t d = 0; d < vla_it->dims.size(); d++) {
                         if (d > 0) src << " * ";
                         if (vla_it->dims[d].is_constant) {
                             src << vla_it->dims[d].constant_value;
+                            total_const_size *= vla_it->dims[d].constant_value;
                         } else {
                             visit_expr(vla_it->dims[d].dim_expr);
+                            all_const = false;
                         }
                     }
                     src << ");\n";
                     local_alloc_arrays.insert(vname);
+                    if (all_const) {
+                        alloc_array_sizes[vname] = total_const_size;
+                    }
                     return;
                 }
             }
@@ -2845,6 +2852,83 @@ public:
                             src << "[" << ei << "];\n";
                             if (ei + 1 < sz) src << get_indent();
                         }
+                    } else if (ASR::is_a<ASR::StructInstanceMember_t>(
+                                *a->m_target)) {
+                        // Target is StructInstanceMember with allocatable
+                        // array member, RHS is a local alloc array.
+                        // Copy elements to the decomposed data buffer
+                        // using the offsets buffer.
+                        ASR::StructInstanceMember_t *sm =
+                            ASR::down_cast<ASR::StructInstanceMember_t>(
+                                a->m_target);
+                        std::string mem_name = ASRUtils::symbol_name(
+                            ASRUtils::symbol_get_past_external(sm->m_m));
+                        bool handled = false;
+                        if (ASR::is_a<ASR::ArrayItem_t>(*sm->m_v)) {
+                            ASR::ArrayItem_t *ai =
+                                ASR::down_cast<ASR::ArrayItem_t>(sm->m_v);
+                            if (ASR::is_a<ASR::Var_t>(*ai->m_v)) {
+                                std::string sname =
+                                    ASRUtils::symbol_name(
+                                        ASR::down_cast<ASR::Var_t>(
+                                            ai->m_v)->m_v);
+                                std::string key = sname + "." + mem_name;
+                                auto data_it =
+                                    func_array_data_params.find(key);
+                                auto off_it =
+                                    struct_array_offset_params.find(key);
+                                if (data_it !=
+                                        func_array_data_params.end() &&
+                                    off_it !=
+                                        struct_array_offset_params.end()) {
+                                    std::string rname =
+                                        ASRUtils::symbol_name(
+                                            ASR::down_cast<ASR::Var_t>(
+                                                a->m_value)->m_v);
+                                    auto sit =
+                                        alloc_array_sizes.find(rname);
+                                    int64_t sz =
+                                        (sit != alloc_array_sizes.end())
+                                        ? sit->second : 1;
+                                    // Emit index expression
+                                    std::stringstream idx_ss;
+                                    {
+                                        std::stringstream saved;
+                                        saved.swap(src);
+                                        ASR::expr_t *idx_expr =
+                                            ai->m_args[0].m_right
+                                            ? ai->m_args[0].m_right
+                                            : ai->m_args[0].m_left;
+                                        visit_expr(idx_expr);
+                                        idx_ss << "((int)(" << src.str()
+                                               << ") - 1)";
+                                        saved.swap(src);
+                                    }
+                                    src << "{\n";
+                                    indent_level++;
+                                    src << get_indent() << "int __off = "
+                                        << off_it->second << "["
+                                        << idx_ss.str() << "];\n";
+                                    for (int64_t ei = 0; ei < sz; ei++) {
+                                        src << get_indent()
+                                            << data_it->second
+                                            << "[__off + " << ei
+                                            << "] = ";
+                                        visit_expr(a->m_value);
+                                        src << "[" << ei << "];\n";
+                                    }
+                                    indent_level--;
+                                    src << get_indent() << "}\n";
+                                    handled = true;
+                                }
+                            }
+                        }
+                        if (!handled) {
+                            visit_expr(a->m_target);
+                            src << " = ";
+                            visit_expr(a->m_value);
+                            src << "[0];\n";
+                        }
                     } else {
                         // RHS is a local alloc array but target is a scalar
                         // (e.g., a(i) = alloc_var): index with [0]
@@ -2988,6 +3072,27 @@ public:
                         src << " = ";
                         visit_expr(a->m_value);
                         src << ";\n";
+                    }
+                } else if (target_is_local_alloc && !rhs_is_array_or_alloc) {
+                    // Local alloc array target with scalar-typed RHS.
+                    // This occurs when elemental functions (e.g., merge)
+                    // are called with array args but return scalar type
+                    // after intrinsic_function lowering. Generate
+                    // element-wise assignments using the target's known
+                    // alloc size.
+                    std::string tname = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(a->m_target)->m_v);
+                    auto sit = alloc_array_sizes.find(tname);
+                    int64_t sz = (sit != alloc_array_sizes.end())
+                        ? sit->second : 1;
+                    for (int64_t ei = 0; ei < sz; ei++) {
+                        visit_expr(a->m_target);
+                        src << "[" << ei << "] = ";
+                        array_elem_index = ei;
+                        visit_expr(a->m_value);
+                        array_elem_index = -1;
+                        src << ";\n";
+                        if (ei + 1 < sz) src << get_indent();
                     }
                 } else {
                     if (deref_target) {
