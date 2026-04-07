@@ -1418,6 +1418,10 @@ public:
                         return;
                     }
                 }
+                if (ASR::is_a<ASR::StructInstanceMember_t>(*expr)) {
+                    emit_struct_member_array_size(expr);
+                    return;
+                }
                 src << "/* unknown pointer-array size */";
                 return;
             }
@@ -2367,10 +2371,27 @@ public:
                         val = ASR::down_cast<ASR::ArrayPhysicalCast_t>(
                             val)->m_arg;
                     }
-                    if (!ASR::is_a<ASR::Var_t>(*val)) continue;
                     std::string tgt_name = ASRUtils::symbol_name(
                         ASR::down_cast<ASR::Var_t>(
                             asgn->m_target)->m_v);
+                    if (ASR::is_a<ASR::StructInstanceMember_t>(*val)) {
+                        ASR::StructInstanceMember_t *sm =
+                            ASR::down_cast<ASR::StructInstanceMember_t>(val);
+                        std::string mem_name = ASRUtils::symbol_name(
+                            ASRUtils::symbol_get_past_external(sm->m_m));
+                        if (ASR::is_a<ASR::Var_t>(*sm->m_v)) {
+                            std::string struct_name = ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(sm->m_v)->m_v);
+                            std::string key = struct_name + "." + mem_name;
+                            auto spit = func_array_size_params.find(key);
+                            if (spit != func_array_size_params.end() &&
+                                    !func_array_size_params.count(tgt_name)) {
+                                func_array_size_params[tgt_name] = spit->second;
+                            }
+                        }
+                        continue;
+                    }
+                    if (!ASR::is_a<ASR::Var_t>(*val)) continue;
                     std::string val_name = ASRUtils::symbol_name(
                         ASR::down_cast<ASR::Var_t>(val)->m_v);
                     auto fit = local_fixed_sizes.find(val_name);
@@ -3237,10 +3258,35 @@ public:
                         val = ASR::down_cast<ASR::ArrayPhysicalCast_t>(
                             val)->m_arg;
                     }
-                    if (ASR::is_a<ASR::Var_t>(*val)) {
-                        std::string tgt_name = ASRUtils::symbol_name(
-                            ASR::down_cast<ASR::Var_t>(
-                                a->m_target)->m_v);
+                    std::string tgt_name = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(
+                            a->m_target)->m_v);
+                    if (ASR::is_a<ASR::StructInstanceMember_t>(*val)) {
+                        ASR::StructInstanceMember_t *sm =
+                            ASR::down_cast<ASR::StructInstanceMember_t>(
+                                val);
+                        std::string mem_name = ASRUtils::symbol_name(
+                            ASRUtils::symbol_get_past_external(
+                                sm->m_m));
+                        if (ASR::is_a<ASR::Var_t>(*sm->m_v)) {
+                            std::string struct_name =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        sm->m_v)->m_v);
+                            std::string key =
+                                struct_name + "." + mem_name;
+                            if (!func_array_size_params.count(
+                                    tgt_name)) {
+                                auto spit =
+                                    func_array_size_params.find(key);
+                                if (spit !=
+                                        func_array_size_params.end()) {
+                                    func_array_size_params[tgt_name]
+                                        = spit->second;
+                                }
+                            }
+                        }
+                    } else if (ASR::is_a<ASR::Var_t>(*val)) {
                         std::string val_name = ASRUtils::symbol_name(
                             ASR::down_cast<ASR::Var_t>(val)->m_v);
                         if (!func_array_size_params.count(tgt_name)) {
@@ -4111,7 +4157,38 @@ public:
                             ASR::down_cast<ASR::ArrayPhysicalCast_t>(
                                 assoc_val)->m_arg;
                     }
-                    if (ASR::is_a<ASR::Var_t>(*assoc_val)) {
+                    if (ASR::is_a<ASR::StructInstanceMember_t>(
+                            *assoc_val)) {
+                        ASR::StructInstanceMember_t *sm =
+                            ASR::down_cast<
+                                ASR::StructInstanceMember_t>(
+                                    assoc_val);
+                        std::string mem_name =
+                            ASRUtils::symbol_name(
+                                ASRUtils::symbol_get_past_external(
+                                    sm->m_m));
+                        if (ASR::is_a<ASR::Var_t>(*sm->m_v)) {
+                            std::string struct_name =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        sm->m_v)->m_v);
+                            std::string key =
+                                struct_name + "." + mem_name;
+                            if (!func_array_size_params.count(
+                                    tgt_name)) {
+                                auto spit =
+                                    func_array_size_params.find(
+                                        key);
+                                if (spit !=
+                                        func_array_size_params
+                                            .end()) {
+                                    func_array_size_params[
+                                        tgt_name]
+                                        = spit->second;
+                                }
+                            }
+                        }
+                    } else if (ASR::is_a<ASR::Var_t>(*assoc_val)) {
                         std::string val_name = ASRUtils::symbol_name(
                             ASR::down_cast<ASR::Var_t>(
                                 assoc_val)->m_v);
