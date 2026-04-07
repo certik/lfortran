@@ -2370,44 +2370,54 @@ public:
             src << get_indent() << ret_type << " " << sanitize_metal_name(rv->m_name) << ";\n";
         }
         // Declare Parameter (constant) variables from the function scope
-        for (auto &item : fn->m_symtab->get_scope()) {
-            if (!ASR::is_a<ASR::Variable_t>(*item.second)) continue;
-            ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(
-                item.second);
-            if (var->m_storage != ASR::storage_typeType::Parameter) continue;
-            if (!var->m_value) continue;
-            if (ASR::is_a<ASR::Array_t>(*var->m_type)) {
-                ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
-                    var->m_type);
-                int64_t total = 1;
-                for (size_t d = 0; d < arr->n_dims; d++) {
-                    if (arr->m_dims[d].m_length &&
-                        ASR::is_a<ASR::IntegerConstant_t>(
-                            *arr->m_dims[d].m_length)) {
-                        total *= ASR::down_cast<ASR::IntegerConstant_t>(
-                            arr->m_dims[d].m_length)->m_n;
+        // and from parent scopes (contained functions may reference
+        // parameter constants defined in the enclosing program/function).
+        {
+            std::set<std::string> emitted_params;
+            for (SymbolTable *scope = fn->m_symtab; scope != nullptr;
+                    scope = scope->parent) {
+                for (auto &item : scope->get_scope()) {
+                    if (!ASR::is_a<ASR::Variable_t>(*item.second)) continue;
+                    ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(
+                        item.second);
+                    if (var->m_storage != ASR::storage_typeType::Parameter) continue;
+                    if (!var->m_value) continue;
+                    if (emitted_params.count(item.first)) continue;
+                    emitted_params.insert(item.first);
+                    if (ASR::is_a<ASR::Array_t>(*var->m_type)) {
+                        ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
+                            var->m_type);
+                        int64_t total = 1;
+                        for (size_t d = 0; d < arr->n_dims; d++) {
+                            if (arr->m_dims[d].m_length &&
+                                ASR::is_a<ASR::IntegerConstant_t>(
+                                    *arr->m_dims[d].m_length)) {
+                                total *= ASR::down_cast<ASR::IntegerConstant_t>(
+                                    arr->m_dims[d].m_length)->m_n;
+                            }
+                        }
+                        src << get_indent() << "const "
+                            << metal_type(arr->m_type) << " "
+                            << sanitize_metal_name(std::string(var->m_name))
+                            << "[" << total << "] = {";
+                        if (ASR::is_a<ASR::ArrayConstant_t>(*var->m_value)) {
+                            ASR::ArrayConstant_t *ac =
+                                ASR::down_cast<ASR::ArrayConstant_t>(
+                                    var->m_value);
+                            for (int64_t i = 0; i < total; i++) {
+                                if (i > 0) src << ", ";
+                                src << ASRUtils::fetch_ArrayConstant_value(
+                                    ac, i);
+                            }
+                        }
+                        src << "};\n";
+                    } else {
+                        src << get_indent() << "const " << metal_type(var->m_type)
+                            << " " << sanitize_metal_name(std::string(var->m_name)) << " = ";
+                        visit_expr(var->m_value);
+                        src << ";\n";
                     }
                 }
-                src << get_indent() << "const "
-                    << metal_type(arr->m_type) << " "
-                    << sanitize_metal_name(std::string(var->m_name))
-                    << "[" << total << "] = {";
-                if (ASR::is_a<ASR::ArrayConstant_t>(*var->m_value)) {
-                    ASR::ArrayConstant_t *ac =
-                        ASR::down_cast<ASR::ArrayConstant_t>(
-                            var->m_value);
-                    for (int64_t i = 0; i < total; i++) {
-                        if (i > 0) src << ", ";
-                        src << ASRUtils::fetch_ArrayConstant_value(
-                            ac, i);
-                    }
-                }
-                src << "};\n";
-            } else {
-                src << get_indent() << "const " << metal_type(var->m_type)
-                    << " " << sanitize_metal_name(std::string(var->m_name)) << " = ";
-                visit_expr(var->m_value);
-                src << ";\n";
             }
         }
         // Pre-scan the inline function body for Allocate statements,
