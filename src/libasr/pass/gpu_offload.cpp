@@ -4457,6 +4457,37 @@ public:
                     orig_scope, kernel_scope, loc);
             }
 
+            // Parameter variables are compile-time constants without
+            // runtime storage. Clone them into the kernel scope with
+            // their values preserved instead of passing as GPU buffers.
+            if (orig_sym) {
+                ASR::symbol_t *resolved =
+                    ASRUtils::symbol_get_past_external(orig_sym);
+                if (ASR::is_a<ASR::Variable_t>(*resolved)) {
+                    ASR::Variable_t *orig_var =
+                        ASR::down_cast<ASR::Variable_t>(resolved);
+                    if (orig_var->m_storage ==
+                            ASR::storage_typeType::Parameter) {
+                        ASR::symbol_t *cloned =
+                            ASR::down_cast<ASR::symbol_t>(
+                                ASRUtils::make_Variable_t_util(al, loc,
+                                    kernel_scope, s2c(al, sym_name),
+                                    nullptr, 0,
+                                    ASR::intentType::Local,
+                                    orig_var->m_value,
+                                    orig_var->m_value,
+                                    ASR::storage_typeType::Parameter,
+                                    ASRUtils::duplicate_type(al,
+                                        orig_var->m_type),
+                                    nullptr, orig_var->m_abi,
+                                    orig_var->m_access,
+                                    ASR::presenceType::Required, false));
+                        kernel_scope->add_symbol(sym_name, cloned);
+                        continue;
+                    }
+                }
+            }
+
             // Strip Allocatable wrapper: GPU kernel parameters receive
             // raw array data, not allocatable descriptors
             ASR::ttype_t *dup_type = ASRUtils::duplicate_type(al,

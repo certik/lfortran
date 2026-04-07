@@ -1860,10 +1860,38 @@ public:
                 item.second);
             if (var->m_storage != ASR::storage_typeType::Parameter) continue;
             if (!var->m_value) continue;
-            src << get_indent() << "const " << metal_type(var->m_type)
-                << " " << var->m_name << " = ";
-            visit_expr(var->m_value);
-            src << ";\n";
+            if (ASR::is_a<ASR::Array_t>(*var->m_type)) {
+                ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
+                    var->m_type);
+                int64_t total = 1;
+                for (size_t d = 0; d < arr->n_dims; d++) {
+                    if (arr->m_dims[d].m_length &&
+                        ASR::is_a<ASR::IntegerConstant_t>(
+                            *arr->m_dims[d].m_length)) {
+                        total *= ASR::down_cast<ASR::IntegerConstant_t>(
+                            arr->m_dims[d].m_length)->m_n;
+                    }
+                }
+                src << get_indent() << "const "
+                    << metal_type(arr->m_type) << " " << var->m_name
+                    << "[" << total << "] = {";
+                if (ASR::is_a<ASR::ArrayConstant_t>(*var->m_value)) {
+                    ASR::ArrayConstant_t *ac =
+                        ASR::down_cast<ASR::ArrayConstant_t>(
+                            var->m_value);
+                    for (int64_t i = 0; i < total; i++) {
+                        if (i > 0) src << ", ";
+                        src << ASRUtils::fetch_ArrayConstant_value(
+                            ac, i);
+                    }
+                }
+                src << "};\n";
+            } else {
+                src << get_indent() << "const " << metal_type(var->m_type)
+                    << " " << var->m_name << " = ";
+                visit_expr(var->m_value);
+                src << ";\n";
+            }
         }
         // Declare local variables (non-argument, non-return, non-parameter)
         {
@@ -2627,7 +2655,52 @@ public:
                     }
                 }
                 if (!is_arg) {
-                    emit_local_var_decl(var);
+                    if (var->m_storage ==
+                            ASR::storage_typeType::Parameter &&
+                            var->m_value) {
+                        if (ASR::is_a<ASR::Array_t>(*var->m_type)) {
+                            ASR::Array_t *arr =
+                                ASR::down_cast<ASR::Array_t>(
+                                    var->m_type);
+                            int64_t total = 1;
+                            for (size_t d = 0; d < arr->n_dims; d++) {
+                                if (arr->m_dims[d].m_length &&
+                                    ASR::is_a<ASR::IntegerConstant_t>(
+                                        *arr->m_dims[d].m_length)) {
+                                    total *= ASR::down_cast<
+                                        ASR::IntegerConstant_t>(
+                                        arr->m_dims[d].m_length)->m_n;
+                                }
+                            }
+                            src << get_indent() << "const "
+                                << metal_type(arr->m_type) << " "
+                                << var->m_name << "[" << total
+                                << "] = {";
+                            if (ASR::is_a<ASR::ArrayConstant_t>(
+                                    *var->m_value)) {
+                                ASR::ArrayConstant_t *ac =
+                                    ASR::down_cast<
+                                        ASR::ArrayConstant_t>(
+                                        var->m_value);
+                                for (int64_t ei = 0; ei < total;
+                                        ei++) {
+                                    if (ei > 0) src << ", ";
+                                    src << ASRUtils::
+                                        fetch_ArrayConstant_value(
+                                            ac, ei);
+                                }
+                            }
+                            src << "};\n";
+                        } else {
+                            src << get_indent() << "const "
+                                << metal_type(var->m_type) << " "
+                                << var->m_name << " = ";
+                            visit_expr(var->m_value);
+                            src << ";\n";
+                        }
+                    } else {
+                        emit_local_var_decl(var);
+                    }
                 }
             }
         }
