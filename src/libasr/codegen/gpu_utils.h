@@ -1396,7 +1396,6 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
             }
             if (!ASR::is_a<ASR::StructInstanceMember_t>(*asgn->m_target))
                 continue;
-            if (!ASR::is_a<ASR::Var_t>(*asgn->m_value)) continue;
             ASR::StructInstanceMember_t *sm =
                 ASR::down_cast<ASR::StructInstanceMember_t>(
                     asgn->m_target);
@@ -1412,6 +1411,17 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                 }
             }
             if (struct_name.empty()) continue;
+            std::string key = struct_name + "." + mem_name;
+            if (result.count(key)) continue;
+            // Try fixed-size RHS first (e.g., ArrayConstant)
+            int64_t rhs_fsz = get_fixed_size_array_size(
+                ASRUtils::expr_type(asgn->m_value));
+            if (rhs_fsz > 0) {
+                result[key] = rhs_fsz;
+                continue;
+            }
+            // Fall back to VLA workspace lookup
+            if (!ASR::is_a<ASR::Var_t>(*asgn->m_value)) continue;
             std::string val_name = ASRUtils::symbol_name(
                 ASR::down_cast<ASR::Var_t>(asgn->m_value)->m_v);
             auto ws_it = ws_by_name.find(val_name);
@@ -1427,7 +1437,7 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                 }
             }
             if (all_const && per_elem > 0) {
-                result[struct_name + "." + mem_name] = per_elem;
+                result[key] = per_elem;
             }
         } else if (stmt->type == ASR::stmtType::SubroutineCall) {
             // Look through subroutine calls for writes to struct
