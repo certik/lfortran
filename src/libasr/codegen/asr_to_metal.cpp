@@ -105,6 +105,51 @@ inline bool is_metal_intercepted_intrinsic(const std::string &name) {
     return false;
 }
 
+// Recursively evaluate a compile-time integer constant expression from ASR.
+// Returns true and sets `result` if the expression can be fully evaluated.
+static bool eval_const_int(ASR::expr_t *e, int64_t &result) {
+    if (!e) return false;
+    switch (e->type) {
+        case ASR::exprType::IntegerConstant: {
+            result = ASR::down_cast<ASR::IntegerConstant_t>(e)->m_n;
+            return true;
+        }
+        case ASR::exprType::Cast: {
+            return eval_const_int(
+                ASR::down_cast<ASR::Cast_t>(e)->m_arg, result);
+        }
+        case ASR::exprType::IntegerBinOp: {
+            ASR::IntegerBinOp_t *b =
+                ASR::down_cast<ASR::IntegerBinOp_t>(e);
+            if (b->m_value)
+                return eval_const_int(b->m_value, result);
+            int64_t lhs, rhs;
+            if (!eval_const_int(b->m_left, lhs)) return false;
+            if (!eval_const_int(b->m_right, rhs)) return false;
+            switch (b->m_op) {
+                case ASR::binopType::Add: result = lhs + rhs; return true;
+                case ASR::binopType::Sub: result = lhs - rhs; return true;
+                case ASR::binopType::Mul: result = lhs * rhs; return true;
+                case ASR::binopType::Div:
+                    if (rhs == 0) return false;
+                    result = lhs / rhs; return true;
+                default: return false;
+            }
+        }
+        case ASR::exprType::IntegerUnaryMinus: {
+            ASR::IntegerUnaryMinus_t *u =
+                ASR::down_cast<ASR::IntegerUnaryMinus_t>(e);
+            if (u->m_value)
+                return eval_const_int(u->m_value, result);
+            int64_t v;
+            if (!eval_const_int(u->m_arg, v)) return false;
+            result = -v;
+            return true;
+        }
+        default: return false;
+    }
+}
+
 class ASRToMetalVisitor
 {
 public:
@@ -133,6 +178,10 @@ public:
     // Maps "struct_arr.member" to the sizes-buffer parameter name
     // for allocatable array members of array-of-struct kernel arguments.
     std::map<std::string, std::string> struct_array_sizes_params;
+
+    // Maps companion data key to declared buffer size (for kernel-local
+    // FixedSizeArray-of-struct companion data buffers).
+    std::map<std::string, int64_t> func_array_data_sizes;
 
     // Tracks local struct variables that were assigned from an element
     // of an array-of-struct. Maps local_var_name -> (array_name, index_expr_string).
@@ -2717,6 +2766,13 @@ public:
         std::string struct_out_addr_space =
             struct_out_addr_space_override.empty()
             ? out_addr_space : struct_out_addr_space_override;
+        // Member data pointers keep their original "device" addr space
+        // unless an explicit struct override is given (the override
+        // means the struct lives in a different addr space, so its
+        // companion data must also match).
+        std::string member_data_addr_space =
+            struct_out_addr_space_override.empty()
+            ? "device" : struct_out_addr_space_override;
         func_array_size_params.clear();
         func_array_data_params.clear();
         func_array_params.clear();
@@ -2790,7 +2846,7 @@ public:
                                 elem_type_str =
                                     metal_type(mem_arr->m_type);
                             }
-                            src << ", device "
+                            src << ", " << member_data_addr_space << " "
                                 << elem_type_str
                                 << "* " << data_name;
                             func_array_data_params[key] = data_name;
@@ -3386,8 +3442,9 @@ public:
     // Emit a function with both thread and device overloads for
     // array out parameters when needed.  When a function has both
     // variable-address-space array params and struct Out/InOut params,
-    // also emit a mixed overload (thread arrays + device struct out)
-    // to handle calls from device context with thread-local temps.
+    // also emit mixed overloads:
+    //   thread arrays + device struct out (calls from device w/ thread temps)
+    //   device arrays + thread struct out (calls w/ device input + local struct)
     void emit_function_def(ASR::Function_t *fn,
             const std::string &metal_name) {
         emit_function_def_impl(fn, metal_name, "thread");
@@ -3395,6 +3452,7 @@ public:
             emit_function_def_impl(fn, metal_name, "device");
             if (func_needs_mixed_overload(fn)) {
                 emit_function_def_impl(fn, metal_name, "thread", "device");
+                emit_function_def_impl(fn, metal_name, "device", "thread");
             }
         }
     }
@@ -4256,6 +4314,9 @@ public:
                         // companion size/data params.
                         if (is_struct_type(
                                 ASRUtils::type_get_past_allocatable(
+                                    var->m_type))
+                            && !ASR::is_a<ASR::Array_t>(
+                                *ASRUtils::type_get_past_allocatable(
                                     var->m_type))) {
                             ASR::Struct_t *st = get_struct_decl(var);
                             if (st) {
@@ -4757,6 +4818,246 @@ public:
                                         func_array_data_params[key] =
                                             "__data_" + vname + "_"
                                             + mem_name;
+                                    }
+                                }
+                            }
+                        }
+                        // For local FixedSizeArray-of-struct variables
+                        // with allocatable members (e.g., array
+                        // constructor temps), declare thread-local
+                        // companion data buffers for each allocatable
+                        // member. Without this, function calls that
+                        // write to the struct's allocatable members
+                        // reference undeclared device buffer names.
+                        ASR::ttype_t *var_base_type =
+                            ASRUtils::type_get_past_allocatable(
+                                var->m_type);
+                        if (ASR::is_a<ASR::Array_t>(*var_base_type)) {
+                            ASR::Array_t *var_arr =
+                                ASR::down_cast<ASR::Array_t>(
+                                    var_base_type);
+                            if (var_arr->m_physical_type ==
+                                    ASR::array_physical_typeType::FixedSizeArray
+                                && is_struct_type(var_arr->m_type)) {
+                                ASR::Struct_t *fsa_st = nullptr;
+                                if (var->m_type_declaration) {
+                                    ASR::symbol_t *ts =
+                                        ASRUtils::symbol_get_past_external(
+                                            var->m_type_declaration);
+                                    if (ASR::is_a<ASR::Struct_t>(*ts))
+                                        fsa_st = ASR::down_cast<ASR::Struct_t>(ts);
+                                }
+                                if (fsa_st && struct_has_allocatable_members(fsa_st)) {
+                                    std::string vname(var->m_name);
+                                    for (size_t m = 0; m < fsa_st->n_members; m++) {
+                                        ASR::symbol_t *mem =
+                                            fsa_st->m_symtab->get_symbol(
+                                                fsa_st->m_members[m]);
+                                        if (!mem ||
+                                            !ASR::is_a<ASR::Variable_t>(*mem))
+                                            continue;
+                                        ASR::Variable_t *mv =
+                                            ASR::down_cast<ASR::Variable_t>(
+                                                mem);
+                                        if (!ASRUtils::is_allocatable(
+                                                mv->m_type))
+                                            continue;
+                                        ASR::ttype_t *mem_inner =
+                                            ASRUtils::type_get_past_allocatable(
+                                                mv->m_type);
+                                        if (!ASR::is_a<ASR::Array_t>(
+                                                *mem_inner))
+                                            continue;
+                                        std::string mem_name(
+                                            fsa_st->m_members[m]);
+                                        std::string key =
+                                            vname + "." + mem_name;
+                                        // Determine companion data
+                                        // buffer size by scanning
+                                        // kernel body for function
+                                        // calls that write to this
+                                        // array's struct elements.
+                                        // Collect all stmts including
+                                        // those inside DoConcurrentLoop.
+                                        std::vector<ASR::stmt_t*> all_stmts;
+                                        for (size_t ki = 0; ki < x.n_body; ki++) {
+                                            all_stmts.push_back(x.m_body[ki]);
+                                            if (x.m_body[ki]->type ==
+                                                    ASR::stmtType::DoConcurrentLoop) {
+                                                ASR::DoConcurrentLoop_t *dcl =
+                                                    ASR::down_cast<ASR::DoConcurrentLoop_t>(
+                                                        x.m_body[ki]);
+                                                for (size_t di = 0; di < dcl->n_body; di++)
+                                                    all_stmts.push_back(dcl->m_body[di]);
+                                            }
+                                        }
+                                        int64_t data_size = 0;
+                                        for (size_t si = 0;
+                                                si < all_stmts.size(); si++) {
+                                            if (data_size > 0) break;
+                                            if (all_stmts[si]->type !=
+                                                    ASR::stmtType::SubroutineCall)
+                                                continue;
+                                            ASR::SubroutineCall_t *sc =
+                                                ASR::down_cast<ASR::SubroutineCall_t>(
+                                                    all_stmts[si]);
+                                            size_t struct_arg_idx = SIZE_MAX;
+                                            for (size_t ai = 0;
+                                                    ai < sc->n_args; ai++) {
+                                                if (!sc->m_args[ai].m_value)
+                                                    continue;
+                                                if (!ASR::is_a<ASR::ArrayItem_t>(
+                                                        *sc->m_args[ai].m_value))
+                                                    continue;
+                                                ASR::ArrayItem_t *cai =
+                                                    ASR::down_cast<ASR::ArrayItem_t>(
+                                                        sc->m_args[ai].m_value);
+                                                if (!ASR::is_a<ASR::Var_t>(
+                                                        *cai->m_v))
+                                                    continue;
+                                                std::string cn =
+                                                    ASRUtils::symbol_name(
+                                                        ASR::down_cast<ASR::Var_t>(
+                                                            cai->m_v)->m_v);
+                                                if (cn == vname) {
+                                                    struct_arg_idx = ai;
+                                                    break;
+                                                }
+                                            }
+                                            if (struct_arg_idx == SIZE_MAX)
+                                                continue;
+                                            ASR::Function_t *callee =
+                                                resolve_function(sc->m_name);
+                                            if (!callee) continue;
+                                            // Find r%member = v pattern
+                                            for (size_t bi = 0;
+                                                    bi < callee->n_body; bi++) {
+                                                if (callee->m_body[bi]->type !=
+                                                        ASR::stmtType::Assignment)
+                                                    continue;
+                                                ASR::Assignment_t *fa =
+                                                    ASR::down_cast<ASR::Assignment_t>(
+                                                        callee->m_body[bi]);
+                                                if (!ASR::is_a<ASR::StructInstanceMember_t>(
+                                                        *fa->m_target))
+                                                    continue;
+                                                ASR::StructInstanceMember_t *fsm =
+                                                    ASR::down_cast<ASR::StructInstanceMember_t>(
+                                                        fa->m_target);
+                                                std::string fmn =
+                                                    ASRUtils::symbol_name(
+                                                        ASRUtils::symbol_get_past_external(
+                                                            fsm->m_m));
+                                                if (fmn != mem_name) continue;
+                                                if (!ASR::is_a<ASR::Var_t>(
+                                                        *fa->m_value))
+                                                    continue;
+                                                std::string src_name =
+                                                    ASRUtils::symbol_name(
+                                                        ASR::down_cast<ASR::Var_t>(
+                                                            fa->m_value)->m_v);
+                                                for (size_t pi = 0;
+                                                        pi < callee->n_args; pi++) {
+                                                    std::string pn =
+                                                        ASRUtils::symbol_name(
+                                                            ASR::down_cast<ASR::Var_t>(
+                                                                callee->m_args[pi])->m_v);
+                                                    if (pn != src_name)
+                                                        continue;
+                                                    if (pi < sc->n_args &&
+                                                            sc->m_args[pi].m_value) {
+                                                        ASR::ttype_t *at =
+                                                            ASRUtils::type_get_past_pointer(
+                                                                ASRUtils::expr_type(
+                                                                    sc->m_args[pi].m_value));
+                                                        data_size =
+                                                            get_total_elements(
+                                                                ASRUtils::type_get_past_allocatable(at));
+                                                        // If DescriptorArray (unknown
+                                                        // dims), resolve through
+                                                        // Associate stmts
+                                                        if (data_size <= 1 &&
+                                                                ASR::is_a<ASR::Var_t>(
+                                                                    *sc->m_args[pi].m_value)) {
+                                                            std::string call_src =
+                                                                ASRUtils::symbol_name(
+                                                                    ASR::down_cast<ASR::Var_t>(
+                                                                        sc->m_args[pi].m_value)->m_v);
+                                                            for (size_t asi = 0;
+                                                                    asi < all_stmts.size(); asi++) {
+                                                                if (all_stmts[asi]->type !=
+                                                                        ASR::stmtType::Associate)
+                                                                    continue;
+                                                                ASR::Associate_t *asc =
+                                                                    ASR::down_cast<ASR::Associate_t>(
+                                                                        all_stmts[asi]);
+                                                                if (!ASR::is_a<ASR::Var_t>(
+                                                                        *asc->m_target))
+                                                                    continue;
+                                                                std::string atn =
+                                                                    ASRUtils::symbol_name(
+                                                                        ASR::down_cast<ASR::Var_t>(
+                                                                            asc->m_target)->m_v);
+                                                                if (atn != call_src)
+                                                                    continue;
+                                                                if (!ASR::is_a<ASR::ArraySection_t>(
+                                                                        *asc->m_value)) {
+                                                                    continue;
+                                                                }
+                                                                ASR::ArraySection_t *asec =
+                                                                    ASR::down_cast<ASR::ArraySection_t>(
+                                                                        asc->m_value);
+                                                                // Compute first dim size
+                                                                if (asec->n_args >= 1) {
+                                                                    int64_t lb = 1, ub = -1;
+                                                                    ASR::expr_t *left = asec->m_args[0].m_left;
+                                                                    ASR::expr_t *right = asec->m_args[0].m_right;
+                                                                    if (left)
+                                                                        eval_const_int(left, lb);
+                                                                    if (right)
+                                                                        eval_const_int(right, ub);
+                                                                    if (ub > 0)
+                                                                        data_size = ub - lb + 1;
+                                                                }
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                    break;
+                                                }
+                                                break;
+                                            }
+                                        }
+                                        ASR::Array_t *mem_arr =
+                                            ASR::down_cast<ASR::Array_t>(
+                                                mem_inner);
+                                        std::string elem_type_str;
+                                        if (is_struct_type(mem_arr->m_type)) {
+                                            elem_type_str =
+                                                get_struct_name(mv);
+                                        } else {
+                                            elem_type_str =
+                                                metal_type(mem_arr->m_type);
+                                        }
+                                        std::string data_name =
+                                            "__data_" + vname + "_"
+                                            + mem_name;
+                                        src << get_indent()
+                                            << elem_type_str << " "
+                                            << data_name << "["
+                                            << (data_size > 0 ? data_size : 1)
+                                            << "];\n";
+                                        func_array_data_params[key] =
+                                            data_name;
+                                        func_array_data_sizes[key] =
+                                            (data_size > 0 ? data_size : 1);
+                                        std::string size_name =
+                                            "__size_" + vname + "_"
+                                            + mem_name;
+                                        src << get_indent() << "int "
+                                            << size_name << " = 0;\n";
+                                        func_array_size_params[key] =
+                                            size_name;
                                     }
                                 }
                             }
@@ -6415,6 +6716,218 @@ public:
                                 src << get_indent()
                                     << asit->second << " = "
                                     << fixed_sz << ";\n";
+                            }
+                        }
+                    }
+                }
+                // Post-call fixup: when a function copies
+                // structs from a local FixedSizeArray-of-struct
+                // to a device struct array element, the nested
+                // allocatable companion data is not transferred.
+                // Emit explicit copy of thread-local companion
+                // data to the device companion data buffers.
+                if (fn && !in_inline_function) {
+                    // Find an arg that is a local FSA-of-struct
+                    // with registered companion data
+                    std::string fsa_name;
+                    for (size_t i = 0; i < sc->n_args; i++) {
+                        if (!sc->m_args[i].m_value) continue;
+                        ASR::expr_t *ae = sc->m_args[i].m_value;
+                        if (ASR::is_a<ASR::ArrayPhysicalCast_t>(*ae))
+                            ae = ASR::down_cast<
+                                ASR::ArrayPhysicalCast_t>(ae)->m_arg;
+                        if (!ASR::is_a<ASR::Var_t>(*ae)) continue;
+                        std::string an = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(ae)->m_v);
+                        // Check if this var has companion entries
+                        for (auto &e : func_array_data_params) {
+                            if (e.first.compare(0,
+                                    an.size() + 1,
+                                    an + ".") == 0) {
+                                fsa_name = an;
+                                break;
+                            }
+                        }
+                        if (!fsa_name.empty()) break;
+                    }
+                    if (!fsa_name.empty()) {
+                        // Find the dest arg (ArrayItem of
+                        // device struct array)
+                        for (size_t i = 0; i < sc->n_args; i++) {
+                            if (!sc->m_args[i].m_value) continue;
+                            if (!ASR::is_a<ASR::ArrayItem_t>(
+                                    *sc->m_args[i].m_value))
+                                continue;
+                            ASR::ArrayItem_t *dai =
+                                ASR::down_cast<ASR::ArrayItem_t>(
+                                    sc->m_args[i].m_value);
+                            if (!ASR::is_a<ASR::Var_t>(*dai->m_v))
+                                continue;
+                            ASR::symbol_t *dsym =
+                                ASR::down_cast<ASR::Var_t>(
+                                    dai->m_v)->m_v;
+                            std::string dst_arr =
+                                ASRUtils::symbol_name(dsym);
+                            // Get the dest struct and find its
+                            // first allocatable member (the one
+                            // that make_outer writes to)
+                            ASR::Variable_t *dvar =
+                                ASR::down_cast<ASR::Variable_t>(
+                                    ASRUtils::symbol_get_past_external(
+                                        dsym));
+                            ASR::Struct_t *dst_st =
+                                get_struct_decl(dvar);
+                            if (!dst_st) continue;
+                            for (size_t dm = 0;
+                                    dm < dst_st->n_members; dm++) {
+                                ASR::symbol_t *dms =
+                                    dst_st->m_symtab->get_symbol(
+                                        dst_st->m_members[dm]);
+                                if (!dms ||
+                                    !ASR::is_a<ASR::Variable_t>(
+                                        *dms))
+                                    continue;
+                                ASR::Variable_t *dmv =
+                                    ASR::down_cast<ASR::Variable_t>(
+                                        dms);
+                                if (!ASRUtils::is_allocatable(
+                                        dmv->m_type))
+                                    continue;
+                                ASR::ttype_t *dmi =
+                                    ASRUtils::type_get_past_allocatable(
+                                        dmv->m_type);
+                                if (!ASR::is_a<ASR::Array_t>(*dmi))
+                                    continue;
+                                if (!is_struct_type(
+                                        ASR::down_cast<ASR::Array_t>(
+                                            dmi)->m_type))
+                                    continue;
+                                std::string dst_mem(
+                                    dst_st->m_members[dm]);
+                                // Get the sub-struct of the
+                                // dest member (e.g., inner_t)
+                                ASR::Struct_t *sub_st = nullptr;
+                                if (dmv->m_type_declaration) {
+                                    ASR::symbol_t *es =
+                                        ASRUtils::symbol_get_past_external(
+                                            dmv->m_type_declaration);
+                                    if (ASR::is_a<ASR::Struct_t>(*es))
+                                        sub_st =
+                                            ASR::down_cast<ASR::Struct_t>(
+                                                es);
+                                }
+                                if (!sub_st) continue;
+                                // For each alloc member of inner_t
+                                for (size_t sm2 = 0;
+                                        sm2 < sub_st->n_members;
+                                        sm2++) {
+                                    ASR::symbol_t *sms =
+                                        sub_st->m_symtab->get_symbol(
+                                            sub_st->m_members[sm2]);
+                                    if (!sms ||
+                                        !ASR::is_a<ASR::Variable_t>(
+                                            *sms))
+                                        continue;
+                                    ASR::Variable_t *smv =
+                                        ASR::down_cast<ASR::Variable_t>(
+                                            sms);
+                                    if (!ASRUtils::is_allocatable(
+                                            smv->m_type))
+                                        continue;
+                                    std::string sub_mem(
+                                        sub_st->m_members[sm2]);
+                                    // Source companion
+                                    std::string src_key =
+                                        fsa_name + "." + sub_mem;
+                                    auto sdit =
+                                        func_array_data_params.find(
+                                            src_key);
+                                    auto ssit =
+                                        func_array_size_params.find(
+                                            src_key);
+                                    if (sdit ==
+                                            func_array_data_params.end()
+                                        || ssit ==
+                                            func_array_size_params.end())
+                                        continue;
+                                    // Dest nested companion
+                                    std::string dst_nkey =
+                                        dst_arr + "_" + dst_mem
+                                        + "." + sub_mem;
+                                    auto ddit =
+                                        func_array_data_params.find(
+                                            dst_nkey);
+                                    auto doit =
+                                        struct_array_offset_params.find(
+                                            dst_nkey);
+                                    auto dsit =
+                                        struct_array_sizes_params.find(
+                                            dst_nkey);
+                                    if (ddit ==
+                                            func_array_data_params.end()
+                                        || doit ==
+                                            struct_array_offset_params.end()
+                                        || dsit ==
+                                            struct_array_sizes_params.end())
+                                        continue;
+                                    // Emit idx expression
+                                    std::string idx_expr;
+                                    {
+                                        std::stringstream ss;
+                                        std::swap(ss, src);
+                                        if (dai->n_args >= 1) {
+                                            ASR::expr_t *idx =
+                                                dai->m_args[0].m_right
+                                                ? dai->m_args[0].m_right
+                                                : dai->m_args[0].m_left;
+                                            if (idx) {
+                                                visit_expr(idx);
+                                            }
+                                        }
+                                        idx_expr = src.str();
+                                        src.str("");
+                                        std::swap(ss, src);
+                                    }
+                                    std::string lb_str =
+                                        get_lower_bound_str(nullptr, 0);
+                                    std::string offset_idx =
+                                        "((int)(" + idx_expr
+                                        + ") - (" + lb_str + "))";
+                                    // Use declared buffer size if
+                                    // available (size var is passed
+                                    // by value so stays 0)
+                                    auto fsa_sz_it =
+                                        func_array_data_sizes.find(
+                                            src_key);
+                                    std::string sz_str =
+                                        (fsa_sz_it !=
+                                            func_array_data_sizes.end()
+                                         && fsa_sz_it->second > 0)
+                                        ? std::to_string(
+                                            fsa_sz_it->second)
+                                        : ssit->second;
+                                    // Copy companion data from
+                                    // thread-local to device
+                                    src << get_indent()
+                                        << "for (int __nc = 0; "
+                                        << "__nc < "
+                                        << sz_str
+                                        << "; __nc++) {\n";
+                                    indent_level++;
+                                    src << get_indent()
+                                        << ddit->second << "["
+                                        << doit->second << "["
+                                        << offset_idx << "] + __nc"
+                                        << "] = "
+                                        << sdit->second
+                                        << "[__nc];\n";
+                                    indent_level--;
+                                    src << get_indent() << "}\n";
+                                    src << get_indent()
+                                        << dsit->second << "["
+                                        << offset_idx << "] = "
+                                        << sz_str << ";\n";
+                                }
                             }
                         }
                     }

@@ -299,6 +299,22 @@ public:
                 }
             }
         }
+        // Check if target is an ArrayItem (e.g., tmp(idx) = ...)
+        // This catches FixedSizeArray temporaries created by the
+        // implied_do_loops pass for array constructors.
+        if (ASR::is_a<ASR::ArrayItem_t>(*x.m_target)) { 
+            ASR::ArrayItem_t *ai =
+                ASR::down_cast<ASR::ArrayItem_t>(x.m_target);
+            if (ASR::is_a<ASR::Var_t>(*ai->m_v)) {
+                ASR::Var_t *v = ASR::down_cast<ASR::Var_t>(ai->m_v);
+                std::string name = ASRUtils::symbol_name(v->m_v);
+                ASR::ttype_t *type = ASRUtils::symbol_type(v->m_v);
+                if (ASRUtils::is_array(type) &&
+                        !ASRUtils::is_allocatable(type)) {
+                    assigned_vars.insert(name);
+                }
+            }
+        }
         // Check if target is a StructInstanceMember (e.g., x%v = ...)
         if (ASR::is_a<ASR::StructInstanceMember_t>(*x.m_target)) {
             ASR::StructInstanceMember_t *sm =
@@ -4802,6 +4818,40 @@ public:
             involved_syms.erase(name);
         }
 
+        // Classify FixedSizeArray variables that are compiler-generated
+        // temporaries (e.g., array constructor temps from the
+        // implied_do_loops pass) as kernel-local.  Without this they
+        // become shared device buffers and all threads race on the same
+        // element.  Only temporaries (names starting with "__libasr")
+        // are classified as local; user variables must remain as device
+        // buffers so their data can be read back after the kernel.
+        std::set<std::string> local_fixed_array_names;
+        for (auto &name : assigned_vars) {
+            if (loop_var_set.count(name)) continue;
+            if (all_reduction_targets.count(name)) continue;
+            if (post_loop_vars.count(name)) continue;
+            if (name.substr(0, 8) != "__libasr") continue;
+            auto it = involved_syms.find(name);
+            if (it != involved_syms.end()) {
+                ASR::ttype_t *type = it->second.first;
+                if (ASRUtils::is_array(type) &&
+                        !ASRUtils::is_allocatable(type)) {
+                    ASR::ttype_t *base = ASRUtils::type_get_past_allocatable(type);
+                    if (ASR::is_a<ASR::Array_t>(*base)) {
+                        ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(base);
+                        if (arr->m_physical_type ==
+                                ASR::array_physical_typeType::FixedSizeArray) {
+                            local_fixed_array_names.insert(name);
+                        }
+                    }
+                }
+            }
+        }
+
+        for (auto &name : local_fixed_array_names) {
+            involved_syms.erase(name);
+        }
+
         // Collect optional variables from involved_syms. When an optional
         // argument is used inside a do concurrent body guarded by present(),
         // the kernel launch and all buffer setup must be skipped when the
@@ -5519,6 +5569,24 @@ public:
                     ASR::storage_typeType::Default,
                     ASRUtils::duplicate_type(al, type),
                     nullptr, ASR::abiType::Source,
+                    ASR::accessType::Public, ASR::presenceType::Required, false));
+            kernel_scope->add_symbol(name, param);
+        }
+
+        // Create local FixedSizeArray temporaries in kernel scope
+        for (auto &name : local_fixed_array_names) {
+            auto it_orig = orig_scope->resolve_symbol(name);
+            if (!it_orig) continue;
+            ASR::ttype_t *type = ASRUtils::symbol_type(it_orig);
+            ASR::symbol_t *type_decl = import_struct_type(it_orig,
+                orig_scope, kernel_scope, loc);
+            ASR::symbol_t *param = ASR::down_cast<ASR::symbol_t>(
+                ASRUtils::make_Variable_t_util(al, loc, kernel_scope,
+                    s2c(al, name), nullptr, 0,
+                    ASR::intentType::Local, nullptr, nullptr,
+                    ASR::storage_typeType::Default,
+                    ASRUtils::duplicate_type(al, type),
+                    type_decl, ASR::abiType::Source,
                     ASR::accessType::Public, ASR::presenceType::Required, false));
             kernel_scope->add_symbol(name, param);
         }
@@ -7530,6 +7598,932 @@ public:
                         ASR::make_DoLoop_t(al, loc, nullptr,
                             lh, lbody.p, lbody.n,
                             nullptr, 0)));
+                }
+            }
+        }
+
+        // Pre-allocate allocatable struct members for struct-constructor
+        // assignments like arr(i) = wrapper_t(vals(:, i)) inside the do
+        // concurrent body. When a StructConstructor is assigned to an
+        // ArrayItem of a struct array, allocatable members are
+        // uninitialized and the Metal buffer gets size 0. For each
+        // allocatable member, compute the size from the constructor
+        // argument and emit a pre-launch allocation loop.
+        for (size_t si = 0; si < x.n_body; si++) {
+            ASR::stmt_t *stmt = x.m_body[si];
+            ASR::stmt_t **stmts_to_scan = &stmt;
+            size_t n_stmts_to_scan = 1;
+            if (ASR::is_a<ASR::BlockCall_t>(*stmt)) {
+                ASR::BlockCall_t *bc =
+                    ASR::down_cast<ASR::BlockCall_t>(stmt);
+                if (ASR::is_a<ASR::Block_t>(*bc->m_m)) {
+                    ASR::Block_t *blk =
+                        ASR::down_cast<ASR::Block_t>(bc->m_m);
+                    stmts_to_scan = blk->m_body;
+                    n_stmts_to_scan = blk->n_body;
+                }
+            }
+            for (size_t sj = 0; sj < n_stmts_to_scan; sj++) {
+                if (!ASR::is_a<ASR::Assignment_t>(*stmts_to_scan[sj]))
+                    continue;
+                ASR::Assignment_t *asgn =
+                    ASR::down_cast<ASR::Assignment_t>(
+                        stmts_to_scan[sj]);
+                if (!ASR::is_a<ASR::ArrayItem_t>(*asgn->m_target))
+                    continue;
+                if (!ASR::is_a<ASR::StructConstructor_t>(*asgn->m_value))
+                    continue;
+                ASR::ttype_t *elem_type =
+                    ASRUtils::expr_type(asgn->m_target);
+                if (!ASR::is_a<ASR::StructType_t>(
+                        *ASRUtils::extract_type(elem_type)))
+                    continue;
+                ASR::ArrayItem_t *tgt_ai =
+                    ASR::down_cast<ASR::ArrayItem_t>(asgn->m_target);
+                if (!ASR::is_a<ASR::Var_t>(*tgt_ai->m_v)) continue;
+                ASR::symbol_t *tgt_sym =
+                    ASR::down_cast<ASR::Var_t>(tgt_ai->m_v)->m_v;
+                ASR::Variable_t *tgt_var =
+                    ASR::down_cast<ASR::Variable_t>(
+                        ASRUtils::symbol_get_past_external(tgt_sym));
+                // Only pre-allocate if the target array is indexed
+                // by the do concurrent loop variable.
+                {
+                    bool uses_loop_var = false;
+                    ASR::symbol_t *lv_sym =
+                        ASR::down_cast<ASR::Var_t>(
+                            x.m_head[0].m_v)->m_v;
+                    for (size_t ti = 0; ti < tgt_ai->n_args; ti++) {
+                        ASR::expr_t *idx =
+                            tgt_ai->m_args[ti].m_right;
+                        if (idx && ASR::is_a<ASR::Var_t>(*idx) &&
+                            ASR::down_cast<ASR::Var_t>(idx)->m_v
+                                == lv_sym) {
+                            uses_loop_var = true;
+                            break;
+                        }
+                    }
+                    if (!uses_loop_var) continue;
+                }
+                if (!tgt_var->m_type_declaration) continue;
+                ASR::symbol_t *struct_sym =
+                    ASRUtils::symbol_get_past_external(
+                        tgt_var->m_type_declaration);
+                if (!ASR::is_a<ASR::Struct_t>(*struct_sym)) continue;
+                ASR::Struct_t *st =
+                    ASR::down_cast<ASR::Struct_t>(struct_sym);
+                ASR::StructConstructor_t *sc =
+                    ASR::down_cast<ASR::StructConstructor_t>(
+                        asgn->m_value);
+                if (n_dims != 1) continue;
+
+                ASR::ttype_t *int_type_pa = ASRUtils::TYPE(
+                    ASR::make_Integer_t(al, loc, 4));
+
+                for (size_t m = 0; m < st->n_members; m++) {
+                    ASR::symbol_t *mem_sym =
+                        st->m_symtab->get_symbol(st->m_members[m]);
+                    if (!mem_sym ||
+                            !ASR::is_a<ASR::Variable_t>(*mem_sym))
+                        continue;
+                    ASR::Variable_t *mv =
+                        ASR::down_cast<ASR::Variable_t>(mem_sym);
+                    if (!ASRUtils::is_allocatable(mv->m_type)) continue;
+                    ASR::ttype_t *mi =
+                        ASRUtils::type_get_past_allocatable(mv->m_type);
+                    if (!ASR::is_a<ASR::Array_t>(*mi)) continue;
+                    if (m >= sc->n_args) continue;
+                    ASR::expr_t *ctor_arg = sc->m_args[m].m_value;
+                    if (!ctor_arg) continue;
+
+                    // Compute the size of the constructor argument
+                    ASR::expr_t *arg_size = nullptr;
+                    ASRUtils::ExprStmtDuplicator dup_sz(al);
+                    dup_sz.success = true;
+                    if (ASR::is_a<ASR::ArraySection_t>(*ctor_arg)) {
+                        ASR::ArraySection_t *sec =
+                            ASR::down_cast<ASR::ArraySection_t>(
+                                ctor_arg);
+                        for (size_t d = 0; d < sec->n_args; d++) {
+                            if (!sec->m_args[d].m_left ||
+                                    !sec->m_args[d].m_right)
+                                continue;
+                            ASR::expr_t *lb_d =
+                                dup_sz.duplicate_expr(
+                                    sec->m_args[d].m_left);
+                            ASR::expr_t *ub_d =
+                                dup_sz.duplicate_expr(
+                                    sec->m_args[d].m_right);
+                            ASR::expr_t *one = ASRUtils::EXPR(
+                                ASR::make_IntegerConstant_t(al, loc,
+                                    1, int_type_pa,
+                                    ASR::integerbozType::Decimal));
+                            ASR::expr_t *diff = ASRUtils::EXPR(
+                                ASR::make_IntegerBinOp_t(al, loc,
+                                    ub_d, ASR::binopType::Sub, lb_d,
+                                    int_type_pa, nullptr));
+                            ASR::expr_t *dim_sz = ASRUtils::EXPR(
+                                ASR::make_IntegerBinOp_t(al, loc,
+                                    diff, ASR::binopType::Add, one,
+                                    int_type_pa, nullptr));
+                            if (!arg_size) {
+                                arg_size = dim_sz;
+                            } else {
+                                arg_size = ASRUtils::EXPR(
+                                    ASR::make_IntegerBinOp_t(al, loc,
+                                        arg_size, ASR::binopType::Mul,
+                                        dim_sz, int_type_pa, nullptr));
+                            }
+                        }
+                    } else {
+                        // Fallback: use ArraySize of the argument
+                        arg_size = ASRUtils::EXPR(
+                            ASR::make_ArraySize_t(al, loc,
+                                dup_sz.duplicate_expr(ctor_arg),
+                                nullptr, int_type_pa, nullptr));
+                    }
+                    if (!arg_size) continue;
+
+                    // Find ExternalSymbol for member in current scope
+                    ASR::symbol_t *mem_ext = nullptr;
+                    for (auto &scope_item :
+                            current_scope->get_scope()) {
+                        if (!ASR::is_a<ASR::ExternalSymbol_t>(
+                                *scope_item.second)) continue;
+                        ASR::ExternalSymbol_t *es =
+                            ASR::down_cast<ASR::ExternalSymbol_t>(
+                                scope_item.second);
+                        ASR::symbol_t *resolved =
+                            ASRUtils::symbol_get_past_external(
+                                es->m_external);
+                        if (resolved == mem_sym) {
+                            mem_ext = scope_item.second;
+                            break;
+                        }
+                    }
+                    if (!mem_ext) continue;
+
+                    ASRUtils::ExprStmtDuplicator dup_lp(al);
+                    dup_lp.success = true;
+                    ASR::do_loop_head_t lh;
+                    lh.loc = loc;
+                    lh.m_v = dup_lp.duplicate_expr(x.m_head[0].m_v);
+                    lh.m_start =
+                        dup_lp.duplicate_expr(x.m_head[0].m_start);
+                    lh.m_end =
+                        dup_lp.duplicate_expr(x.m_head[0].m_end);
+                    lh.m_increment = nullptr;
+
+                    ASR::expr_t *loop_var =
+                        dup_lp.duplicate_expr(x.m_head[0].m_v);
+                    ASR::array_index_t *tgt_idx =
+                        al.allocate<ASR::array_index_t>(1);
+                    tgt_idx[0].loc = loc;
+                    tgt_idx[0].m_left = nullptr;
+                    tgt_idx[0].m_right = loop_var;
+                    tgt_idx[0].m_step = nullptr;
+                    ASR::expr_t *tgt_elem = ASRUtils::EXPR(
+                        ASR::make_ArrayItem_t(al, loc,
+                            ASRUtils::EXPR(ASR::make_Var_t(
+                                al, loc, tgt_sym)),
+                            tgt_idx, 1, elem_type,
+                            ASR::arraystorageType::ColMajor,
+                            nullptr));
+                    ASR::expr_t *tgt_member = ASRUtils::EXPR(
+                        ASR::make_StructInstanceMember_t(al, loc,
+                            tgt_elem, mem_ext,
+                            mv->m_type, nullptr));
+
+                    ASR::alloc_arg_t aa;
+                    aa.loc = loc;
+                    aa.m_a = tgt_member;
+                    aa.n_dims = 1;
+                    aa.m_dims = al.allocate<ASR::dimension_t>(1);
+                    aa.m_dims[0].loc = loc;
+                    aa.m_dims[0].m_start = ASRUtils::EXPR(
+                        ASR::make_IntegerConstant_t(al, loc, 1,
+                            int_type_pa,
+                            ASR::integerbozType::Decimal));
+                    aa.m_dims[0].m_length = arg_size;
+                    aa.m_len_expr = nullptr;
+                    aa.m_sym_subclass = nullptr;
+                    aa.m_type = nullptr;
+
+                    Vec<ASR::alloc_arg_t> av;
+                    av.reserve(al, 1);
+                    av.push_back(al, aa);
+
+                    ASR::stmt_t *alloc_s = ASRUtils::STMT(
+                        ASR::make_Allocate_t(al, loc,
+                            av.p, av.n,
+                            nullptr, nullptr, nullptr));
+
+                    // Guard: if (.not. allocated(tgt(k)%member))
+                    ASR::expr_t *tgt_member_dup =
+                        dup_lp.duplicate_expr(tgt_member);
+                    ASR::ttype_t *log_type = ASRUtils::TYPE(
+                        ASR::make_Logical_t(al, loc, 4));
+                    Vec<ASR::expr_t*> alloc_args;
+                    alloc_args.reserve(al, 1);
+                    alloc_args.push_back(al, tgt_member_dup);
+                    ASR::expr_t *is_allocated = ASRUtils::EXPR(
+                        ASR::make_IntrinsicImpureFunction_t(al, loc,
+                            static_cast<int64_t>(
+                                ASRUtils::IntrinsicImpureFunctions::Allocated),
+                            alloc_args.p, alloc_args.n,
+                            0, log_type, nullptr));
+                    ASR::expr_t *not_allocated = ASRUtils::EXPR(
+                        ASR::make_LogicalNot_t(al, loc,
+                            is_allocated, log_type, nullptr));
+
+                    Vec<ASR::stmt_t*> if_body;
+                    if_body.reserve(al, 1);
+                    if_body.push_back(al, alloc_s);
+
+                    ASR::stmt_t *guarded_alloc = ASRUtils::STMT(
+                        ASR::make_If_t(al, loc, nullptr,
+                            not_allocated,
+                            if_body.p, if_body.n,
+                            nullptr, 0));
+
+                    Vec<ASR::stmt_t*> lbody;
+                    lbody.reserve(al, 1);
+                    lbody.push_back(al, guarded_alloc);
+
+                    pre_launch_stmts.push_back(al, ASRUtils::STMT(
+                        ASR::make_DoLoop_t(al, loc, nullptr,
+                            lh, lbody.p, lbody.n,
+                            nullptr, 0)));
+                }
+            }
+        }
+
+        // Pre-allocate allocatable struct members when a FunctionCall
+        // result is assigned to an ArrayItem of struct type.  This
+        // handles patterns like:
+        //   a(i) = make_outer([make_inner(d(:,i))])
+        // where make_outer returns a struct with allocatable members
+        // that need to be pre-allocated before the GPU kernel launch.
+        for (size_t si = 0; si < x.n_body; si++) {
+            ASR::stmt_t *stmt = x.m_body[si];
+            ASR::stmt_t **stmts_to_scan = &stmt;
+            size_t n_stmts_to_scan = 1;
+            if (ASR::is_a<ASR::BlockCall_t>(*stmt)) {
+                ASR::BlockCall_t *bc =
+                    ASR::down_cast<ASR::BlockCall_t>(stmt);
+                if (ASR::is_a<ASR::Block_t>(*bc->m_m)) {
+                    ASR::Block_t *blk =
+                        ASR::down_cast<ASR::Block_t>(bc->m_m);
+                    stmts_to_scan = blk->m_body;
+                    n_stmts_to_scan = blk->n_body;
+                }
+            }
+            for (size_t sj = 0; sj < n_stmts_to_scan; sj++) {
+                if (!ASR::is_a<ASR::Assignment_t>(*stmts_to_scan[sj]))
+                    continue;
+                ASR::Assignment_t *asgn =
+                    ASR::down_cast<ASR::Assignment_t>(
+                        stmts_to_scan[sj]);
+                if (!ASR::is_a<ASR::ArrayItem_t>(*asgn->m_target))
+                    continue;
+                if (!ASR::is_a<ASR::FunctionCall_t>(*asgn->m_value))
+                    continue;
+                ASR::ttype_t *elem_type =
+                    ASRUtils::expr_type(asgn->m_target);
+                if (!ASR::is_a<ASR::StructType_t>(
+                        *ASRUtils::extract_type(elem_type)))
+                    continue;
+                ASR::ArrayItem_t *tgt_ai =
+                    ASR::down_cast<ASR::ArrayItem_t>(asgn->m_target);
+                if (!ASR::is_a<ASR::Var_t>(*tgt_ai->m_v)) continue;
+                ASR::symbol_t *tgt_sym =
+                    ASR::down_cast<ASR::Var_t>(tgt_ai->m_v)->m_v;
+                ASR::Variable_t *tgt_var =
+                    ASR::down_cast<ASR::Variable_t>(
+                        ASRUtils::symbol_get_past_external(tgt_sym));
+                // Only pre-allocate if the target array is indexed by
+                // the do concurrent loop variable.  Temps like
+                // __libasr__created__var__*__array_constructor_ are
+                // kernel-local and use a different index variable.
+                {
+                    bool uses_loop_var = false;
+                    ASR::symbol_t *lv_sym = ASR::down_cast<ASR::Var_t>(
+                        x.m_head[0].m_v)->m_v;
+                    for (size_t ti = 0; ti < tgt_ai->n_args; ti++) {
+                        ASR::expr_t *idx = tgt_ai->m_args[ti].m_right;
+                        if (idx && ASR::is_a<ASR::Var_t>(*idx) &&
+                            ASR::down_cast<ASR::Var_t>(idx)->m_v ==
+                                lv_sym) {
+                            uses_loop_var = true;
+                            break;
+                        }
+                    }
+                    if (!uses_loop_var) continue;
+                }
+                if (!tgt_var->m_type_declaration) continue;
+                ASR::symbol_t *struct_sym =
+                    ASRUtils::symbol_get_past_external(
+                        tgt_var->m_type_declaration);
+                if (!ASR::is_a<ASR::Struct_t>(*struct_sym)) continue;
+                ASR::Struct_t *st =
+                    ASR::down_cast<ASR::Struct_t>(struct_sym);
+                ASR::FunctionCall_t *outer_fc =
+                    ASR::down_cast<ASR::FunctionCall_t>(asgn->m_value);
+                if (n_dims != 1) continue;
+
+                ASR::Function_t *outer_fn = nullptr;
+                {
+                    ASR::symbol_t *fs =
+                        ASRUtils::symbol_get_past_external(
+                            outer_fc->m_name);
+                    if (ASR::is_a<ASR::Function_t>(*fs))
+                        outer_fn = ASR::down_cast<ASR::Function_t>(fs);
+                }
+                if (!outer_fn) continue;
+
+                ASR::ttype_t *int_type_fc = ASRUtils::TYPE(
+                    ASR::make_Integer_t(al, loc, 4));
+
+                for (size_t m = 0; m < st->n_members; m++) {
+                    ASR::symbol_t *mem_sym =
+                        st->m_symtab->get_symbol(st->m_members[m]);
+                    if (!mem_sym ||
+                            !ASR::is_a<ASR::Variable_t>(*mem_sym))
+                        continue;
+                    ASR::Variable_t *mv =
+                        ASR::down_cast<ASR::Variable_t>(mem_sym);
+                    if (!ASRUtils::is_allocatable(mv->m_type)) continue;
+                    ASR::ttype_t *mi =
+                        ASRUtils::type_get_past_allocatable(mv->m_type);
+                    if (!ASR::is_a<ASR::Array_t>(*mi)) continue;
+                    // Only pre-allocate members whose element type
+                    // is a struct with its own allocatable sub-members
+                    // (nested struct case).  For simple allocatable
+                    // arrays (e.g., real(:)), the LLVM codegen already
+                    // handles pre-allocation via vla_member_sz.
+                    ASR::Array_t *mi_arr =
+                        ASR::down_cast<ASR::Array_t>(mi);
+                    bool needs_nested_prealloc = false;
+                    if (ASR::is_a<ASR::StructType_t>(
+                            *ASRUtils::extract_type(
+                                mi_arr->m_type))) {
+                        ASR::StructType_t *stype =
+                            ASR::down_cast<ASR::StructType_t>(
+                                ASRUtils::extract_type(
+                                    mi_arr->m_type));
+                        for (size_t em = 0;
+                                em < stype->n_data_member_types;
+                                em++) {
+                            if (ASRUtils::is_allocatable(
+                                    stype->m_data_member_types[em])) {
+                                needs_nested_prealloc = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!needs_nested_prealloc) continue;
+
+                    // callee's formal argument to the actual argument.
+                    ASR::expr_t *arg_size = nullptr;
+                    // Find which formal parameter feeds this member
+                    // by scanning callee body for r%member = param.
+                    for (size_t bi = 0;
+                            bi < outer_fn->n_body && !arg_size; bi++) {
+                        if (!ASR::is_a<ASR::Assignment_t>(
+                                *outer_fn->m_body[bi]))
+                            continue;
+                        ASR::Assignment_t *fa =
+                            ASR::down_cast<ASR::Assignment_t>(
+                                outer_fn->m_body[bi]);
+                        if (!ASR::is_a<ASR::StructInstanceMember_t>(
+                                *fa->m_target))
+                            continue;
+                        ASR::StructInstanceMember_t *fsm =
+                            ASR::down_cast<ASR::StructInstanceMember_t>(
+                                fa->m_target);
+                        std::string fmn = ASRUtils::symbol_name(
+                            ASRUtils::symbol_get_past_external(
+                                fsm->m_m));
+                        if (fmn != std::string(st->m_members[m]))
+                            continue;
+                        if (!ASR::is_a<ASR::Var_t>(*fa->m_value))
+                            continue;
+                        std::string src_name = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(
+                                fa->m_value)->m_v);
+                        // Match to formal parameter index
+                        for (size_t pi = 0;
+                                pi < outer_fn->n_args; pi++) {
+                            std::string pn = ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    outer_fn->m_args[pi])->m_v);
+                            if (pn != src_name) continue;
+                            // Get actual argument
+                            if (pi >= outer_fc->n_args) break;
+                            ASR::expr_t *actual =
+                                outer_fc->m_args[pi].m_value;
+                            if (!actual) break;
+                            // Strip ArrayPhysicalCast
+                            if (ASR::is_a<ASR::ArrayPhysicalCast_t>(
+                                    *actual))
+                                actual = ASR::down_cast<
+                                    ASR::ArrayPhysicalCast_t>(
+                                        actual)->m_arg;
+                            ASR::ttype_t *at =
+                                ASRUtils::type_get_past_allocatable(
+                                    ASRUtils::expr_type(actual));
+                            if (ASR::is_a<ASR::Array_t>(*at)) {
+                                ASR::Array_t *aa =
+                                    ASR::down_cast<ASR::Array_t>(at);
+                                if (aa->m_physical_type ==
+                                        ASR::array_physical_typeType::
+                                            FixedSizeArray) {
+                                    int64_t total = 1;
+                                    for (size_t d = 0;
+                                            d < aa->n_dims; d++) {
+                                        if (aa->m_dims[d].m_length &&
+                                            ASR::is_a<ASR::IntegerConstant_t>(
+                                                *aa->m_dims[d].m_length))
+                                            total *= ASR::down_cast<
+                                                ASR::IntegerConstant_t>(
+                                                    aa->m_dims[d].m_length)->m_n;
+                                    }
+                                    arg_size = ASRUtils::EXPR(
+                                        ASR::make_IntegerConstant_t(
+                                            al, loc, total,
+                                            int_type_fc,
+                                            ASR::integerbozType::
+                                                Decimal));
+                                } else {
+                                    ASRUtils::ExprStmtDuplicator dup_as(al);
+                                    dup_as.success = true;
+                                    arg_size = ASRUtils::EXPR(
+                                        ASR::make_ArraySize_t(al, loc,
+                                            dup_as.duplicate_expr(
+                                                actual),
+                                            nullptr, int_type_fc,
+                                            nullptr));
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    if (!arg_size) continue;
+
+                    // Find ExternalSymbol for member
+                    ASR::symbol_t *mem_ext = nullptr;
+                    for (auto &scope_item :
+                            current_scope->get_scope()) {
+                        if (!ASR::is_a<ASR::ExternalSymbol_t>(
+                                *scope_item.second))
+                            continue;
+                        ASR::ExternalSymbol_t *es =
+                            ASR::down_cast<ASR::ExternalSymbol_t>(
+                                scope_item.second);
+                        ASR::symbol_t *resolved =
+                            ASRUtils::symbol_get_past_external(
+                                es->m_external);
+                        if (resolved == mem_sym) {
+                            mem_ext = scope_item.second;
+                            break;
+                        }
+                    }
+                    if (!mem_ext) continue;
+
+                    ASRUtils::ExprStmtDuplicator dup_fc(al);
+                    dup_fc.success = true;
+                    ASR::do_loop_head_t lh;
+                    lh.loc = loc;
+                    lh.m_v = dup_fc.duplicate_expr(x.m_head[0].m_v);
+                    lh.m_start =
+                        dup_fc.duplicate_expr(x.m_head[0].m_start);
+                    lh.m_end =
+                        dup_fc.duplicate_expr(x.m_head[0].m_end);
+                    lh.m_increment = nullptr;
+
+                    ASR::expr_t *loop_var =
+                        dup_fc.duplicate_expr(x.m_head[0].m_v);
+                    ASR::array_index_t *tgt_idx =
+                        al.allocate<ASR::array_index_t>(1);
+                    tgt_idx[0].loc = loc;
+                    tgt_idx[0].m_left = nullptr;
+                    tgt_idx[0].m_right = loop_var;
+                    tgt_idx[0].m_step = nullptr;
+                    ASR::expr_t *tgt_elem = ASRUtils::EXPR(
+                        ASR::make_ArrayItem_t(al, loc,
+                            ASRUtils::EXPR(ASR::make_Var_t(
+                                al, loc, tgt_sym)),
+                            tgt_idx, 1, elem_type,
+                            ASR::arraystorageType::ColMajor,
+                            nullptr));
+                    ASR::expr_t *tgt_member = ASRUtils::EXPR(
+                        ASR::make_StructInstanceMember_t(al, loc,
+                            tgt_elem, mem_ext,
+                            mv->m_type, nullptr));
+
+                    ASR::alloc_arg_t aa;
+                    aa.loc = loc;
+                    aa.m_a = tgt_member;
+                    aa.n_dims = 1;
+                    aa.m_dims = al.allocate<ASR::dimension_t>(1);
+                    aa.m_dims[0].loc = loc;
+                    aa.m_dims[0].m_start = ASRUtils::EXPR(
+                        ASR::make_IntegerConstant_t(al, loc, 1,
+                            int_type_fc,
+                            ASR::integerbozType::Decimal));
+                    aa.m_dims[0].m_length = arg_size;
+                    aa.m_len_expr = nullptr;
+                    aa.m_sym_subclass = nullptr;
+                    aa.m_type = nullptr;
+
+                    Vec<ASR::alloc_arg_t> av;
+                    av.reserve(al, 1);
+                    av.push_back(al, aa);
+
+                    ASR::stmt_t *alloc_s = ASRUtils::STMT(
+                        ASR::make_Allocate_t(al, loc,
+                            av.p, av.n,
+                            nullptr, nullptr, nullptr));
+
+                    Vec<ASR::stmt_t*> lbody;
+                    lbody.reserve(al, 1);
+                    lbody.push_back(al, alloc_s);
+
+                    pre_launch_stmts.push_back(al, ASRUtils::STMT(
+                        ASR::make_DoLoop_t(al, loc, nullptr,
+                            lh, lbody.p, lbody.n,
+                            nullptr, 0)));
+
+                    // Handle nested allocatable sub-members.
+                    // If items is an array of struct with allocatable
+                    // sub-members (e.g., inner_t has allocatable v),
+                    // pre-allocate those too by tracing through the
+                    // preceding FunctionCall in the do concurrent body.
+                    ASR::ttype_t *inner_elem =
+                        ASRUtils::type_get_past_allocatable(mi);
+                    if (ASR::is_a<ASR::Array_t>(*inner_elem))
+                        inner_elem = ASR::down_cast<ASR::Array_t>(
+                            inner_elem)->m_type;
+                    if (!ASR::is_a<ASR::StructType_t>(*inner_elem))
+                        continue;
+                    // Resolve inner struct from member's type declaration
+                    ASR::Struct_t *inner_struct = nullptr;
+                    if (mv->m_type_declaration) {
+                        ASR::symbol_t *idecl =
+                            ASRUtils::symbol_get_past_external(
+                                mv->m_type_declaration);
+                        if (ASR::is_a<ASR::Struct_t>(*idecl))
+                            inner_struct =
+                                ASR::down_cast<ASR::Struct_t>(idecl);
+                    }
+                    if (!inner_struct) {
+                        // Fallback: search external symbols
+                        for (auto &scope_item :
+                                current_scope->get_scope()) {
+                            if (!ASR::is_a<ASR::ExternalSymbol_t>(
+                                    *scope_item.second))
+                                continue;
+                            ASR::symbol_t *res =
+                                ASRUtils::symbol_get_past_external(
+                                    scope_item.second);
+                            if (ASR::is_a<ASR::Struct_t>(*res)) {
+                                inner_struct =
+                                    ASR::down_cast<ASR::Struct_t>(res);
+                                break;
+                            }
+                        }
+                    }
+                    if (!inner_struct) continue;
+
+                    // Scan preceding body stmts for FunctionCall
+                    // assignments into temp_arr elements, e.g.,
+                    // temp_arr(idx) = make_inner(d(:,i))
+                    for (size_t pi = 0; pi < si; pi++) {
+                        ASR::stmt_t *ps = x.m_body[pi];
+                        ASR::stmt_t **pstmts = &ps;
+                        size_t npstmts = 1;
+                        if (ASR::is_a<ASR::BlockCall_t>(*ps)) {
+                            ASR::BlockCall_t *pbc =
+                                ASR::down_cast<ASR::BlockCall_t>(ps);
+                            if (ASR::is_a<ASR::Block_t>(*pbc->m_m)) {
+                                ASR::Block_t *pblk =
+                                    ASR::down_cast<ASR::Block_t>(
+                                        pbc->m_m);
+                                pstmts = pblk->m_body;
+                                npstmts = pblk->n_body;
+                            }
+                        }
+                        for (size_t pj = 0; pj < npstmts; pj++) {
+                            if (!ASR::is_a<ASR::Assignment_t>(
+                                    *pstmts[pj]))
+                                continue;
+                            ASR::Assignment_t *pa =
+                                ASR::down_cast<ASR::Assignment_t>(
+                                    pstmts[pj]);
+                            if (!ASR::is_a<ASR::FunctionCall_t>(
+                                    *pa->m_value))
+                                continue;
+                            ASR::FunctionCall_t *inner_fc =
+                                ASR::down_cast<ASR::FunctionCall_t>(
+                                    pa->m_value);
+                            ASR::Function_t *inner_fn = nullptr;
+                            {
+                                ASR::symbol_t *ifs =
+                                    ASRUtils::symbol_get_past_external(
+                                        inner_fc->m_name);
+                                if (ASR::is_a<ASR::Function_t>(*ifs))
+                                    inner_fn =
+                                        ASR::down_cast<ASR::Function_t>(
+                                            ifs);
+                            }
+                            if (!inner_fn) continue;
+
+                            // For each sub-member of inner_struct
+                            for (size_t sm = 0;
+                                    sm < inner_struct->n_members;
+                                    sm++) {
+                                ASR::symbol_t *sub_sym =
+                                    inner_struct->m_symtab->get_symbol(
+                                        inner_struct->m_members[sm]);
+                                if (!sub_sym ||
+                                    !ASR::is_a<ASR::Variable_t>(
+                                        *sub_sym))
+                                    continue;
+                                ASR::Variable_t *sub_mv =
+                                    ASR::down_cast<ASR::Variable_t>(
+                                        sub_sym);
+                                if (!ASRUtils::is_allocatable(
+                                        sub_mv->m_type))
+                                    continue;
+                                ASR::ttype_t *sub_mi =
+                                    ASRUtils::type_get_past_allocatable(
+                                        sub_mv->m_type);
+                                if (!ASR::is_a<ASR::Array_t>(*sub_mi))
+                                    continue;
+
+                                // Find sub-member size from inner_fn
+                                ASR::expr_t *sub_size = nullptr;
+                                for (size_t ibi = 0;
+                                        ibi < inner_fn->n_body
+                                        && !sub_size; ibi++) {
+                                    if (!ASR::is_a<ASR::Assignment_t>(
+                                            *inner_fn->m_body[ibi]))
+                                        continue;
+                                    ASR::Assignment_t *ifa =
+                                        ASR::down_cast<
+                                            ASR::Assignment_t>(
+                                                inner_fn->m_body[ibi]);
+                                    if (!ASR::is_a<
+                                            ASR::StructInstanceMember_t>(
+                                                *ifa->m_target))
+                                        continue;
+                                    ASR::StructInstanceMember_t *ism =
+                                        ASR::down_cast<
+                                            ASR::StructInstanceMember_t>(
+                                                ifa->m_target);
+                                    std::string imn =
+                                        ASRUtils::symbol_name(
+                                            ASRUtils::
+                                                symbol_get_past_external(
+                                                    ism->m_m));
+                                    if (imn != std::string(
+                                            inner_struct->m_members[sm]))
+                                        continue;
+                                    if (!ASR::is_a<ASR::Var_t>(
+                                            *ifa->m_value))
+                                        continue;
+                                    std::string isrc =
+                                        ASRUtils::symbol_name(
+                                            ASR::down_cast<ASR::Var_t>(
+                                                ifa->m_value)->m_v);
+                                    for (size_t ipi = 0;
+                                            ipi < inner_fn->n_args;
+                                            ipi++) {
+                                        std::string ipn =
+                                            ASRUtils::symbol_name(
+                                                ASR::down_cast<
+                                                    ASR::Var_t>(
+                                                        inner_fn->
+                                                            m_args[ipi])
+                                                    ->m_v);
+                                        if (ipn != isrc) continue;
+                                        if (ipi >= inner_fc->n_args)
+                                            break;
+                                        ASR::expr_t *iactual =
+                                            inner_fc->m_args[ipi]
+                                                .m_value;
+                                        if (!iactual) break;
+                                        if (ASR::is_a<
+                                                ASR::ArrayPhysicalCast_t>(
+                                                    *iactual))
+                                            iactual = ASR::down_cast<
+                                                ASR::ArrayPhysicalCast_t>(
+                                                    iactual)->m_arg;
+                                        ASRUtils::ExprStmtDuplicator
+                                            dup_sub(al);
+                                        dup_sub.success = true;
+                                        if (ASR::is_a<
+                                                ASR::ArraySection_t>(
+                                                    *iactual)) {
+                                            ASR::ArraySection_t *sec =
+                                                ASR::down_cast<
+                                                    ASR::ArraySection_t>(
+                                                        iactual);
+                                            for (size_t dd = 0;
+                                                    dd < sec->n_args;
+                                                    dd++) {
+                                                if (!sec->m_args[dd]
+                                                        .m_left ||
+                                                    !sec->m_args[dd]
+                                                        .m_right)
+                                                    continue;
+                                                ASR::expr_t *lb_d =
+                                                    dup_sub
+                                                        .duplicate_expr(
+                                                            sec->m_args[dd]
+                                                                .m_left);
+                                                ASR::expr_t *ub_d =
+                                                    dup_sub
+                                                        .duplicate_expr(
+                                                            sec->m_args[dd]
+                                                                .m_right);
+                                                ASR::expr_t *one =
+                                                    ASRUtils::EXPR(
+                                                        ASR::make_IntegerConstant_t(
+                                                            al, loc, 1,
+                                                            int_type_fc,
+                                                            ASR::integerbozType::Decimal));
+                                                ASR::expr_t *diff =
+                                                    ASRUtils::EXPR(
+                                                        ASR::make_IntegerBinOp_t(
+                                                            al, loc,
+                                                            ub_d,
+                                                            ASR::binopType::Sub,
+                                                            lb_d,
+                                                            int_type_fc,
+                                                            nullptr));
+                                                ASR::expr_t *dim_sz =
+                                                    ASRUtils::EXPR(
+                                                        ASR::make_IntegerBinOp_t(
+                                                            al, loc,
+                                                            diff,
+                                                            ASR::binopType::Add,
+                                                            one,
+                                                            int_type_fc,
+                                                            nullptr));
+                                                if (!sub_size) {
+                                                    sub_size = dim_sz;
+                                                } else {
+                                                    sub_size =
+                                                        ASRUtils::EXPR(
+                                                            ASR::make_IntegerBinOp_t(
+                                                                al, loc,
+                                                                sub_size,
+                                                                ASR::binopType::Mul,
+                                                                dim_sz,
+                                                                int_type_fc,
+                                                                nullptr));
+                                                }
+                                            }
+                                        } else {
+                                            sub_size = ASRUtils::EXPR(
+                                                ASR::make_ArraySize_t(
+                                                    al, loc,
+                                                    dup_sub
+                                                        .duplicate_expr(
+                                                            iactual),
+                                                    nullptr,
+                                                    int_type_fc,
+                                                    nullptr));
+                                        }
+                                        break;
+                                    }
+                                }
+                                if (!sub_size) continue;
+
+                                // Find ExternalSymbol for sub-member
+                                ASR::symbol_t *sub_ext = nullptr;
+                                for (auto &sci :
+                                        current_scope->get_scope()) {
+                                    if (!ASR::is_a<
+                                            ASR::ExternalSymbol_t>(
+                                                *sci.second))
+                                        continue;
+                                    ASR::ExternalSymbol_t *se =
+                                        ASR::down_cast<
+                                            ASR::ExternalSymbol_t>(
+                                                sci.second);
+                                    ASR::symbol_t *sres =
+                                        ASRUtils::
+                                            symbol_get_past_external(
+                                                se->m_external);
+                                    if (sres == sub_sym) {
+                                        sub_ext = sci.second;
+                                        break;
+                                    }
+                                }
+                                if (!sub_ext) continue;
+
+                                // Generate: do i=1,n
+                                //   allocate(a(i)%items(1)%sub_member(1:sub_size))
+                                ASRUtils::ExprStmtDuplicator dup_n(al);
+                                dup_n.success = true;
+                                ASR::do_loop_head_t nlh;
+                                nlh.loc = loc;
+                                nlh.m_v = dup_n.duplicate_expr(
+                                    x.m_head[0].m_v);
+                                nlh.m_start = dup_n.duplicate_expr(
+                                    x.m_head[0].m_start);
+                                nlh.m_end = dup_n.duplicate_expr(
+                                    x.m_head[0].m_end);
+                                nlh.m_increment = nullptr;
+
+                                ASR::expr_t *nlv =
+                                    dup_n.duplicate_expr(
+                                        x.m_head[0].m_v);
+                                ASR::array_index_t *ni =
+                                    al.allocate<ASR::array_index_t>(1);
+                                ni[0].loc = loc;
+                                ni[0].m_left = nullptr;
+                                ni[0].m_right = nlv;
+                                ni[0].m_step = nullptr;
+                                ASR::expr_t *ne = ASRUtils::EXPR(
+                                    ASR::make_ArrayItem_t(al, loc,
+                                        ASRUtils::EXPR(
+                                            ASR::make_Var_t(
+                                                al, loc, tgt_sym)),
+                                        ni, 1, elem_type,
+                                        ASR::arraystorageType::
+                                            ColMajor,
+                                        nullptr));
+                                ASR::expr_t *ne_mem = ASRUtils::EXPR(
+                                    ASR::make_StructInstanceMember_t(
+                                        al, loc, ne, mem_ext,
+                                        mv->m_type, nullptr));
+                                // Index first element of member
+                                ASR::array_index_t *mi_idx =
+                                    al.allocate<ASR::array_index_t>(1);
+                                mi_idx[0].loc = loc;
+                                mi_idx[0].m_left = nullptr;
+                                mi_idx[0].m_right = ASRUtils::EXPR(
+                                    ASR::make_IntegerConstant_t(
+                                        al, loc, 1, int_type_fc,
+                                        ASR::integerbozType::Decimal));
+                                mi_idx[0].m_step = nullptr;
+                                ASR::ttype_t *inner_st_type =
+                                    ASRUtils::extract_type(inner_elem);
+                                ASR::expr_t *ne_item = ASRUtils::EXPR(
+                                    ASR::make_ArrayItem_t(al, loc,
+                                        ne_mem, mi_idx, 1,
+                                        inner_st_type,
+                                        ASR::arraystorageType::
+                                            ColMajor,
+                                        nullptr));
+                                ASR::expr_t *ne_sub = ASRUtils::EXPR(
+                                    ASR::make_StructInstanceMember_t(
+                                        al, loc, ne_item, sub_ext,
+                                        sub_mv->m_type, nullptr));
+
+                                ASR::alloc_arg_t naa;
+                                naa.loc = loc;
+                                naa.m_a = ne_sub;
+                                naa.n_dims = 1;
+                                naa.m_dims =
+                                    al.allocate<ASR::dimension_t>(1);
+                                naa.m_dims[0].loc = loc;
+                                naa.m_dims[0].m_start =
+                                    ASRUtils::EXPR(
+                                        ASR::make_IntegerConstant_t(
+                                            al, loc, 1, int_type_fc,
+                                            ASR::integerbozType::
+                                                Decimal));
+                                naa.m_dims[0].m_length = sub_size;
+                                naa.m_len_expr = nullptr;
+                                naa.m_sym_subclass = nullptr;
+                                naa.m_type = nullptr;
+
+                                Vec<ASR::alloc_arg_t> nav;
+                                nav.reserve(al, 1);
+                                nav.push_back(al, naa);
+
+                                ASR::stmt_t *nalloc = ASRUtils::STMT(
+                                    ASR::make_Allocate_t(al, loc,
+                                        nav.p, nav.n,
+                                        nullptr, nullptr, nullptr));
+
+                                Vec<ASR::stmt_t*> nlbody;
+                                nlbody.reserve(al, 1);
+                                nlbody.push_back(al, nalloc);
+
+                                pre_launch_stmts.push_back(al,
+                                    ASRUtils::STMT(
+                                        ASR::make_DoLoop_t(al, loc,
+                                            nullptr,
+                                            nlh, nlbody.p, nlbody.n,
+                                            nullptr, 0)));
+                            }
+                        }
+                    }
                 }
             }
         }

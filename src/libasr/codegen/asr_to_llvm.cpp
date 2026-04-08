@@ -19857,18 +19857,73 @@ public:
                                         raw, i8_ptr);
                                     if (vla_member_sz > 0) {
                                         // Kernel writes to this member.
-                                        // The descriptor pointer in the
-                                        // struct may be garbage (member
-                                        // not yet allocated). Allocate
-                                        // a fresh descriptor and data
-                                        // buffer, and update the struct
-                                        // field so the descriptor is
-                                        // valid.
+                                        // Check whether the member's
+                                        // element type is itself a struct
+                                        // (nested allocatable case). Only
+                                        // in that case does the gpu_offload
+                                        // pass insert pre-allocation; for
+                                        // simple types (real, integer, …)
+                                        // the descriptor pointer may be
+                                        // uninitialised garbage in
+                                        // FixedSizeArrays.
+                                        bool is_nested_struct_member =
+                                            ASR::is_a<ASR::StructType_t>(
+                                                *ASRUtils::extract_type(
+                                                    mem_arr->m_type));
+                                        if (is_nested_struct_member) {
+                                        // Pre-alloc PHI: check whether an
+                                        // ASR-level pre-allocation has
+                                        // already set up a valid
+                                        // descriptor (non-null dp). If
+                                        // so, read the existing size and
+                                        // data to preserve nested
+                                        // allocatable sub-members.
+                                        llvm::Value *dp_pti =
+                                            builder->CreatePtrToInt(
+                                                dp, i64);
+                                        llvm::Value *dp_nonnull =
+                                            builder->CreateICmpNE(
+                                                dp_pti,
+                                                llvm::ConstantInt::get(
+                                                    i64, 0));
+                                        llvm::Function *cur_fn0 =
+                                            builder->GetInsertBlock()
+                                                ->getParent();
+                                        llvm::BasicBlock *bb_pre =
+                                            llvm::BasicBlock::Create(
+                                                context,
+                                                "vla.preallocd",
+                                                cur_fn0);
+                                        llvm::BasicBlock *bb_fresh =
+                                            llvm::BasicBlock::Create(
+                                                context, "vla.fresh",
+                                                cur_fn0);
+                                        llvm::BasicBlock *bb_vmrg =
+                                            llvm::BasicBlock::Create(
+                                                context, "vla.merge",
+                                                cur_fn0);
+                                        builder->CreateCondBr(
+                                            dp_nonnull, bb_pre,
+                                            bb_fresh);
+                                        // Pre-allocated path: read size
+                                        // from existing descriptor
+                                        builder->SetInsertPoint(bb_pre);
+                                        llvm::Value *pre_ne =
+                                            arr_descr->get_array_size(
+                                                desc_type, dp,
+                                                nullptr, 4);
+                                        llvm::Value *pre_ne64 =
+                                            builder->CreateSExtOrTrunc(
+                                                pre_ne, i64);
+                                        llvm::BasicBlock *bb_pre_end =
+                                            builder->GetInsertBlock();
+                                        builder->CreateBr(bb_vmrg);
+                                        // Fresh path: create new
+                                        // descriptor and data buffer
+                                        builder->SetInsertPoint(bb_fresh);
                                         llvm::Value *ne64 =
                                             llvm::ConstantInt::get(
                                                 i64, vla_member_sz);
-                                        szs.push_back(ne64);
-                                        // Allocate descriptor on heap
                                         llvm::DataLayout dl(
                                             module.get());
                                         uint64_t desc_sz =
@@ -19889,10 +19944,6 @@ public:
                                                 desc_mem,
                                                 desc_type
                                                     ->getPointerTo());
-                                        // Store descriptor ptr in
-                                        // struct field (cast if
-                                        // desc_type differs from
-                                        // the struct's field type)
                                         {
                                             llvm::Type *fp_el =
                                                 fp->getType()
@@ -19906,11 +19957,9 @@ public:
                                                 : new_desc;
                                             builder->CreateStore(sd, fp);
                                         }
-                                        // Initialize descriptor
                                         arr_descr
                                             ->fill_dimension_descriptor(
                                                 desc_type, new_desc, 1);
-                                        // Allocate data buffer
                                         llvm::Value *alloc_bytes =
                                             llvm::ConstantInt::get(
                                                 i64,
@@ -19918,8 +19967,6 @@ public:
                                         llvm::Value *new_dp =
                                             builder->CreateCall(
                                                 mfn2, {alloc_bytes});
-                                        // Set data pointer in
-                                        // descriptor
                                         llvm::Value *new_dpp =
                                             arr_descr
                                                 ->get_pointer_to_data(
@@ -19931,7 +19978,6 @@ public:
                                                 mem_el_llvm
                                                     ->getPointerTo()),
                                             new_dpp);
-                                        // Set dimension extent
                                         llvm::Value *dim_des_arr =
                                             arr_descr
                                                 ->get_pointer_to_dimension_descriptor_array(
@@ -19953,7 +19999,115 @@ public:
                                                 llvm::Type::getInt64Ty(
                                                     context)),
                                             extent_ptr);
-                                        dps.push_back(new_dp);
+                                        llvm::BasicBlock *bb_fresh_end =
+                                            builder->GetInsertBlock();
+                                        builder->CreateBr(bb_vmrg);
+                                        // Merge
+                                        builder->SetInsertPoint(bb_vmrg);
+                                        llvm::PHINode *phi_sz =
+                                            builder->CreatePHI(i64, 2);
+                                        phi_sz->addIncoming(
+                                            pre_ne64, bb_pre_end);
+                                        phi_sz->addIncoming(
+                                            ne64, bb_fresh_end);
+                                        llvm::PHINode *phi_dp =
+                                            builder->CreatePHI(
+                                                i8_ptr, 2);
+                                        phi_dp->addIncoming(
+                                            raw, bb_pre_end);
+                                        phi_dp->addIncoming(
+                                            new_dp, bb_fresh_end);
+                                        szs.push_back(phi_sz);
+                                        dps.push_back(phi_dp);
+                                        } else {
+                                        // Simple allocatable member (not
+                                        // a nested struct): always create
+                                        // a fresh descriptor and data
+                                        // buffer. The descriptor pointer
+                                        // may be garbage for FixedSizeArray
+                                        // structs that were never
+                                        // explicitly allocated.
+                                        llvm::Value *ne64 =
+                                            llvm::ConstantInt::get(
+                                                i64, vla_member_sz);
+                                        llvm::DataLayout dl2(
+                                            module.get());
+                                        uint64_t desc_sz2 =
+                                            dl2.getTypeAllocSize(
+                                                desc_type);
+                                        llvm::FunctionType *mft2 =
+                                            llvm::FunctionType::get(
+                                                i8_ptr, {i64}, false);
+                                        llvm::Function *mfn2 =
+                                            get_gpu_runtime_func(
+                                                "malloc", mft2);
+                                        llvm::Value *desc_mem =
+                                            builder->CreateCall(mfn2,
+                                                {llvm::ConstantInt::get(
+                                                    i64, desc_sz2)});
+                                        llvm::Value *new_desc =
+                                            builder->CreatePointerCast(
+                                                desc_mem,
+                                                desc_type
+                                                    ->getPointerTo());
+                                        {
+                                            llvm::Type *fp_el =
+                                                fp->getType()
+                                                    ->getPointerElementType();
+                                            llvm::Value *sd =
+                                                (new_desc->getType()
+                                                    != fp_el)
+                                                ? builder
+                                                    ->CreatePointerCast(
+                                                        new_desc, fp_el)
+                                                : new_desc;
+                                            builder->CreateStore(sd, fp);
+                                        }
+                                        arr_descr
+                                            ->fill_dimension_descriptor(
+                                                desc_type, new_desc, 1);
+                                        llvm::Value *alloc_bytes =
+                                            llvm::ConstantInt::get(
+                                                i64,
+                                                vla_member_sz * me_size);
+                                        llvm::Value *new_dp2 =
+                                            builder->CreateCall(
+                                                mfn2, {alloc_bytes});
+                                        llvm::Value *new_dpp =
+                                            arr_descr
+                                                ->get_pointer_to_data(
+                                                    desc_type,
+                                                    new_desc);
+                                        builder->CreateStore(
+                                            builder->CreatePointerCast(
+                                                new_dp2,
+                                                mem_el_llvm
+                                                    ->getPointerTo()),
+                                            new_dpp);
+                                        llvm::Value *dim_des_arr =
+                                            arr_descr
+                                                ->get_pointer_to_dimension_descriptor_array(
+                                                    desc_type,
+                                                    new_desc);
+                                        llvm::Value *dim0 =
+                                            arr_descr
+                                                ->get_pointer_to_dimension_descriptor(
+                                                    dim_des_arr,
+                                                    llvm::ConstantInt::get(
+                                                        i32, 0));
+                                        llvm::Value *extent_ptr =
+                                            arr_descr
+                                                ->get_dimension_size(
+                                                    dim0, false);
+                                        builder->CreateStore(
+                                            builder->CreateSExtOrTrunc(
+                                                ne64,
+                                                llvm::Type::getInt64Ty(
+                                                    context)),
+                                            extent_ptr);
+                                        szs.push_back(ne64);
+                                        dps.push_back(new_dp2);
+                                        }
                                     } else if (runtime_sourced) {
                                         // Size determined at runtime from
                                         // another struct member (e.g.,
