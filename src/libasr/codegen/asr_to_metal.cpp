@@ -5083,6 +5083,7 @@ public:
                         ASRUtils::symbol_get_past_external(sm->m_m));
                     std::string size_expr;
                     std::string data_expr;
+                    bool sim_handled = false;
                     if (ASR::is_a<ASR::Var_t>(*sm->m_v)) {
                         std::string sname = ASRUtils::symbol_name(
                             ASR::down_cast<ASR::Var_t>(sm->m_v)->m_v);
@@ -5094,8 +5095,127 @@ public:
                             size_expr = spit->second;
                             data_expr = dit->second;
                         }
+                    } else if (ASR::is_a<ASR::ArrayItem_t>(*sm->m_v)) {
+                        ASR::ArrayItem_t *ai =
+                            ASR::down_cast<ASR::ArrayItem_t>(sm->m_v);
+                        if (ASR::is_a<ASR::Var_t>(*ai->m_v)) {
+                            std::string sname = ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    ai->m_v)->m_v);
+                            std::string key = sname + "." + mem_name;
+                            auto dit =
+                                func_array_data_params.find(key);
+                            auto oit =
+                                struct_array_offset_params.find(key);
+                            auto szit =
+                                struct_array_sizes_params.find(key);
+                            if (dit != func_array_data_params.end() &&
+                                    oit !=
+                                    struct_array_offset_params.end()) {
+                                std::stringstream idx_ss;
+                                {
+                                    std::stringstream saved;
+                                    saved.swap(src);
+                                    ASR::expr_t *idx_expr =
+                                        ai->m_args[0].m_right
+                                        ? ai->m_args[0].m_right
+                                        : ai->m_args[0].m_left;
+                                    visit_expr(idx_expr);
+                                    ASR::Array_t *sa_arr = nullptr;
+                                    ASR::ttype_t *sa_inner =
+                                        ASRUtils::
+                                        type_get_past_allocatable(
+                                            ASRUtils::expr_type(
+                                                ai->m_v));
+                                    if (ASR::is_a<ASR::Array_t>(
+                                            *sa_inner)) {
+                                        sa_arr =
+                                            ASR::down_cast<
+                                                ASR::Array_t>(
+                                                    sa_inner);
+                                    }
+                                    std::string lb =
+                                        get_lower_bound_str(
+                                            sa_arr, 0);
+                                    idx_ss << "((int)(" << src.str()
+                                           << ") - (" << lb << "))";
+                                    saved.swap(src);
+                                }
+                                int64_t rhs_fixed_sz = -1;
+                                if (ASR::is_a<ASR::Var_t>(
+                                        *a->m_value)) {
+                                    ASR::symbol_t *rsym =
+                                        ASR::down_cast<ASR::Var_t>(
+                                            a->m_value)->m_v;
+                                    rsym = ASRUtils::
+                                        symbol_get_past_external(
+                                            rsym);
+                                    if (ASR::is_a<ASR::Variable_t>(
+                                            *rsym)) {
+                                        ASR::ttype_t *rt =
+                                            ASR::down_cast<
+                                                ASR::Variable_t>(
+                                                    rsym)->m_type;
+                                        rhs_fixed_sz =
+                                            get_total_elements(rt);
+                                        if (rhs_fixed_sz <= 0)
+                                            rhs_fixed_sz = -1;
+                                    }
+                                }
+                                std::string rhs_runtime_size;
+                                if (rhs_fixed_sz <= 0 &&
+                                        szit !=
+                                        struct_array_sizes_params
+                                            .end()) {
+                                    rhs_runtime_size =
+                                        szit->second + "["
+                                        + idx_ss.str() + "]";
+                                }
+                                src << "{\n";
+                                indent_level++;
+                                src << get_indent() << "int __off = "
+                                    << oit->second << "["
+                                    << idx_ss.str() << "];\n";
+                                if (rhs_fixed_sz > 0) {
+                                    for (int64_t ei = 0;
+                                            ei < rhs_fixed_sz;
+                                            ei++) {
+                                        src << get_indent()
+                                            << dit->second
+                                            << "[__off + " << ei
+                                            << "] = ";
+                                        visit_expr(a->m_value);
+                                        src << "[" << ei << "];\n";
+                                    }
+                                } else if (
+                                        !rhs_runtime_size.empty()) {
+                                    src << get_indent()
+                                        << "for (int __ei = 0;"
+                                        << " __ei < "
+                                        << rhs_runtime_size
+                                        << "; __ei++) {\n";
+                                    indent_level++;
+                                    src << get_indent()
+                                        << dit->second
+                                        << "[__off + __ei] = ";
+                                    visit_expr(a->m_value);
+                                    src << "[__ei];\n";
+                                    indent_level--;
+                                    src << get_indent() << "}\n";
+                                } else {
+                                    src << get_indent()
+                                        << dit->second
+                                        << "[__off] = ";
+                                    visit_expr(a->m_value);
+                                    src << "[0];\n";
+                                }
+                                indent_level--;
+                                src << get_indent() << "}\n";
+                                sim_handled = true;
+                            }
+                        }
                     }
-                    if (!size_expr.empty()) {
+                    if (!sim_handled && !size_expr.empty()) {
                         // Try to determine the RHS array's compile-time
                         // size so we can use it instead of the size
                         // parameter (which may be 0 for local struct
@@ -5196,7 +5316,7 @@ public:
                             visit_expr(a->m_value);
                             src << "[__copy_i];\n";
                         }
-                    } else {
+                    } else if (!sim_handled) {
                         visit_expr(a->m_target);
                         src << " = ";
                         visit_expr(a->m_value);
