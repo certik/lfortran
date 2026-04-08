@@ -126,6 +126,13 @@ public:
     // Used by emit_struct_member_data_ptrs/sizes to offset into flat buffers.
     std::map<std::string, std::pair<std::string, std::string>> struct_from_array_elem;
 
+    // Tracks local pointer variables that are aliases into an
+    // array-of-struct (via Associate with ArraySection).
+    // Maps ptr_name -> base_array_name. Used by the elemental call
+    // expansion to emit struct member decomposition args with the
+    // correct pointer offset into the base array's flat buffers.
+    std::map<std::string, std::string> ptr_struct_array_alias;
+
     // Tracks allocatable out parameters emitted as thread pointers
     // in the current inline function. Used by the Assignment handler
     // to dereference the pointer when assigning to these params.
@@ -1986,6 +1993,88 @@ public:
         }
     }
 
+    // Emit struct member decomposition args for an element of an
+    // array-of-struct in the elemental call expansion loop.
+    // `arr_expr` is the array expression (before indexing).
+    // `arr_type` is its type (past pointer). The element type's struct
+    // members are checked for allocatable arrays; for each one, the
+    // corresponding data-pointer and size args are emitted.
+    void emit_elemental_struct_member_args(
+            ASR::expr_t *arr_expr, ASR::ttype_t *arr_type) {
+        ASR::ttype_t *elem_type = ASRUtils::extract_type(
+            ASRUtils::type_get_past_array(arr_type));
+        if (!ASR::is_a<ASR::StructType_t>(*elem_type)) return;
+        if (!ASR::is_a<ASR::Var_t>(*arr_expr)) return;
+        ASR::symbol_t *sym = ASR::down_cast<ASR::Var_t>(arr_expr)->m_v;
+        sym = ASRUtils::symbol_get_past_external(sym);
+        if (!ASR::is_a<ASR::Variable_t>(*sym)) return;
+        ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(sym);
+        ASR::Struct_t *st = get_struct_decl(var);
+        if (!st || !struct_has_allocatable_members(st)) return;
+
+        std::string arr_var_name(var->m_name);
+
+        // Check if this variable is a pointer alias into a base
+        // array-of-struct (e.g., from Associate with ArraySection).
+        std::string base_arr_name = arr_var_name;
+        bool is_alias = false;
+        auto alias_it = ptr_struct_array_alias.find(arr_var_name);
+        if (alias_it != ptr_struct_array_alias.end()) {
+            base_arr_name = alias_it->second;
+            is_alias = true;
+        }
+
+        for (size_t m = 0; m < st->n_members; m++) {
+            ASR::symbol_t *mem =
+                st->m_symtab->get_symbol(st->m_members[m]);
+            if (!mem || !ASR::is_a<ASR::Variable_t>(*mem)) continue;
+            ASR::Variable_t *mv =
+                ASR::down_cast<ASR::Variable_t>(mem);
+            if (!ASRUtils::is_allocatable(mv->m_type)) continue;
+            ASR::ttype_t *inner =
+                ASRUtils::type_get_past_allocatable(mv->m_type);
+            if (!ASR::is_a<ASR::Array_t>(*inner)) continue;
+            std::string key = base_arr_name + "."
+                + st->m_members[m];
+            auto dit = func_array_data_params.find(key);
+            auto oit = struct_array_offset_params.find(key);
+            if (dit != func_array_data_params.end() &&
+                    oit != struct_array_offset_params.end()) {
+                if (is_alias) {
+                    src << ", " << dit->second << " + "
+                        << oit->second << "[(int)("
+                        << sanitize_metal_name(arr_var_name)
+                        << " - "
+                        << sanitize_metal_name(base_arr_name)
+                        << ") + __elem_i]";
+                } else {
+                    src << ", " << dit->second << " + "
+                        << oit->second << "[__elem_i]";
+                }
+            } else {
+                src << ", __data_"
+                    << base_arr_name << "_"
+                    << st->m_members[m];
+            }
+            auto sit = struct_array_sizes_params.find(key);
+            if (sit != struct_array_sizes_params.end()) {
+                if (is_alias) {
+                    src << ", " << sit->second << "[(int)("
+                        << sanitize_metal_name(arr_var_name)
+                        << " - "
+                        << sanitize_metal_name(base_arr_name)
+                        << ") + __elem_i]";
+                } else {
+                    src << ", " << sit->second << "[__elem_i]";
+                }
+            } else {
+                src << ", __size_"
+                    << base_arr_name << "_"
+                    << st->m_members[m];
+            }
+        }
+    }
+
 
     bool needs_erf_helper = false;
     bool needs_erfc_helper = false;
@@ -3466,6 +3555,7 @@ public:
         struct_array_offset_params.clear();
         struct_array_sizes_params.clear();
         struct_from_array_elem.clear();
+        ptr_struct_array_alias.clear();
         for (size_t i = 0; i < args.size(); i++) {
             if (args[i].is_struct && !args[i].is_array) {
                 ASR::Var_t *v = ASR::down_cast<ASR::Var_t>(x.m_args[i]);
@@ -5319,6 +5409,11 @@ public:
                         visit_expr(sc->m_args[i].m_value);
                         if (is_arr) {
                             src << "[__elem_i]";
+                            emit_elemental_struct_member_args(
+                                sc->m_args[i].m_value, past_ptr);
+                        } else if (is_struct_type(past_ptr)) {
+                            emit_struct_member_args_interleaved(
+                                sc->m_args[i].m_value);
                         }
                     }
                     src << ");\n";
@@ -5654,6 +5749,26 @@ public:
                                 for (auto &e : new_entries) {
                                     func_array_size_params[e.first]
                                         = e.second;
+                                }
+                            }
+                        }
+                    } else if (ASR::is_a<ASR::ArraySection_t>(
+                            *assoc_val)) {
+                        ASR::ArraySection_t *as =
+                            ASR::down_cast<ASR::ArraySection_t>(
+                                assoc_val);
+                        if (ASR::is_a<ASR::Var_t>(*as->m_v)) {
+                            std::string base_name =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        as->m_v)->m_v);
+                            std::string key_pfx = base_name + ".";
+                            for (auto &entry :
+                                    func_array_data_params) {
+                                if (entry.first.find(key_pfx) == 0) {
+                                    ptr_struct_array_alias[tgt_name]
+                                        = base_name;
+                                    break;
                                 }
                             }
                         }
