@@ -27,6 +27,19 @@ public:
         called.insert(ASRUtils::symbol_name(x.m_name));
         ASR::BaseWalkVisitor<GpuFuncCallCollector>::visit_SubroutineCall(x);
     }
+    void visit_BlockCall(const ASR::BlockCall_t &x) {
+        ASR::Block_t *block = ASR::down_cast<ASR::Block_t>(x.m_m);
+        for (size_t i = 0; i < block->n_body; i++) {
+            visit_stmt(*block->m_body[i]);
+        }
+    }
+    void visit_AssociateBlockCall(const ASR::AssociateBlockCall_t &x) {
+        ASR::AssociateBlock_t *ab =
+            ASR::down_cast<ASR::AssociateBlock_t>(x.m_m);
+        for (size_t i = 0; i < ab->n_body; i++) {
+            visit_stmt(*ab->m_body[i]);
+        }
+    }
 };
 
 class GpuMathHelperScanner : public ASR::BaseWalkVisitor<GpuMathHelperScanner> {
@@ -2835,6 +2848,25 @@ public:
                         prescan_func_body(ifs->m_body, ifs->n_body);
                         prescan_func_body(
                             ifs->m_orelse, ifs->n_orelse);
+                        break;
+                    }
+                    case ASR::stmtType::BlockCall: {
+                        ASR::Block_t *block =
+                            ASR::down_cast<ASR::Block_t>(
+                                ASR::down_cast<ASR::BlockCall_t>(
+                                    stmts[i])->m_m);
+                        prescan_func_body(block->m_body,
+                            block->n_body);
+                        break;
+                    }
+                    case ASR::stmtType::AssociateBlockCall: {
+                        ASR::AssociateBlock_t *ab =
+                            ASR::down_cast<ASR::AssociateBlock_t>(
+                                ASR::down_cast<
+                                    ASR::AssociateBlockCall_t>(
+                                        stmts[i])->m_m);
+                        prescan_func_body(ab->m_body,
+                            ab->n_body);
                         break;
                     }
                     default:
