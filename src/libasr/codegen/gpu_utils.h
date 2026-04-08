@@ -1138,6 +1138,59 @@ inline ASR::expr_t* unwrap_array_physical_cast(ASR::expr_t *e) {
     return e;
 }
 
+// Extract a compile-time integer constant from an ASR expression.
+// Handles IntegerConstant directly, ArrayBound nodes whose m_value
+// is an IntegerConstant, Cast wrapping a constant, IntegerBinOp
+// with constant operands, and any expression whose expr_value()
+// is an IntegerConstant.
+inline bool extract_const_int(ASR::expr_t *e, int64_t &val) {
+    if (!e) return false;
+    if (ASR::is_a<ASR::IntegerConstant_t>(*e)) {
+        val = ASR::down_cast<ASR::IntegerConstant_t>(e)->m_n;
+        return true;
+    }
+    if (ASR::is_a<ASR::ArrayBound_t>(*e)) {
+        ASR::ArrayBound_t *ab = ASR::down_cast<ASR::ArrayBound_t>(e);
+        if (ab->m_value &&
+                ASR::is_a<ASR::IntegerConstant_t>(*ab->m_value)) {
+            val = ASR::down_cast<ASR::IntegerConstant_t>(
+                ab->m_value)->m_n;
+            return true;
+        }
+    }
+    if (ASR::is_a<ASR::Cast_t>(*e)) {
+        return extract_const_int(
+            ASR::down_cast<ASR::Cast_t>(e)->m_arg, val);
+    }
+    if (ASR::is_a<ASR::IntegerBinOp_t>(*e)) {
+        ASR::IntegerBinOp_t *bo =
+            ASR::down_cast<ASR::IntegerBinOp_t>(e);
+        if (bo->m_value) {
+            return extract_const_int(bo->m_value, val);
+        }
+        int64_t lv = 0, rv = 0;
+        if (extract_const_int(bo->m_left, lv) &&
+                extract_const_int(bo->m_right, rv)) {
+            switch (bo->m_op) {
+                case ASR::binopType::Add: val = lv + rv; return true;
+                case ASR::binopType::Sub: val = lv - rv; return true;
+                case ASR::binopType::Mul: val = lv * rv; return true;
+                case ASR::binopType::Div:
+                    if (rv != 0) { val = lv / rv; return true; }
+                    return false;
+                default: return false;
+            }
+        }
+    }
+    // Try the compile-time evaluated value of the expression
+    ASR::expr_t *v = ASRUtils::expr_value(e);
+    if (v && v != e && ASR::is_a<ASR::IntegerConstant_t>(*v)) {
+        val = ASR::down_cast<ASR::IntegerConstant_t>(v)->m_n;
+        return true;
+    }
+    return false;
+}
+
 inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
         const ASR::GpuKernelFunction_t &kernel,
         const std::vector<GpuVlaWorkspace> &vla_workspaces) {
@@ -1235,6 +1288,44 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                                     if (all_const && per_elem > 0) {
                                         result[key] = per_elem;
                                     }
+                                }
+                            } else if (ASR::is_a<ASR::ArraySection_t>(
+                                    *arg)) {
+                                // ArraySection (e.g., h(:)):
+                                // compute size from section bounds
+                                ASR::ArraySection_t *as =
+                                    ASR::down_cast<ASR::ArraySection_t>(
+                                        arg);
+                                int64_t total = 1;
+                                bool all_const = true;
+                                for (size_t d = 0; d < as->n_args;
+                                        d++) {
+                                    int64_t lb_val = 0, ub_val = 0,
+                                            step_val = 1;
+                                    if (extract_const_int(
+                                            as->m_args[d].m_left,
+                                            lb_val) &&
+                                            extract_const_int(
+                                                as->m_args[d].m_right,
+                                                ub_val)) {
+                                        if (as->m_args[d].m_step) {
+                                            if (!extract_const_int(
+                                                    as->m_args[d].m_step,
+                                                    step_val) ||
+                                                    step_val == 0) {
+                                                all_const = false;
+                                                break;
+                                            }
+                                        }
+                                        total *= (ub_val - lb_val)
+                                            / step_val + 1;
+                                    } else {
+                                        all_const = false;
+                                        break;
+                                    }
+                                }
+                                if (all_const && total > 0) {
+                                    result[key] = total;
                                 }
                             }
                         }
@@ -1425,19 +1516,61 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
             std::string val_name = ASRUtils::symbol_name(
                 ASR::down_cast<ASR::Var_t>(asgn->m_value)->m_v);
             auto ws_it = ws_by_name.find(val_name);
-            if (ws_it == ws_by_name.end()) continue;
-            int64_t per_elem = 1;
-            bool all_const = true;
-            for (auto &dim : ws_it->second->dims) {
-                if (dim.is_constant) {
-                    per_elem *= dim.constant_value;
-                } else {
-                    all_const = false;
-                    break;
+            if (ws_it != ws_by_name.end()) {
+                int64_t per_elem = 1;
+                bool all_const = true;
+                for (auto &dim : ws_it->second->dims) {
+                    if (dim.is_constant) {
+                        per_elem *= dim.constant_value;
+                    } else {
+                        all_const = false;
+                        break;
+                    }
                 }
+                if (all_const && per_elem > 0) {
+                    result[key] = per_elem;
+                }
+                continue;
             }
-            if (all_const && per_elem > 0) {
-                result[key] = per_elem;
+            // Check if the RHS variable is associated with an
+            // ArraySection (from lowered StructConstructor).
+            auto assoc_it = assoc_map.find(val_name);
+            if (assoc_it != assoc_map.end()) {
+                ASR::expr_t *assoc_val = assoc_it->second;
+                if (ASR::is_a<ASR::ArraySection_t>(*assoc_val)) {
+                    ASR::ArraySection_t *as =
+                        ASR::down_cast<ASR::ArraySection_t>(
+                            assoc_val);
+                    int64_t total = 1;
+                    bool all_const = true;
+                    for (size_t d = 0; d < as->n_args; d++) {
+                        int64_t lb_val = 0, ub_val = 0,
+                                step_val = 1;
+                        bool got_lb = extract_const_int(
+                                as->m_args[d].m_left, lb_val);
+                        bool got_ub = extract_const_int(
+                                as->m_args[d].m_right, ub_val);
+                        if (got_lb && got_ub) {
+                            if (as->m_args[d].m_step) {
+                                if (!extract_const_int(
+                                        as->m_args[d].m_step,
+                                        step_val) ||
+                                        step_val == 0) {
+                                    all_const = false;
+                                    break;
+                                }
+                            }
+                            total *= (ub_val - lb_val)
+                                / step_val + 1;
+                        } else {
+                            all_const = false;
+                            break;
+                        }
+                    }
+                    if (all_const && total > 0) {
+                        result[key] = total;
+                    }
+                }
             }
         } else if (stmt->type == ASR::stmtType::SubroutineCall) {
             // Look through subroutine calls for writes to struct
