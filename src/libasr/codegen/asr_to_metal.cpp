@@ -4750,60 +4750,94 @@ public:
                                     visit_expr(a->m_value);
                                     src << "[__copy_i];\n";
                                 } else {
-                                    // Try to determine the source
-                                    // array's compile-time size from
-                                    // its type (handles FixedSizeArray
-                                    // temporaries like array
-                                    // constructors).
-                                    ASR::symbol_t *rsym =
-                                        ASR::down_cast<ASR::Var_t>(
-                                            a->m_value)->m_v;
-                                    rsym = ASRUtils::
-                                        symbol_get_past_external(rsym);
-                                    int64_t src_sz = -1;
-                                    if (ASR::is_a<ASR::Variable_t>(
-                                            *rsym)) {
-                                        ASR::ttype_t *rt =
-                                            ASR::down_cast<
-                                                ASR::Variable_t>(
-                                                    rsym)->m_type;
-                                        src_sz =
-                                            get_total_elements(rt);
-                                        if (src_sz <= 1) {
-                                            ASR::ttype_t *rtp =
-                                                ASRUtils::
-                                                type_get_past_allocatable(
-                                                    rt);
-                                            if (!ASR::is_a<ASR::Array_t>(
-                                                    *rtp))
-                                                src_sz = -1;
-                                        }
-                                    }
-                                    if (src_sz > 0) {
+                                    // Check if the RHS has a runtime
+                                    // size from function parameters
+                                    // (e.g. assumed-shape arrays).
+                                    auto rhs_size_it =
+                                        func_array_size_params.find(
+                                            rname);
+                                    if (rhs_size_it !=
+                                            func_array_size_params
+                                                .end()) {
                                         src << size_it->second
-                                            << " = " << src_sz
+                                            << " = "
+                                            << rhs_size_it->second
                                             << ";\n";
                                         src << get_indent();
-                                        for (int64_t ei = 0;
-                                                ei < src_sz; ei++) {
-                                            src << data_it->second
-                                                << "[" << ei
-                                                << "] = ";
-                                            visit_expr(a->m_value);
-                                            src << "[" << ei
-                                                << "];\n";
-                                            if (ei + 1 < src_sz)
-                                                src << get_indent();
-                                        }
-                                    } else {
-                                        src << "for (int __copy_i = 0;"
-                                            << " __copy_i < "
-                                            << size_it->second
-                                            << "; __copy_i++) "
+                                        src << "for (int __copy_i"
+                                            << " = 0; __copy_i < "
+                                            << rhs_size_it->second
+                                            << "; __copy_i++) {\n";
+                                        indent_level++;
+                                        src << get_indent()
                                             << data_it->second
                                             << "[__copy_i] = ";
                                         visit_expr(a->m_value);
                                         src << "[__copy_i];\n";
+                                        indent_level--;
+                                        src << get_indent() << "}\n";
+                                    } else {
+                                        // Try to determine the source
+                                        // array's compile-time size
+                                        // from its type (handles
+                                        // FixedSizeArray temporaries
+                                        // like array constructors).
+                                        ASR::symbol_t *rsym =
+                                            ASR::down_cast<ASR::Var_t>(
+                                                a->m_value)->m_v;
+                                        rsym = ASRUtils::
+                                            symbol_get_past_external(
+                                                rsym);
+                                        int64_t src_sz = -1;
+                                        if (ASR::is_a<
+                                                ASR::Variable_t>(
+                                                    *rsym)) {
+                                            ASR::ttype_t *rt =
+                                                ASR::down_cast<
+                                                    ASR::Variable_t>(
+                                                        rsym)->m_type;
+                                            src_sz =
+                                                get_total_elements(rt);
+                                            if (src_sz <= 1) {
+                                                ASR::ttype_t *rtp =
+                                                    ASRUtils::
+                                                    type_get_past_allocatable(
+                                                        rt);
+                                                if (!ASR::is_a<
+                                                        ASR::Array_t>(
+                                                            *rtp))
+                                                    src_sz = -1;
+                                            }
+                                        }
+                                        if (src_sz > 0) {
+                                            src << size_it->second
+                                                << " = " << src_sz
+                                                << ";\n";
+                                            src << get_indent();
+                                            for (int64_t ei = 0;
+                                                    ei < src_sz;
+                                                    ei++) {
+                                                src << data_it->second
+                                                    << "[" << ei
+                                                    << "] = ";
+                                                visit_expr(
+                                                    a->m_value);
+                                                src << "[" << ei
+                                                    << "];\n";
+                                                if (ei + 1 < src_sz)
+                                                    src << get_indent();
+                                            }
+                                        } else {
+                                            src << "for (int "
+                                                << "__copy_i = 0;"
+                                                << " __copy_i < "
+                                                << size_it->second
+                                                << "; __copy_i++) "
+                                                << data_it->second
+                                                << "[__copy_i] = ";
+                                            visit_expr(a->m_value);
+                                            src << "[__copy_i];\n";
+                                        }
                                     }
                                 }
                                 handled = true;
@@ -5067,7 +5101,12 @@ public:
                         // parameter (which may be 0 for local struct
                         // temporaries).
                         int64_t rhs_fixed_sz = -1;
+                        std::string rhs_runtime_size;
                         if (ASR::is_a<ASR::Var_t>(*a->m_value)) {
+                            std::string rname =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        a->m_value)->m_v);
                             ASR::symbol_t *rsym =
                                 ASR::down_cast<ASR::Var_t>(
                                     a->m_value)->m_v;
@@ -5082,10 +5121,40 @@ public:
                                     ASRUtils::
                                     type_get_past_allocatable(rt);
                                 if (ASR::is_a<ASR::Array_t>(*rtp)) {
-                                    rhs_fixed_sz =
-                                        get_total_elements(rt);
-                                    if (rhs_fixed_sz <= 0)
-                                        rhs_fixed_sz = -1;
+                                    ASR::Array_t *rtp_arr =
+                                        ASR::down_cast<
+                                            ASR::Array_t>(rtp);
+                                    bool all_dims_const = true;
+                                    for (size_t d = 0;
+                                            d < rtp_arr->n_dims;
+                                            d++) {
+                                        if (!rtp_arr->m_dims[d]
+                                                .m_length ||
+                                            !ASR::is_a<ASR::
+                                                IntegerConstant_t>(
+                                                *rtp_arr->m_dims[d]
+                                                    .m_length)) {
+                                            all_dims_const = false;
+                                            break;
+                                        }
+                                    }
+                                    if (all_dims_const) {
+                                        rhs_fixed_sz =
+                                            get_total_elements(rt);
+                                        if (rhs_fixed_sz <= 0)
+                                            rhs_fixed_sz = -1;
+                                    }
+                                }
+                            }
+                            if (rhs_fixed_sz <= 0) {
+                                auto rpit =
+                                    func_array_size_params.find(
+                                        rname);
+                                if (rpit !=
+                                        func_array_size_params
+                                            .end()) {
+                                    rhs_runtime_size =
+                                        rpit->second;
                                 }
                             }
                         }
@@ -5102,6 +5171,23 @@ public:
                                 if (ei + 1 < rhs_fixed_sz)
                                     src << get_indent();
                             }
+                        } else if (!rhs_runtime_size.empty()
+                                && !data_expr.empty()) {
+                            src << size_expr << " = "
+                                << rhs_runtime_size << ";\n";
+                            src << get_indent();
+                            src << "for (int __copy_i = 0;"
+                                << " __copy_i < "
+                                << rhs_runtime_size
+                                << "; __copy_i++) {\n";
+                            indent_level++;
+                            src << get_indent()
+                                << data_expr
+                                << "[__copy_i] = ";
+                            visit_expr(a->m_value);
+                            src << "[__copy_i];\n";
+                            indent_level--;
+                            src << get_indent() << "}\n";
                         } else {
                             src << "for (int __copy_i = 0; __copy_i < "
                                 << size_expr << "; __copy_i++) ";

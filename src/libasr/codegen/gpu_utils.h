@@ -1072,6 +1072,72 @@ inline int64_t get_fixed_size_array_size(ASR::ttype_t *t) {
     return sz;
 }
 
+// Extract a compile-time integer constant from an ASR expression,
+// evaluating simple IntegerBinOp chains recursively.
+// Returns INT64_MIN if the expression is not a compile-time constant.
+inline int64_t eval_iconst(ASR::expr_t *e) {
+    if (!e) return INT64_MIN;
+    if (ASR::is_a<ASR::IntegerConstant_t>(*e))
+        return ASR::down_cast<ASR::IntegerConstant_t>(e)->m_n;
+    if (ASR::is_a<ASR::ArrayBound_t>(*e)) {
+        ASR::expr_t *v = ASR::down_cast<ASR::ArrayBound_t>(e)
+            ->m_value;
+        if (v) return eval_iconst(v);
+        return INT64_MIN;
+    }
+    if (ASR::is_a<ASR::Cast_t>(*e)) {
+        ASR::Cast_t *c = ASR::down_cast<ASR::Cast_t>(e);
+        if (c->m_value) return eval_iconst(c->m_value);
+        return eval_iconst(c->m_arg);
+    }
+    if (ASR::is_a<ASR::IntegerBinOp_t>(*e)) {
+        ASR::IntegerBinOp_t *bo =
+            ASR::down_cast<ASR::IntegerBinOp_t>(e);
+        if (bo->m_value) return eval_iconst(bo->m_value);
+        int64_t lv = eval_iconst(bo->m_left);
+        int64_t rv = eval_iconst(bo->m_right);
+        if (lv == INT64_MIN || rv == INT64_MIN) return INT64_MIN;
+        switch (bo->m_op) {
+            case ASR::binopType::Add: return lv + rv;
+            case ASR::binopType::Sub: return lv - rv;
+            case ASR::binopType::Mul: return lv * rv;
+            case ASR::binopType::Div:
+                return rv != 0 ? lv / rv : INT64_MIN;
+            default: return INT64_MIN;
+        }
+    }
+    return INT64_MIN;
+}
+
+// Compute the compile-time element count of an ArraySection.
+// Returns 0 if any dimension range has non-constant bounds.
+inline int64_t get_array_section_size(ASR::ArraySection_t *as) {
+    int64_t total = 1;
+    for (size_t d = 0; d < as->n_args; d++) {
+        ASR::expr_t *lo = as->m_args[d].m_left;
+        ASR::expr_t *hi = as->m_args[d].m_right;
+        ASR::expr_t *st = as->m_args[d].m_step;
+        if (!lo || !st) continue; // index, not a range
+        int64_t lo_v = eval_iconst(lo);
+        int64_t hi_v = eval_iconst(hi);
+        int64_t st_v = eval_iconst(st);
+        if (lo_v == INT64_MIN || hi_v == INT64_MIN ||
+                st_v == INT64_MIN || st_v == 0)
+            return 0;
+        int64_t dim_sz = (hi_v - lo_v) / st_v + 1;
+        if (dim_sz <= 0) return 0;
+        total *= dim_sz;
+    }
+    return total;
+}
+
+// Unwrap ArrayPhysicalCast to get the inner expression.
+inline ASR::expr_t* unwrap_array_physical_cast(ASR::expr_t *e) {
+    if (ASR::is_a<ASR::ArrayPhysicalCast_t>(*e))
+        return ASR::down_cast<ASR::ArrayPhysicalCast_t>(e)->m_arg;
+    return e;
+}
+
 inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
         const ASR::GpuKernelFunction_t &kernel,
         const std::vector<GpuVlaWorkspace> &vla_workspaces) {
@@ -1085,6 +1151,22 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
     // (e.g., inner writes to temp%vals, outer copies temp to res(i)).
     // Key: "local_var.member", Value: compile-time element count.
     std::map<std::string, int64_t> local_struct_sizes;
+
+    // Build a map from Associate target variable names to their
+    // associated expressions (e.g., from subroutine_from_function).
+    std::map<std::string, ASR::expr_t*> assoc_map;
+    for (size_t si = 0; si < kernel.n_body; si++) {
+        if (kernel.m_body[si]->type == ASR::stmtType::Associate) {
+            ASR::Associate_t *assoc =
+                ASR::down_cast<ASR::Associate_t>(kernel.m_body[si]);
+            if (ASR::is_a<ASR::Var_t>(*assoc->m_target)) {
+                std::string tname = ASRUtils::symbol_name(
+                    ASR::down_cast<ASR::Var_t>(
+                        assoc->m_target)->m_v);
+                assoc_map[tname] = assoc->m_value;
+            }
+        }
+    }
 
     for (size_t si = 0; si < kernel.n_body; si++) {
         ASR::stmt_t *stmt = kernel.m_body[si];
@@ -1257,6 +1339,53 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                                         if (all_const
                                                 && per_elem > 0) {
                                             result[key] = per_elem;
+                                        }
+                                    } else {
+                                        // Trace formal param back
+                                        // to actual arg at call site
+                                        for (size_t pi = 0;
+                                                pi < fn->n_args;
+                                                pi++) {
+                                            ASR::Variable_t *fp =
+                                                ASR::down_cast<
+                                                    ASR::Variable_t>(
+                                                    ASR::down_cast<
+                                                        ASR::Var_t>(
+                                                        fn->m_args[pi])
+                                                        ->m_v);
+                                            if (std::string(
+                                                    fp->m_name)
+                                                    != rhs_name)
+                                                continue;
+                                            if (pi >= fc->n_args)
+                                                break;
+                                            ASR::expr_t *actual =
+                                                fc->m_args[pi]
+                                                    .m_value;
+                                            if (!actual) break;
+                                            int64_t asz =
+                                                get_fixed_size_array_size(
+                                                    ASRUtils::expr_type(
+                                                        actual));
+                                            if (asz > 0) {
+                                                result[key] = asz;
+                                                break;
+                                            }
+                                            ASR::expr_t *inner =
+                                                unwrap_array_physical_cast(
+                                                    actual);
+                                            if (ASR::is_a<ASR::
+                                                    ArraySection_t>(
+                                                        *inner)) {
+                                                int64_t ss =
+                                                    get_array_section_size(
+                                                        ASR::down_cast<
+                                                            ASR::ArraySection_t>(
+                                                                inner));
+                                                if (ss > 0)
+                                                    result[key] = ss;
+                                            }
+                                            break;
                                         }
                                     }
                                 }
@@ -1473,7 +1602,8 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                             ASR::ttype_t *at =
                                 ASRUtils::expr_type(actual);
                             ASR::ttype_t *past =
-                                ASRUtils::type_get_past_allocatable(
+                                ASRUtils::
+                                type_get_past_allocatable_pointer(
                                     at);
                             if (!ASR::is_a<ASR::Array_t>(*past))
                                 break;
@@ -1523,6 +1653,29 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                                     }
                                     if (ws_all_c && ws_sz > 0) {
                                         result[key] = ws_sz;
+                                    }
+                                } else {
+                                    // Check if variable is
+                                    // associated with an
+                                    // ArraySection (from
+                                    // subroutine_from_function)
+                                    auto ait =
+                                        assoc_map.find(act_name);
+                                    if (ait != assoc_map.end()) {
+                                        ASR::expr_t *ae =
+                                            unwrap_array_physical_cast(
+                                                ait->second);
+                                        if (ASR::is_a<ASR::
+                                                ArraySection_t>(
+                                                    *ae)) {
+                                            int64_t ss =
+                                                get_array_section_size(
+                                                    ASR::down_cast<
+                                                        ASR::ArraySection_t>(
+                                                            ae));
+                                            if (ss > 0)
+                                                result[key] = ss;
+                                        }
                                     }
                                 }
                             }
