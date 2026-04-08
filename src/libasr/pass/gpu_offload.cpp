@@ -7301,6 +7301,239 @@ public:
             }
         }
 
+        // Pre-allocate allocatable struct members for whole-struct
+        // assignments like b(i) = a(i) inside the do concurrent body.
+        // When the source element has an allocated member but the
+        // target element does not, the Metal buffer for the target
+        // member gets size 0 and the kernel writes out of bounds.
+        // For each allocatable array member, emit a pre-launch loop:
+        //   do k = dc_start, dc_end
+        //     allocate(tgt(k)%member(size(src(k)%member)))
+        //   end do
+        for (size_t si = 0; si < x.n_body; si++) {
+            ASR::stmt_t *stmt = x.m_body[si];
+            ASR::stmt_t **stmts_to_scan = &stmt;
+            size_t n_stmts_to_scan = 1;
+            if (ASR::is_a<ASR::BlockCall_t>(*stmt)) {
+                ASR::BlockCall_t *bc =
+                    ASR::down_cast<ASR::BlockCall_t>(stmt);
+                if (ASR::is_a<ASR::Block_t>(*bc->m_m)) {
+                    ASR::Block_t *blk =
+                        ASR::down_cast<ASR::Block_t>(bc->m_m);
+                    stmts_to_scan = blk->m_body;
+                    n_stmts_to_scan = blk->n_body;
+                }
+            }
+            for (size_t sj = 0; sj < n_stmts_to_scan; sj++) {
+                if (!ASR::is_a<ASR::Assignment_t>(*stmts_to_scan[sj]))
+                    continue;
+                ASR::Assignment_t *asgn =
+                    ASR::down_cast<ASR::Assignment_t>(
+                        stmts_to_scan[sj]);
+                if (!ASR::is_a<ASR::ArrayItem_t>(*asgn->m_target))
+                    continue;
+                if (!ASR::is_a<ASR::ArrayItem_t>(*asgn->m_value))
+                    continue;
+                ASR::ttype_t *elem_type =
+                    ASRUtils::expr_type(asgn->m_target);
+                if (!ASR::is_a<ASR::StructType_t>(
+                        *ASRUtils::extract_type(elem_type)))
+                    continue;
+                ASR::ArrayItem_t *tgt_ai =
+                    ASR::down_cast<ASR::ArrayItem_t>(asgn->m_target);
+                ASR::ArrayItem_t *src_ai =
+                    ASR::down_cast<ASR::ArrayItem_t>(asgn->m_value);
+                if (!ASR::is_a<ASR::Var_t>(*tgt_ai->m_v)) continue;
+                if (!ASR::is_a<ASR::Var_t>(*src_ai->m_v)) continue;
+                ASR::symbol_t *tgt_sym =
+                    ASR::down_cast<ASR::Var_t>(tgt_ai->m_v)->m_v;
+                ASR::symbol_t *src_sym =
+                    ASR::down_cast<ASR::Var_t>(src_ai->m_v)->m_v;
+                ASR::Variable_t *tgt_var = ASR::down_cast<ASR::Variable_t>(
+                    ASRUtils::symbol_get_past_external(tgt_sym));
+                if (!tgt_var->m_type_declaration) continue;
+                ASR::symbol_t *struct_sym =
+                    ASRUtils::symbol_get_past_external(
+                        tgt_var->m_type_declaration);
+                if (!ASR::is_a<ASR::Struct_t>(*struct_sym)) continue;
+                ASR::Struct_t *st =
+                    ASR::down_cast<ASR::Struct_t>(struct_sym);
+                bool has_alloc = false;
+                for (size_t m = 0; m < st->n_members; m++) {
+                    ASR::symbol_t *mem =
+                        st->m_symtab->get_symbol(st->m_members[m]);
+                    if (!mem || !ASR::is_a<ASR::Variable_t>(*mem))
+                        continue;
+                    ASR::Variable_t *mv =
+                        ASR::down_cast<ASR::Variable_t>(mem);
+                    if (!ASRUtils::is_allocatable(mv->m_type)) continue;
+                    ASR::ttype_t *mi =
+                        ASRUtils::type_get_past_allocatable(mv->m_type);
+                    if (ASR::is_a<ASR::Array_t>(*mi)) {
+                        has_alloc = true;
+                        break;
+                    }
+                }
+                if (!has_alloc) continue;
+                if (n_dims != 1) continue;
+
+                ASR::ttype_t *int_type_pa = ASRUtils::TYPE(
+                    ASR::make_Integer_t(al, loc, 4));
+                for (size_t m = 0; m < st->n_members; m++) {
+                    ASR::symbol_t *mem_sym =
+                        st->m_symtab->get_symbol(st->m_members[m]);
+                    if (!mem_sym ||
+                            !ASR::is_a<ASR::Variable_t>(*mem_sym))
+                        continue;
+                    ASR::Variable_t *mv =
+                        ASR::down_cast<ASR::Variable_t>(mem_sym);
+                    if (!ASRUtils::is_allocatable(mv->m_type)) continue;
+                    ASR::ttype_t *mi =
+                        ASRUtils::type_get_past_allocatable(mv->m_type);
+                    if (!ASR::is_a<ASR::Array_t>(*mi)) continue;
+
+                    // Find the ExternalSymbol in current_scope
+                    // that refers to this member
+                    ASR::symbol_t *mem_ext = nullptr;
+                    for (auto &scope_item :
+                            current_scope->get_scope()) {
+                        if (!ASR::is_a<ASR::ExternalSymbol_t>(
+                                *scope_item.second)) continue;
+                        ASR::ExternalSymbol_t *es =
+                            ASR::down_cast<ASR::ExternalSymbol_t>(
+                                scope_item.second);
+                        ASR::symbol_t *resolved =
+                            ASRUtils::symbol_get_past_external(
+                                es->m_external);
+                        if (resolved == mem_sym) {
+                            mem_ext = scope_item.second;
+                            break;
+                        }
+                    }
+                    if (!mem_ext) continue;
+
+                    ASRUtils::ExprStmtDuplicator dup_lp(al);
+                    dup_lp.success = true;
+                    ASR::do_loop_head_t lh;
+                    lh.loc = loc;
+                    lh.m_v = dup_lp.duplicate_expr(x.m_head[0].m_v);
+                    lh.m_start =
+                        dup_lp.duplicate_expr(x.m_head[0].m_start);
+                    lh.m_end =
+                        dup_lp.duplicate_expr(x.m_head[0].m_end);
+                    lh.m_increment = nullptr;
+
+                    // Build: tgt_arr(k)%member
+                    ASR::expr_t *loop_var =
+                        dup_lp.duplicate_expr(x.m_head[0].m_v);
+                    ASR::array_index_t *tgt_idx =
+                        al.allocate<ASR::array_index_t>(1);
+                    tgt_idx[0].loc = loc;
+                    tgt_idx[0].m_left = nullptr;
+                    tgt_idx[0].m_right = loop_var;
+                    tgt_idx[0].m_step = nullptr;
+                    ASR::expr_t *tgt_elem = ASRUtils::EXPR(
+                        ASR::make_ArrayItem_t(al, loc,
+                            ASRUtils::EXPR(ASR::make_Var_t(
+                                al, loc, tgt_sym)),
+                            tgt_idx, 1, elem_type,
+                            ASR::arraystorageType::ColMajor,
+                            nullptr));
+                    ASR::expr_t *tgt_member = ASRUtils::EXPR(
+                        ASR::make_StructInstanceMember_t(al, loc,
+                            tgt_elem, mem_ext,
+                            mv->m_type, nullptr));
+
+                    // Build: size(src_arr(k)%member)
+                    ASR::expr_t *loop_var2 =
+                        dup_lp.duplicate_expr(x.m_head[0].m_v);
+                    ASR::array_index_t *src_idx =
+                        al.allocate<ASR::array_index_t>(1);
+                    src_idx[0].loc = loc;
+                    src_idx[0].m_left = nullptr;
+                    src_idx[0].m_right = loop_var2;
+                    src_idx[0].m_step = nullptr;
+                    ASR::expr_t *src_elem = ASRUtils::EXPR(
+                        ASR::make_ArrayItem_t(al, loc,
+                            ASRUtils::EXPR(ASR::make_Var_t(
+                                al, loc, src_sym)),
+                            src_idx, 1, elem_type,
+                            ASR::arraystorageType::ColMajor,
+                            nullptr));
+                    ASR::expr_t *src_member = ASRUtils::EXPR(
+                        ASR::make_StructInstanceMember_t(al, loc,
+                            src_elem, mem_ext,
+                            mv->m_type, nullptr));
+                    ASR::expr_t *src_size = ASRUtils::EXPR(
+                        ASR::make_ArraySize_t(al, loc,
+                            src_member, nullptr,
+                            int_type_pa, nullptr));
+
+                    // Build: allocate(tgt_arr(k)%member(src_size))
+                    ASR::alloc_arg_t aa;
+                    aa.loc = loc;
+                    aa.m_a = tgt_member;
+                    aa.n_dims = 1;
+                    aa.m_dims = al.allocate<ASR::dimension_t>(1);
+                    aa.m_dims[0].loc = loc;
+                    aa.m_dims[0].m_start = ASRUtils::EXPR(
+                        ASR::make_IntegerConstant_t(al, loc, 1,
+                            int_type_pa,
+                            ASR::integerbozType::Decimal));
+                    aa.m_dims[0].m_length = src_size;
+                    aa.m_len_expr = nullptr;
+                    aa.m_sym_subclass = nullptr;
+                    aa.m_type = nullptr;
+
+                    Vec<ASR::alloc_arg_t> av;
+                    av.reserve(al, 1);
+                    av.push_back(al, aa);
+
+                    ASR::stmt_t *alloc_s = ASRUtils::STMT(
+                        ASR::make_Allocate_t(al, loc,
+                            av.p, av.n,
+                            nullptr, nullptr, nullptr));
+
+                    // Guard with: if (.not. allocated(tgt(k)%member))
+                    ASR::expr_t *tgt_member_dup =
+                        dup_lp.duplicate_expr(tgt_member);
+                    ASR::ttype_t *log_type = ASRUtils::TYPE(
+                        ASR::make_Logical_t(al, loc, 4));
+                    Vec<ASR::expr_t*> alloc_args;
+                    alloc_args.reserve(al, 1);
+                    alloc_args.push_back(al, tgt_member_dup);
+                    ASR::expr_t *is_allocated = ASRUtils::EXPR(
+                        ASR::make_IntrinsicImpureFunction_t(al, loc,
+                            static_cast<int64_t>(
+                                ASRUtils::IntrinsicImpureFunctions::Allocated),
+                            alloc_args.p, alloc_args.n,
+                            0, log_type, nullptr));
+                    ASR::expr_t *not_allocated = ASRUtils::EXPR(
+                        ASR::make_LogicalNot_t(al, loc,
+                            is_allocated, log_type, nullptr));
+
+                    Vec<ASR::stmt_t*> if_body;
+                    if_body.reserve(al, 1);
+                    if_body.push_back(al, alloc_s);
+
+                    ASR::stmt_t *guarded_alloc = ASRUtils::STMT(
+                        ASR::make_If_t(al, loc, nullptr,
+                            not_allocated,
+                            if_body.p, if_body.n,
+                            nullptr, 0));
+
+                    Vec<ASR::stmt_t*> lbody;
+                    lbody.reserve(al, 1);
+                    lbody.push_back(al, guarded_alloc);
+
+                    pre_launch_stmts.push_back(al, ASRUtils::STMT(
+                        ASR::make_DoLoop_t(al, loc, nullptr,
+                            lh, lbody.p, lbody.n,
+                            nullptr, 0)));
+                }
+            }
+        }
+
         // 7. Replace DoConcurrentLoop with GpuKernelLaunch + GpuSync
         // Collect all launch-related statements into a temporary Vec.
         // If any involved variable is optional, wrap them in a
