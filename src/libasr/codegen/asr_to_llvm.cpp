@@ -19289,6 +19289,9 @@ public:
                 *kernel_func, gpu_vla_workspaces);
         std::map<std::string, std::string> struct_member_runtime_sources =
             find_struct_member_vla_runtime_sources(*kernel_func);
+        std::map<std::string, StructMemberSectionSource>
+            struct_member_section_sources =
+                find_struct_member_section_sources(*kernel_func);
 
         for (size_t i = 0; i < x.n_args; i++) {
             ASR::expr_t *arg_expr = x.m_args[i].m_value;
@@ -20466,6 +20469,331 @@ public:
                                         builder->CreateBr(pa_h);
                                     }
                                     builder->SetInsertPoint(pa_e);
+                                } else {
+                                    // Check for runtime section source
+                                    auto sec_it =
+                                        struct_member_section_sources
+                                            .find(sm_key);
+                                    if (sec_it !=
+                                            struct_member_section_sources
+                                                .end()) {
+                                        const auto &sec_src =
+                                            sec_it->second;
+                                        ASR::symbol_t *src_sym =
+                                            current_scope->get_symbol(
+                                                sec_src.source_var);
+                                        llvm::Value *rt_ne64 = nullptr;
+                                        if (src_sym) {
+                                            uint32_t src_h =
+                                                get_hash(
+                                                    (ASR::asr_t*)
+                                                        src_sym);
+                                            auto sym_it =
+                                                llvm_symtab.find(src_h);
+                                            if (sym_it !=
+                                                    llvm_symtab.end()) {
+                                                llvm::Value *src_desc =
+                                                    sym_it->second;
+                                                ASR::Variable_t *src_var =
+                                                    ASR::down_cast<
+                                                        ASR::Variable_t>(
+                                                            src_sym);
+                                                ASR::ttype_t
+                                                    *src_asr_type =
+                                                    ASRUtils::
+                                                        type_get_past_allocatable(
+                                                            src_var
+                                                                ->m_type);
+                                                llvm::Type
+                                                    *src_desc_type =
+                                                    llvm_utils
+                                                        ->get_type_from_ttype_t_util(
+                                                            nullptr,
+                                                            src_asr_type,
+                                                            module
+                                                                .get());
+                                                if (ASRUtils::
+                                                        is_allocatable(
+                                                            src_var
+                                                                ->m_type)) {
+                                                    src_desc =
+                                                        llvm_utils
+                                                            ->CreateLoad2(
+                                                                src_desc_type
+                                                                    ->getPointerTo(),
+                                                                src_desc);
+                                                }
+                                                llvm::Value
+                                                    *dim_des_arr =
+                                                    arr_descr
+                                                        ->get_pointer_to_dimension_descriptor_array(
+                                                            src_desc_type,
+                                                            src_desc);
+                                                rt_ne64 =
+                                                    llvm::ConstantInt
+                                                        ::get(i64, 1);
+                                                for (size_t sd :
+                                                        sec_src
+                                                            .section_dims) {
+                                                    llvm::Value
+                                                        *dim_desc =
+                                                        arr_descr
+                                                            ->get_pointer_to_dimension_descriptor(
+                                                                dim_des_arr,
+                                                                llvm::ConstantInt
+                                                                    ::get(
+                                                                        i32,
+                                                                        sd));
+                                                    llvm::Value
+                                                        *dim_ext =
+                                                        arr_descr
+                                                            ->get_dimension_size(
+                                                                dim_desc,
+                                                                true);
+                                                    dim_ext =
+                                                        builder
+                                                            ->CreateSExtOrTrunc(
+                                                                dim_ext,
+                                                                i64);
+                                                    rt_ne64 =
+                                                        builder
+                                                            ->CreateMul(
+                                                                rt_ne64,
+                                                                dim_ext);
+                                                }
+                                            }
+                                        }
+                                        if (rt_ne64) {
+                                            llvm::Function *pa_fn =
+                                                builder
+                                                    ->GetInsertBlock()
+                                                    ->getParent();
+                                            llvm::AllocaInst *pa_k =
+                                                llvm_utils->CreateAlloca(
+                                                    i64);
+                                            builder->CreateStore(
+                                                llvm::ConstantInt::get(
+                                                    i64, 0),
+                                                pa_k);
+                                            llvm::BasicBlock *pa_h =
+                                                llvm::BasicBlock::Create(
+                                                    context,
+                                                    "pa_rt.head",
+                                                    pa_fn);
+                                            llvm::BasicBlock *pa_b =
+                                                llvm::BasicBlock::Create(
+                                                    context,
+                                                    "pa_rt.body",
+                                                    pa_fn);
+                                            llvm::BasicBlock *pa_alloc =
+                                                llvm::BasicBlock::Create(
+                                                    context,
+                                                    "pa_rt.alloc",
+                                                    pa_fn);
+                                            llvm::BasicBlock *pa_next =
+                                                llvm::BasicBlock::Create(
+                                                    context,
+                                                    "pa_rt.next",
+                                                    pa_fn);
+                                            llvm::BasicBlock *pa_e =
+                                                llvm::BasicBlock::Create(
+                                                    context,
+                                                    "pa_rt.end",
+                                                    pa_fn);
+                                            builder->CreateBr(pa_h);
+                                            builder->SetInsertPoint(
+                                                pa_h);
+                                            {
+                                                llvm::Value *kv =
+                                                    llvm_utils
+                                                        ->CreateLoad2(
+                                                            i64, pa_k);
+                                                builder->CreateCondBr(
+                                                    builder
+                                                        ->CreateICmpSLT(
+                                                            kv,
+                                                            n_elems_64),
+                                                    pa_b, pa_e);
+                                            }
+                                            builder->SetInsertPoint(
+                                                pa_b);
+                                            {
+                                                llvm::Value *kv =
+                                                    llvm_utils
+                                                        ->CreateLoad2(
+                                                            i64, pa_k);
+                                                llvm::Value *fp =
+                                                    emit_nested_field_gep(
+                                                        struct_llvm,
+                                                        typed_data,
+                                                        kv,
+                                                        llvm_parent_chain,
+                                                        field_idx);
+                                                llvm::Value *dp =
+                                                    llvm_utils
+                                                        ->CreateLoad2(
+                                                            mem_desc_type
+                                                                ->getPointerTo(),
+                                                            fp);
+                                                llvm::Value *is_null =
+                                                    builder
+                                                        ->CreateICmpEQ(
+                                                            builder
+                                                                ->CreatePtrToInt(
+                                                                    dp,
+                                                                    i64),
+                                                            llvm::ConstantInt
+                                                                ::get(
+                                                                    i64,
+                                                                    0));
+                                                builder->CreateCondBr(
+                                                    is_null, pa_alloc,
+                                                    pa_next);
+                                            }
+                                            builder->SetInsertPoint(
+                                                pa_alloc);
+                                            {
+                                                llvm::Value *kv =
+                                                    llvm_utils
+                                                        ->CreateLoad2(
+                                                            i64, pa_k);
+                                                llvm::Value *fp =
+                                                    emit_nested_field_gep(
+                                                        struct_llvm,
+                                                        typed_data,
+                                                        kv,
+                                                        llvm_parent_chain,
+                                                        field_idx);
+                                                llvm::DataLayout dl(
+                                                    module.get());
+                                                uint64_t desc_sz =
+                                                    dl.getTypeAllocSize(
+                                                        mem_desc_type);
+                                                llvm::Value *desc_mem =
+                                                    builder->CreateCall(
+                                                        mfn,
+                                                        {llvm::ConstantInt
+                                                            ::get(i64,
+                                                                desc_sz)});
+                                                llvm::Value *new_desc =
+                                                    builder
+                                                        ->CreatePointerCast(
+                                                            desc_mem,
+                                                            mem_desc_type
+                                                                ->getPointerTo());
+                                                {
+                                                    llvm::Type *fp_el =
+                                                        fp->getType()
+                                                            ->getPointerElementType();
+                                                    llvm::Value *sd =
+                                                        (new_desc
+                                                                ->getType()
+                                                            != fp_el)
+                                                        ? builder
+                                                            ->CreatePointerCast(
+                                                                new_desc,
+                                                                fp_el)
+                                                        : new_desc;
+                                                    builder
+                                                        ->CreateStore(
+                                                            sd, fp);
+                                                }
+                                                arr_descr
+                                                    ->fill_dimension_descriptor(
+                                                        mem_desc_type,
+                                                        new_desc, 1);
+                                                llvm::Value
+                                                    *alloc_bytes =
+                                                    builder->CreateMul(
+                                                        rt_ne64,
+                                                        llvm::ConstantInt
+                                                            ::get(i64,
+                                                                me_size));
+                                                llvm::Value *new_dp =
+                                                    builder->CreateCall(
+                                                        mfn,
+                                                        {alloc_bytes});
+                                                llvm::Value *new_dpp =
+                                                    arr_descr
+                                                        ->get_pointer_to_data(
+                                                            mem_desc_type,
+                                                            new_desc);
+                                                builder->CreateStore(
+                                                    builder
+                                                        ->CreatePointerCast(
+                                                            new_dp,
+                                                            mem_el_llvm
+                                                                ->getPointerTo()),
+                                                    new_dpp);
+                                                llvm::Value
+                                                    *dim_des_arr2 =
+                                                    arr_descr
+                                                        ->get_pointer_to_dimension_descriptor_array(
+                                                            mem_desc_type,
+                                                            new_desc);
+                                                llvm::Value *dim0 =
+                                                    arr_descr
+                                                        ->get_pointer_to_dimension_descriptor(
+                                                            dim_des_arr2,
+                                                            llvm::ConstantInt
+                                                                ::get(
+                                                                    i32,
+                                                                    0));
+                                                llvm::Value
+                                                    *extent_ptr =
+                                                    arr_descr
+                                                        ->get_dimension_size(
+                                                            dim0, false);
+                                                builder->CreateStore(
+                                                    rt_ne64,
+                                                    extent_ptr);
+                                                llvm::Value
+                                                    *stride_ptr =
+                                                    arr_descr
+                                                        ->get_stride(
+                                                            dim0, false);
+                                                builder->CreateStore(
+                                                    llvm::ConstantInt
+                                                        ::get(i64, 1),
+                                                    stride_ptr);
+                                                llvm::Value
+                                                    *offset_ptr =
+                                                    builder->CreateGEP(
+                                                        mem_desc_type,
+                                                        new_desc,
+                                                        {llvm::ConstantInt
+                                                            ::get(i32,
+                                                                0),
+                                                         llvm::ConstantInt
+                                                            ::get(i32,
+                                                                7)});
+                                                builder->CreateStore(
+                                                    llvm::ConstantInt
+                                                        ::get(i64, 0),
+                                                    offset_ptr);
+                                                builder->CreateBr(
+                                                    pa_next);
+                                            }
+                                            builder->SetInsertPoint(
+                                                pa_next);
+                                            {
+                                                llvm::Value *kv =
+                                                    llvm_utils
+                                                        ->CreateLoad2(
+                                                            i64, pa_k);
+                                                builder->CreateStore(
+                                                    builder->CreateAdd(
+                                                        kv,
+                                                        llvm::ConstantInt
+                                                            ::get(i64,
+                                                                1)),
+                                                    pa_k);
+                                                builder->CreateBr(pa_h);
+                                            }
+                                            builder->SetInsertPoint(
+                                                pa_e);
+                                        }
+                                    }
                                 }
                                 // Allocate sizes and offsets buffers
                                 llvm::Value *buf_bytes =

@@ -1997,6 +1997,170 @@ inline std::map<std::string, std::string> find_struct_member_vla_runtime_sources
     return result;
 }
 
+// Information about a struct member whose runtime size comes from an
+// array section of a kernel argument (e.g., arr(i) = t(x(:, i))).
+struct StructMemberSectionSource {
+    std::string source_var;
+    std::vector<size_t> section_dims;
+};
+
+// Extract section source info from an ArraySection expression.
+// Returns true if the section has at least one range dimension whose
+// bounds are not compile-time constants (i.e., runtime-sized).
+inline bool get_runtime_section_source(ASR::ArraySection_t *as,
+        StructMemberSectionSource &out) {
+    if (!ASR::is_a<ASR::Var_t>(*as->m_v)) return false;
+    out.source_var = ASRUtils::symbol_name(
+        ASR::down_cast<ASR::Var_t>(as->m_v)->m_v);
+    out.section_dims.clear();
+    bool has_runtime_dim = false;
+    for (size_t d = 0; d < as->n_args; d++) {
+        ASR::expr_t *lo = as->m_args[d].m_left;
+        ASR::expr_t *hi = as->m_args[d].m_right;
+        ASR::expr_t *st = as->m_args[d].m_step;
+        if (!lo || !st) continue;
+        out.section_dims.push_back(d);
+        int64_t lo_v = eval_iconst(lo);
+        int64_t hi_v = eval_iconst(hi);
+        if (lo_v == INT64_MIN || hi_v == INT64_MIN)
+            has_runtime_dim = true;
+    }
+    return has_runtime_dim && !out.section_dims.empty();
+}
+
+// Find struct member allocatable components whose size is determined at
+// runtime from an array section of another kernel argument.
+// After passes (e.g., subroutine_from_function), StructConstructor args
+// may be Var references resolved through Associate statements.
+inline std::map<std::string, StructMemberSectionSource>
+find_struct_member_section_sources(
+                const ASR::GpuKernelFunction_t &kernel) {
+    std::map<std::string, StructMemberSectionSource> result;
+
+    // Build assoc_map: Associate target names -> associated expressions.
+    std::map<std::string, ASR::expr_t*> assoc_map;
+    for (size_t si = 0; si < kernel.n_body; si++) {
+        if (kernel.m_body[si]->type == ASR::stmtType::Associate) {
+            ASR::Associate_t *assoc =
+                ASR::down_cast<ASR::Associate_t>(kernel.m_body[si]);
+            if (ASR::is_a<ASR::Var_t>(*assoc->m_target)) {
+                std::string tname = ASRUtils::symbol_name(
+                    ASR::down_cast<ASR::Var_t>(
+                        assoc->m_target)->m_v);
+                assoc_map[tname] = assoc->m_value;
+            }
+        }
+    }
+
+    for (size_t si = 0; si < kernel.n_body; si++) {
+        ASR::stmt_t *stmt = kernel.m_body[si];
+        if (stmt->type != ASR::stmtType::Assignment) continue;
+        ASR::Assignment_t *asgn =
+            ASR::down_cast<ASR::Assignment_t>(stmt);
+
+        // Case 1: arr(i) = StructConstructor(t, [arg])
+        if (ASR::is_a<ASR::ArrayItem_t>(*asgn->m_target) &&
+                ASR::is_a<ASR::StructConstructor_t>(
+                    *asgn->m_value)) {
+            ASR::ArrayItem_t *ai =
+                ASR::down_cast<ASR::ArrayItem_t>(asgn->m_target);
+            if (!ASR::is_a<ASR::Var_t>(*ai->m_v)) continue;
+            std::string arr_name = ASRUtils::symbol_name(
+                ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
+            ASR::StructConstructor_t *sc =
+                ASR::down_cast<ASR::StructConstructor_t>(
+                    asgn->m_value);
+            ASR::symbol_t *struct_sym =
+                ASRUtils::symbol_get_past_external(sc->m_dt_sym);
+            if (!ASR::is_a<ASR::Struct_t>(*struct_sym)) continue;
+            ASR::Struct_t *st =
+                ASR::down_cast<ASR::Struct_t>(struct_sym);
+            for (size_t mi = 0;
+                    mi < st->n_members && mi < sc->n_args; mi++) {
+                if (!sc->m_args[mi].m_value) continue;
+                ASR::symbol_t *mem =
+                    st->m_symtab->get_symbol(st->m_members[mi]);
+                if (!mem || !ASR::is_a<ASR::Variable_t>(*mem))
+                    continue;
+                ASR::Variable_t *mv =
+                    ASR::down_cast<ASR::Variable_t>(mem);
+                if (!ASRUtils::is_allocatable(mv->m_type)) continue;
+                std::string key =
+                    arr_name + "." + st->m_members[mi];
+                if (result.count(key)) continue;
+                ASR::expr_t *arg = sc->m_args[mi].m_value;
+                ASR::expr_t *inner =
+                    unwrap_array_physical_cast(arg);
+                if (ASR::is_a<ASR::Var_t>(*inner)) {
+                    std::string vn = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(inner)
+                            ->m_v);
+                    auto ait = assoc_map.find(vn);
+                    if (ait != assoc_map.end())
+                        inner = unwrap_array_physical_cast(
+                            ait->second);
+                }
+                if (ASR::is_a<ASR::ArraySection_t>(*inner)) {
+                    StructMemberSectionSource src;
+                    if (get_runtime_section_source(
+                            ASR::down_cast<ASR::ArraySection_t>(
+                                inner), src)) {
+                        result[key] = src;
+                    }
+                }
+            }
+            continue;
+        }
+
+        // Case 2: Lowered StructConstructor pattern:
+        //   arr(i)%member = Var (where Var is associated with
+        //   an ArraySection)
+        if (!ASR::is_a<ASR::StructInstanceMember_t>(
+                *asgn->m_target)) continue;
+        ASR::StructInstanceMember_t *sim =
+            ASR::down_cast<ASR::StructInstanceMember_t>(
+                asgn->m_target);
+        // Extract member name
+        std::string mem_name = ASRUtils::symbol_name(
+            ASRUtils::symbol_get_past_external(sim->m_m));
+        // Check if the member is allocatable
+        if (!ASR::is_a<ASR::Variable_t>(
+                *ASRUtils::symbol_get_past_external(sim->m_m)))
+            continue;
+        ASR::Variable_t *mv = ASR::down_cast<ASR::Variable_t>(
+            ASRUtils::symbol_get_past_external(sim->m_m));
+        if (!ASRUtils::is_allocatable(mv->m_type)) continue;
+        // Extract the array name from the base (arr(i))
+        if (!ASR::is_a<ASR::ArrayItem_t>(*sim->m_v)) continue;
+        ASR::ArrayItem_t *ai =
+            ASR::down_cast<ASR::ArrayItem_t>(sim->m_v);
+        if (!ASR::is_a<ASR::Var_t>(*ai->m_v)) continue;
+        std::string arr_name = ASRUtils::symbol_name(
+            ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
+        std::string key = arr_name + "." + mem_name;
+        if (result.count(key)) continue;
+        // Resolve RHS through Associate
+        ASR::expr_t *rhs =
+            unwrap_array_physical_cast(asgn->m_value);
+        if (ASR::is_a<ASR::Var_t>(*rhs)) {
+            std::string vn = ASRUtils::symbol_name(
+                ASR::down_cast<ASR::Var_t>(rhs)->m_v);
+            auto ait = assoc_map.find(vn);
+            if (ait != assoc_map.end())
+                rhs = unwrap_array_physical_cast(ait->second);
+        }
+        if (ASR::is_a<ASR::ArraySection_t>(*rhs)) {
+            StructMemberSectionSource src;
+            if (get_runtime_section_source(
+                    ASR::down_cast<ASR::ArraySection_t>(rhs),
+                    src)) {
+                result[key] = src;
+            }
+        }
+    }
+    return result;
+}
+
 } // namespace LCompilers
 
 #endif // LFORTRAN_GPU_UTILS_H
