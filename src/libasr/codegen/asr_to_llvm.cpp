@@ -19175,6 +19175,23 @@ public:
         // for VLA workspace allocation of function-call result temps.
         std::map<std::string, llvm::Value*> struct_member_first_sizes;
 
+        // Track nested sub-member buffers for write-back.
+        // After kernel, allocate descriptors for sub-members and
+        // copy data from nested flat buffers BEFORE parent write-back.
+        struct NestedStructWriteBack {
+            llvm::Value *nflat;       // nested flat data buffer
+            llvm::Value *noff_ptr;    // nested offsets (int32*)
+            llvm::Value *nsz_ptr;     // nested sizes (int32*)
+            llvm::Value *total_inner; // total inner element count
+            int sub_me;               // element byte size
+            int ifidx;                // field idx in inner struct
+            llvm::Type *idesc_type;   // descriptor type
+            llvm::Type *iel_llvm;     // element LLVM type
+            llvm::Type *mem_el_llvm;  // inner struct LLVM type
+            llvm::Value *flat_typed;  // parent flat buf as inner*
+        };
+        std::vector<NestedStructWriteBack> nested_writebacks;
+
         // Helper: emit a GEP chain to navigate from typed_data[kv]
         // through nested struct fields to the allocatable descriptor pointer.
         // parent_gep_chain contains (llvm_type, field_idx) for intermediate
@@ -19292,6 +19309,202 @@ public:
         std::map<std::string, StructMemberSectionSource>
             struct_member_section_sources =
                 find_struct_member_section_sources(*kernel_func);
+
+        // Pre-scan: find max allocatable sub-member element counts
+        // from simple struct array args.  This lets nested buffer
+        // creation for unallocated targets use the source element
+        // count as a fallback, ensuring proper buffer sizing.
+        std::map<std::string, llvm::Value*> nested_prescan_max;
+        for (size_t psi = 0; psi < x.n_args; psi++) {
+            ASR::expr_t *ps_expr = x.m_args[psi].m_value;
+            if (!ps_expr || !ASR::is_a<ASR::Var_t>(*ps_expr))
+                continue;
+            ASR::ttype_t *ps_type = ASRUtils::expr_type(ps_expr);
+            if (!ASRUtils::is_array(ps_type)) continue;
+            ASR::ttype_t *ps_past =
+                ASRUtils::type_get_past_allocatable(ps_type);
+            if (!ASR::is_a<ASR::Array_t>(*ps_past)) continue;
+            ASR::Array_t *ps_arr =
+                ASR::down_cast<ASR::Array_t>(ps_past);
+            if (!ASR::is_a<ASR::StructType_t>(
+                    *ASRUtils::extract_type(ps_arr->m_type)))
+                continue;
+            ASR::Variable_t *ps_var =
+                ASR::down_cast<ASR::Variable_t>(
+                    ASRUtils::symbol_get_past_external(
+                        ASR::down_cast<ASR::Var_t>(
+                            ps_expr)->m_v));
+            if (!ps_var->m_type_declaration) continue;
+            ASR::symbol_t *ps_sym =
+                ASRUtils::symbol_get_past_external(
+                    ps_var->m_type_declaration);
+            if (!ASR::is_a<ASR::Struct_t>(*ps_sym)) continue;
+            ASR::Struct_t *ps_st =
+                ASR::down_cast<ASR::Struct_t>(ps_sym);
+            std::string stype_name =
+                ASRUtils::symbol_name(ps_sym);
+            std::vector<LLVMNestedAllocMember> ps_members;
+            collect_llvm_nested_alloc_members(
+                ps_st, "", {}, ps_members);
+            if (ps_members.empty()) continue;
+            llvm::Type *ps_sllvm =
+                llvm_utils->getStructType(ps_st, module.get());
+            int64_t pls = ptr_loads;
+            bool ps_alloc =
+                ASR::is_a<ASR::Allocatable_t>(*ps_type);
+            if (ps_alloc) ptr_loads = 1;
+            visit_expr(*ps_expr);
+            ptr_loads = pls;
+            llvm::Value *ps_val = tmp;
+            llvm::Value *ps_data;
+            if (ps_alloc) {
+                ASR::ttype_t *ps_dty =
+                    ASRUtils::type_get_past_allocatable(
+                        ps_type);
+                llvm::Type *ps_dt =
+                    llvm_utils->get_type_from_ttype_t_util(
+                        ps_expr, ps_dty, module.get());
+                llvm::Value *dpp =
+                    arr_descr->get_pointer_to_data(
+                        ps_dt, ps_val);
+                ps_data = llvm_utils->CreateLoad2(
+                    llvm::PointerType::getUnqual(
+                        llvm::Type::getInt8Ty(context)),
+                    dpp);
+                ps_data = builder->CreatePointerCast(
+                    ps_data, i8_ptr);
+            } else {
+                ps_data = builder->CreatePointerCast(
+                    ps_val, i8_ptr);
+            }
+            llvm::Value *ps_typed =
+                builder->CreatePointerCast(
+                    ps_data, ps_sllvm->getPointerTo());
+            for (auto &ps_mem : ps_members) {
+                ASR::ttype_t *ps_inner =
+                    ASRUtils::type_get_past_allocatable(
+                        ps_mem.var->m_type);
+                if (!ASR::is_a<ASR::Array_t>(*ps_inner))
+                    continue;
+                ASR::Array_t *ps_iarr =
+                    ASR::down_cast<ASR::Array_t>(ps_inner);
+                // Skip struct-type allocatable members
+                if (ASR::is_a<ASR::StructType_t>(
+                        *ASRUtils::extract_type(
+                            ps_iarr->m_type)))
+                    continue;
+                llvm::Type *ps_iel =
+                    llvm_utils->get_el_type(
+                        nullptr, ps_iarr->m_type,
+                        module.get());
+                llvm::Type *ps_idesc =
+                    arr_descr->get_array_type(
+                        nullptr, ps_inner, ps_iel, false);
+                int ps_sub_me = 4;
+                if (ps_iarr->m_type->type
+                        == ASR::ttypeType::Real)
+                    ps_sub_me =
+                        ASR::down_cast<ASR::Real_t>(
+                            ps_iarr->m_type)->m_kind;
+                else if (ps_iarr->m_type->type
+                        == ASR::ttypeType::Integer)
+                    ps_sub_me =
+                        ASR::down_cast<ASR::Integer_t>(
+                            ps_iarr->m_type)->m_kind;
+                // GEP to first element's member
+                llvm::Value *ps_fp;
+                if (ps_mem.parent_chain.empty()) {
+                    ps_fp = builder->CreateGEP(
+                        ps_sllvm, ps_typed,
+                        {llvm::ConstantInt::get(i64, 0),
+                         llvm::ConstantInt::get(
+                             i32, ps_mem.field_idx)});
+                } else {
+                    llvm::Value *cur = builder->CreateGEP(
+                        ps_sllvm, ps_typed,
+                        {llvm::ConstantInt::get(i64, 0),
+                         llvm::ConstantInt::get(i32,
+                             ps_mem.parent_chain[0].second)});
+                    for (size_t pc = 0;
+                            pc < ps_mem.parent_chain.size();
+                            pc++) {
+                        llvm::Type *lt =
+                            llvm_utils->getStructType(
+                                ps_mem.parent_chain[pc].first,
+                                module.get());
+                        if (pc + 1
+                                < ps_mem.parent_chain.size()) {
+                            cur = builder->CreateGEP(lt, cur,
+                                {llvm::ConstantInt::get(
+                                     i32, 0),
+                                 llvm::ConstantInt::get(i32,
+                                     ps_mem.parent_chain
+                                         [pc + 1].second)});
+                        } else {
+                            ps_fp = builder->CreateGEP(
+                                lt, cur,
+                                {llvm::ConstantInt::get(
+                                     i32, 0),
+                                 llvm::ConstantInt::get(i32,
+                                     ps_mem.field_idx)});
+                        }
+                    }
+                }
+                llvm::Value *ps_dp = llvm_utils->CreateLoad2(
+                    ps_idesc->getPointerTo(), ps_fp);
+                llvm::Function *ps_fn =
+                    builder->GetInsertBlock()->getParent();
+                llvm::BasicBlock *ps_ab =
+                    llvm::BasicBlock::Create(
+                        context, "ps.alloc", ps_fn);
+                llvm::BasicBlock *ps_nb =
+                    llvm::BasicBlock::Create(
+                        context, "ps.null", ps_fn);
+                llvm::BasicBlock *ps_mb =
+                    llvm::BasicBlock::Create(
+                        context, "ps.merge", ps_fn);
+                builder->CreateCondBr(
+                    builder->CreateICmpEQ(
+                        builder->CreatePtrToInt(ps_dp, i64),
+                        llvm::ConstantInt::get(i64, 0)),
+                    ps_nb, ps_ab);
+                builder->SetInsertPoint(ps_ab);
+                llvm::Value *ps_ne =
+                    arr_descr->get_array_size(
+                        ps_idesc, ps_dp,
+                        nullptr, ps_sub_me);
+                ps_ne = builder->CreateSExtOrTrunc(
+                    ps_ne, i64);
+                llvm::BasicBlock *ps_ab_end =
+                    builder->GetInsertBlock();
+                builder->CreateBr(ps_mb);
+                builder->SetInsertPoint(ps_nb);
+                llvm::BasicBlock *ps_nb_end =
+                    builder->GetInsertBlock();
+                builder->CreateBr(ps_mb);
+                builder->SetInsertPoint(ps_mb);
+                llvm::PHINode *ps_phi =
+                    builder->CreatePHI(i64, 2);
+                ps_phi->addIncoming(ps_ne, ps_ab_end);
+                ps_phi->addIncoming(
+                    llvm::ConstantInt::get(i64, 0),
+                    ps_nb_end);
+                std::string ps_key =
+                    stype_name + "." + ps_mem.suffix;
+                auto ps_it =
+                    nested_prescan_max.find(ps_key);
+                if (ps_it == nested_prescan_max.end()) {
+                    nested_prescan_max[ps_key] = ps_phi;
+                } else {
+                    nested_prescan_max[ps_key] =
+                        builder->CreateSelect(
+                            builder->CreateICmpSGT(
+                                ps_phi,
+                                ps_it->second),
+                            ps_phi, ps_it->second);
+                }
+            }
+        }
 
         for (size_t i = 0; i < x.n_args; i++) {
             ASR::expr_t *arg_expr = x.m_args[i].m_value;
@@ -19556,6 +19769,11 @@ public:
                                     me_size =
                                         ASR::down_cast<ASR::Integer_t>(
                                             mem_arr->m_type)->m_kind;
+                                } else if (ASR::is_a<ASR::StructType_t>(
+                                        *ASRUtils::extract_type(
+                                            mem_arr->m_type))) {
+                                    me_size = module->getDataLayout()
+                                        .getTypeAllocSize(mem_el_llvm);
                                 }
                                 // Collect data ptrs and sizes.
                                 // Look up VLA write size for this member
@@ -20139,6 +20357,766 @@ public:
                                     struct_member_first_sizes[sm_key] =
                                         szs[0];
                                 }
+                                // Emit nested sub-member buffers for
+                                // struct-element-type members so that
+                                // Metal kernel buffer indices align.
+                                if (ASR::is_a<ASR::StructType_t>(
+                                        *ASRUtils::extract_type(
+                                            mem_arr->m_type)) &&
+                                        nam.var->m_type_declaration) {
+                                    ASR::symbol_t *inner_sym =
+                                        ASRUtils::
+                                        symbol_get_past_external(
+                                            nam.var
+                                                ->m_type_declaration);
+                                    if (ASR::is_a<ASR::Struct_t>(
+                                            *inner_sym)) {
+                                        ASR::Struct_t *inner_st =
+                                            ASR::down_cast<
+                                                ASR::Struct_t>(
+                                                    inner_sym);
+                                        std::vector<
+                                            LLVMNestedAllocMember>
+                                                inner_members;
+                                        collect_llvm_nested_alloc_members(
+                                            inner_st, "", {},
+                                            inner_members);
+                                        if (!inner_members.empty()) {
+                                            // Compute total inner
+                                            // element count
+                                            llvm::Value *total_inner =
+                                                llvm::ConstantInt::get(
+                                                    i64, 0);
+                                            for (int64_t k = 0;
+                                                    k < total_elements;
+                                                    k++) {
+                                                total_inner =
+                                                    builder->CreateAdd(
+                                                        total_inner,
+                                                        szs[k]);
+                                            }
+                                            // Cast flat buffer to typed
+                                            // inner struct pointer
+                                            llvm::Value *flat_typed =
+                                                builder
+                                                    ->CreatePointerCast(
+                                                        flat,
+                                                        mem_el_llvm
+                                                            ->getPointerTo());
+                                            for (auto &inam :
+                                                    inner_members) {
+                                                ASR::Variable_t *imv =
+                                                    inam.var;
+                                                ASR::ttype_t *iinner =
+                                                    ASRUtils::
+                                                    type_get_past_allocatable(
+                                                        imv->m_type);
+                                                ASR::Array_t *iarr =
+                                                    ASR::down_cast<
+                                                        ASR::Array_t>(
+                                                            iinner);
+                                                llvm::Type *iel_llvm =
+                                                    llvm_utils
+                                                        ->get_el_type(
+                                                            nullptr,
+                                                            iarr->m_type,
+                                                            module
+                                                                .get());
+                                                int sub_me = 4;
+                                                if (iarr->m_type->type
+                                                        == ASR::ttypeType
+                                                            ::Real) {
+                                                    sub_me =
+                                                        ASR::down_cast<
+                                                            ASR::Real_t>(
+                                                                iarr
+                                                                    ->m_type)
+                                                            ->m_kind;
+                                                } else if (iarr
+                                                        ->m_type->type
+                                                        == ASR::ttypeType
+                                                            ::Integer) {
+                                                    sub_me =
+                                                        ASR::down_cast<
+                                                            ASR::Integer_t>(
+                                                                iarr
+                                                                    ->m_type)
+                                                            ->m_kind;
+                                                }
+                                                llvm::Type *idesc_type =
+                                                    arr_descr
+                                                        ->get_array_type(
+                                                            nullptr,
+                                                            iinner,
+                                                            iel_llvm,
+                                                            false);
+                                                int ifidx =
+                                                    inam.field_idx;
+                                                // Build nested flat
+                                                // data/offsets/sizes
+                                                // buffers using a
+                                                // runtime loop over
+                                                // all inner elements.
+                                                llvm::Function *loop_fn =
+                                                    builder
+                                                        ->GetInsertBlock()
+                                                        ->getParent();
+                                                // First pass: compute
+                                                // total nested data
+                                                // size and collect
+                                                // per-element sizes.
+                                                llvm::AllocaInst *ntot =
+                                                    llvm_utils
+                                                        ->CreateAlloca(
+                                                            i64);
+                                                builder->CreateStore(
+                                                    llvm::ConstantInt
+                                                        ::get(i64, 0),
+                                                    ntot);
+                                                // Allocate arrays for
+                                                // per-element data
+                                                // ptrs and sizes
+                                                llvm::Value *ni32 =
+                                                    builder
+                                                        ->CreateTrunc(
+                                                            total_inner,
+                                                            i32);
+                                                llvm::Value *nszs_buf =
+                                                    builder->CreateCall(
+                                                        mfn,
+                                                        {builder
+                                                            ->CreateMul(
+                                                                builder
+                                                                    ->CreateSExtOrTrunc(
+                                                                        total_inner,
+                                                                        i64),
+                                                                llvm::ConstantInt
+                                                                    ::get(
+                                                                        i64,
+                                                                        8))});
+                                                llvm::Value *nszs_arr =
+                                                    builder
+                                                        ->CreatePointerCast(
+                                                            nszs_buf,
+                                                            llvm::Type
+                                                                ::getInt64Ty(
+                                                                    context)
+                                                                ->getPointerTo());
+                                                llvm::Value *ndps_buf =
+                                                    builder->CreateCall(
+                                                        mfn,
+                                                        {builder
+                                                            ->CreateMul(
+                                                                builder
+                                                                    ->CreateSExtOrTrunc(
+                                                                        total_inner,
+                                                                        i64),
+                                                                llvm::ConstantInt
+                                                                    ::get(
+                                                                        i64,
+                                                                        8))});
+                                                llvm::Value *ndps_arr =
+                                                    builder
+                                                        ->CreatePointerCast(
+                                                            ndps_buf,
+                                                            i8_ptr
+                                                                ->getPointerTo());
+                                                // Loop: for j = 0 to
+                                                // total_inner-1
+                                                llvm::AllocaInst *jj =
+                                                    llvm_utils
+                                                        ->CreateAlloca(
+                                                            i64);
+                                                builder->CreateStore(
+                                                    llvm::ConstantInt
+                                                        ::get(i64, 0),
+                                                    jj);
+                                                llvm::BasicBlock *lh =
+                                                    llvm::BasicBlock
+                                                        ::Create(context,
+                                                            "nsz.head",
+                                                            loop_fn);
+                                                llvm::BasicBlock *lb =
+                                                    llvm::BasicBlock
+                                                        ::Create(context,
+                                                            "nsz.body",
+                                                            loop_fn);
+                                                llvm::BasicBlock *le =
+                                                    llvm::BasicBlock
+                                                        ::Create(context,
+                                                            "nsz.end",
+                                                            loop_fn);
+                                                builder->CreateBr(lh);
+                                                builder->SetInsertPoint(
+                                                    lh);
+                                                {
+                                                    llvm::Value *jv =
+                                                        llvm_utils
+                                                            ->CreateLoad2(
+                                                                i64, jj);
+                                                    builder
+                                                        ->CreateCondBr(
+                                                            builder
+                                                                ->CreateICmpSLT(
+                                                                    jv,
+                                                                    total_inner),
+                                                            lb, le);
+                                                }
+                                                builder->SetInsertPoint(
+                                                    lb);
+                                                {
+                                                    llvm::Value *jv =
+                                                        llvm_utils
+                                                            ->CreateLoad2(
+                                                                i64, jj);
+                                                    // Get inner struct
+                                                    // at flat_typed[j]
+                                                    llvm::Value *iptr =
+                                                        builder
+                                                            ->CreateGEP(
+                                                                mem_el_llvm,
+                                                                flat_typed,
+                                                                jv);
+                                                    // GEP to sub-member
+                                                    // descriptor field
+                                                    llvm::Value *fp =
+                                                        builder
+                                                            ->CreateGEP(
+                                                                mem_el_llvm,
+                                                                iptr,
+                                                                {llvm::ConstantInt
+                                                                    ::get(
+                                                                        i32,
+                                                                        0),
+                                                                 llvm::ConstantInt
+                                                                    ::get(
+                                                                        i32,
+                                                                        ifidx)});
+                                                    // Load descriptor
+                                                    // pointer
+                                                    llvm::Value *dp =
+                                                        llvm_utils
+                                                            ->CreateLoad2(
+                                                                idesc_type
+                                                                    ->getPointerTo(),
+                                                                fp);
+                                                    // Check if allocated
+                                                    llvm::Value *is_null =
+                                                        builder
+                                                            ->CreateICmpEQ(
+                                                                builder
+                                                                    ->CreatePtrToInt(
+                                                                        dp,
+                                                                        i64),
+                                                                llvm::ConstantInt
+                                                                    ::get(
+                                                                        i64,
+                                                                        0));
+                                                    llvm::BasicBlock
+                                                        *bb_alloc =
+                                                        llvm::BasicBlock
+                                                            ::Create(
+                                                                context,
+                                                                "nsz.alloc",
+                                                                loop_fn);
+                                                    llvm::BasicBlock
+                                                        *bb_null =
+                                                        llvm::BasicBlock
+                                                            ::Create(
+                                                                context,
+                                                                "nsz.null",
+                                                                loop_fn);
+                                                    llvm::BasicBlock
+                                                        *bb_merge =
+                                                        llvm::BasicBlock
+                                                            ::Create(
+                                                                context,
+                                                                "nsz.merge",
+                                                                loop_fn);
+                                                    builder
+                                                        ->CreateCondBr(
+                                                            is_null,
+                                                            bb_null,
+                                                            bb_alloc);
+                                                    // Allocated path
+                                                    builder
+                                                        ->SetInsertPoint(
+                                                            bb_alloc);
+                                                    llvm::Value *ne_a;
+                                                    llvm::Value *raw_a;
+                                                    {
+                                                        ne_a =
+                                                            arr_descr
+                                                                ->get_array_size(
+                                                                    idesc_type,
+                                                                    dp,
+                                                                    nullptr,
+                                                                    sub_me);
+                                                        ne_a = builder
+                                                            ->CreateSExtOrTrunc(
+                                                                ne_a,
+                                                                i64);
+                                                        raw_a = builder
+                                                            ->CreatePointerCast(
+                                                                llvm_utils
+                                                                    ->CreateLoad2(
+                                                                        llvm::PointerType
+                                                                            ::getUnqual(
+                                                                                llvm::Type
+                                                                                    ::getInt8Ty(
+                                                                                        context)),
+                                                                        arr_descr
+                                                                            ->get_pointer_to_data(
+                                                                                idesc_type,
+                                                                                dp)),
+                                                                i8_ptr);
+                                                    }
+                                                    llvm::BasicBlock
+                                                        *bb_a_end =
+                                                        builder
+                                                            ->GetInsertBlock();
+                                                    builder->CreateBr(
+                                                        bb_merge);
+                                                    // Null path: use
+                                                    // prescan fallback
+                                                    // if available so
+                                                    // that target nested
+                                                    // buffers are sized
+                                                    // from the source.
+                                                    builder
+                                                        ->SetInsertPoint(
+                                                            bb_null);
+                                                    llvm::Value *ne_n =
+                                                        llvm::ConstantInt
+                                                            ::get(i64, 0);
+                                                    {
+                                                        std::string
+                                                            ps_lk =
+                                                            ASRUtils
+                                                                ::symbol_name(
+                                                                    inner_sym)
+                                                            + std::string(".")
+                                                            + inam.suffix;
+                                                        auto ps_fb =
+                                                            nested_prescan_max
+                                                                .find(ps_lk);
+                                                        if (ps_fb !=
+                                                                nested_prescan_max
+                                                                    .end())
+                                                            ne_n =
+                                                                ps_fb
+                                                                    ->second;
+                                                    }
+                                                    llvm::Value *raw_n =
+                                                        llvm::ConstantPointerNull
+                                                            ::get(
+                                                                llvm::Type
+                                                                    ::getInt8PtrTy(
+                                                                        context));
+                                                    llvm::BasicBlock
+                                                        *bb_n_end =
+                                                        builder
+                                                            ->GetInsertBlock();
+                                                    builder->CreateBr(
+                                                        bb_merge);
+                                                    // Merge
+                                                    builder
+                                                        ->SetInsertPoint(
+                                                            bb_merge);
+                                                    llvm::PHINode
+                                                        *ne_phi =
+                                                        builder
+                                                            ->CreatePHI(
+                                                                i64, 2);
+                                                    ne_phi->addIncoming(
+                                                        ne_a, bb_a_end);
+                                                    ne_phi->addIncoming(
+                                                        ne_n, bb_n_end);
+                                                    llvm::PHINode
+                                                        *raw_phi =
+                                                        builder
+                                                            ->CreatePHI(
+                                                                i8_ptr,
+                                                                2);
+                                                    raw_phi->addIncoming(
+                                                        raw_a,
+                                                        bb_a_end);
+                                                    raw_phi->addIncoming(
+                                                        raw_n,
+                                                        bb_n_end);
+                                                    // Store into
+                                                    // per-element
+                                                    // arrays
+                                                    builder
+                                                        ->CreateStore(
+                                                            ne_phi,
+                                                            builder
+                                                                ->CreateGEP(
+                                                                    i64,
+                                                                    nszs_arr,
+                                                                    jv));
+                                                    builder
+                                                        ->CreateStore(
+                                                            raw_phi,
+                                                            builder
+                                                                ->CreateGEP(
+                                                                    i8_ptr,
+                                                                    ndps_arr,
+                                                                    jv));
+                                                    // Accumulate total
+                                                    llvm::Value *cur =
+                                                        llvm_utils
+                                                            ->CreateLoad2(
+                                                                i64,
+                                                                ntot);
+                                                    builder
+                                                        ->CreateStore(
+                                                            builder
+                                                                ->CreateAdd(
+                                                                    cur,
+                                                                    ne_phi),
+                                                            ntot);
+                                                    // Increment j
+                                                    builder
+                                                        ->CreateStore(
+                                                            builder
+                                                                ->CreateAdd(
+                                                                    jv,
+                                                                    llvm::ConstantInt
+                                                                        ::get(
+                                                                            i64,
+                                                                            1)),
+                                                            jj);
+                                                    builder->CreateBr(
+                                                        lh);
+                                                }
+                                                builder->SetInsertPoint(
+                                                    le);
+                                                // Allocate nested flat
+                                                // data buffer
+                                                llvm::Value *ntot_v =
+                                                    llvm_utils
+                                                        ->CreateLoad2(
+                                                            i64, ntot);
+                                                llvm::Value *ntot_bytes =
+                                                    builder->CreateMul(
+                                                        ntot_v,
+                                                        llvm::ConstantInt
+                                                            ::get(i64,
+                                                                sub_me));
+                                                // Ensure at least 4
+                                                // bytes for Metal
+                                                // buffer binding
+                                                ntot_bytes =
+                                                    builder->CreateSelect(
+                                                        builder
+                                                            ->CreateICmpSLT(
+                                                                ntot_bytes,
+                                                                llvm::ConstantInt
+                                                                    ::get(
+                                                                        i64,
+                                                                        4)),
+                                                        llvm::ConstantInt
+                                                            ::get(i64,
+                                                                4),
+                                                        ntot_bytes);
+                                                llvm::Value *nflat =
+                                                    builder->CreateCall(
+                                                        mfn,
+                                                        {ntot_bytes});
+                                                // Allocate offsets
+                                                // buffer
+                                                llvm::Value *noff_sz =
+                                                    builder->CreateMul(
+                                                        builder
+                                                            ->CreateSExtOrTrunc(
+                                                                total_inner,
+                                                                i64),
+                                                        llvm::ConstantInt
+                                                            ::get(i64,
+                                                                4));
+                                                noff_sz =
+                                                    builder->CreateSelect(
+                                                        builder
+                                                            ->CreateICmpSLT(
+                                                                noff_sz,
+                                                                llvm::ConstantInt
+                                                                    ::get(
+                                                                        i64,
+                                                                        4)),
+                                                        llvm::ConstantInt
+                                                            ::get(i64,
+                                                                4),
+                                                        noff_sz);
+                                                llvm::Value *noff_buf =
+                                                    builder->CreateCall(
+                                                        mfn,
+                                                        {noff_sz});
+                                                llvm::Value *noff_ptr =
+                                                    builder
+                                                        ->CreatePointerCast(
+                                                            noff_buf,
+                                                            llvm::Type
+                                                                ::getInt32Ty(
+                                                                    context)
+                                                                ->getPointerTo());
+                                                llvm::Value *nsz_buf =
+                                                    builder->CreateCall(
+                                                        mfn,
+                                                        {noff_sz});
+                                                llvm::Value *nsz_ptr =
+                                                    builder
+                                                        ->CreatePointerCast(
+                                                            nsz_buf,
+                                                            llvm::Type
+                                                                ::getInt32Ty(
+                                                                    context)
+                                                                ->getPointerTo());
+                                                // Second pass: copy
+                                                // data and fill
+                                                // offsets/sizes
+                                                llvm::AllocaInst *nrun =
+                                                    llvm_utils
+                                                        ->CreateAlloca(
+                                                            i64);
+                                                builder->CreateStore(
+                                                    llvm::ConstantInt
+                                                        ::get(i64, 0),
+                                                    nrun);
+                                                builder->CreateStore(
+                                                    llvm::ConstantInt
+                                                        ::get(i64, 0),
+                                                    jj);
+                                                llvm::BasicBlock *ch =
+                                                    llvm::BasicBlock
+                                                        ::Create(context,
+                                                            "ncp.head",
+                                                            loop_fn);
+                                                llvm::BasicBlock *cb =
+                                                    llvm::BasicBlock
+                                                        ::Create(context,
+                                                            "ncp.body",
+                                                            loop_fn);
+                                                llvm::BasicBlock *ce =
+                                                    llvm::BasicBlock
+                                                        ::Create(context,
+                                                            "ncp.end",
+                                                            loop_fn);
+                                                builder->CreateBr(ch);
+                                                builder->SetInsertPoint(
+                                                    ch);
+                                                {
+                                                    llvm::Value *jv =
+                                                        llvm_utils
+                                                            ->CreateLoad2(
+                                                                i64, jj);
+                                                    builder
+                                                        ->CreateCondBr(
+                                                            builder
+                                                                ->CreateICmpSLT(
+                                                                    jv,
+                                                                    total_inner),
+                                                            cb, ce);
+                                                }
+                                                builder->SetInsertPoint(
+                                                    cb);
+                                                {
+                                                    llvm::Value *jv =
+                                                        llvm_utils
+                                                            ->CreateLoad2(
+                                                                i64, jj);
+                                                    llvm::Value *rv =
+                                                        llvm_utils
+                                                            ->CreateLoad2(
+                                                                i64,
+                                                                nrun);
+                                                    // Store offset
+                                                    llvm::Value *o32 =
+                                                        builder
+                                                            ->CreateTrunc(
+                                                                rv,
+                                                                llvm::Type
+                                                                    ::getInt32Ty(
+                                                                        context));
+                                                    builder
+                                                        ->CreateStore(
+                                                            o32,
+                                                            builder
+                                                                ->CreateGEP(
+                                                                    llvm::Type
+                                                                        ::getInt32Ty(
+                                                                            context),
+                                                                    noff_ptr,
+                                                                    jv));
+                                                    // Load this
+                                                    // element's size
+                                                    llvm::Value *esz =
+                                                        llvm_utils
+                                                            ->CreateLoad2(
+                                                                i64,
+                                                                builder
+                                                                    ->CreateGEP(
+                                                                        i64,
+                                                                        nszs_arr,
+                                                                        jv));
+                                                    // Store size
+                                                    llvm::Value *s32 =
+                                                        builder
+                                                            ->CreateTrunc(
+                                                                esz,
+                                                                llvm::Type
+                                                                    ::getInt32Ty(
+                                                                        context));
+                                                    builder
+                                                        ->CreateStore(
+                                                            s32,
+                                                            builder
+                                                                ->CreateGEP(
+                                                                    llvm::Type
+                                                                        ::getInt32Ty(
+                                                                            context),
+                                                                    nsz_ptr,
+                                                                    jv));
+                                                    // Copy data
+                                                    llvm::Value *edp =
+                                                        llvm_utils
+                                                            ->CreateLoad2(
+                                                                i8_ptr,
+                                                                builder
+                                                                    ->CreateGEP(
+                                                                        i8_ptr,
+                                                                        ndps_arr,
+                                                                        jv));
+                                                    llvm::Value *boff =
+                                                        builder
+                                                            ->CreateMul(
+                                                                rv,
+                                                                llvm::ConstantInt
+                                                                    ::get(
+                                                                        i64,
+                                                                        sub_me));
+                                                    llvm::Value *dst =
+                                                        builder
+                                                            ->CreateGEP(
+                                                                llvm::Type
+                                                                    ::getInt8Ty(
+                                                                        context),
+                                                                nflat,
+                                                                boff);
+                                                    llvm::Value *sb =
+                                                        builder
+                                                            ->CreateMul(
+                                                                esz,
+                                                                llvm::ConstantInt
+                                                                    ::get(
+                                                                        i64,
+                                                                        sub_me));
+                                                    // Only copy if
+                                                    // size > 0
+                                                    llvm::BasicBlock
+                                                        *cpy_bb =
+                                                        llvm::BasicBlock
+                                                            ::Create(
+                                                                context,
+                                                                "ncp.cpy",
+                                                                loop_fn);
+                                                    llvm::BasicBlock
+                                                        *nxt_bb =
+                                                        llvm::BasicBlock
+                                                            ::Create(
+                                                                context,
+                                                                "ncp.nxt",
+                                                                loop_fn);
+                                                    builder
+                                                        ->CreateCondBr(
+                                                            builder
+                                                                ->CreateAnd(
+                                                                    builder
+                                                                        ->CreateICmpSGT(
+                                                                            esz,
+                                                                            llvm::ConstantInt
+                                                                                ::get(
+                                                                                    i64,
+                                                                                    0)),
+                                                                    builder
+                                                                        ->CreateICmpNE(
+                                                                            builder
+                                                                                ->CreatePtrToInt(
+                                                                                    edp,
+                                                                                    i64),
+                                                                            llvm::ConstantInt
+                                                                                ::get(
+                                                                                    i64,
+                                                                                    0))),
+                                                            cpy_bb,
+                                                            nxt_bb);
+                                                    builder
+                                                        ->SetInsertPoint(
+                                                            cpy_bb);
+                                                    builder
+                                                        ->CreateMemCpy(
+                                                            dst,
+                                                            llvm::MaybeAlign(1),
+                                                            edp,
+                                                            llvm::MaybeAlign(1),
+                                                            sb);
+                                                    builder->CreateBr(
+                                                        nxt_bb);
+                                                    builder
+                                                        ->SetInsertPoint(
+                                                            nxt_bb);
+                                                    // Update run
+                                                    builder
+                                                        ->CreateStore(
+                                                            builder
+                                                                ->CreateAdd(
+                                                                    rv,
+                                                                    esz),
+                                                            nrun);
+                                                    // Increment j
+                                                    builder
+                                                        ->CreateStore(
+                                                            builder
+                                                                ->CreateAdd(
+                                                                    jv,
+                                                                    llvm::ConstantInt
+                                                                        ::get(
+                                                                            i64,
+                                                                            1)),
+                                                            jj);
+                                                    builder->CreateBr(
+                                                        ch);
+                                                }
+                                                builder->SetInsertPoint(
+                                                    ce);
+                                                // Emit nested GPU
+                                                // buffers
+                                                emit_gpu_buffer(
+                                                    nflat,
+                                                    ntot_bytes);
+                                                emit_gpu_buffer(
+                                                    noff_buf,
+                                                    noff_sz);
+                                                emit_gpu_buffer(
+                                                    nsz_buf,
+                                                    noff_sz);
+                                                // Record for write-back
+                                                nested_writebacks
+                                                    .push_back({
+                                                    nflat,
+                                                    noff_ptr,
+                                                    nsz_ptr,
+                                                    total_inner,
+                                                    sub_me,
+                                                    ifidx,
+                                                    idesc_type,
+                                                    iel_llvm,
+                                                    mem_el_llvm,
+                                                    flat_typed});
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -20262,6 +21240,11 @@ public:
                                     me_size =
                                         ASR::down_cast<ASR::Integer_t>(
                                             mem_arr->m_type)->m_kind;
+                                } else if (ASR::is_a<ASR::StructType_t>(
+                                        *ASRUtils::extract_type(
+                                            mem_arr->m_type))) {
+                                    me_size = module->getDataLayout()
+                                        .getTypeAllocSize(mem_el_llvm);
                                 }
                                 llvm::Value *me_size_val =
                                     llvm::ConstantInt::get(i64,
@@ -21427,6 +22410,180 @@ public:
                 get_gpu_runtime_func("free", free_packed_ft);
             builder->CreateCall(free_packed_fn, {packed_buf_ptr});
         }
+
+        // 5b2. Nested write-back: allocate descriptors for sub-members
+        // that were populated by the kernel through nested buffers.
+        // Must run BEFORE parent write-back so the flat buffer's
+        // inner structs have valid descriptor pointers.
+        if (!nested_writebacks.empty()) {
+            llvm::FunctionType *nwb_mft =
+                llvm::FunctionType::get(i8_ptr, {i64}, false);
+            llvm::Function *nwb_mfn =
+                get_gpu_runtime_func("malloc", nwb_mft);
+        for (auto &nwb : nested_writebacks) {
+            llvm::Function *nwb_fn =
+                builder->GetInsertBlock()->getParent();
+            llvm::AllocaInst *nwb_j =
+                llvm_utils->CreateAlloca(i64);
+            builder->CreateStore(
+                llvm::ConstantInt::get(i64, 0), nwb_j);
+            llvm::BasicBlock *nwb_h =
+                llvm::BasicBlock::Create(
+                    context, "nwb.head", nwb_fn);
+            llvm::BasicBlock *nwb_b =
+                llvm::BasicBlock::Create(
+                    context, "nwb.body", nwb_fn);
+            llvm::BasicBlock *nwb_e =
+                llvm::BasicBlock::Create(
+                    context, "nwb.end", nwb_fn);
+            builder->CreateBr(nwb_h);
+            builder->SetInsertPoint(nwb_h);
+            {
+                llvm::Value *jv =
+                    llvm_utils->CreateLoad2(i64, nwb_j);
+                builder->CreateCondBr(
+                    builder->CreateICmpSLT(
+                        jv, nwb.total_inner),
+                    nwb_b, nwb_e);
+            }
+            builder->SetInsertPoint(nwb_b);
+            {
+                llvm::Value *jv =
+                    llvm_utils->CreateLoad2(i64, nwb_j);
+                llvm::Value *jv32 =
+                    builder->CreateTrunc(jv, i32);
+                // Read element size from sizes buffer
+                llvm::Value *nsz_j =
+                    builder->CreateSExtOrTrunc(
+                        llvm_utils->CreateLoad2(
+                            llvm::Type::getInt32Ty(context),
+                            builder->CreateGEP(
+                                llvm::Type::getInt32Ty(
+                                    context),
+                                nwb.nsz_ptr, jv32)),
+                        i64);
+                llvm::BasicBlock *nwb_alloc =
+                    llvm::BasicBlock::Create(
+                        context, "nwb.alloc", nwb_fn);
+                llvm::BasicBlock *nwb_next =
+                    llvm::BasicBlock::Create(
+                        context, "nwb.next", nwb_fn);
+                builder->CreateCondBr(
+                    builder->CreateICmpSGT(
+                        nsz_j,
+                        llvm::ConstantInt::get(i64, 0)),
+                    nwb_alloc, nwb_next);
+                builder->SetInsertPoint(nwb_alloc);
+                {
+                    // Allocate descriptor via malloc
+                    uint64_t desc_sz =
+                        module->getDataLayout()
+                            .getTypeAllocSize(
+                                nwb.idesc_type);
+                    llvm::Value *desc_raw =
+                        builder->CreateCall(nwb_mfn,
+                            {llvm::ConstantInt::get(
+                                i64, desc_sz)});
+                    // Zero-initialize descriptor
+                    builder->CreateMemSet(
+                        desc_raw,
+                        llvm::ConstantInt::get(
+                            llvm::Type::getInt8Ty(context),
+                            0),
+                        llvm::ConstantInt::get(
+                            i64, desc_sz),
+                        llvm::MaybeAlign(1));
+                    llvm::Value *desc =
+                        builder->CreatePointerCast(
+                            desc_raw,
+                            nwb.idesc_type
+                                ->getPointerTo());
+                    // Set rank, offset, dimension info
+                    llvm::Type *idx_type =
+                        arr_descr->get_index_type();
+                    arr_descr->set_rank(
+                        nwb.idesc_type, desc,
+                        llvm::ConstantInt::get(i32, 1));
+                    std::vector<
+                        std::pair<llvm::Value*,
+                                  llvm::Value*>> dims;
+                    dims.push_back({
+                        llvm::ConstantInt::get(idx_type, 1),
+                        builder->CreateTrunc(
+                            nsz_j, idx_type)});
+                    arr_descr->fill_array_details(
+                        nwb.idesc_type, desc,
+                        nwb.iel_llvm, 1, dims,
+                        module.get(), false);
+                    // Allocate data
+                    llvm::Value *data_bytes =
+                        builder->CreateMul(nsz_j,
+                            llvm::ConstantInt::get(
+                                i64, nwb.sub_me));
+                    llvm::Value *data_raw =
+                        builder->CreateCall(
+                            nwb_mfn, {data_bytes});
+                    // Set data pointer
+                    llvm::Value *data_pp =
+                        arr_descr->get_pointer_to_data(
+                            nwb.idesc_type, desc);
+                    builder->CreateStore(
+                        builder->CreatePointerCast(
+                            data_raw,
+                            nwb.iel_llvm
+                                ->getPointerTo()),
+                        data_pp);
+                    // Copy from nested flat buffer
+                    llvm::Value *noff_j =
+                        builder->CreateSExtOrTrunc(
+                            llvm_utils->CreateLoad2(
+                                llvm::Type::getInt32Ty(
+                                    context),
+                                builder->CreateGEP(
+                                    llvm::Type::getInt32Ty(
+                                        context),
+                                    nwb.noff_ptr, jv32)),
+                            i64);
+                    llvm::Value *src_off =
+                        builder->CreateMul(noff_j,
+                            llvm::ConstantInt::get(
+                                i64, nwb.sub_me));
+                    llvm::Value *src_ptr =
+                        builder->CreateGEP(
+                            llvm::Type::getInt8Ty(context),
+                            nwb.nflat, src_off);
+                    builder->CreateMemCpy(
+                        data_raw,
+                        llvm::MaybeAlign(1),
+                        src_ptr,
+                        llvm::MaybeAlign(1),
+                        data_bytes);
+                    // Store descriptor pointer in
+                    // inner struct's field
+                    llvm::Value *elem_ptr =
+                        builder->CreateGEP(
+                            nwb.mem_el_llvm,
+                            nwb.flat_typed, jv);
+                    llvm::Value *field_ptr =
+                        builder->CreateGEP(
+                            nwb.mem_el_llvm, elem_ptr,
+                            {llvm::ConstantInt::get(
+                                 i32, 0),
+                             llvm::ConstantInt::get(
+                                 i32, nwb.ifidx)});
+                    builder->CreateStore(desc, field_ptr);
+                }
+                builder->CreateBr(nwb_next);
+                builder->SetInsertPoint(nwb_next);
+                builder->CreateStore(
+                    builder->CreateAdd(jv,
+                        llvm::ConstantInt::get(i64, 1)),
+                    nwb_j);
+                builder->CreateBr(nwb_h);
+            }
+            builder->SetInsertPoint(nwb_e);
+        }
+        } // !nested_writebacks.empty()
 
         // 5c. Write back decomposed struct member buffers.
         // After kernel execution, copy data from the flat buffer
@@ -25594,6 +26751,11 @@ Result<std::unique_ptr<LLVMModule>> asr_to_llvm(ASR::TranslationUnit_t &asr,
         Result<std::string> metal_res = asr_to_metal(al, asr, metal_diag, co);
         if (metal_res.ok) {
             co.gpu_metal_source = metal_res.result;
+            if (std::getenv("LFORTRAN_DEBUG_METAL_SOURCE")) {
+                std::cerr << "=== Metal Kernel Source ===\n"
+                          << metal_res.result
+                          << "\n=== End Metal Source ===\n";
+            }
         }
     }
 
