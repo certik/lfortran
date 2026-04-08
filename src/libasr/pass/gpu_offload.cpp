@@ -294,6 +294,8 @@ public:
                 ASR::ttype_t *type = ASRUtils::symbol_type(v->m_v);
                 if (!ASRUtils::is_array(type)) {
                     assigned_vars.insert(name);
+                } else if (ASRUtils::is_allocatable(type)) {
+                    assigned_vars.insert(name);
                 }
             }
         }
@@ -4776,6 +4778,30 @@ public:
             involved_syms.erase(name);
         }
 
+        // Classify allocatable arrays that are assigned in the loop body
+        // and NOT liveout as kernel-local variables (thread-private
+        // temporaries). Without this, they remain in involved_syms and
+        // are passed as device buffer arguments with a null data pointer,
+        // causing a SIGSEGV on the GPU.
+        std::set<std::string> local_alloc_array_names;
+        for (auto &name : assigned_vars) {
+            if (loop_var_set.count(name)) continue;
+            if (all_reduction_targets.count(name)) continue;
+            if (post_loop_vars.count(name)) continue;
+            auto it = involved_syms.find(name);
+            if (it != involved_syms.end()) {
+                ASR::ttype_t *type = it->second.first;
+                if (ASRUtils::is_array(type) && ASRUtils::is_allocatable(type)) {
+                    local_alloc_array_names.insert(name);
+                }
+            }
+        }
+
+        // Remove local allocatable arrays from involved_syms
+        for (auto &name : local_alloc_array_names) {
+            involved_syms.erase(name);
+        }
+
         // Collect optional variables from involved_syms. When an optional
         // argument is used inside a do concurrent body guarded by present(),
         // the kernel launch and all buffer setup must be skipped when the
@@ -5477,6 +5503,22 @@ public:
                     ASR::storage_typeType::Default,
                     ASRUtils::duplicate_type(al, type),
                     type_decl, ASR::abiType::Source,
+                    ASR::accessType::Public, ASR::presenceType::Required, false));
+            kernel_scope->add_symbol(name, param);
+        }
+
+        // Create local allocatable array temporaries in kernel scope
+        for (auto &name : local_alloc_array_names) {
+            auto it_orig = orig_scope->resolve_symbol(name);
+            if (!it_orig) continue;
+            ASR::ttype_t *type = ASRUtils::symbol_type(it_orig);
+            ASR::symbol_t *param = ASR::down_cast<ASR::symbol_t>(
+                ASRUtils::make_Variable_t_util(al, loc, kernel_scope,
+                    s2c(al, name), nullptr, 0,
+                    ASR::intentType::Local, nullptr, nullptr,
+                    ASR::storage_typeType::Default,
+                    ASRUtils::duplicate_type(al, type),
+                    nullptr, ASR::abiType::Source,
                     ASR::accessType::Public, ASR::presenceType::Required, false));
             kernel_scope->add_symbol(name, param);
         }
