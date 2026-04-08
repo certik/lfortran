@@ -1159,6 +1159,112 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                     }
                 }
             }
+            // Case: arr(i) = FunctionCall(f, ...)
+            // where f returns a struct with allocatable members.
+            // Trace into f's body to find writes to the return
+            // variable's allocatable members and determine sizes.
+            if (ASR::is_a<ASR::ArrayItem_t>(*asgn->m_target) &&
+                    ASR::is_a<ASR::FunctionCall_t>(*asgn->m_value)) {
+                ASR::ArrayItem_t *ai =
+                    ASR::down_cast<ASR::ArrayItem_t>(asgn->m_target);
+                if (ASR::is_a<ASR::Var_t>(*ai->m_v)) {
+                    std::string arr_name = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
+                    ASR::FunctionCall_t *fc =
+                        ASR::down_cast<ASR::FunctionCall_t>(
+                            asgn->m_value);
+                    ASR::symbol_t *fn_sym =
+                        ASRUtils::symbol_get_past_external(
+                            fc->m_name);
+                    if (ASR::is_a<ASR::Function_t>(*fn_sym)) {
+                        ASR::Function_t *fn =
+                            ASR::down_cast<ASR::Function_t>(fn_sym);
+                        std::string ret_name;
+                        if (fn->m_return_var &&
+                                ASR::is_a<ASR::Var_t>(
+                                    *fn->m_return_var)) {
+                            ret_name = ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    fn->m_return_var)->m_v);
+                        }
+                        if (!ret_name.empty()) {
+                            for (size_t fi = 0;
+                                    fi < fn->n_body; fi++) {
+                                if (fn->m_body[fi]->type !=
+                                        ASR::stmtType::Assignment)
+                                    continue;
+                                ASR::Assignment_t *fa =
+                                    ASR::down_cast<
+                                        ASR::Assignment_t>(
+                                            fn->m_body[fi]);
+                                if (!ASR::is_a<
+                                        ASR::StructInstanceMember_t>(
+                                            *fa->m_target))
+                                    continue;
+                                ASR::StructInstanceMember_t *fsm =
+                                    ASR::down_cast<
+                                        ASR::StructInstanceMember_t>(
+                                            fa->m_target);
+                                if (!ASR::is_a<ASR::Var_t>(
+                                        *fsm->m_v))
+                                    continue;
+                                std::string tgt_name =
+                                    ASRUtils::symbol_name(
+                                        ASR::down_cast<ASR::Var_t>(
+                                            fsm->m_v)->m_v);
+                                if (tgt_name != ret_name) continue;
+                                std::string mem_name =
+                                    ASRUtils::symbol_name(
+                                        ASRUtils::
+                                            symbol_get_past_external(
+                                                fsm->m_m));
+                                std::string key =
+                                    arr_name + "." + mem_name;
+                                if (result.count(key)) continue;
+                                // Check RHS type for fixed size
+                                ASR::ttype_t *rhs_type =
+                                    ASRUtils::expr_type(
+                                        fa->m_value);
+                                int64_t fsz =
+                                    get_fixed_size_array_size(
+                                        rhs_type);
+                                if (fsz > 0) {
+                                    result[key] = fsz;
+                                } else if (ASR::is_a<ASR::Var_t>(
+                                        *fa->m_value)) {
+                                    std::string rhs_name =
+                                        ASRUtils::symbol_name(
+                                            ASR::down_cast<
+                                                ASR::Var_t>(
+                                                    fa->m_value)
+                                                ->m_v);
+                                    auto ws_it =
+                                        ws_by_name.find(rhs_name);
+                                    if (ws_it != ws_by_name.end()) {
+                                        int64_t per_elem = 1;
+                                        bool all_const = true;
+                                        for (auto &dim :
+                                                ws_it->second
+                                                    ->dims) {
+                                            if (dim.is_constant) {
+                                                per_elem *=
+                                                    dim.constant_value;
+                                            } else {
+                                                all_const = false;
+                                                break;
+                                            }
+                                        }
+                                        if (all_const
+                                                && per_elem > 0) {
+                                            result[key] = per_elem;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             if (!ASR::is_a<ASR::StructInstanceMember_t>(*asgn->m_target))
                 continue;
             if (!ASR::is_a<ASR::Var_t>(*asgn->m_value)) continue;
@@ -1254,9 +1360,15 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                     std::string lkey =
                         local_name + "." + mem_name;
                     if (local_struct_sizes.count(lkey)) continue;
-                    // Check if RHS is a local var with
-                    // FixedSizeArray type
-                    if (ASR::is_a<ASR::Var_t>(*fa->m_value)) {
+                    // Check if RHS has a known fixed size from
+                    // its type (e.g., ArrayConstructor)
+                    int64_t rhs_fsz =
+                        get_fixed_size_array_size(
+                            ASRUtils::expr_type(fa->m_value));
+                    if (rhs_fsz > 0) {
+                        local_struct_sizes[lkey] = rhs_fsz;
+                    } else if (ASR::is_a<ASR::Var_t>(
+                            *fa->m_value)) {
                         ASR::Variable_t *rhs_var =
                             ASR::down_cast<ASR::Variable_t>(
                                 ASRUtils::symbol_get_past_external(
@@ -1325,6 +1437,17 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                         std::string key =
                             arr_name + "." + mem_name;
                         if (result.count(key)) continue;
+                        // Check if RHS has a known fixed size
+                        // from its type (e.g., ArrayConstructor
+                        // with FixedSizeArray dimensions).
+                        int64_t rhs_fsz =
+                            get_fixed_size_array_size(
+                                ASRUtils::expr_type(
+                                    fa->m_value));
+                        if (rhs_fsz > 0) {
+                            result[key] = rhs_fsz;
+                            continue;
+                        }
                         // RHS is a Var — find its size from the
                         // actual argument at the call site
                         if (!ASR::is_a<ASR::Var_t>(*fa->m_value))
