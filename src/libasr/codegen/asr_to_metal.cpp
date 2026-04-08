@@ -2259,7 +2259,9 @@ public:
                     src << "    " << get_struct_name(mv) << " "
                         << mv->m_name << ";\n";
                 } else if (is_array_type(mv->m_type)) {
-                    ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(mv->m_type);
+                    ASR::ttype_t *mv_type = ASRUtils::type_get_past_pointer(
+                        mv->m_type);
+                    ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(mv_type);
                     src << "    " << metal_type(arr->m_type) << " "
                         << mv->m_name;
                     int64_t total = get_total_elements(mv->m_type);
@@ -2326,8 +2328,10 @@ public:
             ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(
                 ASR::down_cast<ASR::Var_t>(fn->m_args[i])->m_v);
             if (is_array_type(arg->m_type)) {
-                ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
+                ASR::ttype_t *arg_type = ASRUtils::type_get_past_pointer(
                     arg->m_type);
+                ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
+                    arg_type);
                 if (arr->m_physical_type
                         == ASR::array_physical_typeType::PointerArray
                     || arr->m_physical_type
@@ -2443,7 +2447,9 @@ public:
             if (!first) src << ", ";
             first = false;
             if (is_array_type(arg->m_type)) {
-                ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(arg->m_type);
+                ASR::ttype_t *arg_type = ASRUtils::type_get_past_pointer(
+                    arg->m_type);
+                ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(arg_type);
                 // FixedSizeArray and PointerArray out params (from
                 // subroutine_from_function) receive local thread-space
                 // temporaries.  For functions where ALL array params
@@ -2939,8 +2945,10 @@ public:
             ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(
                 ASR::down_cast<ASR::Var_t>(fn->m_args[i])->m_v);
             if (is_array_type(arg->m_type)) {
-                ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
+                ASR::ttype_t *arg_type = ASRUtils::type_get_past_pointer(
                     arg->m_type);
+                ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
+                    arg_type);
                 if ((arr->m_physical_type
                         == ASR::array_physical_typeType::FixedSizeArray)
                     || (arr->m_physical_type
@@ -2983,8 +2991,10 @@ public:
             ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(
                 ASR::down_cast<ASR::Var_t>(fn->m_args[i])->m_v);
             if (is_array_type(arg->m_type)) {
-                ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
+                ASR::ttype_t *arg_type = ASRUtils::type_get_past_pointer(
                     arg->m_type);
+                ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
+                    arg_type);
                 if ((arr->m_physical_type
                         == ASR::array_physical_typeType::FixedSizeArray)
                     || (arr->m_physical_type
@@ -3236,7 +3246,8 @@ public:
         }
 
         // Add per-dimension size scalars for DescriptorArray (assumed-shape)
-        // kernel arguments so the kernel body can resolve ArrayBound UBound.
+        // and PointerArray kernel arguments so the kernel body can resolve
+        // ArrayBound UBound.
         for (size_t i = 0; i < args.size(); i++) {
             if (!args[i].is_array) continue;
             // Skip synthetic kernel args (__data_*, __size_*, etc.)
@@ -3245,7 +3256,7 @@ public:
             ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(
                 ASRUtils::symbol_get_past_external(v->m_v));
             ASR::ttype_t *past_alloc =
-                ASRUtils::type_get_past_allocatable(var->m_type);
+                ASRUtils::type_get_past_allocatable_pointer(var->m_type);
             if (!ASR::is_a<ASR::Array_t>(*past_alloc)) continue;
             ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(past_alloc);
             bool has_null_dim = false;
@@ -3287,7 +3298,7 @@ public:
                         ? args[i].struct_name
                         : metal_type(args[i].type);
                     ASR::ttype_t *base_type =
-                        ASRUtils::type_get_past_allocatable(args[i].type);
+                        ASRUtils::type_get_past_allocatable_pointer(args[i].type);
                     if (ASR::is_a<ASR::Array_t>(*base_type)) {
                         ASR::Array_t *arr =
                             ASR::down_cast<ASR::Array_t>(base_type);
@@ -3673,8 +3684,8 @@ public:
         }
 
         // Register per-dimension size params for DescriptorArray
-        // (assumed-shape) kernel arguments so ArrayBound UBound can
-        // resolve them.
+        // (assumed-shape) and PointerArray kernel arguments so
+        // ArrayBound UBound can resolve them.
         for (size_t i = 0; i < args.size(); i++) {
             if (!args[i].is_array) continue;
             if (args[i].name.substr(0, 2) == "__") continue;
@@ -3682,7 +3693,7 @@ public:
             ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(
                 ASRUtils::symbol_get_past_external(v->m_v));
             ASR::ttype_t *past_alloc =
-                ASRUtils::type_get_past_allocatable(var->m_type);
+                ASRUtils::type_get_past_allocatable_pointer(var->m_type);
             if (!ASR::is_a<ASR::Array_t>(*past_alloc)) continue;
             ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(past_alloc);
             bool has_null_dim = false;
