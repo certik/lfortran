@@ -2578,37 +2578,63 @@ public:
             return prefix + "." + suffix;
         };
 
-        // Verify all decomposed buffers are available
+        // Verify decomposed buffers are available.
+        // Each side may be either:
+        //   (a) "device": has data + offsets + sizes params
+        //   (b) "local": kernel-local FixedSizeArray with data +
+        //       scalar size param but no offsets/sizes
+        bool tgt_has_offsets = true;
+        bool val_has_offsets = true;
         for (auto &mem : alloc_members) {
             std::string tgt_key = make_key(tgt_simple, tgt_arr,
                 tgt_prefix, mem.suffix);
             std::string val_key = make_key(val_simple, val_arr,
                 val_prefix, mem.suffix);
-            if (!func_array_data_params.count(tgt_key) ||
-                    !struct_array_offset_params.count(tgt_key) ||
-                    !struct_array_sizes_params.count(tgt_key) ||
-                    !func_array_data_params.count(val_key) ||
-                    !struct_array_offset_params.count(val_key) ||
-                    !struct_array_sizes_params.count(val_key)) {
+            if (!func_array_data_params.count(tgt_key))
                 return false;
+            if (!struct_array_offset_params.count(tgt_key) ||
+                    !struct_array_sizes_params.count(tgt_key)) {
+                if (!func_array_size_params.count(tgt_key))
+                    return false;
+                tgt_has_offsets = false;
+            }
+            if (!func_array_data_params.count(val_key))
+                return false;
+            if (!struct_array_offset_params.count(val_key) ||
+                    !struct_array_sizes_params.count(val_key)) {
+                if (!func_array_size_params.count(val_key))
+                    return false;
+                val_has_offsets = false;
             }
         }
 
-        // Copy non-allocatable members directly
-        for (size_t m = 0; m < st->n_members; m++) {
-            ASR::symbol_t *mem_sym = st->m_symtab->get_symbol(
-                st->m_members[m]);
-            if (!mem_sym || !ASR::is_a<ASR::Variable_t>(*mem_sym))
-                continue;
-            ASR::Variable_t *mv =
-                ASR::down_cast<ASR::Variable_t>(mem_sym);
-            if (ASRUtils::is_allocatable(mv->m_type)) continue;
-            if (!is_struct_type(mv->m_type)) {
-                src << get_indent();
-                visit_expr(a->m_target);
-                src << "." << st->m_members[m] << " = ";
-                visit_expr(a->m_value);
-                src << "." << st->m_members[m] << ";\n";
+        bool any_local = !tgt_has_offsets || !val_has_offsets;
+        if (any_local) {
+            // When either side is a local FixedSizeArray, emit a
+            // whole struct handle copy first (covers non-allocatable
+            // members and placeholder fields).
+            src << get_indent();
+            visit_expr(a->m_target);
+            src << " = ";
+            visit_expr(a->m_value);
+            src << ";\n";
+        } else {
+            // Copy non-allocatable members directly
+            for (size_t m = 0; m < st->n_members; m++) {
+                ASR::symbol_t *mem_sym = st->m_symtab->get_symbol(
+                    st->m_members[m]);
+                if (!mem_sym || !ASR::is_a<ASR::Variable_t>(*mem_sym))
+                    continue;
+                ASR::Variable_t *mv =
+                    ASR::down_cast<ASR::Variable_t>(mem_sym);
+                if (ASRUtils::is_allocatable(mv->m_type)) continue;
+                if (!is_struct_type(mv->m_type)) {
+                    src << get_indent();
+                    visit_expr(a->m_target);
+                    src << "." << st->m_members[m] << " = ";
+                    visit_expr(a->m_value);
+                    src << "." << st->m_members[m] << ";\n";
+                }
             }
         }
 
@@ -2619,25 +2645,51 @@ public:
             std::string val_key = make_key(val_simple, val_arr,
                 val_prefix, mem.suffix);
             std::string tgt_data = func_array_data_params[tgt_key];
-            std::string tgt_off = struct_array_offset_params[tgt_key];
-            std::string tgt_sizes = struct_array_sizes_params[tgt_key];
             std::string val_data = func_array_data_params[val_key];
-            std::string val_off = struct_array_offset_params[val_key];
-            std::string val_sizes = struct_array_sizes_params[val_key];
-            // Index into target/source buffers
             std::string tidx = tgt_simple ? tgt_idx : tgt_linear_idx;
             std::string vidx = val_simple ? val_idx : val_linear_idx;
 
             src << get_indent() << "{\n";
             indent_level++;
-            src << get_indent() << "int __src_off = " << val_off
-                << "[" << vidx << "];\n";
-            src << get_indent() << "int __dst_off = " << tgt_off
-                << "[" << tidx << "];\n";
-            src << get_indent() << "int __n = " << val_sizes
-                << "[" << vidx << "];\n";
-            src << get_indent() << tgt_sizes << "["
-                << tidx << "] = __n;\n";
+            // Source offset and count
+            if (val_has_offsets) {
+                std::string val_off =
+                    struct_array_offset_params[val_key];
+                std::string val_sizes =
+                    struct_array_sizes_params[val_key];
+                src << get_indent() << "int __src_off = " << val_off
+                    << "[" << vidx << "];\n";
+                src << get_indent() << "int __n = " << val_sizes
+                    << "[" << vidx << "];\n";
+            } else {
+                std::string val_size =
+                    func_array_size_params[val_key];
+                int64_t buf_sz = func_array_data_sizes.count(val_key)
+                    ? func_array_data_sizes[val_key] : 1;
+                src << get_indent() << "int __src_off = " << vidx
+                    << " * " << buf_sz << ";\n";
+                src << get_indent() << "int __n = " << val_size
+                    << ";\n";
+            }
+            // Target offset and size update
+            if (tgt_has_offsets) {
+                std::string tgt_off =
+                    struct_array_offset_params[tgt_key];
+                std::string tgt_sizes =
+                    struct_array_sizes_params[tgt_key];
+                src << get_indent() << "int __dst_off = " << tgt_off
+                    << "[" << tidx << "];\n";
+                src << get_indent() << tgt_sizes << "["
+                    << tidx << "] = __n;\n";
+            } else {
+                std::string tgt_size =
+                    func_array_size_params[tgt_key];
+                int64_t buf_sz = func_array_data_sizes.count(tgt_key)
+                    ? func_array_data_sizes[tgt_key] : 1;
+                src << get_indent() << "int __dst_off = " << tidx
+                    << " * " << buf_sz << ";\n";
+                src << get_indent() << tgt_size << " = __n;\n";
+            }
             src << get_indent()
                 << "for (int __ci = 0; __ci < __n; __ci++) {\n";
             indent_level++;

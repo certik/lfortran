@@ -7417,6 +7417,26 @@ public:
                     ASR::down_cast<ASR::Var_t>(tgt_ai->m_v)->m_v;
                 ASR::symbol_t *src_sym =
                     ASR::down_cast<ASR::Var_t>(src_ai->m_v)->m_v;
+                // Only pre-allocate when the target array is indexed
+                // by the do concurrent loop variable.  Temporaries
+                // like array constructor temps use their own index
+                // variable and have a different size than the loop
+                // range.
+                {
+                    bool uses_loop_var = false;
+                    ASR::symbol_t *lv_sym = ASR::down_cast<ASR::Var_t>(
+                        x.m_head[0].m_v)->m_v;
+                    for (size_t ti = 0; ti < tgt_ai->n_args; ti++) {
+                        ASR::expr_t *idx = tgt_ai->m_args[ti].m_right;
+                        if (idx && ASR::is_a<ASR::Var_t>(*idx) &&
+                            ASR::down_cast<ASR::Var_t>(idx)->m_v ==
+                                lv_sym) {
+                            uses_loop_var = true;
+                            break;
+                        }
+                    }
+                    if (!uses_loop_var) continue;
+                }
                 ASR::Variable_t *tgt_var = ASR::down_cast<ASR::Variable_t>(
                     ASRUtils::symbol_get_past_external(tgt_sym));
                 if (!tgt_var->m_type_declaration) continue;
