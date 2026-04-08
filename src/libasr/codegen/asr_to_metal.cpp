@@ -2243,6 +2243,92 @@ public:
         return false;
     }
 
+    // Info about a (possibly nested) allocatable array member of a struct.
+    struct NestedAllocMember {
+        std::string suffix;     // underscore-separated path, e.g. "x" or "inner_x"
+        ASR::Variable_t *var;   // the allocatable Variable_t
+        int field_idx;          // LLVM struct field index of the allocatable member
+        // For nested members, the chain of field indices to reach the
+        // containing sub-struct from the top-level struct.
+        std::vector<int> parent_field_indices;
+    };
+
+    // Recursively collect all allocatable array members from a struct,
+    // including those inside nested (non-allocatable) struct members.
+    void collect_nested_alloc_members(
+            ASR::Struct_t *st,
+            const std::string &prefix,
+            const std::vector<int> &parent_indices,
+            std::vector<NestedAllocMember> &result) {
+        int field_idx = 0;
+        for (size_t m = 0; m < st->n_members; m++) {
+            ASR::symbol_t *mem = st->m_symtab->get_symbol(st->m_members[m]);
+            if (!mem || !ASR::is_a<ASR::Variable_t>(*mem)) {
+                field_idx++;
+                continue;
+            }
+            ASR::Variable_t *mv = ASR::down_cast<ASR::Variable_t>(mem);
+            if (ASRUtils::is_allocatable(mv->m_type)) {
+                ASR::ttype_t *inner =
+                    ASRUtils::type_get_past_allocatable(mv->m_type);
+                if (ASR::is_a<ASR::Array_t>(*inner)) {
+                    std::string suf = prefix.empty()
+                        ? std::string(st->m_members[m])
+                        : prefix + "_" + st->m_members[m];
+                    result.push_back({suf, mv, field_idx,
+                                      parent_indices});
+                }
+            } else if (is_struct_type(mv->m_type) &&
+                       mv->m_type_declaration) {
+                ASR::symbol_t *inner_sym =
+                    ASRUtils::symbol_get_past_external(
+                        mv->m_type_declaration);
+                if (ASR::is_a<ASR::Struct_t>(*inner_sym)) {
+                    std::string new_prefix = prefix.empty()
+                        ? std::string(st->m_members[m])
+                        : prefix + "_" + st->m_members[m];
+                    std::vector<int> new_indices = parent_indices;
+                    new_indices.push_back(field_idx);
+                    collect_nested_alloc_members(
+                        ASR::down_cast<ASR::Struct_t>(inner_sym),
+                        new_prefix, new_indices, result);
+                }
+            }
+            field_idx++;
+        }
+    }
+
+    // Walk a (possibly nested) StructInstanceMember chain and build the
+    // underscore-separated member path suffix (e.g., "inner_x" for
+    // arr(i)%inner%x).  Returns the root expression (Var or ArrayItem)
+    // that the chain originates from.  If the chain contains no nesting,
+    // suffix is just the leaf member name (e.g., "x").
+    ASR::expr_t *resolve_nested_struct_member_path(
+            ASR::StructInstanceMember_t *sm,
+            std::string &suffix) {
+        std::string leaf = ASRUtils::symbol_name(
+            ASRUtils::symbol_get_past_external(sm->m_m));
+        ASR::expr_t *parent = sm->m_v;
+        std::vector<std::string> path_parts;
+        while (ASR::is_a<ASR::StructInstanceMember_t>(*parent)) {
+            ASR::StructInstanceMember_t *psm =
+                ASR::down_cast<ASR::StructInstanceMember_t>(parent);
+            path_parts.push_back(ASRUtils::symbol_name(
+                ASRUtils::symbol_get_past_external(psm->m_m)));
+            parent = psm->m_v;
+        }
+        // Build suffix: intermediate members (reversed) + leaf
+        std::string result;
+        for (int i = (int)path_parts.size() - 1; i >= 0; i--) {
+            if (!result.empty()) result += "_";
+            result += path_parts[i];
+        }
+        if (!result.empty()) result += "_";
+        result += leaf;
+        suffix = result;
+        return parent;
+    }
+
     // Emit a Metal struct definition for a Struct symbol
     void emit_struct_def(ASR::Struct_t *st) {
         src << "struct " << st->m_name << " {\n";
@@ -3350,44 +3436,35 @@ public:
                                 v->m_v));
                     ASR::Struct_t *st = get_struct_decl(var);
                     if (st) {
-                        for (size_t m = 0; m < st->n_members; m++) {
-                            ASR::symbol_t *mem =
-                                st->m_symtab->get_symbol(
-                                    st->m_members[m]);
-                            if (!mem ||
-                                !ASR::is_a<ASR::Variable_t>(*mem))
-                                continue;
-                            ASR::Variable_t *mv =
-                                ASR::down_cast<ASR::Variable_t>(
-                                    mem);
-                            if (!ASRUtils::is_allocatable(mv->m_type))
-                                continue;
-                            ASR::ttype_t *inner =
+                        std::vector<NestedAllocMember> nested;
+                        collect_nested_alloc_members(
+                            st, "", {}, nested);
+                        for (auto &nam : nested) {
+                            ASR::ttype_t *alloc_inner =
                                 ASRUtils::type_get_past_allocatable(
-                                    mv->m_type);
-                            if (!ASR::is_a<ASR::Array_t>(*inner))
-                                continue;
+                                    nam.var->m_type);
                             ASR::Array_t *mem_arr =
-                                ASR::down_cast<ASR::Array_t>(inner);
+                                ASR::down_cast<ASR::Array_t>(
+                                    alloc_inner);
                             std::string et;
                             if (is_struct_type(mem_arr->m_type)) {
-                                et = get_struct_name(mv);
+                                et = get_struct_name(nam.var);
                             } else {
                                 et = metal_type(mem_arr->m_type);
                             }
                             std::string data_name =
                                 "__data_" + args[i].name + "_"
-                                + st->m_members[m];
+                                + nam.suffix;
                             packed_arrays.push_back({
                                 data_name, et, false, "", 0, 0});
                             std::string off_name =
                                 "__offsets_" + args[i].name + "_"
-                                + st->m_members[m];
+                                + nam.suffix;
                             packed_arrays.push_back({
                                 off_name, "int", false, "", 0, 0});
                             std::string sizes_name =
                                 "__sizes_" + args[i].name + "_"
-                                + st->m_members[m];
+                                + nam.suffix;
                             packed_arrays.push_back({
                                 sizes_name, "int", false, "", 0, 0});
                         }
@@ -3447,46 +3524,37 @@ public:
                                     v->m_v));
                         ASR::Struct_t *st = get_struct_decl(var);
                         if (st) {
-                            for (size_t m = 0; m < st->n_members; m++) {
-                                ASR::symbol_t *mem =
-                                    st->m_symtab->get_symbol(
-                                        st->m_members[m]);
-                                if (!mem ||
-                                    !ASR::is_a<ASR::Variable_t>(*mem))
-                                    continue;
-                                ASR::Variable_t *mv =
-                                    ASR::down_cast<ASR::Variable_t>(
-                                        mem);
-                                if (!ASRUtils::is_allocatable(mv->m_type))
-                                    continue;
-                                ASR::ttype_t *inner =
+                            std::vector<NestedAllocMember> nested;
+                            collect_nested_alloc_members(
+                                st, "", {}, nested);
+                            for (auto &nam : nested) {
+                                ASR::ttype_t *alloc_inner =
                                     ASRUtils::type_get_past_allocatable(
-                                        mv->m_type);
-                                if (!ASR::is_a<ASR::Array_t>(*inner))
-                                    continue;
+                                        nam.var->m_type);
                                 ASR::Array_t *mem_arr =
-                                    ASR::down_cast<ASR::Array_t>(inner);
+                                    ASR::down_cast<ASR::Array_t>(
+                                        alloc_inner);
                                 std::string et;
                                 if (is_struct_type(mem_arr->m_type)) {
-                                    et = get_struct_name(mv);
+                                    et = get_struct_name(nam.var);
                                 } else {
                                     et = metal_type(mem_arr->m_type);
                                 }
                                 std::string data_name =
                                     "__data_" + args[i].name + "_"
-                                    + st->m_members[m];
+                                    + nam.suffix;
                                 src << ",\n    device " << et << "* "
                                     << data_name << " [[buffer("
                                     << buffer_idx++ << ")]]";
                                 std::string off_name =
                                     "__offsets_" + args[i].name + "_"
-                                    + st->m_members[m];
+                                    + nam.suffix;
                                 src << ",\n    device int* "
                                     << off_name << " [[buffer("
                                     << buffer_idx++ << ")]]";
                                 std::string sizes_name =
                                     "__sizes_" + args[i].name + "_"
-                                    + st->m_members[m];
+                                    + nam.suffix;
                                 src << ",\n    device int* "
                                     << sizes_name << " [[buffer("
                                     << buffer_idx++ << ")]]";
@@ -3611,31 +3679,19 @@ public:
                     if (ASR::is_a<ASR::Struct_t>(*st_sym)) {
                         ASR::Struct_t *st =
                             ASR::down_cast<ASR::Struct_t>(st_sym);
-                        for (size_t m = 0; m < st->n_members; m++) {
-                            ASR::symbol_t *mem =
-                                st->m_symtab->get_symbol(
-                                    st->m_members[m]);
-                            if (!mem ||
-                                !ASR::is_a<ASR::Variable_t>(*mem))
-                                continue;
-                            ASR::Variable_t *mv =
-                                ASR::down_cast<ASR::Variable_t>(mem);
-                            if (!ASRUtils::is_allocatable(mv->m_type))
-                                continue;
-                            ASR::ttype_t *inner =
-                                ASRUtils::type_get_past_allocatable(
-                                    mv->m_type);
-                            if (!ASR::is_a<ASR::Array_t>(*inner))
-                                continue;
+                        std::vector<NestedAllocMember> nested;
+                        collect_nested_alloc_members(
+                            st, "", {}, nested);
+                        for (auto &nam : nested) {
                             std::string key = args[i].name + "."
-                                + st->m_members[m];
+                                + nam.suffix;
                             std::string size_name =
                                 "__size_" + args[i].name + "_"
-                                + st->m_members[m];
+                                + nam.suffix;
                             func_array_size_params[key] = size_name;
                             std::string data_name =
                                 "__data_" + args[i].name + "_"
-                                + st->m_members[m];
+                                + nam.suffix;
                             func_array_data_params[key] = data_name;
                         }
                     }
@@ -3649,34 +3705,23 @@ public:
                     ASRUtils::symbol_get_past_external(v->m_v));
                 ASR::Struct_t *st = get_struct_decl(var);
                 if (st) {
-                    for (size_t m = 0; m < st->n_members; m++) {
-                        ASR::symbol_t *mem =
-                            st->m_symtab->get_symbol(st->m_members[m]);
-                        if (!mem ||
-                            !ASR::is_a<ASR::Variable_t>(*mem))
-                            continue;
-                        ASR::Variable_t *mv =
-                            ASR::down_cast<ASR::Variable_t>(mem);
-                        if (!ASRUtils::is_allocatable(mv->m_type))
-                            continue;
-                        ASR::ttype_t *inner =
-                            ASRUtils::type_get_past_allocatable(
-                                mv->m_type);
-                        if (!ASR::is_a<ASR::Array_t>(*inner))
-                            continue;
+                    std::vector<NestedAllocMember> nested;
+                    collect_nested_alloc_members(
+                        st, "", {}, nested);
+                    for (auto &nam : nested) {
                         std::string key = args[i].name + "."
-                            + st->m_members[m];
+                            + nam.suffix;
                         std::string data_name =
                             "__data_" + args[i].name + "_"
-                            + st->m_members[m];
+                            + nam.suffix;
                         func_array_data_params[key] = data_name;
                         std::string off_name =
                             "__offsets_" + args[i].name + "_"
-                            + st->m_members[m];
+                            + nam.suffix;
                         struct_array_offset_params[key] = off_name;
                         std::string sizes_name =
                             "__sizes_" + args[i].name + "_"
-                            + st->m_members[m];
+                            + nam.suffix;
                         struct_array_sizes_params[key] = sizes_name;
                     }
                 }
@@ -6548,29 +6593,33 @@ public:
                 if (ASR::is_a<ASR::StructInstanceMember_t>(*ai->m_v)) {
                     ASR::StructInstanceMember_t *sm =
                         ASR::down_cast<ASR::StructInstanceMember_t>(ai->m_v);
-                    std::string mem_name = ASRUtils::symbol_name(
-                        ASRUtils::symbol_get_past_external(sm->m_m));
-                    if (ASR::is_a<ASR::Var_t>(*sm->m_v)) {
-                        // Single struct: s%member(j)
+                    // Walk the (possibly nested) StructInstanceMember chain
+                    // to build the member path suffix and find the root expr.
+                    std::string member_suffix;
+                    ASR::expr_t *root =
+                        resolve_nested_struct_member_path(sm, member_suffix);
+                    if (ASR::is_a<ASR::Var_t>(*root)) {
+                        // Single struct: s%member(j) or s%nested%member(j)
                         std::string struct_name = ASRUtils::symbol_name(
-                            ASR::down_cast<ASR::Var_t>(sm->m_v)->m_v);
-                        std::string key = struct_name + "." + mem_name;
+                            ASR::down_cast<ASR::Var_t>(root)->m_v);
+                        std::string key = struct_name + "." + member_suffix;
                         auto it = func_array_data_params.find(key);
                         if (it != func_array_data_params.end()) {
                             src << it->second;
                             used_data_param = true;
                         }
-                    } else if (ASR::is_a<ASR::ArrayItem_t>(*sm->m_v)) {
-                        // Array-of-struct: arr(i)%member(j)
+                    } else if (ASR::is_a<ASR::ArrayItem_t>(*root)) {
+                        // Array-of-struct: arr(i)%member(j) or
+                        // arr(i)%nested%member(j)
                         // Use separate data+offsets buffers:
                         // __data_arr_member[__offsets_arr_member[i-1] + (j-1)]
                         ASR::ArrayItem_t *arr_ai =
-                            ASR::down_cast<ASR::ArrayItem_t>(sm->m_v);
+                            ASR::down_cast<ASR::ArrayItem_t>(root);
                         if (ASR::is_a<ASR::Var_t>(*arr_ai->m_v)) {
                             std::string arr_name = ASRUtils::symbol_name(
                                 ASR::down_cast<ASR::Var_t>(
                                     arr_ai->m_v)->m_v);
-                            std::string key = arr_name + "." + mem_name;
+                            std::string key = arr_name + "." + member_suffix;
                             auto dit = func_array_data_params.find(key);
                             auto oit = struct_array_offset_params.find(key);
                             if (dit != func_array_data_params.end() &&
@@ -6708,67 +6757,74 @@ public:
                 // For allocatable array members with a known data pointer
                 // parameter, emit the data pointer instead of struct.member
                 // (the struct field is just a descriptor, not the data).
-                if (ASR::is_a<ASR::Var_t>(*sm->m_v)) {
-                    std::string struct_name = ASRUtils::symbol_name(
-                        ASR::down_cast<ASR::Var_t>(sm->m_v)->m_v);
-                    std::string key = struct_name + "." + mem_name;
-                    auto it = func_array_data_params.find(key);
-                    if (it != func_array_data_params.end()) {
-                        src << it->second;
-                        if (array_elem_index >= 0) {
-                            src << "[" << array_elem_index << "]";
-                        } else if (!array_elem_index_var.empty()) {
-                            src << "[" << array_elem_index_var << "]";
+                // Use the nested path resolver to handle chains like
+                // s%inner%x or arr(i)%inner%x.
+                {
+                    std::string member_suffix;
+                    ASR::expr_t *root =
+                        resolve_nested_struct_member_path(sm, member_suffix);
+                    if (ASR::is_a<ASR::Var_t>(*root)) {
+                        std::string struct_name = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(root)->m_v);
+                        std::string key = struct_name + "." + member_suffix;
+                        auto it = func_array_data_params.find(key);
+                        if (it != func_array_data_params.end()) {
+                            src << it->second;
+                            if (array_elem_index >= 0) {
+                                src << "[" << array_elem_index << "]";
+                            } else if (!array_elem_index_var.empty()) {
+                                src << "[" << array_elem_index_var << "]";
+                            }
+                            break;
                         }
-                        break;
-                    }
-                } else if (ASR::is_a<ASR::ArrayItem_t>(*sm->m_v)) {
-                    // Array-of-struct: arr(i)%member as whole array
-                    // Emit pointer: __data_arr_member + __offsets_arr_member[idx]
-                    ASR::ArrayItem_t *arr_ai =
-                        ASR::down_cast<ASR::ArrayItem_t>(sm->m_v);
-                    if (ASR::is_a<ASR::Var_t>(*arr_ai->m_v)) {
-                        std::string arr_name = ASRUtils::symbol_name(
-                            ASR::down_cast<ASR::Var_t>(
-                                arr_ai->m_v)->m_v);
-                        std::string key = arr_name + "." + mem_name;
-                        auto dit = func_array_data_params.find(key);
-                        auto oit =
-                            struct_array_offset_params.find(key);
-                        if (dit != func_array_data_params.end() &&
-                                oit != struct_array_offset_params.end()) {
-                            src << "(" << dit->second << " + "
-                                << oit->second << "[";
-                            if (arr_ai->n_args == 1) {
-                                ASR::expr_t *idx =
-                                    arr_ai->m_args[0].m_right
-                                    ? arr_ai->m_args[0].m_right
-                                    : arr_ai->m_args[0].m_left;
-                                if (idx) {
-                                    ASR::Array_t *idx_arr = nullptr;
-                                    ASR::ttype_t *idx_arr_type =
-                                        ASRUtils::type_get_past_allocatable(
-                                            ASRUtils::expr_type(
-                                                arr_ai->m_v));
-                                    if (ASR::is_a<ASR::Array_t>(
-                                            *idx_arr_type)) {
-                                        idx_arr =
-                                            ASR::down_cast<ASR::Array_t>(
-                                                idx_arr_type);
+                    } else if (ASR::is_a<ASR::ArrayItem_t>(*root)) {
+                        // Array-of-struct: arr(i)%member or
+                        // arr(i)%nested%member as whole array
+                        ASR::ArrayItem_t *arr_ai =
+                            ASR::down_cast<ASR::ArrayItem_t>(root);
+                        if (ASR::is_a<ASR::Var_t>(*arr_ai->m_v)) {
+                            std::string arr_name = ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    arr_ai->m_v)->m_v);
+                            std::string key = arr_name + "." + member_suffix;
+                            auto dit = func_array_data_params.find(key);
+                            auto oit =
+                                struct_array_offset_params.find(key);
+                            if (dit != func_array_data_params.end() &&
+                                    oit != struct_array_offset_params.end()) {
+                                src << "(" << dit->second << " + "
+                                    << oit->second << "[";
+                                if (arr_ai->n_args == 1) {
+                                    ASR::expr_t *idx =
+                                        arr_ai->m_args[0].m_right
+                                        ? arr_ai->m_args[0].m_right
+                                        : arr_ai->m_args[0].m_left;
+                                    if (idx) {
+                                        ASR::Array_t *idx_arr = nullptr;
+                                        ASR::ttype_t *idx_arr_type =
+                                            ASRUtils::type_get_past_allocatable(
+                                                ASRUtils::expr_type(
+                                                    arr_ai->m_v));
+                                        if (ASR::is_a<ASR::Array_t>(
+                                                *idx_arr_type)) {
+                                            idx_arr =
+                                                ASR::down_cast<ASR::Array_t>(
+                                                    idx_arr_type);
+                                        }
+                                        std::string lb =
+                                            get_lower_bound_str(idx_arr, 0);
+                                        src << "((int)(";
+                                        visit_expr(idx);
+                                        src << ") - (" << lb << "))";
+                                    } else {
+                                        src << "0";
                                     }
-                                    std::string lb =
-                                        get_lower_bound_str(idx_arr, 0);
-                                    src << "((int)(";
-                                    visit_expr(idx);
-                                    src << ") - (" << lb << "))";
                                 } else {
                                     src << "0";
                                 }
-                            } else {
-                                src << "0";
+                                src << "])";
+                                break;
                             }
-                            src << "])";
-                            break;
                         }
                     }
                 }

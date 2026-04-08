@@ -19152,6 +19152,7 @@ public:
             llvm::Type *struct_llvm;
             llvm::Value *arg_val;
             int field_idx;
+            std::vector<std::pair<llvm::Type*, int>> parent_gep_chain;
         };
         std::vector<StructMemberWriteBack> struct_writebacks;
         // Writeback info for the non-constant (allocatable) path
@@ -19165,11 +19166,117 @@ public:
             llvm::Type *mem_el_llvm;
             int field_idx;
             int elem_byte_size;
+            // For nested allocatable members: chain of (llvm_type, field_idx)
+            // pairs from the top-level struct to the containing sub-struct.
+            std::vector<std::pair<llvm::Type*, int>> parent_gep_chain;
         };
         std::vector<DynStructMemberWriteBack> dyn_struct_writebacks;
         // Map "arr.member" -> first element's size (LLVM value)
         // for VLA workspace allocation of function-call result temps.
         std::map<std::string, llvm::Value*> struct_member_first_sizes;
+
+        // Helper: emit a GEP chain to navigate from typed_data[kv]
+        // through nested struct fields to the allocatable descriptor pointer.
+        // parent_gep_chain contains (llvm_type, field_idx) for intermediate
+        // struct fields; field_idx is the index within the innermost struct.
+        auto emit_nested_field_gep = [&](
+                llvm::Type *top_struct_llvm,
+                llvm::Value *typed_data_ptr,
+                llvm::Value *kv,
+                const std::vector<std::pair<llvm::Type*, int>> &parent_chain,
+                int final_field_idx) -> llvm::Value* {
+            if (parent_chain.empty()) {
+                // Direct member: typed_data[kv].field_idx
+                return builder->CreateGEP(
+                    top_struct_llvm, typed_data_ptr,
+                    {kv, llvm::ConstantInt::get(i32, final_field_idx)});
+            }
+            // Navigate to the first intermediate struct:
+            // typed_data[kv].parent_chain[0].second
+            llvm::Value *current = builder->CreateGEP(
+                top_struct_llvm, typed_data_ptr,
+                {kv, llvm::ConstantInt::get(
+                    i32, parent_chain[0].second)});
+            // Navigate through remaining intermediate structs
+            for (size_t ci = 1; ci < parent_chain.size(); ci++) {
+                current = builder->CreateGEP(
+                    parent_chain[ci - 1].first, current,
+                    {llvm::ConstantInt::get(i32, 0),
+                     llvm::ConstantInt::get(
+                         i32, parent_chain[ci].second)});
+            }
+            // Final field within the innermost struct
+            llvm::Type *innermost_type =
+                parent_chain.back().first;
+            return builder->CreateGEP(
+                innermost_type, current,
+                {llvm::ConstantInt::get(i32, 0),
+                 llvm::ConstantInt::get(i32, final_field_idx)});
+        };
+
+        // Info about a (possibly nested) allocatable array member.
+        struct LLVMNestedAllocMember {
+            std::string suffix;  // underscore-separated path
+            ASR::Variable_t *var;
+            int field_idx;       // field index within containing struct
+            // Parent chain: (ASR Struct_t, field_idx) from top to innermost
+            std::vector<std::pair<ASR::Struct_t*, int>> parent_chain;
+        };
+
+        // Recursively collect nested allocatable array members.
+        std::function<void(ASR::Struct_t*, const std::string&,
+            const std::vector<std::pair<ASR::Struct_t*, int>>&,
+            std::vector<LLVMNestedAllocMember>&)>
+        collect_llvm_nested_alloc_members =
+            [&](ASR::Struct_t *st, const std::string &prefix,
+                const std::vector<std::pair<ASR::Struct_t*, int>> &parents,
+                std::vector<LLVMNestedAllocMember> &result) {
+            int fidx = 0;
+            for (size_t m = 0; m < st->n_members; m++) {
+                ASR::symbol_t *mem =
+                    st->m_symtab->get_symbol(st->m_members[m]);
+                if (!mem || !ASR::is_a<ASR::Variable_t>(*mem)) {
+                    fidx++;
+                    continue;
+                }
+                ASR::Variable_t *mv =
+                    ASR::down_cast<ASR::Variable_t>(mem);
+                if (ASRUtils::is_allocatable(mv->m_type)) {
+                    ASR::ttype_t *inner =
+                        ASRUtils::type_get_past_allocatable(mv->m_type);
+                    if (ASR::is_a<ASR::Array_t>(*inner)) {
+                        std::string suf = prefix.empty()
+                            ? std::string(st->m_members[m])
+                            : prefix + "_" + st->m_members[m];
+                        result.push_back({suf, mv, fidx, parents});
+                    }
+                } else {
+                    ASR::ttype_t *base =
+                        ASRUtils::extract_type(mv->m_type);
+                    if (ASR::is_a<ASR::StructType_t>(*base) &&
+                            mv->m_type_declaration) {
+                        ASR::symbol_t *inner_sym =
+                            ASRUtils::symbol_get_past_external(
+                                mv->m_type_declaration);
+                        if (ASR::is_a<ASR::Struct_t>(*inner_sym)) {
+                            std::string np = prefix.empty()
+                                ? std::string(st->m_members[m])
+                                : prefix + "_" + st->m_members[m];
+                            auto new_parents = parents;
+                            ASR::Struct_t *child_st =
+                                ASR::down_cast<ASR::Struct_t>(
+                                    inner_sym);
+                            new_parents.push_back(
+                                {child_st, fidx});
+                            collect_llvm_nested_alloc_members(
+                                child_st,
+                                np, new_parents, result);
+                        }
+                    }
+                }
+                fidx++;
+            }
+        };
 
         int buffer_idx = 0;
 
@@ -19398,33 +19505,15 @@ public:
                                     total_elements);
                             llvm::Value *i32_0 =
                                 llvm::ConstantInt::get(i32, 0);
-                            int field_idx = 0;
-                            for (size_t m = 0; m < st->n_members;
-                                    m++) {
-                                ASR::symbol_t *mem =
-                                    st->m_symtab->get_symbol(
-                                        st->m_members[m]);
-                                if (!mem ||
-                                        !ASR::is_a<ASR::Variable_t>(
-                                            *mem)) {
-                                    field_idx++;
-                                    continue;
-                                }
-                                ASR::Variable_t *mv =
-                                    ASR::down_cast<ASR::Variable_t>(
-                                        mem);
-                                if (!ASRUtils::is_allocatable(
-                                        mv->m_type)) {
-                                    field_idx++;
-                                    continue;
-                                }
+                            std::vector<LLVMNestedAllocMember>
+                                nested_members;
+                            collect_llvm_nested_alloc_members(
+                                st, "", {}, nested_members);
+                            for (auto &nam : nested_members) {
+                                ASR::Variable_t *mv = nam.var;
                                 ASR::ttype_t *inner =
                                     ASRUtils::type_get_past_allocatable(
                                         mv->m_type);
-                                if (!ASR::is_a<ASR::Array_t>(*inner)) {
-                                    field_idx++;
-                                    continue;
-                                }
                                 ASR::Array_t *mem_arr =
                                     ASR::down_cast<ASR::Array_t>(inner);
                                 // Get LLVM descriptor type for the
@@ -19473,7 +19562,18 @@ public:
                                     arr_var->m_name);
                                 std::string sm_key =
                                     arr_var_name + "."
-                                    + st->m_members[m];
+                                    + nam.suffix;
+                                // Build LLVM parent GEP chain
+                                std::vector<std::pair<llvm::Type*, int>>
+                                    llvm_parent_chain;
+                                for (auto &pc : nam.parent_chain) {
+                                    llvm::Type *lt =
+                                        llvm_utils->getStructType(
+                                            pc.first, module.get());
+                                    llvm_parent_chain.push_back(
+                                        {lt, pc.second});
+                                }
+                                int field_idx = nam.field_idx;
                                 int64_t vla_member_sz = 0;
                                 {
                                     auto vit =
@@ -19511,11 +19611,10 @@ public:
                                              llvm::ConstantInt::get(
                                                  i32, k)});
                                     llvm::Value *fp =
-                                        builder->CreateGEP(
+                                        emit_nested_field_gep(
                                             struct_llvm, ep,
-                                            {i32_0,
-                                             llvm::ConstantInt::get(
-                                                 i32, field_idx)});
+                                            i32_0, llvm_parent_chain,
+                                            field_idx);
                                     llvm::Value *dp =
                                         llvm_utils->CreateLoad2(
                                             desc_type->getPointerTo(),
@@ -19772,7 +19871,7 @@ public:
                                         llvm::Value *ne64_null = nullptr;
                                         std::string mem_suffix =
                                             std::string(".")
-                                            + st->m_members[m];
+                                            + nam.suffix;
                                         for (auto &entry :
                                                 struct_member_first_sizes) {
                                             if (entry.first != sm_key &&
@@ -20029,7 +20128,7 @@ public:
                                          || runtime_sourced,
                                      desc_type, arr_llvm,
                                      struct_llvm, arg_val,
-                                     field_idx});
+                                     field_idx, llvm_parent_chain});
                                 // Save first element's size for VLA
                                 // workspace allocation of function-call
                                 // result temps that depend on this member.
@@ -20037,7 +20136,6 @@ public:
                                     struct_member_first_sizes[sm_key] =
                                         szs[0];
                                 }
-                                field_idx++;
                             }
                         }
                     }
@@ -20111,33 +20209,15 @@ public:
                                     i8_ptr, {i64}, false);
                             llvm::Function *mfn =
                                 get_gpu_runtime_func("malloc", mft);
-                            int field_idx = 0;
-                            for (size_t m = 0; m < st->n_members;
-                                    m++) {
-                                ASR::symbol_t *mem =
-                                    st->m_symtab->get_symbol(
-                                        st->m_members[m]);
-                                if (!mem ||
-                                        !ASR::is_a<ASR::Variable_t>(
-                                            *mem)) {
-                                    field_idx++;
-                                    continue;
-                                }
-                                ASR::Variable_t *mv =
-                                    ASR::down_cast<ASR::Variable_t>(
-                                        mem);
-                                if (!ASRUtils::is_allocatable(
-                                        mv->m_type)) {
-                                    field_idx++;
-                                    continue;
-                                }
+                            std::vector<LLVMNestedAllocMember>
+                                nested_members;
+                            collect_llvm_nested_alloc_members(
+                                st, "", {}, nested_members);
+                            for (auto &nam : nested_members) {
+                                ASR::Variable_t *mv = nam.var;
                                 ASR::ttype_t *inner =
                                     ASRUtils::type_get_past_allocatable(
                                         mv->m_type);
-                                if (!ASR::is_a<ASR::Array_t>(*inner)) {
-                                    field_idx++;
-                                    continue;
-                                }
                                 ASR::Array_t *mem_arr =
                                     ASR::down_cast<ASR::Array_t>(
                                         inner);
@@ -20187,7 +20267,7 @@ public:
                                 // pre-allocating null members
                                 std::string sm_key =
                                     std::string(arr_var->m_name) + "."
-                                    + st->m_members[m];
+                                    + nam.suffix;
                                 int64_t vla_member_sz = 0;
                                 {
                                     auto vit =
@@ -20197,6 +20277,17 @@ public:
                                             struct_member_vla_sizes.end())
                                         vla_member_sz = vit->second;
                                 }
+                                // Build LLVM parent GEP chain for nested members
+                                std::vector<std::pair<llvm::Type*, int>>
+                                    llvm_parent_chain;
+                                for (auto &pc : nam.parent_chain) {
+                                    llvm::Type *lt =
+                                        llvm_utils->getStructType(
+                                            pc.first, module.get());
+                                    llvm_parent_chain.push_back(
+                                        {lt, pc.second});
+                                }
+                                int field_idx = nam.field_idx;
                                 // Pre-allocate null member descriptors
                                 // so sa_sz/sa_cp loops don't crash
                                 if (vla_member_sz > 0) {
@@ -20240,11 +20331,10 @@ public:
                                             llvm_utils->CreateLoad2(
                                                 i64, pa_k);
                                         llvm::Value *fp =
-                                            builder->CreateGEP(
+                                            emit_nested_field_gep(
                                                 struct_llvm, typed_data,
-                                                {kv,
-                                                 llvm::ConstantInt::get(
-                                                     i32, field_idx)});
+                                                kv, llvm_parent_chain,
+                                                field_idx);
                                         llvm::Value *dp =
                                             llvm_utils->CreateLoad2(
                                                 mem_desc_type
@@ -20265,11 +20355,10 @@ public:
                                             llvm_utils->CreateLoad2(
                                                 i64, pa_k);
                                         llvm::Value *fp =
-                                            builder->CreateGEP(
+                                            emit_nested_field_gep(
                                                 struct_llvm, typed_data,
-                                                {kv,
-                                                 llvm::ConstantInt::get(
-                                                     i32, field_idx)});
+                                                kv, llvm_parent_chain,
+                                                field_idx);
                                         llvm::DataLayout dl(
                                             module.get());
                                         uint64_t desc_sz =
@@ -20443,10 +20532,10 @@ public:
                                                 context));
                                     // GEP to field within element kv
                                     llvm::Value *fp =
-                                        builder->CreateGEP(
+                                        emit_nested_field_gep(
                                             struct_llvm, typed_data,
-                                            {kv, llvm::ConstantInt::get(
-                                                i32, field_idx)});
+                                            kv, llvm_parent_chain,
+                                            field_idx);
                                     llvm::Value *dp =
                                         llvm_utils->CreateLoad2(
                                             mem_desc_type
@@ -20546,10 +20635,10 @@ public:
                                             off_ptr, kv32));
                                     // Get descriptor and data pointer
                                     llvm::Value *fp =
-                                        builder->CreateGEP(
+                                        emit_nested_field_gep(
                                             struct_llvm, typed_data,
-                                            {kv, llvm::ConstantInt::get(
-                                                i32, field_idx)});
+                                            kv, llvm_parent_chain,
+                                            field_idx);
                                     llvm::Value *dp =
                                         llvm_utils->CreateLoad2(
                                             mem_desc_type
@@ -20621,8 +20710,7 @@ public:
                                     {flat, n_elems_64, typed_data,
                                      sz_ptr, struct_llvm, mem_desc_type,
                                      mem_el_llvm, field_idx,
-                                     me_size});
-                                field_idx++;
+                                     me_size, llvm_parent_chain});
                             }
                         }
                     }
@@ -21103,10 +21191,10 @@ public:
                         dwb.flat_buf, boff);
                 // Dest: struct element's member data pointer
                 llvm::Value *fp =
-                    builder->CreateGEP(
+                    emit_nested_field_gep(
                         dwb.struct_llvm, dwb.typed_data,
-                        {kv, llvm::ConstantInt::get(
-                            i32, dwb.field_idx)});
+                        kv, dwb.parent_gep_chain,
+                        dwb.field_idx);
                 llvm::Value *dp =
                     llvm_utils->CreateLoad2(
                         dwb.desc_type->getPointerTo(), fp);
