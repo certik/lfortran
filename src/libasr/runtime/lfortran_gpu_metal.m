@@ -53,37 +53,71 @@ void lfortran_gpu_shutdown(lfortran_gpu_ctx* ctx) {
     free(ctx);
 }
 
+// Pipeline cache: reuse compiled shaders across repeated kernel loads.
+#define MAX_CACHED_PIPELINES 256
+
+typedef struct cached_pipeline {
+    const char *entry_point;
+    id<MTLComputePipelineState> pipeline;
+} cached_pipeline;
+
+static cached_pipeline pipeline_cache[MAX_CACHED_PIPELINES];
+static int pipeline_cache_count = 0;
+
+static id<MTLComputePipelineState> find_cached_pipeline(const char *entry_point) {
+    for (int i = 0; i < pipeline_cache_count; i++) {
+        if (strcmp(pipeline_cache[i].entry_point, entry_point) == 0) {
+            return pipeline_cache[i].pipeline;
+        }
+    }
+    return nil;
+}
+
+static void store_cached_pipeline(const char *entry_point,
+                                  id<MTLComputePipelineState> pipeline) {
+    if (pipeline_cache_count >= MAX_CACHED_PIPELINES) return;
+    pipeline_cache[pipeline_cache_count].entry_point = strdup(entry_point);
+    pipeline_cache[pipeline_cache_count].pipeline = pipeline;
+    pipeline_cache_count++;
+}
+
 lfortran_gpu_kernel* lfortran_gpu_load_kernel(
     lfortran_gpu_ctx* ctx, const char* source, const char* entry_point)
 {
     if (!ctx || !source || !entry_point) return NULL;
 
-    NSError *error = nil;
-    NSString *src = [NSString stringWithUTF8String:source];
+    id<MTLComputePipelineState> pipeline = find_cached_pipeline(entry_point);
 
-    id<MTLLibrary> library = [ctx->device newLibraryWithSource:src
-                                                       options:nil
-                                                         error:&error];
-    if (!library) {
-        fprintf(stderr, "lfortran_gpu_load_kernel: Failed to compile Metal shader:\n%s\n",
-                [[error localizedDescription] UTF8String]);
-        exit(1);
-    }
-
-    NSString *name = [NSString stringWithUTF8String:entry_point];
-    id<MTLFunction> function = [library newFunctionWithName:name];
-    if (!function) {
-        fprintf(stderr, "lfortran_gpu_load_kernel: Function '%s' not found in shader\n",
-                entry_point);
-        exit(1);
-    }
-
-    id<MTLComputePipelineState> pipeline =
-        [ctx->device newComputePipelineStateWithFunction:function error:&error];
     if (!pipeline) {
-        fprintf(stderr, "lfortran_gpu_load_kernel: Failed to create pipeline:\n%s\n",
-                [[error localizedDescription] UTF8String]);
-        exit(1);
+        NSError *error = nil;
+        NSString *src = [NSString stringWithUTF8String:source];
+
+        id<MTLLibrary> library = [ctx->device newLibraryWithSource:src
+                                                           options:nil
+                                                             error:&error];
+        if (!library) {
+            fprintf(stderr, "lfortran_gpu_load_kernel: Failed to compile Metal shader:\n%s\n",
+                    [[error localizedDescription] UTF8String]);
+            exit(1);
+        }
+
+        NSString *name = [NSString stringWithUTF8String:entry_point];
+        id<MTLFunction> function = [library newFunctionWithName:name];
+        if (!function) {
+            fprintf(stderr, "lfortran_gpu_load_kernel: Function '%s' not found in shader\n",
+                    entry_point);
+            exit(1);
+        }
+
+        pipeline =
+            [ctx->device newComputePipelineStateWithFunction:function error:&error];
+        if (!pipeline) {
+            fprintf(stderr, "lfortran_gpu_load_kernel: Failed to create pipeline:\n%s\n",
+                    [[error localizedDescription] UTF8String]);
+            exit(1);
+        }
+
+        store_cached_pipeline(entry_point, pipeline);
     }
 
     lfortran_gpu_kernel *k = (lfortran_gpu_kernel*)calloc(1, sizeof(lfortran_gpu_kernel));

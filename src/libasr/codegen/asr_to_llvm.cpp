@@ -20838,6 +20838,14 @@ public:
                 builder->CreateCall(free_fn, {ptr});
             }
         }
+
+        // 7. Release kernel (frees the kernel struct; the pipeline is cached
+        //    in the runtime and reused across invocations)
+        llvm::FunctionType *release_ft = llvm::FunctionType::get(
+            void_type, {i8_ptr}, false);
+        llvm::Function *release_fn = get_gpu_runtime_func(
+            "lfortran_gpu_release_kernel", release_ft);
+        builder->CreateCall(release_fn, {gpu_kernel});
     }
 
     void visit_GpuSync(const ASR::GpuSync_t & /* x */) {
