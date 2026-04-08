@@ -2317,6 +2317,58 @@ find_struct_member_section_sources(
     return result;
 }
 
+// Find struct member allocatable components whose runtime size is
+// determined by a plain array variable assigned in the kernel body.
+// Detects patterns like: arr(i)%member = var
+// where `var` is an array variable (not an ArraySection or struct member).
+// Returns a map: "arr.member" -> "var_name"
+inline std::map<std::string, std::string>
+find_struct_member_direct_var_sources(
+        const ASR::GpuKernelFunction_t &kernel) {
+    std::map<std::string, std::string> result;
+    for (size_t si = 0; si < kernel.n_body; si++) {
+        ASR::stmt_t *stmt = kernel.m_body[si];
+        if (stmt->type != ASR::stmtType::Assignment) continue;
+        ASR::Assignment_t *asgn =
+            ASR::down_cast<ASR::Assignment_t>(stmt);
+        if (!ASR::is_a<ASR::StructInstanceMember_t>(
+                *asgn->m_target)) continue;
+        ASR::StructInstanceMember_t *sim =
+            ASR::down_cast<ASR::StructInstanceMember_t>(
+                asgn->m_target);
+        if (!ASR::is_a<ASR::Variable_t>(
+                *ASRUtils::symbol_get_past_external(sim->m_m)))
+            continue;
+        ASR::Variable_t *mv = ASR::down_cast<ASR::Variable_t>(
+            ASRUtils::symbol_get_past_external(sim->m_m));
+        if (!ASRUtils::is_allocatable(mv->m_type)) continue;
+        std::string mem_name = ASRUtils::symbol_name(
+            ASRUtils::symbol_get_past_external(sim->m_m));
+        if (!ASR::is_a<ASR::ArrayItem_t>(*sim->m_v)) continue;
+        ASR::ArrayItem_t *ai =
+            ASR::down_cast<ASR::ArrayItem_t>(sim->m_v);
+        if (!ASR::is_a<ASR::Var_t>(*ai->m_v)) continue;
+        std::string arr_name = ASRUtils::symbol_name(
+            ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
+        std::string key = arr_name + "." + mem_name;
+        if (result.count(key)) continue;
+        ASR::expr_t *rhs =
+            unwrap_array_physical_cast(asgn->m_value);
+        if (!ASR::is_a<ASR::Var_t>(*rhs)) continue;
+        std::string rhs_name = ASRUtils::symbol_name(
+            ASR::down_cast<ASR::Var_t>(rhs)->m_v);
+        ASR::symbol_t *rhs_sym =
+            ASR::down_cast<ASR::Var_t>(rhs)->m_v;
+        ASR::Variable_t *rhs_var = ASR::down_cast<ASR::Variable_t>(
+            ASRUtils::symbol_get_past_external(rhs_sym));
+        ASR::ttype_t *rhs_type =
+            ASRUtils::type_get_past_allocatable(rhs_var->m_type);
+        if (!ASRUtils::is_array(rhs_type)) continue;
+        result[key] = rhs_name;
+    }
+    return result;
+}
+
 } // namespace LCompilers
 
 #endif // LFORTRAN_GPU_UTILS_H
