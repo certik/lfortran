@@ -407,6 +407,30 @@ public:
                     return;
                 }
             }
+            // Check if this non-allocatable array has a VLA workspace
+            if (!is_alloc) {
+                std::string vname(var->m_name);
+                auto vla_it = std::find_if(
+                    current_vla_infos.begin(), current_vla_infos.end(),
+                    [&](const GpuVlaWorkspace &ws) {
+                        return ws.var_name == vname;
+                    });
+                if (vla_it != current_vla_infos.end()) {
+                    src << get_indent() << "device " << elem_type
+                        << "* " << vname << " = __vla_" << vname
+                        << " + __thread_id * (";
+                    for (size_t d = 0; d < vla_it->dims.size(); d++) {
+                        if (d > 0) src << " * ";
+                        if (vla_it->dims[d].is_constant) {
+                            src << vla_it->dims[d].constant_value;
+                        } else {
+                            visit_expr(vla_it->dims[d].dim_expr);
+                        }
+                    }
+                    src << ");\n";
+                    return;
+                }
+            }
             src << get_indent() << elem_type << " "
                 << sanitize_metal_name(std::string(var->m_name));
             if (is_alloc) {
@@ -2017,11 +2041,47 @@ public:
             if (!ASR::is_a<ASR::GpuKernelFunction_t>(*item.second)) continue;
             ASR::GpuKernelFunction_t &kf =
                 *ASR::down_cast<ASR::GpuKernelFunction_t>(item.second);
+            // Collect Struct_t nodes directly in kernel scope
             for (auto &kitem : kf.m_symtab->get_scope()) {
                 if (ASR::is_a<ASR::Struct_t>(*kitem.second)) {
                     collect_structs_ordered(
                         ASR::down_cast<ASR::Struct_t>(kitem.second),
                         kf.m_symtab, emitted_structs, ordered_structs);
+                }
+            }
+            // Also collect struct types referenced by kernel variables
+            // (the struct definition may be in a parent scope).
+            auto collect_struct_from_var = [&](ASR::Variable_t *var) {
+                if (!var->m_type_declaration) return;
+                ASR::symbol_t *sym =
+                    ASRUtils::symbol_get_past_external(
+                        var->m_type_declaration);
+                if (ASR::is_a<ASR::Struct_t>(*sym)) {
+                    collect_structs_ordered(
+                        ASR::down_cast<ASR::Struct_t>(sym),
+                        kf.m_symtab, emitted_structs,
+                        ordered_structs);
+                }
+            };
+            for (auto &kitem : kf.m_symtab->get_scope()) {
+                if (!ASR::is_a<ASR::Variable_t>(*kitem.second)) continue;
+                collect_struct_from_var(
+                    ASR::down_cast<ASR::Variable_t>(kitem.second));
+            }
+            // Scan block-scope variables too
+            for (size_t bi = 0; bi < kf.n_body; bi++) {
+                if (!ASR::is_a<ASR::BlockCall_t>(*kf.m_body[bi]))
+                    continue;
+                ASR::BlockCall_t *bc =
+                    ASR::down_cast<ASR::BlockCall_t>(kf.m_body[bi]);
+                if (!ASR::is_a<ASR::Block_t>(*bc->m_m)) continue;
+                ASR::Block_t *block =
+                    ASR::down_cast<ASR::Block_t>(bc->m_m);
+                for (auto &bitem : block->m_symtab->get_scope()) {
+                    if (!ASR::is_a<ASR::Variable_t>(*bitem.second))
+                        continue;
+                    collect_struct_from_var(
+                        ASR::down_cast<ASR::Variable_t>(bitem.second));
                 }
             }
         }
@@ -3350,8 +3410,13 @@ public:
                 ASR::ttype_t *vla_type = ASRUtils::type_get_past_allocatable(
                     vla_var->m_type);
                 if (ASR::is_a<ASR::Array_t>(*vla_type)) {
-                    elem_type_str = metal_type(
-                        ASR::down_cast<ASR::Array_t>(vla_type)->m_type);
+                    ASR::ttype_t *inner_type =
+                        ASR::down_cast<ASR::Array_t>(vla_type)->m_type;
+                    if (is_struct_type(inner_type)) {
+                        elem_type_str = get_struct_name(vla_var);
+                    } else {
+                        elem_type_str = metal_type(inner_type);
+                    }
                 }
             }
 
@@ -5166,6 +5231,102 @@ public:
                     ? std::string(fn->m_name)
                     : std::string(ASRUtils::symbol_name(
                           ASRUtils::symbol_get_past_external(sc->m_name)));
+
+                // Check if this is an elemental call with array args
+                // that needs to be expanded into a loop. This happens
+                // when subroutine_from_function converts an elemental
+                // function to a subroutine but array_op skips GPU
+                // kernels, leaving the elementwise expansion undone.
+                bool is_elemental_array_call = false;
+                if (fn && ASRUtils::is_elemental(sc->m_name)) {
+                    for (size_t i = 0; i < sc->n_args; i++) {
+                        if (!sc->m_args[i].m_value) continue;
+                        ASR::ttype_t *at = ASRUtils::expr_type(
+                            sc->m_args[i].m_value);
+                        at = ASRUtils::type_get_past_pointer(at);
+                        if (ASRUtils::is_array(at)) {
+                            is_elemental_array_call = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (is_elemental_array_call) {
+                    // Find the loop size from the first array arg's
+                    // dimension or VLA workspace info
+                    std::string loop_size_expr;
+                    for (size_t i = 0; i < sc->n_args; i++) {
+                        if (!sc->m_args[i].m_value) continue;
+                        ASR::ttype_t *at = ASRUtils::expr_type(
+                            sc->m_args[i].m_value);
+                        at = ASRUtils::type_get_past_pointer(at);
+                        if (!ASRUtils::is_array(at)) continue;
+                        ASR::Array_t *arr =
+                            ASR::down_cast<ASR::Array_t>(at);
+                        if (arr->n_dims > 0 && arr->m_dims[0].m_length) {
+                            std::stringstream ss;
+                            std::swap(ss, src);
+                            visit_expr(arr->m_dims[0].m_length);
+                            loop_size_expr = src.str();
+                            src.str("");
+                            std::swap(ss, src);
+                        }
+                        // Also check VLA workspace for this variable
+                        if (loop_size_expr.empty() &&
+                                ASR::is_a<ASR::Var_t>(
+                                    *sc->m_args[i].m_value)) {
+                            std::string vn = ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    sc->m_args[i].m_value)->m_v);
+                            for (auto &ws : current_vla_infos) {
+                                if (ws.var_name == vn &&
+                                        !ws.dims.empty()) {
+                                    std::stringstream ss;
+                                    std::swap(ss, src);
+                                    if (ws.dims[0].is_constant) {
+                                        src << ws.dims[0].constant_value;
+                                    } else {
+                                        visit_expr(
+                                            ws.dims[0].dim_expr);
+                                    }
+                                    loop_size_expr = src.str();
+                                    src.str("");
+                                    std::swap(ss, src);
+                                    break;
+                                }
+                            }
+                        }
+                        if (!loop_size_expr.empty()) break;
+                    }
+                    if (loop_size_expr.empty()) loop_size_expr = "1";
+
+                    src << get_indent()
+                        << "for (int __elem_i = 0; __elem_i < "
+                        << loop_size_expr << "; __elem_i++) {\n";
+                    indent_level++;
+                    src << get_indent()
+                        << sanitize_metal_name(call_name) << "(";
+                    bool first_arg = true;
+                    for (size_t i = 0; i < sc->n_args; i++) {
+                        if (!sc->m_args[i].m_value) continue;
+                        if (!first_arg) src << ", ";
+                        first_arg = false;
+                        ASR::ttype_t *at = ASRUtils::expr_type(
+                            sc->m_args[i].m_value);
+                        ASR::ttype_t *past_ptr =
+                            ASRUtils::type_get_past_pointer(at);
+                        bool is_arr = ASRUtils::is_array(past_ptr);
+                        visit_expr(sc->m_args[i].m_value);
+                        if (is_arr) {
+                            src << "[__elem_i]";
+                        }
+                    }
+                    src << ");\n";
+                    indent_level--;
+                    src << get_indent() << "}\n";
+                    break;
+                }
+
                 src << get_indent() << sanitize_metal_name(call_name) << "(";
                 bool first_arg = true;
                 for (size_t i = 0; i < sc->n_args; i++) {

@@ -20,13 +20,21 @@ struct GpuVlaDim {
     // per-element sizes. struct_member_key is "arr_name.member_name".
     bool is_struct_member_size = false;
     std::string struct_member_key;
+    // When true, size equals the dimension size of a kernel array
+    // argument, resolved at dispatch time from the host-side array
+    // descriptor.  source_array_name is the kernel param name,
+    // source_dim_index is the 0-based dimension index.
+    bool is_array_dim_size = false;
+    std::string source_array_name;
+    size_t source_dim_index = 0;
 };
 
 // Describes a VLA workspace buffer required by a GPU kernel.
 struct GpuVlaWorkspace {
     std::string var_name;
     int buffer_index;
-    int elem_size;
+    int elem_size; // 0 means struct type, compute at codegen time
+    ASR::ttype_t *elem_asr_type = nullptr; // set when elem_size == 0
     std::vector<GpuVlaDim> dims;
 };
 
@@ -148,6 +156,31 @@ inline bool try_eval_int_constant(ASR::expr_t *e, int64_t &val) {
             default: return false;
         }
     }
+    if (ASR::is_a<ASR::IntegerCompare_t>(*e)) {
+        int64_t l, r;
+        auto *cmp = ASR::down_cast<ASR::IntegerCompare_t>(e);
+        if (!try_eval_int_constant(cmp->m_left, l)) return false;
+        if (!try_eval_int_constant(cmp->m_right, r)) return false;
+        bool result;
+        switch (cmp->m_op) {
+            case ASR::cmpopType::Eq: result = (l == r); break;
+            case ASR::cmpopType::NotEq: result = (l != r); break;
+            case ASR::cmpopType::Lt: result = (l < r); break;
+            case ASR::cmpopType::LtE: result = (l <= r); break;
+            case ASR::cmpopType::Gt: result = (l > r); break;
+            case ASR::cmpopType::GtE: result = (l >= r); break;
+            default: return false;
+        }
+        val = result ? 1 : 0;
+        return true;
+    }
+    if (ASR::is_a<ASR::IfExp_t>(*e)) {
+        auto *ie = ASR::down_cast<ASR::IfExp_t>(e);
+        int64_t cond;
+        if (!try_eval_int_constant(ie->m_test, cond)) return false;
+        return try_eval_int_constant(
+            cond ? ie->m_body : ie->m_orelse, val);
+    }
     return false;
 }
 
@@ -245,6 +278,49 @@ inline bool try_resolve_alloc_dim_constant(
     if (ASR::is_a<ASR::ArraySize_t>(*dim)) {
         return try_resolve_array_size_via_associate(
             ASR::down_cast<ASR::ArraySize_t>(dim), body, n_body, result);
+    }
+    return false;
+}
+
+// Try to find an ArrayBound expression inside a dimension length
+// expression and resolve it to the "__dim_<arr>_<d>" kernel argument.
+// The pattern is typically:
+//   (ArrayBound(arr, d, UBound) - ArrayBound(arr, d, LBound)) / 1 + 1
+// which simplifies to the dim size of `arr` along dimension d.
+// Returns true if the dim expression depends on the dimensions of a
+// kernel array argument, and populates arr_name/dim_index with the
+// source array name and 0-based dimension index.
+inline bool try_extract_array_bound_info(ASR::expr_t *expr,
+        std::string &arr_name, size_t &dim_index) {
+    if (!expr) return false;
+    if (ASR::is_a<ASR::ArrayBound_t>(*expr)) {
+        ASR::ArrayBound_t *ab =
+            ASR::down_cast<ASR::ArrayBound_t>(expr);
+        if (ab->m_v && ASR::is_a<ASR::Var_t>(*ab->m_v)) {
+            arr_name = ASRUtils::symbol_name(
+                ASR::down_cast<ASR::Var_t>(ab->m_v)->m_v);
+            dim_index = 0;
+            if (ab->m_dim &&
+                    ASR::is_a<ASR::IntegerConstant_t>(*ab->m_dim)) {
+                dim_index = ASR::down_cast<ASR::IntegerConstant_t>(
+                    ab->m_dim)->m_n - 1;
+            }
+            return true;
+        }
+    }
+    if (ASR::is_a<ASR::IntegerBinOp_t>(*expr)) {
+        ASR::IntegerBinOp_t *op =
+            ASR::down_cast<ASR::IntegerBinOp_t>(expr);
+        if (try_extract_array_bound_info(op->m_left, arr_name,
+                dim_index))
+            return true;
+        return try_extract_array_bound_info(op->m_right, arr_name,
+            dim_index);
+    }
+    if (ASR::is_a<ASR::Cast_t>(*expr)) {
+        return try_extract_array_bound_info(
+            ASR::down_cast<ASR::Cast_t>(expr)->m_arg,
+            arr_name, dim_index);
     }
     return false;
 }
@@ -602,6 +678,97 @@ inline void scan_kernel_scope_alloc_vlas(
     }
 }
 
+// Scan kernel-scope non-allocatable Array variables for VLA workspaces.
+// These arise from pass-generated temporaries (e.g. subroutine_from_function)
+// whose dimension length depends on runtime values like array bounds.
+inline void scan_kernel_scope_nonalloc_vlas(
+        const ASR::GpuKernelFunction_t &kernel,
+        const std::vector<std::string> &arg_names,
+        int &buffer_idx,
+        std::vector<GpuVlaWorkspace> &result) {
+    std::set<std::string> arg_set(arg_names.begin(), arg_names.end());
+    std::set<std::string> handled_names;
+    for (auto &ws : result) handled_names.insert(ws.var_name);
+
+    for (auto &item : kernel.m_symtab->get_scope()) {
+        if (!ASR::is_a<ASR::Variable_t>(*item.second)) continue;
+        ASR::Variable_t *var =
+            ASR::down_cast<ASR::Variable_t>(item.second);
+        if (ASRUtils::is_allocatable(var->m_type)) continue;
+        if (!ASR::is_a<ASR::Array_t>(*var->m_type)) continue;
+        std::string vname(var->m_name);
+        if (arg_set.count(vname)) continue;
+        if (handled_names.count(vname)) continue;
+        ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(var->m_type);
+        bool has_runtime_dim = false;
+        for (size_t d = 0; d < arr->n_dims; d++) {
+            if (arr->m_dims[d].m_length &&
+                    !ASR::is_a<ASR::IntegerConstant_t>(
+                        *arr->m_dims[d].m_length)) {
+                has_runtime_dim = true;
+                break;
+            }
+        }
+        if (!has_runtime_dim) continue;
+        GpuVlaWorkspace ws;
+        ws.var_name = vname;
+        ws.buffer_index = buffer_idx++;
+        if (ASR::is_a<ASR::Real_t>(*arr->m_type)) {
+            ws.elem_size = ASR::down_cast<ASR::Real_t>(
+                arr->m_type)->m_kind;
+        } else if (ASR::is_a<ASR::Integer_t>(*arr->m_type)) {
+            ws.elem_size = ASR::down_cast<ASR::Integer_t>(
+                arr->m_type)->m_kind;
+        } else if (ASR::is_a<ASR::StructType_t>(*arr->m_type)) {
+            ws.elem_size = 0;
+            ws.elem_asr_type = arr->m_type;
+        } else {
+            ws.elem_size = 4;
+        }
+        for (size_t d = 0; d < arr->n_dims; d++) {
+            ASR::expr_t *dim = arr->m_dims[d].m_length;
+            GpuVlaDim vd;
+            vd.dim_expr = dim;
+            if (dim && ASR::is_a<ASR::IntegerConstant_t>(*dim)) {
+                vd.is_constant = true;
+                vd.constant_value =
+                    ASR::down_cast<ASR::IntegerConstant_t>(dim)->m_n;
+                vd.call_arg_index = 0;
+            } else if (dim) {
+                int64_t const_val;
+                if (try_eval_int_constant(dim, const_val)) {
+                    vd.is_constant = true;
+                    vd.constant_value = const_val;
+                    vd.call_arg_index = 0;
+                } else {
+                    vd.is_constant = false;
+                    vd.constant_value = 0;
+                    vd.call_arg_index = 0;
+                    std::string src_arr;
+                    size_t src_dim;
+                    if (try_extract_array_bound_info(dim, src_arr,
+                            src_dim)) {
+                        vd.is_array_dim_size = true;
+                        vd.source_array_name = src_arr;
+                        vd.source_dim_index = src_dim;
+                    } else {
+                        size_t idx = 0;
+                        if (find_arg_var_in_expr(dim, arg_names, idx)) {
+                            vd.call_arg_index = idx;
+                        }
+                    }
+                }
+            } else {
+                vd.is_constant = true;
+                vd.constant_value = 1;
+                vd.call_arg_index = 0;
+            }
+            ws.dims.push_back(vd);
+        }
+        result.push_back(std::move(ws));
+    }
+}
+
 // Count VLA workspaces in a kernel without assigning buffer indices.
 inline int count_gpu_vla_workspaces(const ASR::GpuKernelFunction_t &kernel) {
     int count = 0;
@@ -681,6 +848,26 @@ inline int count_gpu_vla_workspaces(const ASR::GpuKernelFunction_t &kernel) {
             }
             if (has_runtime) count++;
             break;
+        }
+    }
+    // Also count kernel-scope non-allocatable Array variables with
+    // runtime-dependent dimensions (e.g. pass-generated temporaries)
+    for (auto &item : kernel.m_symtab->get_scope()) {
+        if (!ASR::is_a<ASR::Variable_t>(*item.second)) continue;
+        ASR::Variable_t *var =
+            ASR::down_cast<ASR::Variable_t>(item.second);
+        if (ASRUtils::is_allocatable(var->m_type)) continue;
+        if (!ASR::is_a<ASR::Array_t>(*var->m_type)) continue;
+        std::string vname(var->m_name);
+        if (arg_name_set.count(vname)) continue;
+        ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(var->m_type);
+        for (size_t d = 0; d < arr->n_dims; d++) {
+            if (arr->m_dims[d].m_length &&
+                    !ASR::is_a<ASR::IntegerConstant_t>(
+                        *arr->m_dims[d].m_length)) {
+                count++;
+                break;
+            }
         }
     }
     return count;
@@ -850,6 +1037,11 @@ inline std::vector<GpuVlaWorkspace> analyze_gpu_vla_workspaces(
     // statements have runtime-dependent dimensions (e.g. temporaries from
     // subroutine_from_function pass with runtime-sized array sections).
     scan_kernel_scope_alloc_vlas(kernel, arg_names, buffer_idx, result);
+
+    // Also scan kernel-scope non-allocatable Array variables with
+    // runtime-dependent dimensions (e.g. subroutine_from_function temps
+    // whose size depends on array bounds of kernel arguments).
+    scan_kernel_scope_nonalloc_vlas(kernel, arg_names, buffer_idx, result);
 
     return result;
 }

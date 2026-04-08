@@ -19117,6 +19117,10 @@ public:
         // Save scalar arg LLVM values for VLA workspace size computation
         std::vector<llvm::Value*> call_arg_values(x.n_args, nullptr);
 
+        // Save per-dimension sizes for array kernel arguments, keyed by
+        // "param_name.dim_index" (0-based), for VLA workspace allocation.
+        std::map<std::string, llvm::Value*> host_array_dim_sizes;
+
         // Track scalar args to pack into a single struct buffer
         struct ScalarArgInfo {
             llvm::Value *value;
@@ -20502,6 +20506,8 @@ public:
                             desc_type, desc_val, dim_1based, 4, 4);
                     scalar_arg_infos.push_back(
                         {dim_size, llvm::Type::getInt32Ty(context)});
+                    host_array_dim_sizes[kparam_name + "."
+                        + std::to_string(d)] = dim_size;
                 }
             } else {
                 // Call arg has known dims: compute sizes from ASR
@@ -20529,6 +20535,8 @@ public:
                     }
                     scalar_arg_infos.push_back(
                         {dim_size, llvm::Type::getInt32Ty(context)});
+                    host_array_dim_sizes[kparam_name + "."
+                        + std::to_string(d)] = dim_size;
                 }
                 ptr_loads = ptr_loads_copy;
             }
@@ -20673,6 +20681,17 @@ public:
                                 builder->CreateIntCast(
                                     sit->second, i64, true));
                         }
+                    } else if (dim.is_array_dim_size) {
+                        // Read size from the host-side array dim sizes
+                        std::string key = dim.source_array_name + "."
+                            + std::to_string(dim.source_dim_index);
+                        auto ait = host_array_dim_sizes.find(key);
+                        if (ait != host_array_dim_sizes.end()) {
+                            per_thread_elems = builder->CreateMul(
+                                per_thread_elems,
+                                builder->CreateIntCast(
+                                    ait->second, i64, true));
+                        }
                     } else {
                         llvm::Value *dim_val =
                             call_arg_values[dim.call_arg_index];
@@ -20682,9 +20701,21 @@ public:
                             builder->CreateIntCast(dim_val, i64, true));
                     }
                 }
+                llvm::Value *elem_size_val;
+                if (ws.elem_size == 0 && ws.elem_asr_type) {
+                    llvm::Type *llvm_elem_type =
+                        llvm_utils->get_type_from_ttype_t_util(
+                            nullptr, ws.elem_asr_type, module.get());
+                    llvm::DataLayout dl(module->getDataLayout());
+                    uint64_t sz = dl.getTypeAllocSize(llvm_elem_type);
+                    elem_size_val = llvm::ConstantInt::get(i64, sz);
+                } else {
+                    elem_size_val = llvm::ConstantInt::get(i64,
+                        ws.elem_size);
+                }
                 llvm::Value *workspace_size = builder->CreateMul(
                     builder->CreateMul(total_threads, per_thread_elems),
-                    llvm::ConstantInt::get(i64, ws.elem_size));
+                    elem_size_val);
                 llvm::Value *ptr =
                     builder->CreateCall(malloc_fn, {workspace_size});
                 vla_workspace_ptrs.push_back(ptr);
