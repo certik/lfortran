@@ -38,10 +38,52 @@ struct GpuVlaWorkspace {
     std::vector<GpuVlaDim> dims;
 };
 
+// Recursively count the total number of Metal buffer slots needed for
+// allocatable array members of a struct, including nested decomposition
+// for array-of-struct members.  This mirrors the buffer emission pattern
+// in Metal codegen (collect_nested_alloc_members + nested sub-struct
+// decomposition), counting 3 buffers (data, offsets, sizes) per member.
+inline int count_struct_alloc_buffers(ASR::Struct_t *st) {
+    int count = 0;
+    for (size_t m = 0; m < st->n_members; m++) {
+        ASR::symbol_t *mem = st->m_symtab->get_symbol(st->m_members[m]);
+        if (!mem || !ASR::is_a<ASR::Variable_t>(*mem)) continue;
+        ASR::Variable_t *mv = ASR::down_cast<ASR::Variable_t>(mem);
+        if (ASRUtils::is_allocatable(mv->m_type)) {
+            ASR::ttype_t *inner =
+                ASRUtils::type_get_past_allocatable(mv->m_type);
+            if (!ASR::is_a<ASR::Array_t>(*inner)) continue;
+            count += 3;
+            ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(inner);
+            if (ASR::is_a<ASR::StructType_t>(
+                    *ASRUtils::extract_type(arr->m_type)) &&
+                    mv->m_type_declaration) {
+                ASR::symbol_t *es = ASRUtils::symbol_get_past_external(
+                    mv->m_type_declaration);
+                if (ASR::is_a<ASR::Struct_t>(*es)) {
+                    count += count_struct_alloc_buffers(
+                        ASR::down_cast<ASR::Struct_t>(es));
+                }
+            }
+        } else if (ASR::is_a<ASR::StructType_t>(
+                       *ASRUtils::extract_type(mv->m_type)) &&
+                   mv->m_type_declaration) {
+            ASR::symbol_t *inner_sym =
+                ASRUtils::symbol_get_past_external(mv->m_type_declaration);
+            if (ASR::is_a<ASR::Struct_t>(*inner_sym)) {
+                count += count_struct_alloc_buffers(
+                    ASR::down_cast<ASR::Struct_t>(inner_sym));
+            }
+        }
+    }
+    return count;
+}
+
 // Classify kernel arguments into buffer (array/struct) and scalar categories.
 // Returns the count of buffer args and scalar args respectively.
 // For struct array args with allocatable array members, counts 3 extra
-// buffers per member (data, offsets, sizes) as emitted by Metal codegen.
+// buffers per member (data, offsets, sizes) as emitted by Metal codegen,
+// including nested decomposition for array-of-struct members.
 inline std::pair<int, int> classify_gpu_kernel_args(
         const ASR::GpuKernelFunction_t &kernel) {
     int n_buffer = 0, n_scalar = 0;
@@ -58,23 +100,8 @@ inline std::pair<int, int> classify_gpu_kernel_args(
                 ASR::symbol_t *s = ASRUtils::symbol_get_past_external(
                     var->m_type_declaration);
                 if (ASR::is_a<ASR::Struct_t>(*s)) {
-                    ASR::Struct_t *st = ASR::down_cast<ASR::Struct_t>(s);
-                    for (size_t m = 0; m < st->n_members; m++) {
-                        ASR::symbol_t *mem =
-                            st->m_symtab->get_symbol(st->m_members[m]);
-                        if (!mem || !ASR::is_a<ASR::Variable_t>(*mem))
-                            continue;
-                        ASR::Variable_t *mv =
-                            ASR::down_cast<ASR::Variable_t>(mem);
-                        if (!ASRUtils::is_allocatable(mv->m_type))
-                            continue;
-                        ASR::ttype_t *inner =
-                            ASRUtils::type_get_past_allocatable(
-                                mv->m_type);
-                        if (!ASR::is_a<ASR::Array_t>(*inner))
-                            continue;
-                        n_buffer += 3;
-                    }
+                    n_buffer += count_struct_alloc_buffers(
+                        ASR::down_cast<ASR::Struct_t>(s));
                 }
             }
         } else {

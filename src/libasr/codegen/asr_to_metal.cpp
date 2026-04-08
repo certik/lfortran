@@ -6133,6 +6133,8 @@ public:
                             sc->m_args[i].m_value);
                         at = ASRUtils::type_get_past_pointer(at);
                         if (!ASRUtils::is_array(at)) continue;
+                        at = ASRUtils::type_get_past_allocatable(at);
+                        if (!ASR::is_a<ASR::Array_t>(*at)) continue;
                         ASR::Array_t *arr =
                             ASR::down_cast<ASR::Array_t>(at);
                         if (arr->n_dims > 0 && arr->m_dims[0].m_length) {

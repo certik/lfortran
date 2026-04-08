@@ -19189,6 +19189,7 @@ public:
             llvm::Type *iel_llvm;     // element LLVM type
             llvm::Type *mem_el_llvm;  // inner struct LLVM type
             llvm::Value *flat_typed;  // parent flat buf as inner*
+            std::vector<std::pair<llvm::Type*, int>> parent_gep_chain;
         };
         std::vector<NestedStructWriteBack> nested_writebacks;
 
@@ -20452,6 +20453,21 @@ public:
                                                             false);
                                                 int ifidx =
                                                     inam.field_idx;
+                                                std::vector<std::pair<
+                                                    llvm::Type*, int>>
+                                                    inam_gep_chain;
+                                                for (auto &pc :
+                                                        inam.parent_chain) {
+                                                    llvm::Type *pc_llvm =
+                                                        llvm_utils
+                                                            ->getStructType(
+                                                                pc.first,
+                                                                module.get());
+                                                    inam_gep_chain
+                                                        .push_back(
+                                                            {pc_llvm,
+                                                             pc.second});
+                                                }
                                                 // Build nested flat
                                                 // data/offsets/sizes
                                                 // buffers using a
@@ -20569,29 +20585,16 @@ public:
                                                         llvm_utils
                                                             ->CreateLoad2(
                                                                 i64, jj);
-                                                    // Get inner struct
-                                                    // at flat_typed[j]
-                                                    llvm::Value *iptr =
-                                                        builder
-                                                            ->CreateGEP(
-                                                                mem_el_llvm,
-                                                                flat_typed,
-                                                                jv);
-                                                    // GEP to sub-member
+                                                    // GEP through parent
+                                                    // chain to sub-member
                                                     // descriptor field
                                                     llvm::Value *fp =
-                                                        builder
-                                                            ->CreateGEP(
-                                                                mem_el_llvm,
-                                                                iptr,
-                                                                {llvm::ConstantInt
-                                                                    ::get(
-                                                                        i32,
-                                                                        0),
-                                                                 llvm::ConstantInt
-                                                                    ::get(
-                                                                        i32,
-                                                                        ifidx)});
+                                                        emit_nested_field_gep(
+                                                            mem_el_llvm,
+                                                            flat_typed,
+                                                            jv,
+                                                            inam_gep_chain,
+                                                            ifidx);
                                                     // Load descriptor
                                                     // pointer
                                                     llvm::Value *dp =
@@ -21112,7 +21115,8 @@ public:
                                                     idesc_type,
                                                     iel_llvm,
                                                     mem_el_llvm,
-                                                    flat_typed});
+                                                    flat_typed,
+                                                    inam_gep_chain});
                                             }
                                         }
                                     }
@@ -22560,17 +22564,12 @@ public:
                         data_bytes);
                     // Store descriptor pointer in
                     // inner struct's field
-                    llvm::Value *elem_ptr =
-                        builder->CreateGEP(
-                            nwb.mem_el_llvm,
-                            nwb.flat_typed, jv);
                     llvm::Value *field_ptr =
-                        builder->CreateGEP(
-                            nwb.mem_el_llvm, elem_ptr,
-                            {llvm::ConstantInt::get(
-                                 i32, 0),
-                             llvm::ConstantInt::get(
-                                 i32, nwb.ifidx)});
+                        emit_nested_field_gep(
+                            nwb.mem_el_llvm,
+                            nwb.flat_typed, jv,
+                            nwb.parent_gep_chain,
+                            nwb.ifidx);
                     builder->CreateStore(desc, field_ptr);
                 }
                 builder->CreateBr(nwb_next);
