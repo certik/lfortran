@@ -19154,6 +19154,19 @@ public:
             int field_idx;
         };
         std::vector<StructMemberWriteBack> struct_writebacks;
+        // Writeback info for the non-constant (allocatable) path
+        struct DynStructMemberWriteBack {
+            llvm::Value *flat_buf;
+            llvm::Value *n_elems;
+            llvm::Value *typed_data;
+            llvm::Value *sz_ptr;
+            llvm::Type *struct_llvm;
+            llvm::Type *desc_type;
+            llvm::Type *mem_el_llvm;
+            int field_idx;
+            int elem_byte_size;
+        };
+        std::vector<DynStructMemberWriteBack> dyn_struct_writebacks;
         // Map "arr.member" -> first element's size (LLVM value)
         // for VLA workspace allocation of function-call result temps.
         std::map<std::string, llvm::Value*> struct_member_first_sizes;
@@ -20170,6 +20183,201 @@ public:
                                 llvm::Value *me_size_val =
                                     llvm::ConstantInt::get(i64,
                                         me_size);
+                                // Look up VLA write size for
+                                // pre-allocating null members
+                                std::string sm_key =
+                                    std::string(arr_var->m_name) + "."
+                                    + st->m_members[m];
+                                int64_t vla_member_sz = 0;
+                                {
+                                    auto vit =
+                                        struct_member_vla_sizes.find(
+                                            sm_key);
+                                    if (vit !=
+                                            struct_member_vla_sizes.end())
+                                        vla_member_sz = vit->second;
+                                }
+                                // Pre-allocate null member descriptors
+                                // so sa_sz/sa_cp loops don't crash
+                                if (vla_member_sz > 0) {
+                                    llvm::Function *pa_fn =
+                                        builder->GetInsertBlock()
+                                            ->getParent();
+                                    llvm::AllocaInst *pa_k =
+                                        llvm_utils->CreateAlloca(i64);
+                                    builder->CreateStore(
+                                        llvm::ConstantInt::get(i64, 0),
+                                        pa_k);
+                                    llvm::BasicBlock *pa_h =
+                                        llvm::BasicBlock::Create(context,
+                                            "pa.head", pa_fn);
+                                    llvm::BasicBlock *pa_b =
+                                        llvm::BasicBlock::Create(context,
+                                            "pa.body", pa_fn);
+                                    llvm::BasicBlock *pa_alloc =
+                                        llvm::BasicBlock::Create(context,
+                                            "pa.alloc", pa_fn);
+                                    llvm::BasicBlock *pa_next =
+                                        llvm::BasicBlock::Create(context,
+                                            "pa.next", pa_fn);
+                                    llvm::BasicBlock *pa_e =
+                                        llvm::BasicBlock::Create(context,
+                                            "pa.end", pa_fn);
+                                    builder->CreateBr(pa_h);
+                                    builder->SetInsertPoint(pa_h);
+                                    {
+                                        llvm::Value *kv =
+                                            llvm_utils->CreateLoad2(
+                                                i64, pa_k);
+                                        builder->CreateCondBr(
+                                            builder->CreateICmpSLT(
+                                                kv, n_elems_64),
+                                            pa_b, pa_e);
+                                    }
+                                    builder->SetInsertPoint(pa_b);
+                                    {
+                                        llvm::Value *kv =
+                                            llvm_utils->CreateLoad2(
+                                                i64, pa_k);
+                                        llvm::Value *fp =
+                                            builder->CreateGEP(
+                                                struct_llvm, typed_data,
+                                                {kv,
+                                                 llvm::ConstantInt::get(
+                                                     i32, field_idx)});
+                                        llvm::Value *dp =
+                                            llvm_utils->CreateLoad2(
+                                                mem_desc_type
+                                                    ->getPointerTo(),
+                                                fp);
+                                        llvm::Value *is_null =
+                                            builder->CreateICmpEQ(
+                                                builder->CreatePtrToInt(
+                                                    dp, i64),
+                                                llvm::ConstantInt::get(
+                                                    i64, 0));
+                                        builder->CreateCondBr(
+                                            is_null, pa_alloc, pa_next);
+                                    }
+                                    builder->SetInsertPoint(pa_alloc);
+                                    {
+                                        llvm::Value *kv =
+                                            llvm_utils->CreateLoad2(
+                                                i64, pa_k);
+                                        llvm::Value *fp =
+                                            builder->CreateGEP(
+                                                struct_llvm, typed_data,
+                                                {kv,
+                                                 llvm::ConstantInt::get(
+                                                     i32, field_idx)});
+                                        llvm::DataLayout dl(
+                                            module.get());
+                                        uint64_t desc_sz =
+                                            dl.getTypeAllocSize(
+                                                mem_desc_type);
+                                        llvm::Value *desc_mem =
+                                            builder->CreateCall(mfn,
+                                                {llvm::ConstantInt::get(
+                                                    i64, desc_sz)});
+                                        llvm::Value *new_desc =
+                                            builder->CreatePointerCast(
+                                                desc_mem,
+                                                mem_desc_type
+                                                    ->getPointerTo());
+                                        {
+                                            llvm::Type *fp_el =
+                                                fp->getType()
+                                                    ->getPointerElementType();
+                                            llvm::Value *sd =
+                                                (new_desc->getType()
+                                                    != fp_el)
+                                                ? builder
+                                                    ->CreatePointerCast(
+                                                        new_desc, fp_el)
+                                                : new_desc;
+                                            builder->CreateStore(sd, fp);
+                                        }
+                                        arr_descr
+                                            ->fill_dimension_descriptor(
+                                                mem_desc_type,
+                                                new_desc, 1);
+                                        llvm::Value *ne64 =
+                                            llvm::ConstantInt::get(
+                                                i64, vla_member_sz);
+                                        llvm::Value *alloc_bytes =
+                                            llvm::ConstantInt::get(
+                                                i64,
+                                                vla_member_sz * me_size);
+                                        llvm::Value *new_dp =
+                                            builder->CreateCall(
+                                                mfn, {alloc_bytes});
+                                        llvm::Value *new_dpp =
+                                            arr_descr
+                                                ->get_pointer_to_data(
+                                                    mem_desc_type,
+                                                    new_desc);
+                                        builder->CreateStore(
+                                            builder->CreatePointerCast(
+                                                new_dp,
+                                                mem_el_llvm
+                                                    ->getPointerTo()),
+                                            new_dpp);
+                                        llvm::Value *dim_des_arr =
+                                            arr_descr
+                                                ->get_pointer_to_dimension_descriptor_array(
+                                                    mem_desc_type,
+                                                    new_desc);
+                                        llvm::Value *dim0 =
+                                            arr_descr
+                                                ->get_pointer_to_dimension_descriptor(
+                                                    dim_des_arr,
+                                                    llvm::ConstantInt::get(
+                                                        i32, 0));
+                                        llvm::Value *extent_ptr =
+                                            arr_descr
+                                                ->get_dimension_size(
+                                                    dim0, false);
+                                        builder->CreateStore(
+                                            ne64, extent_ptr);
+                                        // Set stride to 1 for
+                                        // correct element indexing
+                                        llvm::Value *stride_ptr =
+                                            arr_descr
+                                                ->get_stride(dim0,
+                                                    false);
+                                        builder->CreateStore(
+                                            llvm::ConstantInt::get(
+                                                i64, 1),
+                                            stride_ptr);
+                                        // Set offset to 0
+                                        llvm::Value *offset_ptr =
+                                            builder->CreateGEP(
+                                                mem_desc_type,
+                                                new_desc,
+                                                {llvm::ConstantInt::get(
+                                                    i32, 0),
+                                                 llvm::ConstantInt::get(
+                                                    i32, 7)});
+                                        builder->CreateStore(
+                                            llvm::ConstantInt::get(
+                                                i64, 0),
+                                            offset_ptr);
+                                        builder->CreateBr(pa_next);
+                                    }
+                                    builder->SetInsertPoint(pa_next);
+                                    {
+                                        llvm::Value *kv =
+                                            llvm_utils->CreateLoad2(
+                                                i64, pa_k);
+                                        builder->CreateStore(
+                                            builder->CreateAdd(kv,
+                                                llvm::ConstantInt::get(
+                                                    i64, 1)),
+                                            pa_k);
+                                        builder->CreateBr(pa_h);
+                                    }
+                                    builder->SetInsertPoint(pa_e);
+                                }
                                 // Allocate sizes and offsets buffers
                                 llvm::Value *buf_bytes =
                                     builder->CreateMul(n_elems_64,
@@ -20408,6 +20616,12 @@ public:
                                 emit_gpu_buffer(off_buf, buf_bytes);
                                 // Set sizes buffer
                                 emit_gpu_buffer(sz_buf, buf_bytes);
+                                // Track for writeback after kernel
+                                dyn_struct_writebacks.push_back(
+                                    {flat, n_elems_64, typed_data,
+                                     sz_ptr, struct_llvm, mem_desc_type,
+                                     mem_el_llvm, field_idx,
+                                     me_size});
                                 field_idx++;
                             }
                         }
@@ -20826,6 +21040,106 @@ public:
                 run_wb = builder->CreateAdd(
                     run_wb, wb.sizes[k]);
             }
+        }
+
+        // 5d. Write back decomposed struct member buffers
+        // for the non-constant (allocatable) path.
+        for (auto &dwb : dyn_struct_writebacks) {
+            llvm::Function *wb_fn =
+                builder->GetInsertBlock()->getParent();
+            llvm::AllocaInst *wb_k =
+                llvm_utils->CreateAlloca(i64);
+            llvm::AllocaInst *wb_run =
+                llvm_utils->CreateAlloca(i64);
+            builder->CreateStore(
+                llvm::ConstantInt::get(i64, 0), wb_k);
+            builder->CreateStore(
+                llvm::ConstantInt::get(i64, 0), wb_run);
+            llvm::BasicBlock *wb_h =
+                llvm::BasicBlock::Create(context,
+                    "dwb.head", wb_fn);
+            llvm::BasicBlock *wb_b =
+                llvm::BasicBlock::Create(context,
+                    "dwb.body", wb_fn);
+            llvm::BasicBlock *wb_e =
+                llvm::BasicBlock::Create(context,
+                    "dwb.end", wb_fn);
+            builder->CreateBr(wb_h);
+            builder->SetInsertPoint(wb_h);
+            {
+                llvm::Value *kv =
+                    llvm_utils->CreateLoad2(i64, wb_k);
+                builder->CreateCondBr(
+                    builder->CreateICmpSLT(
+                        kv, dwb.n_elems),
+                    wb_b, wb_e);
+            }
+            builder->SetInsertPoint(wb_b);
+            {
+                llvm::Value *kv =
+                    llvm_utils->CreateLoad2(i64, wb_k);
+                llvm::Value *kv32 =
+                    builder->CreateTrunc(kv,
+                        llvm::Type::getInt32Ty(context));
+                llvm::Value *run_val =
+                    llvm_utils->CreateLoad2(i64, wb_run);
+                // Get per-element size from sizes buffer
+                llvm::Value *esz =
+                    llvm_utils->CreateLoad2(
+                        llvm::Type::getInt32Ty(context),
+                        builder->CreateGEP(
+                            llvm::Type::getInt32Ty(context),
+                            dwb.sz_ptr, kv32));
+                llvm::Value *esz64 =
+                    builder->CreateSExtOrTrunc(esz, i64);
+                // Source: flat_buf + run * elem_byte_size
+                llvm::Value *boff =
+                    builder->CreateMul(run_val,
+                        llvm::ConstantInt::get(
+                            i64, dwb.elem_byte_size));
+                llvm::Value *src =
+                    builder->CreateGEP(
+                        llvm::Type::getInt8Ty(context),
+                        dwb.flat_buf, boff);
+                // Dest: struct element's member data pointer
+                llvm::Value *fp =
+                    builder->CreateGEP(
+                        dwb.struct_llvm, dwb.typed_data,
+                        {kv, llvm::ConstantInt::get(
+                            i32, dwb.field_idx)});
+                llvm::Value *dp =
+                    llvm_utils->CreateLoad2(
+                        dwb.desc_type->getPointerTo(), fp);
+                llvm::Value *dpp =
+                    arr_descr->get_pointer_to_data(
+                        dwb.desc_type, dp);
+                llvm::Value *raw =
+                    llvm_utils->CreateLoad2(
+                        llvm::PointerType::getUnqual(
+                            llvm::Type::getInt8Ty(context)),
+                        dpp);
+                raw = builder->CreatePointerCast(
+                    raw, i8_ptr);
+                // Copy
+                llvm::Value *sb =
+                    builder->CreateMul(esz64,
+                        llvm::ConstantInt::get(
+                            i64, dwb.elem_byte_size));
+                builder->CreateMemCpy(
+                    raw, llvm::MaybeAlign(1),
+                    src, llvm::MaybeAlign(1), sb);
+                // Update running offset
+                builder->CreateStore(
+                    builder->CreateAdd(run_val, esz64),
+                    wb_run);
+                // Increment k
+                builder->CreateStore(
+                    builder->CreateAdd(kv,
+                        llvm::ConstantInt::get(i64, 1)),
+                    wb_k);
+                builder->CreateBr(wb_h);
+            }
+            builder->SetInsertPoint(wb_e);
         }
 
         // 6. Free VLA workspace buffers allocated in step 4b

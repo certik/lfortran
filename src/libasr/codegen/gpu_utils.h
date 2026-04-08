@@ -1091,6 +1091,74 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
         if (stmt->type == ASR::stmtType::Assignment) {
             ASR::Assignment_t *asgn =
                 ASR::down_cast<ASR::Assignment_t>(stmt);
+            // Case: arr(i) = StructConstructor(t, [arg1, ...])
+            // where arg is a VLA workspace variable
+            if (ASR::is_a<ASR::ArrayItem_t>(*asgn->m_target) &&
+                    ASR::is_a<ASR::StructConstructor_t>(*asgn->m_value)) {
+                ASR::ArrayItem_t *ai =
+                    ASR::down_cast<ASR::ArrayItem_t>(asgn->m_target);
+                if (ASR::is_a<ASR::Var_t>(*ai->m_v)) {
+                    std::string arr_name = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
+                    ASR::StructConstructor_t *sc =
+                        ASR::down_cast<ASR::StructConstructor_t>(
+                            asgn->m_value);
+                    ASR::symbol_t *struct_sym =
+                        ASRUtils::symbol_get_past_external(sc->m_dt_sym);
+                    if (ASR::is_a<ASR::Struct_t>(*struct_sym)) {
+                        ASR::Struct_t *st =
+                            ASR::down_cast<ASR::Struct_t>(struct_sym);
+                        for (size_t mi = 0;
+                                mi < st->n_members && mi < sc->n_args;
+                                mi++) {
+                            if (!sc->m_args[mi].m_value) continue;
+                            ASR::symbol_t *mem =
+                                st->m_symtab->get_symbol(
+                                    st->m_members[mi]);
+                            if (!mem ||
+                                    !ASR::is_a<ASR::Variable_t>(*mem))
+                                continue;
+                            ASR::Variable_t *mv =
+                                ASR::down_cast<ASR::Variable_t>(mem);
+                            if (!ASRUtils::is_allocatable(mv->m_type))
+                                continue;
+                            ASR::ttype_t *inner =
+                                ASRUtils::type_get_past_allocatable(
+                                    mv->m_type);
+                            if (!ASR::is_a<ASR::Array_t>(*inner))
+                                continue;
+                            std::string key =
+                                arr_name + "." + st->m_members[mi];
+                            if (result.count(key)) continue;
+                            ASR::expr_t *arg = sc->m_args[mi].m_value;
+                            if (ASR::is_a<ASR::Var_t>(*arg)) {
+                                std::string val_name =
+                                    ASRUtils::symbol_name(
+                                        ASR::down_cast<ASR::Var_t>(
+                                            arg)->m_v);
+                                auto ws_it = ws_by_name.find(val_name);
+                                if (ws_it != ws_by_name.end()) {
+                                    int64_t per_elem = 1;
+                                    bool all_const = true;
+                                    for (auto &dim :
+                                            ws_it->second->dims) {
+                                        if (dim.is_constant) {
+                                            per_elem *=
+                                                dim.constant_value;
+                                        } else {
+                                            all_const = false;
+                                            break;
+                                        }
+                                    }
+                                    if (all_const && per_elem > 0) {
+                                        result[key] = per_elem;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             if (!ASR::is_a<ASR::StructInstanceMember_t>(*asgn->m_target))
                 continue;
             if (!ASR::is_a<ASR::Var_t>(*asgn->m_value)) continue;
