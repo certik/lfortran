@@ -2150,10 +2150,77 @@ inline std::map<std::string, std::string> find_struct_member_vla_runtime_sources
             }
         }
     }
+    // Handle direct assignments:
+    // SIM(ArrayItem(Var(b), i), x) = ArrayItem(Var(a), i)
+    // where x is a struct member whose type has allocatable sub-members.
+    // Maps b.x_v -> a.v for each nested allocatable member v.
+    for (size_t si = 0; si < kernel.n_body; si++) {
+        ASR::stmt_t *stmt = kernel.m_body[si];
+        if (stmt->type != ASR::stmtType::Assignment) continue;
+        ASR::Assignment_t *asgn =
+            ASR::down_cast<ASR::Assignment_t>(stmt);
+        if (!ASR::is_a<ASR::StructInstanceMember_t>(*asgn->m_target))
+            continue;
+        if (!ASR::is_a<ASR::ArrayItem_t>(*asgn->m_value))
+            continue;
+        ASR::StructInstanceMember_t *tgt_sim =
+            ASR::down_cast<ASR::StructInstanceMember_t>(
+                asgn->m_target);
+        if (!ASR::is_a<ASR::ArrayItem_t>(*tgt_sim->m_v))
+            continue;
+        ASR::ArrayItem_t *tgt_ai =
+            ASR::down_cast<ASR::ArrayItem_t>(tgt_sim->m_v);
+        if (!ASR::is_a<ASR::Var_t>(*tgt_ai->m_v))
+            continue;
+        std::string tgt_arr = ASRUtils::symbol_name(
+            ASR::down_cast<ASR::Var_t>(tgt_ai->m_v)->m_v);
+        std::string tgt_mem = ASRUtils::symbol_name(
+            ASRUtils::symbol_get_past_external(tgt_sim->m_m));
+        // Check that the member is a struct type with allocatable
+        // sub-members.
+        ASR::symbol_t *mem_sym =
+            ASRUtils::symbol_get_past_external(tgt_sim->m_m);
+        if (!ASR::is_a<ASR::Variable_t>(*mem_sym)) continue;
+        ASR::Variable_t *mem_var =
+            ASR::down_cast<ASR::Variable_t>(mem_sym);
+        if (!mem_var->m_type_declaration) continue;
+        ASR::symbol_t *mem_struct_sym =
+            ASRUtils::symbol_get_past_external(
+                mem_var->m_type_declaration);
+        if (!ASR::is_a<ASR::Struct_t>(*mem_struct_sym)) continue;
+        ASR::Struct_t *mem_st =
+            ASR::down_cast<ASR::Struct_t>(mem_struct_sym);
+        // Get the source array name
+        ASR::ArrayItem_t *val_ai =
+            ASR::down_cast<ASR::ArrayItem_t>(asgn->m_value);
+        if (!ASR::is_a<ASR::Var_t>(*val_ai->m_v)) continue;
+        std::string val_arr = ASRUtils::symbol_name(
+            ASR::down_cast<ASR::Var_t>(val_ai->m_v)->m_v);
+        // Collect allocatable sub-members of the member's struct type
+        // and map tgt_arr.tgt_mem_sub -> val_arr.sub
+        for (size_t m = 0; m < mem_st->n_members; m++) {
+            ASR::symbol_t *sub_sym =
+                mem_st->m_symtab->get_symbol(mem_st->m_members[m]);
+            if (!sub_sym || !ASR::is_a<ASR::Variable_t>(*sub_sym))
+                continue;
+            ASR::Variable_t *sub_var =
+                ASR::down_cast<ASR::Variable_t>(sub_sym);
+            if (!ASRUtils::is_allocatable(sub_var->m_type))
+                continue;
+            ASR::ttype_t *sub_inner =
+                ASRUtils::type_get_past_allocatable(sub_var->m_type);
+            if (!ASR::is_a<ASR::Array_t>(*sub_inner)) continue;
+            std::string sub_name(mem_st->m_members[m]);
+            std::string tgt_key =
+                tgt_arr + "." + tgt_mem + "_" + sub_name;
+            std::string val_key = val_arr + "." + sub_name;
+            if (!result.count(tgt_key)) {
+                result[tgt_key] = val_key;
+            }
+        }
+    }
     return result;
 }
-
-// Information about a struct member whose runtime size comes from an
 // array section of a kernel argument (e.g., arr(i) = t(x(:, i))).
 struct StructMemberSectionSource {
     std::string source_var;

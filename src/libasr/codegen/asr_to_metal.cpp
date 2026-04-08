@@ -2411,6 +2411,55 @@ public:
         return true;
     }
 
+    // Resolve StructInstanceMember-over-ArrayItem pattern:
+    // StructInstanceMember(ArrayItem(Var(x), i), member)
+    // This is used for assignments like b(i)%x = a(i) where
+    // b is an array of struct s that has a struct member x of type t,
+    // and t has allocatable members.
+    // Returns arr_name = "x", member_prefix = "member", idx_str = "i-lb".
+    // Buffer keys are then "arr_name.member_prefix_alloc_suffix".
+    bool resolve_sim_over_array_access(ASR::expr_t *expr,
+            std::string &arr_name, std::string &member_prefix,
+            std::string &idx_str) {
+        if (!ASR::is_a<ASR::StructInstanceMember_t>(*expr))
+            return false;
+        ASR::StructInstanceMember_t *sim =
+            ASR::down_cast<ASR::StructInstanceMember_t>(expr);
+
+        // Build the member path suffix (handles nested SIM chains)
+        std::string suffix;
+        ASR::expr_t *root = resolve_nested_struct_member_path(
+            sim, suffix);
+        member_prefix = suffix;
+
+        // The root must be ArrayItem(Var(x), i)
+        if (!ASR::is_a<ASR::ArrayItem_t>(*root)) return false;
+        ASR::ArrayItem_t *ai = ASR::down_cast<ASR::ArrayItem_t>(root);
+        if (ai->n_args < 1) return false;
+        if (!ASR::is_a<ASR::Var_t>(*ai->m_v)) return false;
+
+        arr_name = ASRUtils::symbol_name(
+            ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
+
+        ASR::expr_t *idx_expr = ai->m_args[0].m_right
+            ? ai->m_args[0].m_right : ai->m_args[0].m_left;
+        if (!idx_expr) return false;
+
+        std::stringstream saved;
+        saved.swap(src);
+        visit_expr(idx_expr);
+        ASR::ttype_t *arr_type = ASRUtils::type_get_past_allocatable(
+            ASRUtils::expr_type(ai->m_v));
+        ASR::Array_t *sa_arr = nullptr;
+        if (ASR::is_a<ASR::Array_t>(*arr_type)) {
+            sa_arr = ASR::down_cast<ASR::Array_t>(arr_type);
+        }
+        std::string lb = get_lower_bound_str(sa_arr, 0);
+        idx_str = "((int)(" + src.str() + ") - (" + lb + "))";
+        saved.swap(src);
+        return true;
+    }
+
     // Resolve decomposed struct access pattern:
     // ArrayItem(StructInstanceMember(ArrayItem(Var(x), i), member), j)
     // Returns buf_prefix = "x_member" and a linear index expression
@@ -2540,41 +2589,65 @@ public:
         if (!st || !struct_has_allocatable_members(st)) return false;
 
         // Resolve source and target array names and 0-based indices.
-        // Two patterns:
+        // Three patterns:
         // 1) Simple: ArrayItem(Var(x), i) → arr="x", idx="i-lb"
         // 2) Decomposed: ArrayItem(SIM(ArrayItem(Var(x),i),m),j)
         //    → prefix="x_m", idx="__offsets_x_m[i-lb]+(j-lb2)"
+        // 3) SIM-over-array: SIM(ArrayItem(Var(x),i),m)
+        //    → arr="x", member_prefix="m", idx="i-lb"
+        //    Buffer key = "x.m_suffix" (member path prepended)
         std::string tgt_arr, tgt_idx, val_arr, val_idx;
         bool tgt_simple =
             resolve_struct_array_access(a->m_target, tgt_arr, tgt_idx);
         bool tgt_decomposed = false;
+        bool tgt_sim_over_array = false;
         std::string tgt_prefix, tgt_linear_idx;
+        std::string tgt_sim_arr, tgt_sim_member, tgt_sim_idx;
         if (!tgt_simple) {
             tgt_decomposed =
                 resolve_decomposed_struct_access(
                     a->m_target, tgt_prefix, tgt_linear_idx);
-            if (!tgt_decomposed) return false;
+            if (!tgt_decomposed) {
+                tgt_sim_over_array =
+                    resolve_sim_over_array_access(
+                        a->m_target, tgt_sim_arr, tgt_sim_member,
+                        tgt_sim_idx);
+                if (!tgt_sim_over_array) return false;
+            }
         }
         bool val_simple =
             resolve_struct_array_access(a->m_value, val_arr, val_idx);
         bool val_decomposed = false;
+        bool val_sim_over_array = false;
         std::string val_prefix, val_linear_idx;
+        std::string val_sim_arr, val_sim_member, val_sim_idx;
         if (!val_simple) {
             val_decomposed =
                 resolve_decomposed_struct_access(
                     a->m_value, val_prefix, val_linear_idx);
-            if (!val_decomposed) return false;
+            if (!val_decomposed) {
+                val_sim_over_array =
+                    resolve_sim_over_array_access(
+                        a->m_value, val_sim_arr, val_sim_member,
+                        val_sim_idx);
+                if (!val_sim_over_array) return false;
+            }
         }
 
         // Collect allocatable members
         std::vector<NestedAllocMember> alloc_members;
         collect_nested_alloc_members(st, "", {}, alloc_members);
 
-        // Determine buffer keys for target and source
+        // Determine buffer keys for target and source.
+        // For the SIM-over-array pattern the key is
+        // "arr.member_suffix" (e.g., b.x_v for b(i)%x where t has v).
         auto make_key = [](bool simple, const std::string &arr,
-                const std::string &prefix, const std::string &suffix)
-                -> std::string {
+                const std::string &prefix, const std::string &suffix,
+                bool sim_over, const std::string &sim_arr,
+                const std::string &sim_member) -> std::string {
             if (simple) return arr + "." + suffix;
+            if (sim_over)
+                return sim_arr + "." + sim_member + "_" + suffix;
             return prefix + "." + suffix;
         };
 
@@ -2587,9 +2660,11 @@ public:
         bool val_has_offsets = true;
         for (auto &mem : alloc_members) {
             std::string tgt_key = make_key(tgt_simple, tgt_arr,
-                tgt_prefix, mem.suffix);
+                tgt_prefix, mem.suffix, tgt_sim_over_array,
+                tgt_sim_arr, tgt_sim_member);
             std::string val_key = make_key(val_simple, val_arr,
-                val_prefix, mem.suffix);
+                val_prefix, mem.suffix, val_sim_over_array,
+                val_sim_arr, val_sim_member);
             if (!func_array_data_params.count(tgt_key))
                 return false;
             if (!struct_array_offset_params.count(tgt_key) ||
@@ -2641,13 +2716,17 @@ public:
         // Deep copy each allocatable member through decomposed buffers
         for (auto &mem : alloc_members) {
             std::string tgt_key = make_key(tgt_simple, tgt_arr,
-                tgt_prefix, mem.suffix);
+                tgt_prefix, mem.suffix, tgt_sim_over_array,
+                tgt_sim_arr, tgt_sim_member);
             std::string val_key = make_key(val_simple, val_arr,
-                val_prefix, mem.suffix);
+                val_prefix, mem.suffix, val_sim_over_array,
+                val_sim_arr, val_sim_member);
             std::string tgt_data = func_array_data_params[tgt_key];
             std::string val_data = func_array_data_params[val_key];
-            std::string tidx = tgt_simple ? tgt_idx : tgt_linear_idx;
-            std::string vidx = val_simple ? val_idx : val_linear_idx;
+            std::string tidx = tgt_simple ? tgt_idx
+                : (tgt_sim_over_array ? tgt_sim_idx : tgt_linear_idx);
+            std::string vidx = val_simple ? val_idx
+                : (val_sim_over_array ? val_sim_idx : val_linear_idx);
 
             src << get_indent() << "{\n";
             indent_level++;

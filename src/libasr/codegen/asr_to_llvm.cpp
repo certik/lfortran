@@ -20203,6 +20203,14 @@ public:
                                                 llvm::Type::getInt64Ty(
                                                     context)),
                                             extent_ptr);
+                                        llvm::Value *stride_ptr =
+                                            arr_descr->get_stride(
+                                                dim0, false);
+                                        builder->CreateStore(
+                                            llvm::ConstantInt::get(
+                                                llvm::Type::getInt64Ty(
+                                                    context), 1),
+                                            stride_ptr);
                                         dps.push_back(new_dp);
                                     } else {
                                         // Check if descriptor pointer
