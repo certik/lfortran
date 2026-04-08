@@ -7118,6 +7118,147 @@ public:
             }
         }
 
+        // Pre-allocate allocatable struct members that are assigned from
+        // ArraySection inside the do concurrent body. The Metal backend
+        // decomposes struct arrays into flat data/offset/size buffers
+        // whose sizes are taken from the current descriptor state. If a
+        // member is unallocated (null descriptor), the buffer gets size 0
+        // and the kernel writes out of bounds. Pre-allocating ensures
+        // the descriptors have the correct sizes before kernel launch.
+        for (size_t si = 0; si < x.n_body; si++) {
+            ASR::stmt_t *stmt = x.m_body[si];
+            ASR::stmt_t **stmts_to_scan = &stmt;
+            size_t n_stmts_to_scan = 1;
+            if (ASR::is_a<ASR::BlockCall_t>(*stmt)) {
+                ASR::BlockCall_t *bc =
+                    ASR::down_cast<ASR::BlockCall_t>(stmt);
+                if (ASR::is_a<ASR::Block_t>(*bc->m_m)) {
+                    ASR::Block_t *blk =
+                        ASR::down_cast<ASR::Block_t>(bc->m_m);
+                    stmts_to_scan = blk->m_body;
+                    n_stmts_to_scan = blk->n_body;
+                }
+            }
+            for (size_t sj = 0; sj < n_stmts_to_scan; sj++) {
+                if (!ASR::is_a<ASR::Assignment_t>(*stmts_to_scan[sj]))
+                    continue;
+                ASR::Assignment_t *asgn =
+                    ASR::down_cast<ASR::Assignment_t>(
+                        stmts_to_scan[sj]);
+                if (!ASR::is_a<ASR::StructInstanceMember_t>(
+                        *asgn->m_target))
+                    continue;
+                ASR::StructInstanceMember_t *sm =
+                    ASR::down_cast<ASR::StructInstanceMember_t>(
+                        asgn->m_target);
+                if (!ASRUtils::is_allocatable(sm->m_type)) continue;
+                ASR::ttype_t *inner =
+                    ASRUtils::type_get_past_allocatable(sm->m_type);
+                if (!ASR::is_a<ASR::Array_t>(*inner)) continue;
+                if (!ASR::is_a<ASR::ArrayItem_t>(*sm->m_v)) continue;
+                ASR::ArrayItem_t *ai =
+                    ASR::down_cast<ASR::ArrayItem_t>(sm->m_v);
+
+                ASR::ArraySection_t *rhs_sec = nullptr;
+                if (ASR::is_a<ASR::ArraySection_t>(*asgn->m_value)) {
+                    rhs_sec = ASR::down_cast<ASR::ArraySection_t>(
+                        asgn->m_value);
+                }
+                if (!rhs_sec) continue;
+                if (n_dims != 1) continue;
+
+                ASR::ttype_t *int_type_pa = ASRUtils::TYPE(
+                    ASR::make_Integer_t(al, loc, 4));
+
+                // Compute section size = product of (ub - lb + 1)
+                // for each range dimension
+                ASR::expr_t *sec_size = nullptr;
+                ASRUtils::ExprStmtDuplicator dup_sz(al);
+                dup_sz.success = true;
+                for (size_t d = 0; d < rhs_sec->n_args; d++) {
+                    if (!rhs_sec->m_args[d].m_left ||
+                            !rhs_sec->m_args[d].m_right)
+                        continue;
+                    ASR::expr_t *lb_d =
+                        dup_sz.duplicate_expr(
+                            rhs_sec->m_args[d].m_left);
+                    ASR::expr_t *ub_d =
+                        dup_sz.duplicate_expr(
+                            rhs_sec->m_args[d].m_right);
+                    ASR::expr_t *one = ASRUtils::EXPR(
+                        ASR::make_IntegerConstant_t(al, loc, 1,
+                            int_type_pa,
+                            ASR::integerbozType::Decimal));
+                    ASR::expr_t *diff = ASRUtils::EXPR(
+                        ASR::make_IntegerBinOp_t(al, loc, ub_d,
+                            ASR::binopType::Sub, lb_d,
+                            int_type_pa, nullptr));
+                    ASR::expr_t *dim_sz = ASRUtils::EXPR(
+                        ASR::make_IntegerBinOp_t(al, loc, diff,
+                            ASR::binopType::Add, one,
+                            int_type_pa, nullptr));
+                    if (!sec_size) {
+                        sec_size = dim_sz;
+                    } else {
+                        sec_size = ASRUtils::EXPR(
+                            ASR::make_IntegerBinOp_t(al, loc,
+                                sec_size, ASR::binopType::Mul,
+                                dim_sz, int_type_pa, nullptr));
+                    }
+                }
+                if (!sec_size) continue;
+
+                // Build DoLoop: do <dc_var> = dc_start, dc_end
+                //   allocate(arr(<dc_var>)%member(section_size))
+                ASRUtils::ExprStmtDuplicator dup_lp(al);
+                dup_lp.success = true;
+                ASR::do_loop_head_t lh;
+                lh.loc = loc;
+                lh.m_v = dup_lp.duplicate_expr(x.m_head[0].m_v);
+                lh.m_start =
+                    dup_lp.duplicate_expr(x.m_head[0].m_start);
+                lh.m_end =
+                    dup_lp.duplicate_expr(x.m_head[0].m_end);
+                lh.m_increment = nullptr;
+
+                // Duplicate the target expression for the Allocate
+                ASR::expr_t *alloc_tgt =
+                    dup_lp.duplicate_expr(asgn->m_target);
+
+                ASR::alloc_arg_t aa;
+                aa.loc = loc;
+                aa.m_a = alloc_tgt;
+                aa.n_dims = 1;
+                aa.m_dims = al.allocate<ASR::dimension_t>(1);
+                aa.m_dims[0].loc = loc;
+                aa.m_dims[0].m_start = ASRUtils::EXPR(
+                    ASR::make_IntegerConstant_t(al, loc, 1,
+                        int_type_pa,
+                        ASR::integerbozType::Decimal));
+                aa.m_dims[0].m_length = sec_size;
+                aa.m_len_expr = nullptr;
+                aa.m_sym_subclass = nullptr;
+                aa.m_type = nullptr;
+
+                Vec<ASR::alloc_arg_t> av;
+                av.reserve(al, 1);
+                av.push_back(al, aa);
+
+                ASR::stmt_t *alloc_s = ASRUtils::STMT(
+                    ASR::make_Allocate_t(al, loc, av.p, av.n,
+                        nullptr, nullptr, nullptr));
+
+                Vec<ASR::stmt_t*> lbody;
+                lbody.reserve(al, 1);
+                lbody.push_back(al, alloc_s);
+
+                pre_launch_stmts.push_back(al, ASRUtils::STMT(
+                    ASR::make_DoLoop_t(al, loc, nullptr,
+                        lh, lbody.p, lbody.n,
+                        nullptr, 0)));
+            }
+        }
+
         // 7. Replace DoConcurrentLoop with GpuKernelLaunch + GpuSync
         // Collect all launch-related statements into a temporary Vec.
         // If any involved variable is optional, wrap them in a

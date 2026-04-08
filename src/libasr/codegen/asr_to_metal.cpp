@@ -4693,11 +4693,34 @@ public:
                                         indent_level--;
                                         src << get_indent() << "}\n";
                                     } else {
-                                        src << get_indent()
-                                            << data_it->second
-                                            << "[__off + 0] = ";
-                                        visit_expr(a->m_value);
-                                        src << "[0];\n";
+                                        auto pit =
+                                            ptr_section_sizes.find(rname);
+                                        if (pit !=
+                                                ptr_section_sizes.end()) {
+                                            std::string loop_var = "__ei";
+                                            src << get_indent()
+                                                << "for (int "
+                                                << loop_var << " = 0; "
+                                                << loop_var << " < "
+                                                << pit->second << "; "
+                                                << loop_var << "++) {\n";
+                                            indent_level++;
+                                            src << get_indent()
+                                                << data_it->second
+                                                << "[__off + "
+                                                << loop_var << "] = ";
+                                            visit_expr(a->m_value);
+                                            src << "[" << loop_var
+                                                << "];\n";
+                                            indent_level--;
+                                            src << get_indent() << "}\n";
+                                        } else {
+                                            src << get_indent()
+                                                << data_it->second
+                                                << "[__off + 0] = ";
+                                            visit_expr(a->m_value);
+                                            src << "[0];\n";
+                                        }
                                     }
                                     indent_level--;
                                     src << get_indent() << "}\n";
@@ -5156,8 +5179,46 @@ public:
                                             ASR::down_cast<
                                                 ASR::Variable_t>(
                                                     rsym)->m_type;
+                                        // Strip Pointer wrapper
+                                        // for array section ptrs
+                                        if (ASR::is_a<
+                                                ASR::Pointer_t>(
+                                                    *rt)) {
+                                            rt = ASR::down_cast<
+                                                ASR::Pointer_t>(
+                                                    rt)->m_type;
+                                        }
                                         rhs_fixed_sz =
                                             get_total_elements(rt);
+                                        // DescriptorArray with no
+                                        // constant dims returns 1
+                                        // but actual size is unknown
+                                        if (ASR::is_a<ASR::Array_t>(
+                                                *rt)) {
+                                            ASR::Array_t *ra =
+                                                ASR::down_cast<
+                                                    ASR::Array_t>(
+                                                        rt);
+                                            bool has_const_dims =
+                                                false;
+                                            for (size_t d = 0;
+                                                    d < ra->n_dims;
+                                                    d++) {
+                                                if (ra->m_dims[d]
+                                                        .m_length &&
+                                                    ASR::is_a<ASR::
+                                                        IntegerConstant_t>(
+                                                        *ra->m_dims[d]
+                                                            .m_length))
+                                                {
+                                                    has_const_dims =
+                                                        true;
+                                                }
+                                            }
+                                            if (!has_const_dims) {
+                                                rhs_fixed_sz = -1;
+                                            }
+                                        }
                                         if (rhs_fixed_sz <= 0)
                                             rhs_fixed_sz = -1;
                                     }
