@@ -1481,6 +1481,74 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                                     }
                                 }
                             }
+                            // Also look at Allocate statements in the
+                            // function body for members of the return
+                            // variable (e.g., allocate(r%v(1))).
+                            for (size_t fi = 0;
+                                    fi < fn->n_body; fi++) {
+                                if (fn->m_body[fi]->type !=
+                                        ASR::stmtType::Allocate)
+                                    continue;
+                                ASR::Allocate_t *fa =
+                                    ASR::down_cast<
+                                        ASR::Allocate_t>(
+                                            fn->m_body[fi]);
+                                for (size_t ai = 0;
+                                        ai < fa->n_args; ai++) {
+                                    if (!fa->m_args[ai].m_a)
+                                        continue;
+                                    if (!ASR::is_a<ASR::
+                                            StructInstanceMember_t>(
+                                                *fa->m_args[ai].m_a))
+                                        continue;
+                                    ASR::StructInstanceMember_t
+                                        *fsm = ASR::down_cast<ASR::
+                                            StructInstanceMember_t>(
+                                                fa->m_args[ai].m_a);
+                                    if (!ASR::is_a<ASR::Var_t>(
+                                            *fsm->m_v))
+                                        continue;
+                                    std::string tgt_name =
+                                        ASRUtils::symbol_name(
+                                            ASR::down_cast<
+                                                ASR::Var_t>(
+                                                    fsm->m_v)->m_v);
+                                    if (tgt_name != ret_name)
+                                        continue;
+                                    std::string mem_name =
+                                        ASRUtils::symbol_name(
+                                            ASRUtils::
+                                                symbol_get_past_external(
+                                                    fsm->m_m));
+                                    std::string key =
+                                        arr_name + "." + mem_name;
+                                    if (result.count(key)) continue;
+                                    int64_t total = 1;
+                                    bool all_const = true;
+                                    for (size_t d = 0;
+                                            d < fa->m_args[ai]
+                                                .n_dims;
+                                            d++) {
+                                        int64_t len_val = 0;
+                                        ASR::expr_t *len_expr =
+                                            fa->m_args[ai]
+                                                .m_dims[d]
+                                                .m_length;
+                                        if (len_expr &&
+                                                extract_const_int(
+                                                    len_expr,
+                                                    len_val)) {
+                                            total *= len_val;
+                                        } else {
+                                            all_const = false;
+                                            break;
+                                        }
+                                    }
+                                    if (all_const && total > 0) {
+                                        result[key] = total;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1682,7 +1750,68 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                 std::string formal_name(formal->m_name);
                 // Scan function body for assignments to
                 // formal%member = some_array_param
+                // Also check Allocate statements for member sizes.
                 for (size_t fi = 0; fi < fn->n_body; fi++) {
+                    if (fn->m_body[fi]->type ==
+                            ASR::stmtType::Allocate) {
+                        ASR::Allocate_t *alloc =
+                            ASR::down_cast<ASR::Allocate_t>(
+                                fn->m_body[fi]);
+                        for (size_t ali = 0;
+                                ali < alloc->n_args; ali++) {
+                            if (!alloc->m_args[ali].m_a)
+                                continue;
+                            if (!ASR::is_a<ASR::
+                                    StructInstanceMember_t>(
+                                        *alloc->m_args[ali].m_a))
+                                continue;
+                            ASR::StructInstanceMember_t *fsm =
+                                ASR::down_cast<ASR::
+                                    StructInstanceMember_t>(
+                                        alloc->m_args[ali].m_a);
+                            if (!ASR::is_a<ASR::Var_t>(
+                                    *fsm->m_v))
+                                continue;
+                            std::string tgt_name =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        fsm->m_v)->m_v);
+                            if (tgt_name != formal_name)
+                                continue;
+                            std::string mem_name =
+                                ASRUtils::symbol_name(
+                                    ASRUtils::
+                                        symbol_get_past_external(
+                                            fsm->m_m));
+                            std::string key =
+                                arr_name + "." + mem_name;
+                            if (result.count(key)) continue;
+                            int64_t total = 1;
+                            bool all_const = true;
+                            for (size_t d = 0;
+                                    d < alloc->m_args[ali]
+                                        .n_dims;
+                                    d++) {
+                                int64_t len_val = 0;
+                                ASR::expr_t *len_expr =
+                                    alloc->m_args[ali]
+                                        .m_dims[d].m_length;
+                                if (len_expr &&
+                                        extract_const_int(
+                                            len_expr,
+                                            len_val)) {
+                                    total *= len_val;
+                                } else {
+                                    all_const = false;
+                                    break;
+                                }
+                            }
+                            if (all_const && total > 0) {
+                                result[key] = total;
+                            }
+                        }
+                        continue;
+                    }
                     if (fn->m_body[fi]->type !=
                             ASR::stmtType::Assignment) continue;
                     ASR::Assignment_t *fa =
