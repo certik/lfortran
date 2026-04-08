@@ -6340,6 +6340,26 @@ public:
             }
             case ASR::exprType::ArrayItem: {
                 ASR::ArrayItem_t *ai = ASR::down_cast<ASR::ArrayItem_t>(expr);
+                // Handle unary minus on array: emit -(arr[idx]) instead of
+                // (-arr)[idx], which is invalid for device pointers in Metal.
+                ASR::expr_t *unwrapped_v = ai->m_v;
+                bool has_real_unary_minus = false;
+                bool has_integer_unary_minus = false;
+                if (ASR::is_a<ASR::RealUnaryMinus_t>(*ai->m_v)) {
+                    unwrapped_v = ASR::down_cast<ASR::RealUnaryMinus_t>(ai->m_v)->m_arg;
+                    has_real_unary_minus = true;
+                } else if (ASR::is_a<ASR::IntegerUnaryMinus_t>(*ai->m_v)) {
+                    unwrapped_v = ASR::down_cast<ASR::IntegerUnaryMinus_t>(ai->m_v)->m_arg;
+                    has_integer_unary_minus = true;
+                }
+                if (has_real_unary_minus || has_integer_unary_minus) {
+                    src << "(-(";
+                    ASR::ArrayItem_t inner = *ai;
+                    inner.m_v = unwrapped_v;
+                    visit_expr((ASR::expr_t*)&inner);
+                    src << "))";
+                    break;
+                }
                 // For allocatable struct member access like s%a(i),
                 // use the separate data pointer parameter instead of
                 // the struct member (which is not a valid array in Metal).
