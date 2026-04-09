@@ -2432,6 +2432,55 @@ public:
                 }
                 return;
             }
+        } else if (ASR::is_a<ASR::StructInstanceMember_t>(*expr)) {
+            // Handle struct member access: r%a where r is a struct
+            // variable and a is a struct-typed member with allocatable
+            // components. Walk the member chain to find the root
+            // variable and build the member path prefix, then look up
+            // companion params registered under root.member_path_suffix.
+            ASR::StructInstanceMember_t *sm =
+                ASR::down_cast<ASR::StructInstanceMember_t>(expr);
+            std::string member_path;
+            ASR::expr_t *root = resolve_nested_struct_member_path(
+                sm, member_path);
+            if (!ASR::is_a<ASR::Var_t>(*root)) return;
+            std::string root_name = ASRUtils::symbol_name(
+                ASR::down_cast<ASR::Var_t>(root)->m_v);
+            // Get the struct type of the member
+            ASR::symbol_t *mem_sym =
+                ASRUtils::symbol_get_past_external(sm->m_m);
+            if (!ASR::is_a<ASR::Variable_t>(*mem_sym)) return;
+            ASR::Variable_t *mem_var =
+                ASR::down_cast<ASR::Variable_t>(mem_sym);
+            if (!mem_var->m_type_declaration) return;
+            ASR::symbol_t *mem_st_sym =
+                ASRUtils::symbol_get_past_external(
+                    mem_var->m_type_declaration);
+            if (!ASR::is_a<ASR::Struct_t>(*mem_st_sym)) return;
+            ASR::Struct_t *mem_st =
+                ASR::down_cast<ASR::Struct_t>(mem_st_sym);
+            std::vector<NestedAllocMember> nested;
+            collect_nested_alloc_members(mem_st, "", {}, nested);
+            for (auto &nam : nested) {
+                // Key format: root_var.member_path_nested_suffix
+                std::string key = root_name + "." + member_path
+                    + "_" + nam.suffix;
+                auto dit = func_array_data_params.find(key);
+                if (dit != func_array_data_params.end()) {
+                    src << ", " << dit->second;
+                } else {
+                    src << ", __data_" << root_name << "_"
+                        << member_path << "_" << nam.suffix;
+                }
+                auto sit = func_array_size_params.find(key);
+                if (sit != func_array_size_params.end()) {
+                    src << ", " << sit->second;
+                } else {
+                    src << ", __size_" << root_name << "_"
+                        << member_path << "_" << nam.suffix;
+                }
+            }
+            return;
         }
         if (!var || !var->m_type_declaration) return;
         ASR::symbol_t *st_sym =
