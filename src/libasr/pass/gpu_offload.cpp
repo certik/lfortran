@@ -9139,6 +9139,42 @@ public:
                         outer_fn = ASR::down_cast<ASR::Function_t>(fs);
                 }
                 if (!outer_fn) continue;
+                // Resolve submodule Interface to Implementation
+                {
+                    ASR::FunctionType_t *oft =
+                        ASR::down_cast<ASR::FunctionType_t>(
+                            outer_fn->m_function_signature);
+                    if (oft->m_deftype ==
+                            ASR::deftypeType::Interface) {
+                        std::string pname = outer_fn->m_name;
+                        for (auto &tu_item :
+                                tu.m_symtab->get_scope()) {
+                            if (!ASR::is_a<ASR::Module_t>(
+                                    *tu_item.second)) continue;
+                            ASR::Module_t *mod =
+                                ASR::down_cast<ASR::Module_t>(
+                                    tu_item.second);
+                            ASR::symbol_t *impl_sym =
+                                mod->m_symtab->get_symbol(pname);
+                            if (!impl_sym ||
+                                !ASR::is_a<ASR::Function_t>(
+                                    *impl_sym)) continue;
+                            ASR::Function_t *impl_func =
+                                ASR::down_cast<ASR::Function_t>(
+                                    impl_sym);
+                            ASR::FunctionType_t *impl_ft =
+                                ASR::down_cast<ASR::FunctionType_t>(
+                                    impl_func
+                                        ->m_function_signature);
+                            if (impl_ft->m_deftype ==
+                                    ASR::deftypeType::
+                                        Implementation) {
+                                outer_fn = impl_func;
+                                break;
+                            }
+                        }
+                    }
+                }
 
                 ASR::ttype_t *int_type_fc = ASRUtils::TYPE(
                     ASR::make_Integer_t(al, loc, 4));
@@ -9454,6 +9490,51 @@ public:
                                             ifs);
                             }
                             if (!inner_fn) continue;
+                            // Resolve submodule Interface to
+                            // Implementation
+                            {
+                                ASR::FunctionType_t *ift =
+                                    ASR::down_cast<
+                                        ASR::FunctionType_t>(
+                                            inner_fn
+                                                ->m_function_signature);
+                                if (ift->m_deftype ==
+                                        ASR::deftypeType::Interface) {
+                                    std::string ipn =
+                                        inner_fn->m_name;
+                                    for (auto &tu_item :
+                                            tu.m_symtab->get_scope()) {
+                                        if (!ASR::is_a<ASR::Module_t>(
+                                                *tu_item.second))
+                                            continue;
+                                        ASR::Module_t *mod =
+                                            ASR::down_cast<
+                                                ASR::Module_t>(
+                                                    tu_item.second);
+                                        ASR::symbol_t *impl_sym =
+                                            mod->m_symtab->get_symbol(
+                                                ipn);
+                                        if (!impl_sym ||
+                                            !ASR::is_a<ASR::Function_t>(
+                                                *impl_sym)) continue;
+                                        ASR::Function_t *impl_func =
+                                            ASR::down_cast<
+                                                ASR::Function_t>(
+                                                    impl_sym);
+                                        ASR::FunctionType_t *impl_ft =
+                                            ASR::down_cast<
+                                                ASR::FunctionType_t>(
+                                                    impl_func
+                                                        ->m_function_signature);
+                                        if (impl_ft->m_deftype ==
+                                                ASR::deftypeType::
+                                                    Implementation) {
+                                            inner_fn = impl_func;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
 
                             // For each sub-member of inner_struct
                             for (size_t sm = 0;
