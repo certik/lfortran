@@ -20113,8 +20113,8 @@ public:
                                         // another struct member (e.g.,
                                         // b(i)%v sized from a(i)%v).
                                         // Check if descriptor is already
-                                        // allocated (e.g., by pre-launch
-                                        // pre-allocation). If so, read
+                                        // allocated AND has a valid data
+                                        // pointer. If both are true, read
                                         // its actual size. Otherwise,
                                         // use the runtime source size.
                                         llvm::Value *dp_pti_rs =
@@ -20125,6 +20125,18 @@ public:
                                                 dp_pti_rs,
                                                 llvm::ConstantInt::get(
                                                     i64, 0));
+                                        llvm::Value *raw_pti_rs =
+                                            builder->CreatePtrToInt(
+                                                raw, i64);
+                                        llvm::Value *raw_nonnull_rs =
+                                            builder->CreateICmpNE(
+                                                raw_pti_rs,
+                                                llvm::ConstantInt::get(
+                                                    i64, 0));
+                                        llvm::Value *fully_allocd_rs =
+                                            builder->CreateAnd(
+                                                dp_nonnull_rs,
+                                                raw_nonnull_rs);
                                         llvm::Function *cur_fn_rs =
                                             builder->GetInsertBlock()
                                                 ->getParent();
@@ -20142,7 +20154,7 @@ public:
                                                 context, "rts.merge",
                                                 cur_fn_rs);
                                         builder->CreateCondBr(
-                                            dp_nonnull_rs, bb_pre_rs,
+                                            fully_allocd_rs, bb_pre_rs,
                                             bb_fresh_rs);
                                         // Pre-allocated path: read size
                                         // from existing descriptor
