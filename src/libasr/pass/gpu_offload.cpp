@@ -6903,7 +6903,24 @@ public:
                             break;
                         }
                     }
-                    if (!mem_ext) continue;
+                    if (!mem_ext) {
+                        std::string es_name =
+                            current_scope->get_unique_name(
+                                std::string(st->m_name) + "_" +
+                                std::string(st->m_members[m]),
+                                false);
+                        ASR::asr_t *new_es =
+                            ASR::make_ExternalSymbol_t(al, loc,
+                                current_scope, s2c(al, es_name),
+                                ms, s2c(al, st->m_name),
+                                nullptr, 0,
+                                s2c(al, st->m_members[m]),
+                                ASR::accessType::Public);
+                        mem_ext = ASR::down_cast<ASR::symbol_t>(
+                            new_es);
+                        current_scope->add_symbol(es_name,
+                            mem_ext);
+                    }
                     ASR::Variable_t *mv =
                         ASR::down_cast<ASR::Variable_t>(ms);
                     ASR::expr_t *tgt_dup =
@@ -7019,7 +7036,26 @@ public:
                                 break;
                             }
                         }
-                        if (!mem_ext) continue;
+                        if (!mem_ext) {
+                            std::string es_name =
+                                current_scope->get_unique_name(
+                                    std::string(st->m_name) + "_" +
+                                    std::string(st->m_members[m]),
+                                    false);
+                            ASR::asr_t *new_es =
+                                ASR::make_ExternalSymbol_t(al, loc,
+                                    current_scope,
+                                    s2c(al, es_name),
+                                    ms, s2c(al, st->m_name),
+                                    nullptr, 0,
+                                    s2c(al, st->m_members[m]),
+                                    ASR::accessType::Public);
+                            mem_ext =
+                                ASR::down_cast<ASR::symbol_t>(
+                                    new_es);
+                            current_scope->add_symbol(es_name,
+                                mem_ext);
+                        }
                         ASR::Variable_t *mv =
                             ASR::down_cast<ASR::Variable_t>(ms);
                         ASR::expr_t *tgt_dup =
@@ -7978,7 +8014,25 @@ public:
                             break;
                         }
                     }
-                    if (!mem_ext) continue;
+                    if (!mem_ext) {
+                        std::string es_name =
+                            current_scope->get_unique_name(
+                                std::string(st->m_name) + "_" +
+                                std::string(st->m_members[m]),
+                                false);
+                        ASR::asr_t *new_es =
+                            ASR::make_ExternalSymbol_t(al, loc,
+                                current_scope,
+                                s2c(al, es_name),
+                                mem_sym, s2c(al, st->m_name),
+                                nullptr, 0,
+                                s2c(al, st->m_members[m]),
+                                ASR::accessType::Public);
+                        mem_ext =
+                            ASR::down_cast<ASR::symbol_t>(new_es);
+                        current_scope->add_symbol(es_name,
+                            mem_ext);
+                    }
 
                     ASRUtils::ExprStmtDuplicator dup_lp(al);
                     dup_lp.success = true;
@@ -8261,7 +8315,25 @@ public:
                             break;
                         }
                     }
-                    if (!mem_ext) continue;
+                    if (!mem_ext) {
+                        std::string es_name =
+                            current_scope->get_unique_name(
+                                std::string(st->m_name) + "_" +
+                                std::string(st->m_members[m]),
+                                false);
+                        ASR::asr_t *new_es =
+                            ASR::make_ExternalSymbol_t(al, loc,
+                                current_scope,
+                                s2c(al, es_name),
+                                mem_sym, s2c(al, st->m_name),
+                                nullptr, 0,
+                                s2c(al, st->m_members[m]),
+                                ASR::accessType::Public);
+                        mem_ext =
+                            ASR::down_cast<ASR::symbol_t>(new_es);
+                        current_scope->add_symbol(es_name,
+                            mem_ext);
+                    }
 
                     ASRUtils::ExprStmtDuplicator dup_lp(al);
                     dup_lp.success = true;
@@ -8398,7 +8470,25 @@ public:
                             break;
                         }
                     }
-                    if (!mem_ext) continue;
+                    if (!mem_ext) {
+                        std::string es_name =
+                            current_scope->get_unique_name(
+                                std::string(st->m_name) + "_" +
+                                std::string(st->m_members[m]),
+                                false);
+                        ASR::asr_t *new_es =
+                            ASR::make_ExternalSymbol_t(al, loc,
+                                current_scope,
+                                s2c(al, es_name),
+                                mem_sym, s2c(al, st->m_name),
+                                nullptr, 0,
+                                s2c(al, st->m_members[m]),
+                                ASR::accessType::Public);
+                        mem_ext =
+                            ASR::down_cast<ASR::symbol_t>(new_es);
+                        current_scope->add_symbol(es_name,
+                            mem_ext);
+                    }
 
                     std::vector<std::pair<ASR::symbol_t*,
                         ASR::ttype_t*>> chain;
@@ -8641,7 +8731,25 @@ public:
                             break;
                         }
                     }
-                    if (!mem_ext) continue;
+                    if (!mem_ext) {
+                        std::string es_name =
+                            current_scope->get_unique_name(
+                                std::string(st->m_name) + "_" +
+                                std::string(st->m_members[m]),
+                                false);
+                        ASR::asr_t *new_es =
+                            ASR::make_ExternalSymbol_t(al, loc,
+                                current_scope,
+                                s2c(al, es_name),
+                                mem_sym, s2c(al, st->m_name),
+                                nullptr, 0,
+                                s2c(al, st->m_members[m]),
+                                ASR::accessType::Public);
+                        mem_ext =
+                            ASR::down_cast<ASR::symbol_t>(new_es);
+                        current_scope->add_symbol(es_name,
+                            mem_ext);
+                    }
 
                     ASRUtils::ExprStmtDuplicator dup_fc(al);
                     dup_fc.success = true;
