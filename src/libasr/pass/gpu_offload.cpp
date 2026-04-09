@@ -15,6 +15,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 namespace LCompilers {
 
@@ -581,6 +582,242 @@ public:
         replacer.replace_expr(*current_expr);
     }
 };
+
+// Recursively check if a Struct has any allocatable sub-members at any
+// nesting depth through non-allocatable struct intermediaries.
+static bool struct_has_allocatable_deep(ASR::Struct_t *st) {
+    for (size_t m = 0; m < st->n_members; m++) {
+        ASR::symbol_t *ms = st->m_symtab->get_symbol(st->m_members[m]);
+        if (!ms || !ASR::is_a<ASR::Variable_t>(*ms)) continue;
+        ASR::Variable_t *mv = ASR::down_cast<ASR::Variable_t>(ms);
+        if (ASRUtils::is_allocatable(mv->m_type)) return true;
+        ASR::ttype_t *mt = ASRUtils::extract_type(mv->m_type);
+        if (!ASR::is_a<ASR::StructType_t>(*mt)) continue;
+        if (!mv->m_type_declaration) continue;
+        ASR::symbol_t *inner_sym =
+            ASRUtils::symbol_get_past_external(mv->m_type_declaration);
+        if (!ASR::is_a<ASR::Struct_t>(*inner_sym)) continue;
+        if (struct_has_allocatable_deep(
+                ASR::down_cast<ASR::Struct_t>(inner_sym)))
+            return true;
+    }
+    return false;
+}
+
+// Check if a struct has allocatable sub-members reachable only through
+// non-allocatable struct intermediaries. Direct allocatable members
+// don't count (they are handled by the flat buffer decomposition).
+// Used to decide whether a struct-to-struct assignment needs to be
+// decomposed into per-member assignments in the GPU kernel.
+static bool struct_needs_assignment_decomposition(ASR::Struct_t *st) {
+    for (size_t m = 0; m < st->n_members; m++) {
+        ASR::symbol_t *ms = st->m_symtab->get_symbol(st->m_members[m]);
+        if (!ms || !ASR::is_a<ASR::Variable_t>(*ms)) continue;
+        ASR::Variable_t *mv = ASR::down_cast<ASR::Variable_t>(ms);
+        if (ASRUtils::is_allocatable(mv->m_type)) continue;
+        ASR::ttype_t *mt = ASRUtils::extract_type(mv->m_type);
+        if (!ASR::is_a<ASR::StructType_t>(*mt)) continue;
+        if (!mv->m_type_declaration) continue;
+        ASR::symbol_t *inner_sym =
+            ASRUtils::symbol_get_past_external(mv->m_type_declaration);
+        if (!ASR::is_a<ASR::Struct_t>(*inner_sym)) continue;
+        if (struct_has_allocatable_deep(
+                ASR::down_cast<ASR::Struct_t>(inner_sym)))
+            return true;
+    }
+    return false;
+}
+
+// Recursively emit pre-allocation DoLoops for allocatable members found
+// at any depth through non-allocatable struct intermediaries.
+// chain_exts/chain_types: accumulated (ExternalSymbol, type) pairs from
+// the outermost non-allocatable struct member down to the current level.
+// src_chain_exts/src_chain_types: same chain but for building the source
+// expression from ctor_arg.
+static void emit_prealloc_deep(
+    Allocator &al,
+    const Location &loc,
+    SymbolTable *current_scope,
+    ASR::Struct_t *st,
+    ASR::expr_t *ctor_arg,
+    const ASR::DoConcurrentLoop_t &x,
+    ASR::symbol_t *tgt_sym,
+    ASR::ttype_t *elem_type,
+    ASR::symbol_t *outer_mem_ext,
+    ASR::ttype_t *outer_mem_type,
+    std::vector<std::pair<ASR::symbol_t*, ASR::ttype_t*>> &chain,
+    Vec<ASR::stmt_t*> &pre_launch_stmts)
+{
+    ASR::ttype_t *int_type = ASRUtils::TYPE(
+        ASR::make_Integer_t(al, loc, 4));
+
+    for (size_t sm = 0; sm < st->n_members; sm++) {
+        ASR::symbol_t *sub_sym =
+            st->m_symtab->get_symbol(st->m_members[sm]);
+        if (!sub_sym || !ASR::is_a<ASR::Variable_t>(*sub_sym))
+            continue;
+        ASR::Variable_t *sub_mv =
+            ASR::down_cast<ASR::Variable_t>(sub_sym);
+
+        ASR::symbol_t *sub_ext = nullptr;
+        for (auto &scope_item : current_scope->get_scope()) {
+            if (!ASR::is_a<ASR::ExternalSymbol_t>(
+                    *scope_item.second)) continue;
+            ASR::ExternalSymbol_t *es =
+                ASR::down_cast<ASR::ExternalSymbol_t>(
+                    scope_item.second);
+            if (ASRUtils::symbol_get_past_external(
+                    es->m_external) == sub_sym) {
+                sub_ext = scope_item.second;
+                break;
+            }
+        }
+        if (!sub_ext) continue;
+
+        if (ASRUtils::is_allocatable(sub_mv->m_type)) {
+            ASR::ttype_t *sub_mi =
+                ASRUtils::type_get_past_allocatable(sub_mv->m_type);
+            if (!ASR::is_a<ASR::Array_t>(*sub_mi)) continue;
+
+            // Build source expression: ctor_arg %chain... %sub_member
+            ASRUtils::ExprStmtDuplicator dup_sz(al);
+            dup_sz.success = true;
+            ASR::expr_t *src_expr =
+                dup_sz.duplicate_expr(ctor_arg);
+            for (auto &cp : chain) {
+                src_expr = ASRUtils::EXPR(
+                    ASR::make_StructInstanceMember_t(al, loc,
+                        src_expr, cp.first, cp.second, nullptr));
+            }
+            src_expr = ASRUtils::EXPR(
+                ASR::make_StructInstanceMember_t(al, loc,
+                    src_expr, sub_ext, sub_mv->m_type, nullptr));
+            ASR::expr_t *sub_size = ASRUtils::EXPR(
+                ASR::make_ArraySize_t(al, loc,
+                    src_expr, nullptr, int_type, nullptr));
+
+            // Build DoLoop for pre-allocation
+            ASRUtils::ExprStmtDuplicator dup_lp(al);
+            dup_lp.success = true;
+            ASR::do_loop_head_t lh;
+            lh.loc = loc;
+            lh.m_v = dup_lp.duplicate_expr(x.m_head[0].m_v);
+            lh.m_start =
+                dup_lp.duplicate_expr(x.m_head[0].m_start);
+            lh.m_end =
+                dup_lp.duplicate_expr(x.m_head[0].m_end);
+            lh.m_increment = nullptr;
+
+            ASR::expr_t *lv =
+                dup_lp.duplicate_expr(x.m_head[0].m_v);
+            ASR::array_index_t *idx =
+                al.allocate<ASR::array_index_t>(1);
+            idx[0].loc = loc;
+            idx[0].m_left = nullptr;
+            idx[0].m_right = lv;
+            idx[0].m_step = nullptr;
+
+            // Build target: dst(k) %outer_mem %chain... %sub_member
+            ASR::expr_t *tgt_elem = ASRUtils::EXPR(
+                ASR::make_ArrayItem_t(al, loc,
+                    ASRUtils::EXPR(ASR::make_Var_t(
+                        al, loc, tgt_sym)),
+                    idx, 1, elem_type,
+                    ASR::arraystorageType::ColMajor, nullptr));
+            ASR::expr_t *tgt_expr = ASRUtils::EXPR(
+                ASR::make_StructInstanceMember_t(al, loc,
+                    tgt_elem, outer_mem_ext,
+                    outer_mem_type, nullptr));
+            for (auto &cp : chain) {
+                tgt_expr = ASRUtils::EXPR(
+                    ASR::make_StructInstanceMember_t(al, loc,
+                        tgt_expr, cp.first, cp.second, nullptr));
+            }
+            tgt_expr = ASRUtils::EXPR(
+                ASR::make_StructInstanceMember_t(al, loc,
+                    tgt_expr, sub_ext,
+                    sub_mv->m_type, nullptr));
+
+            ASR::alloc_arg_t aa;
+            aa.loc = loc;
+            aa.m_a = tgt_expr;
+            aa.n_dims = 1;
+            aa.m_dims = al.allocate<ASR::dimension_t>(1);
+            aa.m_dims[0].loc = loc;
+            aa.m_dims[0].m_start = ASRUtils::EXPR(
+                ASR::make_IntegerConstant_t(al, loc, 1,
+                    int_type, ASR::integerbozType::Decimal));
+            aa.m_dims[0].m_length = sub_size;
+            aa.m_len_expr = nullptr;
+            aa.m_sym_subclass = nullptr;
+            aa.m_type = nullptr;
+
+            Vec<ASR::alloc_arg_t> av;
+            av.reserve(al, 1);
+            av.push_back(al, aa);
+
+            ASR::stmt_t *alloc_s = ASRUtils::STMT(
+                ASR::make_Allocate_t(al, loc,
+                    av.p, av.n,
+                    nullptr, nullptr, nullptr));
+
+            ASR::expr_t *tgt_dup =
+                dup_lp.duplicate_expr(tgt_expr);
+            ASR::ttype_t *log_type = ASRUtils::TYPE(
+                ASR::make_Logical_t(al, loc, 4));
+            Vec<ASR::expr_t*> aa_args;
+            aa_args.reserve(al, 1);
+            aa_args.push_back(al, tgt_dup);
+            ASR::expr_t *is_alloc = ASRUtils::EXPR(
+                ASR::make_IntrinsicImpureFunction_t(al, loc,
+                    static_cast<int64_t>(
+                        ASRUtils::IntrinsicImpureFunctions
+                            ::Allocated),
+                    aa_args.p, aa_args.n,
+                    0, log_type, nullptr));
+            ASR::expr_t *not_alloc = ASRUtils::EXPR(
+                ASR::make_LogicalNot_t(al, loc,
+                    is_alloc, log_type, nullptr));
+
+            Vec<ASR::stmt_t*> if_body;
+            if_body.reserve(al, 1);
+            if_body.push_back(al, alloc_s);
+
+            ASR::stmt_t *guard = ASRUtils::STMT(
+                ASR::make_If_t(al, loc, nullptr,
+                    not_alloc,
+                    if_body.p, if_body.n,
+                    nullptr, 0));
+
+            Vec<ASR::stmt_t*> lb;
+            lb.reserve(al, 1);
+            lb.push_back(al, guard);
+
+            pre_launch_stmts.push_back(al,
+                ASRUtils::STMT(
+                    ASR::make_DoLoop_t(al, loc, nullptr,
+                        lh, lb.p, lb.n,
+                        nullptr, 0)));
+        } else {
+            // Non-allocatable struct member: recurse deeper
+            ASR::ttype_t *mt =
+                ASRUtils::extract_type(sub_mv->m_type);
+            if (!ASR::is_a<ASR::StructType_t>(*mt)) continue;
+            if (!sub_mv->m_type_declaration) continue;
+            ASR::symbol_t *deeper_sym =
+                ASRUtils::symbol_get_past_external(
+                    sub_mv->m_type_declaration);
+            if (!ASR::is_a<ASR::Struct_t>(*deeper_sym)) continue;
+            chain.push_back({sub_ext, sub_mv->m_type});
+            emit_prealloc_deep(al, loc, current_scope,
+                ASR::down_cast<ASR::Struct_t>(deeper_sym),
+                ctor_arg, x, tgt_sym, elem_type,
+                outer_mem_ext, outer_mem_type,
+                chain, pre_launch_stmts);
+            chain.pop_back();
+        }
+    }
+}
 
 class GpuOffloadVisitor : public ASR::StatementWalkVisitor<GpuOffloadVisitor>
 {
@@ -6611,7 +6848,7 @@ public:
                     ASR::down_cast<ASR::Struct_t>(dt_sym);
 
                 // Check if any member is a non-allocatable struct
-                // with allocatable sub-members.
+                // with allocatable sub-members (at any depth).
                 bool has_nested_alloc = false;
                 for (size_t m = 0; m < st->n_members && !has_nested_alloc; m++) {
                     ASR::symbol_t *ms = st->m_symtab->get_symbol(
@@ -6632,20 +6869,9 @@ public:
                             mv->m_type_declaration);
                     if (!ASR::is_a<ASR::Struct_t>(*inner_sym))
                         continue;
-                    ASR::Struct_t *inner_st =
-                        ASR::down_cast<ASR::Struct_t>(inner_sym);
-                    for (size_t sm = 0; sm < inner_st->n_members; sm++) {
-                        ASR::symbol_t *sms =
-                            inner_st->m_symtab->get_symbol(
-                                inner_st->m_members[sm]);
-                        if (sms && ASR::is_a<ASR::Variable_t>(*sms) &&
-                                ASRUtils::is_allocatable(
-                                    ASR::down_cast<ASR::Variable_t>(
-                                        sms)->m_type)) {
-                            has_nested_alloc = true;
-                            break;
-                        }
-                    }
+                    if (struct_has_allocatable_deep(
+                            ASR::down_cast<ASR::Struct_t>(inner_sym)))
+                        has_nested_alloc = true;
                 }
                 if (!has_nested_alloc) {
                     new_body.push_back(al, stmt);
@@ -6697,6 +6923,129 @@ public:
             if (body_changed) {
                 body_copy.p = new_body.p;
                 body_copy.n = new_body.n;
+            }
+        }
+
+        // Recursively decompose struct-to-struct assignments where
+        // the struct contains allocatable sub-members at any depth.
+        // After StructConstructor decomposition, assignments like
+        // dst(i)%y = src(i) may remain where b_t has nested
+        // allocatables (e.g., b_t%x is a_t with allocatable v).
+        // These must be further decomposed into per-member assignments
+        // until only leaf-level (primitive or allocatable array)
+        // assignments remain, so the Metal kernel can use flat
+        // buffers for the data.
+        {
+            bool changed = true;
+            while (changed) {
+                changed = false;
+                Vec<ASR::stmt_t*> new_body;
+                new_body.reserve(al, body_copy.n * 2);
+                for (size_t bi = 0; bi < body_copy.n; bi++) {
+                    ASR::stmt_t *stmt = body_copy.p[bi];
+                    if (!ASR::is_a<ASR::Assignment_t>(*stmt)) {
+                        new_body.push_back(al, stmt);
+                        continue;
+                    }
+                    ASR::Assignment_t *asgn =
+                        ASR::down_cast<ASR::Assignment_t>(stmt);
+                    ASR::ttype_t *val_type =
+                        ASRUtils::expr_type(asgn->m_value);
+                    ASR::ttype_t *val_base =
+                        ASRUtils::extract_type(val_type);
+                    if (!ASR::is_a<ASR::StructType_t>(*val_base)) {
+                        new_body.push_back(al, stmt);
+                        continue;
+                    }
+                    // Get the Struct_t from the target expression.
+                    // The target must be a StructInstanceMember whose
+                    // member variable has a m_type_declaration pointing
+                    // to the Struct symbol.
+                    if (!ASR::is_a<ASR::StructInstanceMember_t>(
+                            *asgn->m_target)) {
+                        new_body.push_back(al, stmt);
+                        continue;
+                    }
+                    ASR::StructInstanceMember_t *tgt_sim =
+                        ASR::down_cast<ASR::StructInstanceMember_t>(
+                            asgn->m_target);
+                    ASR::symbol_t *mem_sym =
+                        ASRUtils::symbol_get_past_external(
+                            tgt_sim->m_m);
+                    if (!ASR::is_a<ASR::Variable_t>(*mem_sym)) {
+                        new_body.push_back(al, stmt);
+                        continue;
+                    }
+                    ASR::Variable_t *mem_var =
+                        ASR::down_cast<ASR::Variable_t>(mem_sym);
+                    if (!mem_var->m_type_declaration) {
+                        new_body.push_back(al, stmt);
+                        continue;
+                    }
+                    ASR::symbol_t *dt_sym =
+                        ASRUtils::symbol_get_past_external(
+                            mem_var->m_type_declaration);
+                    if (!ASR::is_a<ASR::Struct_t>(*dt_sym)) {
+                        new_body.push_back(al, stmt);
+                        continue;
+                    }
+                    ASR::Struct_t *st =
+                        ASR::down_cast<ASR::Struct_t>(dt_sym);
+                    if (!struct_needs_assignment_decomposition(st)) {
+                        new_body.push_back(al, stmt);
+                        continue;
+                    }
+                    // Decompose into per-member assignments
+                    ASRUtils::ExprStmtDuplicator dup(al);
+                    dup.success = true;
+                    for (size_t m = 0; m < st->n_members; m++) {
+                        ASR::symbol_t *ms =
+                            st->m_symtab->get_symbol(
+                                st->m_members[m]);
+                        if (!ms) continue;
+                        ASR::symbol_t *mem_ext = nullptr;
+                        for (auto &si :
+                                current_scope->get_scope()) {
+                            if (!ASR::is_a<ASR::ExternalSymbol_t>(
+                                    *si.second))
+                                continue;
+                            ASR::ExternalSymbol_t *es =
+                                ASR::down_cast<
+                                    ASR::ExternalSymbol_t>(
+                                        si.second);
+                            if (ASRUtils::symbol_get_past_external(
+                                    es->m_external) == ms) {
+                                mem_ext = si.second;
+                                break;
+                            }
+                        }
+                        if (!mem_ext) continue;
+                        ASR::Variable_t *mv =
+                            ASR::down_cast<ASR::Variable_t>(ms);
+                        ASR::expr_t *tgt_dup =
+                            dup.duplicate_expr(asgn->m_target);
+                        ASR::expr_t *val_dup =
+                            dup.duplicate_expr(asgn->m_value);
+                        ASR::expr_t *tgt_mem = ASRUtils::EXPR(
+                            ASR::make_StructInstanceMember_t(
+                                al, loc, tgt_dup, mem_ext,
+                                mv->m_type, nullptr));
+                        ASR::expr_t *val_mem = ASRUtils::EXPR(
+                            ASR::make_StructInstanceMember_t(
+                                al, loc, val_dup, mem_ext,
+                                mv->m_type, nullptr));
+                        ASR::stmt_t *ma = ASRUtils::STMT(
+                            ASR::make_Assignment_t(al, loc,
+                                tgt_mem, val_mem,
+                                nullptr, false, false));
+                        new_body.push_back(al, ma);
+                    }
+                    changed = true;
+                }
+                if (changed) {
+                    body_copy.p = new_body.p;
+                    body_copy.n = new_body.n;
+                }
             }
         }
 
@@ -8008,10 +8357,12 @@ public:
                 }
 
                 // Pre-allocate allocatable sub-members of
-                // non-allocatable struct members. Handles patterns
-                // like: arr(i) = outer_t(x=src(i))
-                // where outer_t%x is a non-allocatable inner_t but
-                // inner_t%v is allocatable.
+                // non-allocatable struct members at any depth.
+                // Handles patterns like:
+                //   arr(i) = outer_t(x=src(i))
+                // where the allocatable members may be nested
+                // arbitrarily deep through non-allocatable struct
+                // intermediaries (e.g., outer_t%x%y%v).
                 for (size_t m = 0; m < st->n_members; m++) {
                     ASR::symbol_t *mem_sym =
                         st->m_symtab->get_symbol(st->m_members[m]);
@@ -8029,13 +8380,10 @@ public:
                         ASRUtils::symbol_get_past_external(
                             mv->m_type_declaration);
                     if (!ASR::is_a<ASR::Struct_t>(*inner_sym)) continue;
-                    ASR::Struct_t *inner_st =
-                        ASR::down_cast<ASR::Struct_t>(inner_sym);
                     if (m >= sc->n_args) continue;
                     ASR::expr_t *ctor_arg = sc->m_args[m].m_value;
                     if (!ctor_arg) continue;
 
-                    // Find ExternalSymbol for outer member (e.g., x)
                     ASR::symbol_t *mem_ext = nullptr;
                     for (auto &scope_item :
                             current_scope->get_scope()) {
@@ -8052,158 +8400,13 @@ public:
                     }
                     if (!mem_ext) continue;
 
-                    for (size_t sm = 0;
-                            sm < inner_st->n_members; sm++) {
-                        ASR::symbol_t *sub_sym =
-                            inner_st->m_symtab->get_symbol(
-                                inner_st->m_members[sm]);
-                        if (!sub_sym ||
-                                !ASR::is_a<ASR::Variable_t>(*sub_sym))
-                            continue;
-                        ASR::Variable_t *sub_mv =
-                            ASR::down_cast<ASR::Variable_t>(sub_sym);
-                        if (!ASRUtils::is_allocatable(sub_mv->m_type))
-                            continue;
-                        ASR::ttype_t *sub_mi =
-                            ASRUtils::type_get_past_allocatable(
-                                sub_mv->m_type);
-                        if (!ASR::is_a<ASR::Array_t>(*sub_mi))
-                            continue;
-
-                        // Find ExternalSymbol for sub-member (e.g., v)
-                        ASR::symbol_t *sub_ext = nullptr;
-                        for (auto &scope_item :
-                                current_scope->get_scope()) {
-                            if (!ASR::is_a<ASR::ExternalSymbol_t>(
-                                    *scope_item.second)) continue;
-                            ASR::ExternalSymbol_t *es =
-                                ASR::down_cast<ASR::ExternalSymbol_t>(
-                                    scope_item.second);
-                            if (ASRUtils::symbol_get_past_external(
-                                    es->m_external) == sub_sym) {
-                                sub_ext = scope_item.second;
-                                break;
-                            }
-                        }
-                        if (!sub_ext) continue;
-
-                        // Compute size from ctor_arg%sub_member
-                        // e.g., size(src(i)%v)
-                        ASRUtils::ExprStmtDuplicator dup_sz2(al);
-                        dup_sz2.success = true;
-                        ASR::expr_t *src_sub = ASRUtils::EXPR(
-                            ASR::make_StructInstanceMember_t(al, loc,
-                                dup_sz2.duplicate_expr(ctor_arg),
-                                sub_ext, sub_mv->m_type, nullptr));
-                        ASR::expr_t *sub_size = ASRUtils::EXPR(
-                            ASR::make_ArraySize_t(al, loc,
-                                src_sub, nullptr,
-                                int_type_pa, nullptr));
-
-                        ASRUtils::ExprStmtDuplicator dup_lp2(al);
-                        dup_lp2.success = true;
-                        ASR::do_loop_head_t lh2;
-                        lh2.loc = loc;
-                        lh2.m_v = dup_lp2.duplicate_expr(
-                            x.m_head[0].m_v);
-                        lh2.m_start = dup_lp2.duplicate_expr(
-                            x.m_head[0].m_start);
-                        lh2.m_end = dup_lp2.duplicate_expr(
-                            x.m_head[0].m_end);
-                        lh2.m_increment = nullptr;
-
-                        ASR::expr_t *lv2 =
-                            dup_lp2.duplicate_expr(x.m_head[0].m_v);
-                        ASR::array_index_t *idx2 =
-                            al.allocate<ASR::array_index_t>(1);
-                        idx2[0].loc = loc;
-                        idx2[0].m_left = nullptr;
-                        idx2[0].m_right = lv2;
-                        idx2[0].m_step = nullptr;
-
-                        // dst(k)
-                        ASR::expr_t *tgt_elem2 = ASRUtils::EXPR(
-                            ASR::make_ArrayItem_t(al, loc,
-                                ASRUtils::EXPR(ASR::make_Var_t(
-                                    al, loc, tgt_sym)),
-                                idx2, 1, elem_type,
-                                ASR::arraystorageType::ColMajor,
-                                nullptr));
-                        // dst(k)%x
-                        ASR::expr_t *tgt_mem2 = ASRUtils::EXPR(
-                            ASR::make_StructInstanceMember_t(al, loc,
-                                tgt_elem2, mem_ext,
-                                mv->m_type, nullptr));
-                        // dst(k)%x%v
-                        ASR::expr_t *tgt_sub2 = ASRUtils::EXPR(
-                            ASR::make_StructInstanceMember_t(al, loc,
-                                tgt_mem2, sub_ext,
-                                sub_mv->m_type, nullptr));
-
-                        ASR::alloc_arg_t aa2;
-                        aa2.loc = loc;
-                        aa2.m_a = tgt_sub2;
-                        aa2.n_dims = 1;
-                        aa2.m_dims =
-                            al.allocate<ASR::dimension_t>(1);
-                        aa2.m_dims[0].loc = loc;
-                        aa2.m_dims[0].m_start = ASRUtils::EXPR(
-                            ASR::make_IntegerConstant_t(al, loc, 1,
-                                int_type_pa,
-                                ASR::integerbozType::Decimal));
-                        aa2.m_dims[0].m_length = sub_size;
-                        aa2.m_len_expr = nullptr;
-                        aa2.m_sym_subclass = nullptr;
-                        aa2.m_type = nullptr;
-
-                        Vec<ASR::alloc_arg_t> av2;
-                        av2.reserve(al, 1);
-                        av2.push_back(al, aa2);
-
-                        ASR::stmt_t *alloc_s2 = ASRUtils::STMT(
-                            ASR::make_Allocate_t(al, loc,
-                                av2.p, av2.n,
-                                nullptr, nullptr, nullptr));
-
-                        ASR::expr_t *tgt_sub2_dup =
-                            dup_lp2.duplicate_expr(tgt_sub2);
-                        ASR::ttype_t *log_type2 = ASRUtils::TYPE(
-                            ASR::make_Logical_t(al, loc, 4));
-                        Vec<ASR::expr_t*> aa2_args;
-                        aa2_args.reserve(al, 1);
-                        aa2_args.push_back(al, tgt_sub2_dup);
-                        ASR::expr_t *is_alloc2 = ASRUtils::EXPR(
-                            ASR::make_IntrinsicImpureFunction_t(
-                                al, loc,
-                                static_cast<int64_t>(
-                                    ASRUtils::IntrinsicImpureFunctions
-                                        ::Allocated),
-                                aa2_args.p, aa2_args.n,
-                                0, log_type2, nullptr));
-                        ASR::expr_t *not_alloc2 = ASRUtils::EXPR(
-                            ASR::make_LogicalNot_t(al, loc,
-                                is_alloc2, log_type2, nullptr));
-
-                        Vec<ASR::stmt_t*> if_body2;
-                        if_body2.reserve(al, 1);
-                        if_body2.push_back(al, alloc_s2);
-
-                        ASR::stmt_t *guard2 = ASRUtils::STMT(
-                            ASR::make_If_t(al, loc, nullptr,
-                                not_alloc2,
-                                if_body2.p, if_body2.n,
-                                nullptr, 0));
-
-                        Vec<ASR::stmt_t*> lb2;
-                        lb2.reserve(al, 1);
-                        lb2.push_back(al, guard2);
-
-                        pre_launch_stmts.push_back(al,
-                            ASRUtils::STMT(
-                                ASR::make_DoLoop_t(al, loc, nullptr,
-                                    lh2, lb2.p, lb2.n,
-                                    nullptr, 0)));
-                    }
+                    std::vector<std::pair<ASR::symbol_t*,
+                        ASR::ttype_t*>> chain;
+                    emit_prealloc_deep(al, loc, current_scope,
+                        ASR::down_cast<ASR::Struct_t>(inner_sym),
+                        ctor_arg, x, tgt_sym, elem_type,
+                        mem_ext, mv->m_type,
+                        chain, pre_launch_stmts);
                 }
             }
         }
