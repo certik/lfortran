@@ -9823,6 +9823,136 @@ public:
                         }
                     }
                 }
+
+                // Pre-allocate allocatable sub-members of
+                // non-allocatable struct members at any depth.
+                // Handles patterns like:
+                //   dst(i) = wrap(src(i))
+                // where wrap returns outer_t, outer_t%x is a
+                // non-allocatable inner_t, and inner_t%v is
+                // allocatable.  Trace through the function body
+                // to map formal parameters to actual arguments.
+                for (size_t m = 0; m < st->n_members; m++) {
+                    ASR::symbol_t *mem_sym_fc =
+                        st->m_symtab->get_symbol(st->m_members[m]);
+                    if (!mem_sym_fc ||
+                            !ASR::is_a<ASR::Variable_t>(*mem_sym_fc))
+                        continue;
+                    ASR::Variable_t *mv_fc =
+                        ASR::down_cast<ASR::Variable_t>(mem_sym_fc);
+                    if (ASRUtils::is_allocatable(mv_fc->m_type))
+                        continue;
+                    ASR::ttype_t *mt_fc =
+                        ASRUtils::extract_type(mv_fc->m_type);
+                    if (!ASR::is_a<ASR::StructType_t>(*mt_fc))
+                        continue;
+                    if (!mv_fc->m_type_declaration) continue;
+                    ASR::symbol_t *inner_sym_fc =
+                        ASRUtils::symbol_get_past_external(
+                            mv_fc->m_type_declaration);
+                    if (!ASR::is_a<ASR::Struct_t>(*inner_sym_fc))
+                        continue;
+                    ASR::Struct_t *inner_st_fc =
+                        ASR::down_cast<ASR::Struct_t>(inner_sym_fc);
+                    if (!struct_has_allocatable_deep(inner_st_fc))
+                        continue;
+
+                    // Trace through function body for w%member = param
+                    ASR::expr_t *src_actual_fc = nullptr;
+                    for (size_t bi = 0;
+                            bi < outer_fn->n_body && !src_actual_fc;
+                            bi++) {
+                        if (!ASR::is_a<ASR::Assignment_t>(
+                                *outer_fn->m_body[bi]))
+                            continue;
+                        ASR::Assignment_t *fa =
+                            ASR::down_cast<ASR::Assignment_t>(
+                                outer_fn->m_body[bi]);
+                        if (!ASR::is_a<ASR::StructInstanceMember_t>(
+                                *fa->m_target))
+                            continue;
+                        ASR::StructInstanceMember_t *fsm =
+                            ASR::down_cast<
+                                ASR::StructInstanceMember_t>(
+                                    fa->m_target);
+                        std::string fmn = ASRUtils::symbol_name(
+                            ASRUtils::symbol_get_past_external(
+                                fsm->m_m));
+                        if (fmn != std::string(st->m_members[m]))
+                            continue;
+                        if (!ASR::is_a<ASR::Var_t>(*fa->m_value))
+                            continue;
+                        std::string src_name =
+                            ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    fa->m_value)->m_v);
+                        for (size_t pi = 0;
+                                pi < outer_fn->n_args; pi++) {
+                            std::string pn =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        outer_fn->m_args[pi])
+                                        ->m_v);
+                            if (pn != src_name) continue;
+                            if (pi >= outer_fc->n_args) break;
+                            ASR::expr_t *actual =
+                                outer_fc->m_args[pi].m_value;
+                            if (!actual) break;
+                            if (ASR::is_a<
+                                    ASR::ArrayPhysicalCast_t>(
+                                        *actual))
+                                actual = ASR::down_cast<
+                                    ASR::ArrayPhysicalCast_t>(
+                                        actual)->m_arg;
+                            src_actual_fc = actual;
+                            break;
+                        }
+                    }
+                    if (!src_actual_fc) continue;
+
+                    ASR::symbol_t *mem_ext_fc = nullptr;
+                    for (auto &scope_item :
+                            current_scope->get_scope()) {
+                        if (!ASR::is_a<ASR::ExternalSymbol_t>(
+                                *scope_item.second)) continue;
+                        ASR::ExternalSymbol_t *es =
+                            ASR::down_cast<ASR::ExternalSymbol_t>(
+                                scope_item.second);
+                        if (ASRUtils::symbol_get_past_external(
+                                es->m_external) == mem_sym_fc) {
+                            mem_ext_fc = scope_item.second;
+                            break;
+                        }
+                    }
+                    if (!mem_ext_fc) {
+                        std::string es_name =
+                            current_scope->get_unique_name(
+                                std::string(st->m_name) + "_" +
+                                std::string(st->m_members[m]),
+                                false);
+                        ASR::asr_t *new_es =
+                            ASR::make_ExternalSymbol_t(al, loc,
+                                current_scope,
+                                s2c(al, es_name),
+                                mem_sym_fc,
+                                s2c(al, st->m_name),
+                                nullptr, 0,
+                                s2c(al, st->m_members[m]),
+                                ASR::accessType::Public);
+                        mem_ext_fc =
+                            ASR::down_cast<ASR::symbol_t>(new_es);
+                        current_scope->add_symbol(es_name,
+                            mem_ext_fc);
+                    }
+
+                    std::vector<std::pair<ASR::symbol_t*,
+                        ASR::ttype_t*>> chain;
+                    emit_prealloc_deep(al, loc, current_scope,
+                        inner_st_fc,
+                        src_actual_fc, x, tgt_sym, elem_type,
+                        mem_ext_fc, mv_fc->m_type,
+                        chain, pre_launch_stmts);
+                }
             }
         }
 

@@ -3188,33 +3188,25 @@ public:
             }
         }
 
-        bool any_local = !tgt_has_offsets || !val_has_offsets;
-        if (any_local) {
-            // When either side is a local FixedSizeArray, emit a
-            // whole struct handle copy first (covers non-allocatable
-            // members and placeholder fields).
-            src << get_indent();
-            visit_expr(a->m_target);
-            src << " = ";
-            visit_expr(a->m_value);
-            src << ";\n";
-        } else {
-            // Copy non-allocatable members directly
-            for (size_t m = 0; m < st->n_members; m++) {
-                ASR::symbol_t *mem_sym = st->m_symtab->get_symbol(
-                    st->m_members[m]);
-                if (!mem_sym || !ASR::is_a<ASR::Variable_t>(*mem_sym))
-                    continue;
-                ASR::Variable_t *mv =
-                    ASR::down_cast<ASR::Variable_t>(mem_sym);
-                if (ASRUtils::is_allocatable(mv->m_type)) continue;
-                if (!is_struct_type(mv->m_type)) {
-                    src << get_indent();
-                    visit_expr(a->m_target);
-                    src << "." << st->m_members[m] << " = ";
-                    visit_expr(a->m_value);
-                    src << "." << st->m_members[m] << ";\n";
-                }
+        // Copy non-allocatable, non-struct members directly.
+        // Allocatable members are handled through decomposed buffers
+        // below.  Avoid whole-struct copy because it would overwrite
+        // allocatable descriptor placeholder fields with GPU-side
+        // values that corrupt host pointers on copy-back.
+        for (size_t m = 0; m < st->n_members; m++) {
+            ASR::symbol_t *mem_sym = st->m_symtab->get_symbol(
+                st->m_members[m]);
+            if (!mem_sym || !ASR::is_a<ASR::Variable_t>(*mem_sym))
+                continue;
+            ASR::Variable_t *mv =
+                ASR::down_cast<ASR::Variable_t>(mem_sym);
+            if (ASRUtils::is_allocatable(mv->m_type)) continue;
+            if (!is_struct_type(mv->m_type)) {
+                src << get_indent();
+                visit_expr(a->m_target);
+                src << "." << st->m_members[m] << " = ";
+                visit_expr(a->m_value);
+                src << "." << st->m_members[m] << ";\n";
             }
         }
 
