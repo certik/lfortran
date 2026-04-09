@@ -2609,6 +2609,36 @@ public:
         collect_nested_alloc_members(st, "", {}, nested);
         for (auto &nam : nested) {
             std::string key = base_arr_name + "." + nam.suffix;
+            // Check FSA dest alias: when set, redirect companion
+            // buffer args to the destination device buffers so the
+            // elemental function writes directly to them.
+            auto fda = fsa_alloc_dest_alias.find(key);
+            if (fda != fsa_alloc_dest_alias.end()) {
+                std::string dk = fda->second.dest_prefix
+                    + "." + nam.suffix;
+                auto ddit = func_array_data_params.find(dk);
+                auto ooit = struct_array_offset_params.find(dk);
+                if (ddit != func_array_data_params.end() &&
+                        ooit != struct_array_offset_params.end()) {
+                    src << ", " << ddit->second << " + "
+                        << ooit->second << "["
+                        << fda->second.base_idx
+                        << " + __elem_i]";
+                } else {
+                    src << ", __data_" << base_arr_name
+                        << "_" << nam.suffix;
+                }
+                auto ssit = struct_array_sizes_params.find(dk);
+                if (ssit != struct_array_sizes_params.end()) {
+                    src << ", " << ssit->second << "["
+                        << fda->second.base_idx
+                        << " + __elem_i]";
+                } else {
+                    src << ", __size_" << base_arr_name
+                        << "_" << nam.suffix;
+                }
+                continue;
+            }
             auto dit = func_array_data_params.find(key);
             auto oit = struct_array_offset_params.find(key);
             if (dit != func_array_data_params.end() &&
@@ -6284,22 +6314,39 @@ public:
                                 ai2 < sc->n_args; ai2++) {
                             if (!sc->m_args[ai2].m_value)
                                 continue;
-                            if (!ASR::is_a<ASR::ArrayItem_t>(
-                                    *sc->m_args[ai2].m_value))
-                                continue;
-                            ASR::ArrayItem_t *cai2 =
-                                ASR::down_cast<ASR::ArrayItem_t>(
-                                    sc->m_args[ai2].m_value);
-                            if (!ASR::is_a<ASR::Var_t>(
-                                    *cai2->m_v))
-                                continue;
-                            std::string cn2 =
-                                ASRUtils::symbol_name(
-                                    ASR::down_cast<ASR::Var_t>(
-                                        cai2->m_v)->m_v);
-                            if (cn2 == fsa_name) {
-                                has_fsa_call = true;
-                                break;
+                            ASR::expr_t *carg =
+                                sc->m_args[ai2].m_value;
+                            // Match ArrayItem(Var(fsa_name))
+                            if (ASR::is_a<ASR::ArrayItem_t>(
+                                    *carg)) {
+                                ASR::ArrayItem_t *cai2 =
+                                    ASR::down_cast<
+                                        ASR::ArrayItem_t>(carg);
+                                if (!ASR::is_a<ASR::Var_t>(
+                                        *cai2->m_v))
+                                    continue;
+                                std::string cn2 =
+                                    ASRUtils::symbol_name(
+                                        ASR::down_cast<
+                                            ASR::Var_t>(
+                                            cai2->m_v)->m_v);
+                                if (cn2 == fsa_name) {
+                                    has_fsa_call = true;
+                                    break;
+                                }
+                            }
+                            // Match Var(fsa_name) directly
+                            // (elemental calls pass whole arrays)
+                            if (ASR::is_a<ASR::Var_t>(*carg)) {
+                                std::string cn2 =
+                                    ASRUtils::symbol_name(
+                                        ASR::down_cast<
+                                            ASR::Var_t>(
+                                            carg)->m_v);
+                                if (cn2 == fsa_name) {
+                                    has_fsa_call = true;
+                                    break;
+                                }
                             }
                         }
                         if (has_fsa_call) break;
