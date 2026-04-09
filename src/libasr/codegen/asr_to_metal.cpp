@@ -5256,6 +5256,68 @@ public:
                                                 break;
                                             }
                                         }
+                                        // Also scan for direct
+                                        // Assignment statements:
+                                        // arr(idx)%member = rhs_array
+                                        if (data_size <= 0) {
+                                            for (size_t si = 0;
+                                                    si < all_stmts.size();
+                                                    si++) {
+                                                if (data_size > 0) break;
+                                                if (all_stmts[si]->type !=
+                                                        ASR::stmtType::
+                                                        Assignment)
+                                                    continue;
+                                                ASR::Assignment_t *asgn =
+                                                    ASR::down_cast<
+                                                        ASR::Assignment_t>(
+                                                            all_stmts[si]);
+                                                if (!ASR::is_a<ASR::
+                                                        StructInstanceMember_t>(
+                                                            *asgn->m_target))
+                                                    continue;
+                                                ASR::StructInstanceMember_t
+                                                    *sim = ASR::down_cast<
+                                                        ASR::StructInstanceMember_t>(
+                                                            asgn->m_target);
+                                                std::string amn =
+                                                    ASRUtils::symbol_name(
+                                                        ASRUtils::
+                                                        symbol_get_past_external(
+                                                            sim->m_m));
+                                                if (amn != mem_name)
+                                                    continue;
+                                                if (!ASR::is_a<
+                                                        ASR::ArrayItem_t>(
+                                                            *sim->m_v))
+                                                    continue;
+                                                ASR::ArrayItem_t *sim_ai =
+                                                    ASR::down_cast<
+                                                        ASR::ArrayItem_t>(
+                                                            sim->m_v);
+                                                if (!ASR::is_a<ASR::Var_t>(
+                                                        *sim_ai->m_v))
+                                                    continue;
+                                                std::string atn =
+                                                    ASRUtils::symbol_name(
+                                                        ASR::down_cast<
+                                                            ASR::Var_t>(
+                                                            sim_ai->m_v)
+                                                            ->m_v);
+                                                if (atn != vname)
+                                                    continue;
+                                                ASR::ttype_t *rhs_t =
+                                                    ASRUtils::
+                                                    type_get_past_allocatable(
+                                                        ASRUtils::expr_type(
+                                                            asgn->m_value));
+                                                data_size =
+                                                    get_total_elements(
+                                                        rhs_t);
+                                                if (data_size <= 0)
+                                                    data_size = 0;
+                                            }
+                                        }
                                         ASR::Array_t *mem_arr =
                                             ASR::down_cast<ASR::Array_t>(
                                                 mem_inner);
@@ -6770,6 +6832,20 @@ public:
                                 indent_level--;
                                 src << get_indent() << "}\n";
                                 sim_handled = true;
+                            } else if (dit !=
+                                    func_array_data_params.end()) {
+                                // Local FSA-of-struct: companion
+                                // data/size buffers exist but no
+                                // device offset buffer. Use the
+                                // local flat buffer directly.
+                                auto spit =
+                                    func_array_size_params.find(key);
+                                if (spit !=
+                                        func_array_size_params
+                                            .end()) {
+                                    data_expr = dit->second;
+                                    size_expr = spit->second;
+                                }
                             }
                         }
                     }
