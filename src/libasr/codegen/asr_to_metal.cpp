@@ -365,6 +365,10 @@ public:
             ASR::ttype_t *inner = ASR::down_cast<ASR::Pointer_t>(type)->m_type;
             return inner->type == ASR::ttypeType::Array;
         }
+        if (type->type == ASR::ttypeType::Allocatable) {
+            ASR::ttype_t *inner = ASR::down_cast<ASR::Allocatable_t>(type)->m_type;
+            return inner->type == ASR::ttypeType::Array;
+        }
         return false;
     }
 
@@ -1598,19 +1602,50 @@ public:
                 return;
             }
         }
-        if (ASR::is_a<ASR::Array_t>(*type)) {
-            ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(type);
+        // Strip Allocatable wrapper to reach the Array type
+        ASR::ttype_t *base_type = ASRUtils::type_get_past_allocatable(type);
+        if (ASR::is_a<ASR::Array_t>(*base_type)) {
+            ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(base_type);
+            bool has_dims = false;
             bool first_d = true;
-            src << "(";
             for (size_t d = 0; d < arr->n_dims; d++) {
-                if (arr->m_dims[d].m_length) {
-                    if (!first_d) src << " * ";
-                    first_d = false;
-                    visit_expr(arr->m_dims[d].m_length);
+                if (arr->m_dims[d].m_length) has_dims = true;
+            }
+            if (has_dims) {
+                src << "(";
+                for (size_t d = 0; d < arr->n_dims; d++) {
+                    if (arr->m_dims[d].m_length) {
+                        if (!first_d) src << " * ";
+                        first_d = false;
+                        visit_expr(arr->m_dims[d].m_length);
+                    }
+                }
+                if (first_d) src << "0";
+                src << ")";
+                return;
+            }
+            // DescriptorArray with null dimensions: look up from
+            // pre-scanned alloc sizes or func_array_size_params
+            if (ASR::is_a<ASR::Var_t>(*expr)) {
+                std::string name = ASRUtils::symbol_name(
+                    ASR::down_cast<ASR::Var_t>(expr)->m_v);
+                auto it = alloc_array_sizes.find(name);
+                if (it != alloc_array_sizes.end()) {
+                    src << it->second;
+                    return;
+                }
+                auto it2 = alloc_array_size_exprs.find(name);
+                if (it2 != alloc_array_size_exprs.end()) {
+                    src << it2->second;
+                    return;
+                }
+                auto it3 = func_array_size_params.find(name);
+                if (it3 != func_array_size_params.end()) {
+                    src << it3->second;
+                    return;
                 }
             }
-            if (first_d) src << "0";
-            src << ")";
+            src << "/* unknown array size */";
         } else if (ASR::is_a<ASR::Var_t>(*expr)) {
             std::string name = ASRUtils::symbol_name(
                 ASR::down_cast<ASR::Var_t>(expr)->m_v);
@@ -1633,7 +1668,8 @@ public:
         if (fn && arg_idx < fn->n_args) {
             ASR::Variable_t *farg = ASR::down_cast<ASR::Variable_t>(
                 ASR::down_cast<ASR::Var_t>(fn->m_args[arg_idx])->m_v);
-            ASR::ttype_t *ftype = farg->m_type;
+            ASR::ttype_t *ftype = ASRUtils::type_get_past_allocatable(
+                farg->m_type);
             if (ASR::is_a<ASR::Array_t>(*ftype)) {
                 ASR::Array_t *farr = ASR::down_cast<ASR::Array_t>(ftype);
                 if (farr->m_physical_type
@@ -2957,8 +2993,8 @@ public:
             ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(
                 ASR::down_cast<ASR::Var_t>(fn->m_args[i])->m_v);
             if (is_array_type(arg->m_type)) {
-                ASR::ttype_t *arg_type = ASRUtils::type_get_past_pointer(
-                    arg->m_type);
+                ASR::ttype_t *arg_type = ASRUtils::type_get_past_allocatable(
+                    ASRUtils::type_get_past_pointer(arg->m_type));
                 ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
                     arg_type);
                 if (arr->m_physical_type
@@ -3089,8 +3125,8 @@ public:
             if (!first) src << ", ";
             first = false;
             if (is_array_type(arg->m_type)) {
-                ASR::ttype_t *arg_type = ASRUtils::type_get_past_pointer(
-                    arg->m_type);
+                ASR::ttype_t *arg_type = ASRUtils::type_get_past_allocatable(
+                    ASRUtils::type_get_past_pointer(arg->m_type));
                 ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(arg_type);
                 // FixedSizeArray and PointerArray out params (from
                 // subroutine_from_function) receive local thread-space
@@ -3099,6 +3135,11 @@ public:
                 // _lcompilers_Sum_*), PointerArray/DescriptorArray In
                 // params also use variable address space so both
                 // thread and device overloads are generated.
+                // Allocatable array out params (from
+                // subroutine_from_function converting functions that
+                // return allocatable arrays) also use variable address
+                // space since the caller may pass thread-local temps.
+                bool is_alloc_array = ASRUtils::is_allocatable(arg->m_type);
                 bool use_variable_addr = (arr->m_physical_type
                     == ASR::array_physical_typeType::FixedSizeArray)
                     || (arr->m_physical_type
@@ -3108,7 +3149,7 @@ public:
                         || all_arrays_input_only))
                     || (arr->m_physical_type
                     == ASR::array_physical_typeType::DescriptorArray
-                    && all_arrays_input_only);
+                    && (all_arrays_input_only || is_alloc_array));
                 std::string addr_space = use_variable_addr
                     ? out_addr_space : "device";
                 std::string elem_type;
@@ -3165,7 +3206,11 @@ public:
                     || (arr->m_physical_type
                         == ASR::array_physical_typeType::PointerArray
                         && (arg->m_intent == ASR::intentType::Out
-                            || arg->m_intent == ASR::intentType::InOut))) {
+                            || arg->m_intent == ASR::intentType::InOut))
+                    || (is_alloc_array
+                        && (arg->m_intent == ASR::intentType::Out
+                            || arg->m_intent == ASR::intentType::InOut
+                            || arg->m_intent == ASR::intentType::ReturnVar))) {
                     func_array_params.insert(std::string(arg->m_name));
                 }
             } else if (ASRUtils::is_allocatable(arg->m_type)) {
@@ -3587,10 +3632,11 @@ public:
             ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(
                 ASR::down_cast<ASR::Var_t>(fn->m_args[i])->m_v);
             if (is_array_type(arg->m_type)) {
-                ASR::ttype_t *arg_type = ASRUtils::type_get_past_pointer(
-                    arg->m_type);
+                ASR::ttype_t *arg_type = ASRUtils::type_get_past_allocatable(
+                    ASRUtils::type_get_past_pointer(arg->m_type));
                 ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
                     arg_type);
+                bool is_alloc_array = ASRUtils::is_allocatable(arg->m_type);
                 if ((arr->m_physical_type
                         == ASR::array_physical_typeType::FixedSizeArray)
                     || (arr->m_physical_type
@@ -3600,7 +3646,7 @@ public:
                             || all_input))
                     || (arr->m_physical_type
                         == ASR::array_physical_typeType::DescriptorArray
-                        && all_input)) {
+                        && (all_input || is_alloc_array))) {
                     return true;
                 }
             } else if (ASRUtils::is_allocatable(arg->m_type)) {
@@ -3633,10 +3679,11 @@ public:
             ASR::Variable_t *arg = ASR::down_cast<ASR::Variable_t>(
                 ASR::down_cast<ASR::Var_t>(fn->m_args[i])->m_v);
             if (is_array_type(arg->m_type)) {
-                ASR::ttype_t *arg_type = ASRUtils::type_get_past_pointer(
-                    arg->m_type);
+                ASR::ttype_t *arg_type = ASRUtils::type_get_past_allocatable(
+                    ASRUtils::type_get_past_pointer(arg->m_type));
                 ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(
                     arg_type);
+                bool is_alloc_array = ASRUtils::is_allocatable(arg->m_type);
                 if ((arr->m_physical_type
                         == ASR::array_physical_typeType::FixedSizeArray)
                     || (arr->m_physical_type
@@ -3646,7 +3693,7 @@ public:
                             || all_input))
                     || (arr->m_physical_type
                         == ASR::array_physical_typeType::DescriptorArray
-                        && all_input)) {
+                        && (all_input || is_alloc_array))) {
                     has_variable_addr_array = true;
                 }
             } else if (ASRUtils::is_allocatable(arg->m_type)) {
