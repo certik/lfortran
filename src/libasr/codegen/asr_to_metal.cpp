@@ -195,6 +195,12 @@ public:
     // instead of the undersized thread-local temp buffer.
     std::map<std::string, std::string> fsa_temp_source_array;
 
+    // Tracks per-member source when a local FSA temp element's
+    // non-allocatable struct member is populated from a device
+    // array element (temp[idx].mem = src[i]).  Maps
+    // "temp_name.member_name" -> source_device_array_name.
+    std::map<std::string, std::string> fsa_temp_member_source;
+
     // Tracks local pointer variables that are aliases into an
     // array-of-struct (via Associate with ArraySection).
     // Maps ptr_name -> base_array_name. Used by the elemental call
@@ -5370,6 +5376,48 @@ public:
                     }
                 }
 
+                // Track SIM(ArrayItem(temp_fsa), member) =
+                // ArrayItem(Var(src_arr)) — when a non-allocatable
+                // struct member of a temp FSA element is populated
+                // from a device struct array element.
+                if (ASR::is_a<ASR::StructInstanceMember_t>(
+                            *a->m_target) &&
+                        ASR::is_a<ASR::ArrayItem_t>(*a->m_value)) {
+                    ASR::StructInstanceMember_t *sm2 =
+                        ASR::down_cast<ASR::StructInstanceMember_t>(
+                            a->m_target);
+                    if (ASR::is_a<ASR::ArrayItem_t>(*sm2->m_v)) {
+                        ASR::ArrayItem_t *tgt_ai2 =
+                            ASR::down_cast<ASR::ArrayItem_t>(
+                                sm2->m_v);
+                        ASR::ArrayItem_t *val_ai2 =
+                            ASR::down_cast<ASR::ArrayItem_t>(
+                                a->m_value);
+                        if (ASR::is_a<ASR::Var_t>(*tgt_ai2->m_v) &&
+                                ASR::is_a<ASR::Var_t>(
+                                    *val_ai2->m_v)) {
+                            std::string tgt_n2 =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        tgt_ai2->m_v)->m_v);
+                            std::string val_n2 =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        val_ai2->m_v)->m_v);
+                            std::string mem_n2 =
+                                ASRUtils::symbol_name(
+                                    ASRUtils::symbol_get_past_external(
+                                        sm2->m_m));
+                            if (kernel_arg_names.count(val_n2) > 0 &&
+                                    kernel_arg_names.count(
+                                        tgt_n2) == 0) {
+                                fsa_temp_member_source[
+                                    tgt_n2 + "." + mem_n2] = val_n2;
+                            }
+                        }
+                    }
+                }
+
                 // Track pointer aliases: when a local pointer is
                 // assigned from a variable whose array size is known
                 // (e.g. temp = assumed_shape_param), propagate size
@@ -6285,14 +6333,14 @@ public:
                                     if (fsa_it !=
                                             fsa_temp_source_array.end())
                                         orig_src = fsa_it->second;
-                                    if (elem_st &&
-                                        struct_has_allocatable_members(
-                                            elem_st) &&
-                                        !rhs_var_name.empty()) {
-                                        std::vector<NestedAllocMember>
-                                            nested;
+                                    std::vector<NestedAllocMember>
+                                        nested;
+                                    if (elem_st) {
                                         collect_nested_alloc_members(
                                             elem_st, "", {}, nested);
+                                    }
+                                    if (elem_st && !nested.empty() &&
+                                        !rhs_var_name.empty()) {
                                         for (auto &nam : nested) {
                                             std::string tgt_nk =
                                                 sname + "_" + mem_name
@@ -6320,10 +6368,56 @@ public:
                                             // is known, read directly
                                             // from it instead of the
                                             // local temp buffer.
-                                            if (!orig_src.empty()) {
+                                            // Also handle member-level
+                                            // sources for nested alloc
+                                            // members through non-alloc
+                                            // struct intermediaries.
+                                            std::string eff_src =
+                                                orig_src;
+                                            std::string eff_suf =
+                                                nam.suffix;
+                                            if (eff_src.empty() &&
+                                                    !nam
+                                                    .parent_field_indices
+                                                    .empty()) {
+                                                std::string top_mem(
+                                                    elem_st->m_members[
+                                                        nam
+                                                        .parent_field_indices
+                                                        [0]]);
+                                                auto ms_it =
+                                                    fsa_temp_member_source
+                                                        .find(
+                                                        rhs_var_name
+                                                        + "."
+                                                        + top_mem);
+                                                if (ms_it !=
+                                                        fsa_temp_member_source
+                                                        .end()) {
+                                                    eff_src =
+                                                        ms_it->second;
+                                                    std::string pfx =
+                                                        top_mem + "_";
+                                                    if (nam.suffix
+                                                            .size()
+                                                            > pfx
+                                                            .size()
+                                                        && nam.suffix
+                                                            .substr(
+                                                            0,
+                                                            pfx.size())
+                                                            == pfx) {
+                                                        eff_suf =
+                                                            nam.suffix
+                                                            .substr(
+                                                            pfx.size());
+                                                    }
+                                                }
+                                            }
+                                            if (!eff_src.empty()) {
                                                 std::string src_nk =
-                                                    orig_src + "."
-                                                    + nam.suffix;
+                                                    eff_src + "."
+                                                    + eff_suf;
                                                 auto snd =
                                                     func_array_data_params
                                                         .find(src_nk);
