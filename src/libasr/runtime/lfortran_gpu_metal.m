@@ -219,6 +219,11 @@ void lfortran_gpu_launch(lfortran_gpu_ctx* ctx, lfortran_gpu_kernel* k,
     // Copy results back from Metal buffers to host memory
     for (int i = 0; i < k->n_args; i++) {
         if (k->arg_is_buffer[i] && buffers[i]) {
+            if (getenv("LFORTRAN_DEBUG_METAL_SOURCE")) {
+                fprintf(stderr, "[gpu_launch] copy-back buf[%d]: dst=%p src=%p size=%zu\n",
+                    i, k->buffer_ptrs[i], [buffers[i] contents],
+                    k->buffer_sizes[i]);
+            }
             memcpy(k->buffer_ptrs[i], [buffers[i] contents], k->buffer_sizes[i]);
         }
     }

@@ -19467,11 +19467,35 @@ public:
                 llvm::BasicBlock *ps_mb =
                     llvm::BasicBlock::Create(
                         context, "ps.merge", ps_fn);
+                llvm::BasicBlock *ps_dc =
+                    llvm::BasicBlock::Create(
+                        context, "ps.data_check", ps_fn);
                 builder->CreateCondBr(
                     builder->CreateICmpEQ(
                         builder->CreatePtrToInt(ps_dp, i64),
                         llvm::ConstantInt::get(i64, 0)),
-                    ps_nb, ps_ab);
+                    ps_nb, ps_dc);
+                // Also treat descriptor-with-null-data as
+                // unallocated (nested struct allocatable members
+                // get a descriptor but no data on allocate).
+                builder->SetInsertPoint(ps_dc);
+                {
+                    llvm::Value *ps_dpp =
+                        arr_descr->get_pointer_to_data(
+                            ps_idesc, ps_dp);
+                    llvm::Value *ps_raw =
+                        llvm_utils->CreateLoad2(
+                            llvm::PointerType::getUnqual(
+                                llvm::Type::getInt8Ty(
+                                    context)),
+                            ps_dpp);
+                    builder->CreateCondBr(
+                        builder->CreateICmpEQ(
+                            builder->CreatePtrToInt(
+                                ps_raw, i64),
+                            llvm::ConstantInt::get(i64, 0)),
+                        ps_nb, ps_ab);
+                }
                 builder->SetInsertPoint(ps_ab);
                 llvm::Value *ps_ne =
                     arr_descr->get_array_size(
@@ -22522,8 +22546,40 @@ public:
                                         llvm::BasicBlock::Create(
                                             context,
                                             "sa_sz.desc_merge", fn);
+                                    llvm::BasicBlock *sz_dc =
+                                        llvm::BasicBlock::Create(
+                                            context,
+                                            "sa_sz.data_check", fn);
                                     builder->CreateCondBr(
-                                        dp_null, sz_null, sz_ok);
+                                        dp_null, sz_null, sz_dc);
+                                    // Treat descriptor-with-null-data
+                                    // as unallocated
+                                    builder->SetInsertPoint(sz_dc);
+                                    {
+                                        llvm::Value *sz_dpp =
+                                            arr_descr
+                                                ->get_pointer_to_data(
+                                                    mem_desc_type,
+                                                    dp);
+                                        llvm::Value *sz_raw =
+                                            llvm_utils->CreateLoad2(
+                                                llvm::PointerType
+                                                    ::getUnqual(
+                                                        llvm::Type
+                                                            ::getInt8Ty(
+                                                                context)),
+                                                sz_dpp);
+                                        llvm::Value *data_null =
+                                            builder->CreateICmpEQ(
+                                                builder
+                                                    ->CreatePtrToInt(
+                                                        sz_raw, i64),
+                                                llvm::ConstantInt
+                                                    ::get(i64, 0));
+                                        builder->CreateCondBr(
+                                            data_null, sz_null,
+                                            sz_ok);
+                                    }
                                     builder->SetInsertPoint(sz_ok);
                                     llvm::Value *ne =
                                         arr_descr->get_array_size(
@@ -22559,6 +22615,47 @@ public:
                                                             entry.second,
                                                             i64);
                                                 break;
+                                            }
+                                        }
+                                        // For nested paths (e.g. "item_v"),
+                                        // also try matching by the leaf
+                                        // member name (e.g. ".v") to find
+                                        // source arrays with the same
+                                        // allocatable member at a different
+                                        // nesting depth.
+                                        if (!ne64_null) {
+                                            std::string leaf_sfx =
+                                                std::string(".")
+                                                + std::string(
+                                                    nam.var->m_name);
+                                            if (leaf_sfx != mem_sfx) {
+                                                for (auto &entry :
+                                                        struct_member_first_sizes) {
+                                                    if (entry.first !=
+                                                            sm_key &&
+                                                        entry.first
+                                                            .size() >=
+                                                            leaf_sfx
+                                                                .size() &&
+                                                        entry.first
+                                                            .compare(
+                                                            entry.first
+                                                                .size()
+                                                            - leaf_sfx
+                                                                .size(),
+                                                            leaf_sfx
+                                                                .size(),
+                                                            leaf_sfx)
+                                                            == 0) {
+                                                        ne64_null =
+                                                            builder
+                                                                ->CreateSExtOrTrunc(
+                                                                    entry
+                                                                        .second,
+                                                                    i64);
+                                                        break;
+                                                    }
+                                                }
                                             }
                                         }
                                         if (!ne64_null) {
@@ -22700,8 +22797,40 @@ public:
                                         llvm::BasicBlock::Create(
                                             context,
                                             "sa_cp.desc_skip", fn);
+                                    llvm::BasicBlock *cp_dc =
+                                        llvm::BasicBlock::Create(
+                                            context,
+                                            "sa_cp.data_check", fn);
                                     builder->CreateCondBr(
-                                        dp_null, cp_skip, cp_ok);
+                                        dp_null, cp_skip, cp_dc);
+                                    // Treat descriptor-with-null-data
+                                    // as unallocated (skip copy)
+                                    builder->SetInsertPoint(cp_dc);
+                                    {
+                                        llvm::Value *cp_dpp =
+                                            arr_descr
+                                                ->get_pointer_to_data(
+                                                    mem_desc_type,
+                                                    dp);
+                                        llvm::Value *cp_raw =
+                                            llvm_utils->CreateLoad2(
+                                                llvm::PointerType
+                                                    ::getUnqual(
+                                                        llvm::Type
+                                                            ::getInt8Ty(
+                                                                context)),
+                                                cp_dpp);
+                                        llvm::Value *data_null =
+                                            builder->CreateICmpEQ(
+                                                builder
+                                                    ->CreatePtrToInt(
+                                                        cp_raw, i64),
+                                                llvm::ConstantInt
+                                                    ::get(i64, 0));
+                                        builder->CreateCondBr(
+                                            data_null, cp_skip,
+                                            cp_ok);
+                                    }
                                     builder->SetInsertPoint(cp_ok);
                                     {
                                     llvm::Value *dpp =
@@ -24396,8 +24525,29 @@ public:
                 llvm::BasicBlock *dwb_desc_merge =
                     llvm::BasicBlock::Create(context,
                         "dwb.desc_merge", wb_fn);
+                llvm::BasicBlock *dwb_data_check =
+                    llvm::BasicBlock::Create(context,
+                        "dwb.data_check", wb_fn);
                 builder->CreateCondBr(
-                    dp_is_null, dwb_desc_null, dwb_desc_ok);
+                    dp_is_null, dwb_desc_null, dwb_data_check);
+                // Treat descriptor-with-null-data as unallocated
+                builder->SetInsertPoint(dwb_data_check);
+                {
+                    llvm::Value *dwb_dpp =
+                        arr_descr->get_pointer_to_data(
+                            dwb.desc_type, dp);
+                    llvm::Value *dwb_raw =
+                        llvm_utils->CreateLoad2(
+                            llvm::PointerType::getUnqual(
+                                llvm::Type::getInt8Ty(context)),
+                            dwb_dpp);
+                    llvm::Value *data_null =
+                        builder->CreateICmpEQ(
+                            builder->CreatePtrToInt(dwb_raw, i64),
+                            llvm::ConstantInt::get(i64, 0));
+                    builder->CreateCondBr(
+                        data_null, dwb_desc_null, dwb_desc_ok);
+                }
                 // Already-allocated path
                 builder->SetInsertPoint(dwb_desc_ok);
                 llvm::Value *dpp_ok =

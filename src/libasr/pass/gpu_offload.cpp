@@ -3869,13 +3869,38 @@ public:
                 ASR::ttype_t *e_type_inner =
                     ASRUtils::type_get_past_allocatable(e_type);
                 if (ASR::is_a<ASR::Array_t>(*e_type_inner)) {
+                    ASR::Array_t *arr_t =
+                        ASR::down_cast<ASR::Array_t>(e_type_inner);
                     Vec<ASR::array_index_t> rhs_args;
                     rhs_args.reserve(al, range_dims.size());
                     for (size_t ri = 0; ri < range_dims.size(); ri++) {
                         ASR::array_index_t idx;
                         idx.loc = loc;
                         idx.m_left = nullptr;
-                        idx.m_right = loop_vars[ri];
+                        ASR::expr_t *rhs_idx = loop_vars[ri];
+                        // For FixedSizeArray (e.g. array constructors),
+                        // the lower bound is 1 but the loop variable
+                        // starts at the LHS section start. Remap:
+                        //   rhs_index = 1 + (loop_var - lhs_start)
+                        if (arr_t->m_physical_type ==
+                                ASR::array_physical_typeType::
+                                    FixedSizeArray) {
+                            int dim = range_dims[ri];
+                            ASR::expr_t *lhs_start =
+                                as->m_args[dim].m_left;
+                            ASR::expr_t *offset = ASRUtils::EXPR(
+                                ASR::make_IntegerBinOp_t(al, loc,
+                                    loop_vars[ri], ASR::binopType::Sub,
+                                    lhs_start, int_type, nullptr));
+                            rhs_idx = ASRUtils::EXPR(
+                                ASR::make_IntegerBinOp_t(al, loc,
+                                    ASRUtils::EXPR(
+                                        ASR::make_IntegerConstant_t(
+                                            al, loc, 1, int_type)),
+                                    ASR::binopType::Add, offset,
+                                    int_type, nullptr));
+                        }
+                        idx.m_right = rhs_idx;
                         idx.m_step = nullptr;
                         rhs_args.push_back(al, idx);
                     }
