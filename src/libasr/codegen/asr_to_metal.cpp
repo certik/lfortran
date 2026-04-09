@@ -4860,10 +4860,11 @@ public:
                                             .end()) {
                                             func_array_data_params[
                                                 key] =
-                                                dit->second + " + "
+                                                "(" + dit->second
+                                                + " + "
                                                 + oit->second + "["
                                                 + source_idx_expr
-                                                + "]";
+                                                + "])";
                                         } else if (dit !=
                                             func_array_data_params
                                             .end()) {
@@ -4913,9 +4914,10 @@ public:
                                             .end()) {
                                             func_array_data_params[
                                                 key] =
-                                                dit->second + " + "
+                                                "(" + dit->second
+                                                + " + "
                                                 + oit->second + "["
-                                                + dest_idx_expr + "]";
+                                                + dest_idx_expr + "])";
                                         } else {
                                             func_array_data_params[
                                                 key] = "__data_"
