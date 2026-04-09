@@ -19507,6 +19507,20 @@ public:
                                 ps_it->second),
                             ps_phi, ps_it->second);
                 }
+                // Also populate struct_member_first_sizes
+                // keyed by variable name + member suffix so
+                // that the sa_sz null path can find fallback
+                // sizes from arrays processed later in the
+                // main loop.
+                std::string ps_var_key =
+                    std::string(ps_var->m_name) + "."
+                    + ps_mem.suffix;
+                if (struct_member_first_sizes.find(
+                        ps_var_key)
+                        == struct_member_first_sizes.end()) {
+                    struct_member_first_sizes[ps_var_key] =
+                        ps_phi;
+                }
             }
         }
 
@@ -22381,13 +22395,92 @@ public:
                                             mem_desc_type
                                                 ->getPointerTo(),
                                             fp);
+                                    // Null check: unallocated member
+                                    // has size 0
+                                    llvm::Value *dp_null =
+                                        builder->CreateICmpEQ(dp,
+                                            llvm::ConstantPointerNull::get(
+                                                llvm::cast<llvm::PointerType>(
+                                                    dp->getType())));
+                                    llvm::BasicBlock *sz_ok =
+                                        llvm::BasicBlock::Create(
+                                            context,
+                                            "sa_sz.desc_ok", fn);
+                                    llvm::BasicBlock *sz_null =
+                                        llvm::BasicBlock::Create(
+                                            context,
+                                            "sa_sz.desc_null", fn);
+                                    llvm::BasicBlock *sz_merge =
+                                        llvm::BasicBlock::Create(
+                                            context,
+                                            "sa_sz.desc_merge", fn);
+                                    builder->CreateCondBr(
+                                        dp_null, sz_null, sz_ok);
+                                    builder->SetInsertPoint(sz_ok);
                                     llvm::Value *ne =
                                         arr_descr->get_array_size(
                                             mem_desc_type, dp,
                                             nullptr, 4);
-                                    llvm::Value *ne64 =
+                                    llvm::Value *ne64_ok =
                                         builder->CreateSExtOrTrunc(
                                             ne, i64);
+                                    llvm::BasicBlock *sz_ok_end =
+                                        builder->GetInsertBlock();
+                                    builder->CreateBr(sz_merge);
+                                    builder->SetInsertPoint(sz_null);
+                                    // Use pre-sampled size from another
+                                    // struct array with same member
+                                    llvm::Value *ne64_null = nullptr;
+                                    {
+                                        std::string mem_sfx =
+                                            std::string(".")
+                                            + nam.suffix;
+                                        for (auto &entry :
+                                                struct_member_first_sizes) {
+                                            if (entry.first != sm_key &&
+                                                    entry.first.size() >=
+                                                        mem_sfx.size() &&
+                                                    entry.first.compare(
+                                                        entry.first.size()
+                                                        - mem_sfx.size(),
+                                                        mem_sfx.size(),
+                                                        mem_sfx) == 0) {
+                                                ne64_null =
+                                                    builder
+                                                        ->CreateSExtOrTrunc(
+                                                            entry.second,
+                                                            i64);
+                                                break;
+                                            }
+                                        }
+                                        if (!ne64_null) {
+                                            auto sit =
+                                                struct_member_first_sizes
+                                                    .find(sm_key);
+                                            if (sit !=
+                                                    struct_member_first_sizes
+                                                        .end()) {
+                                                ne64_null =
+                                                    builder
+                                                        ->CreateSExtOrTrunc(
+                                                            sit->second,
+                                                            i64);
+                                            }
+                                        }
+                                    }
+                                    if (!ne64_null) {
+                                        ne64_null =
+                                            llvm::ConstantInt::get(
+                                                i64, 0);
+                                    }
+                                    builder->CreateBr(sz_merge);
+                                    builder->SetInsertPoint(sz_merge);
+                                    llvm::PHINode *ne64 =
+                                        builder->CreatePHI(i64, 2);
+                                    ne64->addIncoming(
+                                        ne64_ok, sz_ok_end);
+                                    ne64->addIncoming(
+                                        ne64_null, sz_null);
                                     // Store size
                                     llvm::Value *ne32 =
                                         builder->CreateTrunc(ne64,
@@ -22484,6 +22577,25 @@ public:
                                             mem_desc_type
                                                 ->getPointerTo(),
                                             fp);
+                                    // Null check: skip copy for
+                                    // unallocated members
+                                    llvm::Value *dp_null =
+                                        builder->CreateICmpEQ(dp,
+                                            llvm::ConstantPointerNull::get(
+                                                llvm::cast<llvm::PointerType>(
+                                                    dp->getType())));
+                                    llvm::BasicBlock *cp_ok =
+                                        llvm::BasicBlock::Create(
+                                            context,
+                                            "sa_cp.desc_ok", fn);
+                                    llvm::BasicBlock *cp_skip =
+                                        llvm::BasicBlock::Create(
+                                            context,
+                                            "sa_cp.desc_skip", fn);
+                                    builder->CreateCondBr(
+                                        dp_null, cp_skip, cp_ok);
+                                    builder->SetInsertPoint(cp_ok);
+                                    {
                                     llvm::Value *dpp =
                                         arr_descr->get_pointer_to_data(
                                             mem_desc_type, dp);
@@ -22526,10 +22638,33 @@ public:
                                         raw,
                                         llvm::MaybeAlign(1),
                                         sb);
-                                    // Update running offset
+                                    }
+                                    builder->CreateBr(cp_skip);
+                                    builder->SetInsertPoint(cp_skip);
+                                    // Advance running offset
+                                    // unconditionally (including
+                                    // null descriptors) so offsets
+                                    // buffer entries are correct.
+                                    {
+                                    llvm::Value *run_u =
+                                        llvm_utils->CreateLoad2(
+                                            i64, tot_alloca);
+                                    llvm::Value *esz_u =
+                                        llvm_utils->CreateLoad2(
+                                            llvm::Type::getInt32Ty(
+                                                context),
+                                            builder->CreateGEP(
+                                                llvm::Type::getInt32Ty(
+                                                    context),
+                                                sz_ptr, kv32));
+                                    llvm::Value *esz64_u =
+                                        builder->CreateSExtOrTrunc(
+                                            esz_u, i64);
                                     builder->CreateStore(
-                                        builder->CreateAdd(run, esz64),
+                                        builder->CreateAdd(
+                                            run_u, esz64_u),
                                         tot_alloca);
+                                    }
                                     // Increment k
                                     builder->CreateStore(
                                         builder->CreateAdd(kv,
@@ -23955,16 +24090,137 @@ public:
                 llvm::Value *dp =
                     llvm_utils->CreateLoad2(
                         dwb.desc_type->getPointerTo(), fp);
-                llvm::Value *dpp =
+                // Check if descriptor is null (unallocated member).
+                // This happens when the GPU kernel allocates data for
+                // a previously-unallocated allocatable component.
+                llvm::Value *dp_is_null =
+                    builder->CreateICmpEQ(dp,
+                        llvm::ConstantPointerNull::get(
+                            llvm::cast<llvm::PointerType>(
+                                dp->getType())));
+                llvm::BasicBlock *dwb_desc_ok =
+                    llvm::BasicBlock::Create(context,
+                        "dwb.desc_ok", wb_fn);
+                llvm::BasicBlock *dwb_desc_null =
+                    llvm::BasicBlock::Create(context,
+                        "dwb.desc_null", wb_fn);
+                llvm::BasicBlock *dwb_desc_merge =
+                    llvm::BasicBlock::Create(context,
+                        "dwb.desc_merge", wb_fn);
+                builder->CreateCondBr(
+                    dp_is_null, dwb_desc_null, dwb_desc_ok);
+                // Already-allocated path
+                builder->SetInsertPoint(dwb_desc_ok);
+                llvm::Value *dpp_ok =
                     arr_descr->get_pointer_to_data(
                         dwb.desc_type, dp);
-                llvm::Value *raw =
+                llvm::Value *raw_ok =
                     llvm_utils->CreateLoad2(
                         llvm::PointerType::getUnqual(
                             llvm::Type::getInt8Ty(context)),
-                        dpp);
-                raw = builder->CreatePointerCast(
-                    raw, i8_ptr);
+                        dpp_ok);
+                raw_ok = builder->CreatePointerCast(
+                    raw_ok, i8_ptr);
+                llvm::BasicBlock *dwb_desc_ok_end =
+                    builder->GetInsertBlock();
+                builder->CreateBr(dwb_desc_merge);
+                // Null path: allocate descriptor and data
+                builder->SetInsertPoint(dwb_desc_null);
+                {
+                    llvm::DataLayout dl_dwb(module.get());
+                    uint64_t desc_sz_dwb =
+                        dl_dwb.getTypeAllocSize(dwb.desc_type);
+                    llvm::FunctionType *mft_dwb =
+                        llvm::FunctionType::get(
+                            i8_ptr, {i64}, false);
+                    llvm::Function *mfn_dwb =
+                        get_gpu_runtime_func(
+                            "malloc", mft_dwb);
+                    llvm::Value *desc_mem_dwb =
+                        builder->CreateCall(mfn_dwb,
+                            {llvm::ConstantInt::get(
+                                i64, desc_sz_dwb)});
+                    llvm::Value *new_desc_dwb =
+                        builder->CreatePointerCast(
+                            desc_mem_dwb,
+                            dwb.desc_type->getPointerTo());
+                    llvm::Type *fp_el =
+                        fp->getType()
+                            ->getPointerElementType();
+                    llvm::Value *store_desc_dwb =
+                        (new_desc_dwb->getType() != fp_el)
+                        ? builder->CreatePointerCast(
+                            new_desc_dwb, fp_el)
+                        : new_desc_dwb;
+                    builder->CreateStore(store_desc_dwb, fp);
+                    arr_descr->fill_dimension_descriptor(
+                        dwb.desc_type, new_desc_dwb, 1);
+                    llvm::Value *alloc_bytes_dwb =
+                        builder->CreateMul(esz64,
+                            llvm::ConstantInt::get(
+                                i64, dwb.elem_byte_size));
+                    llvm::Value *new_data_dwb =
+                        builder->CreateCall(
+                            mfn_dwb, {alloc_bytes_dwb});
+                    llvm::Value *new_dpp_dwb =
+                        arr_descr->get_pointer_to_data(
+                            dwb.desc_type, new_desc_dwb);
+                    builder->CreateStore(
+                        builder->CreatePointerCast(
+                            new_data_dwb,
+                            dwb.mem_el_llvm->getPointerTo()),
+                        new_dpp_dwb);
+                    llvm::Value *dim_des_arr_dwb =
+                        arr_descr
+                            ->get_pointer_to_dimension_descriptor_array(
+                                dwb.desc_type, new_desc_dwb);
+                    llvm::Value *dim0_dwb =
+                        arr_descr
+                            ->get_pointer_to_dimension_descriptor(
+                                dim_des_arr_dwb,
+                                llvm::ConstantInt::get(i32, 0));
+                    llvm::Value *extent_ptr_dwb =
+                        arr_descr->get_dimension_size(
+                            dim0_dwb, false);
+                    builder->CreateStore(
+                        builder->CreateSExtOrTrunc(
+                            esz64,
+                            llvm::Type::getInt64Ty(context)),
+                        extent_ptr_dwb);
+                    llvm::Value *lb_ptr_dwb =
+                        arr_descr->get_lower_bound(
+                            dim0_dwb, false);
+                    builder->CreateStore(
+                        llvm::ConstantInt::get(
+                            llvm::Type::getInt64Ty(context), 1),
+                        lb_ptr_dwb);
+                }
+                // Re-read the (now valid) data pointer
+                llvm::Value *raw_null;
+                {
+                    llvm::Value *dp2 =
+                        llvm_utils->CreateLoad2(
+                            dwb.desc_type->getPointerTo(), fp);
+                    llvm::Value *dpp2 =
+                        arr_descr->get_pointer_to_data(
+                            dwb.desc_type, dp2);
+                    raw_null = llvm_utils->CreateLoad2(
+                        llvm::PointerType::getUnqual(
+                            llvm::Type::getInt8Ty(context)),
+                        dpp2);
+                    raw_null = builder->CreatePointerCast(
+                        raw_null, i8_ptr);
+                }
+                llvm::BasicBlock *dwb_desc_null_end =
+                    builder->GetInsertBlock();
+                builder->CreateBr(dwb_desc_merge);
+                // Merge: PHI for raw data pointer
+                builder->SetInsertPoint(dwb_desc_merge);
+                llvm::PHINode *raw_phi =
+                    builder->CreatePHI(i8_ptr, 2);
+                raw_phi->addIncoming(raw_ok, dwb_desc_ok_end);
+                raw_phi->addIncoming(raw_null, dwb_desc_null_end);
+                llvm::Value *raw = raw_phi;
                 // Copy
                 llvm::Value *sb =
                     builder->CreateMul(esz64,

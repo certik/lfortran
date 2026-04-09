@@ -2637,6 +2637,7 @@ public:
             resolve_struct_array_access(a->m_target, tgt_arr, tgt_idx);
         bool tgt_decomposed = false;
         bool tgt_sim_over_array = false;
+        bool tgt_scalar_var = false;
         std::string tgt_prefix, tgt_linear_idx;
         std::string tgt_sim_arr, tgt_sim_member, tgt_sim_idx;
         if (!tgt_simple) {
@@ -2648,13 +2649,24 @@ public:
                     resolve_sim_over_array_access(
                         a->m_target, tgt_sim_arr, tgt_sim_member,
                         tgt_sim_idx);
-                if (!tgt_sim_over_array) return false;
+                if (!tgt_sim_over_array) {
+                    if (in_inline_function &&
+                            ASR::is_a<ASR::Var_t>(*a->m_target)) {
+                        tgt_arr = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(
+                                a->m_target)->m_v);
+                        tgt_scalar_var = true;
+                    } else {
+                        return false;
+                    }
+                }
             }
         }
         bool val_simple =
             resolve_struct_array_access(a->m_value, val_arr, val_idx);
         bool val_decomposed = false;
         bool val_sim_over_array = false;
+        bool val_scalar_var = false;
         std::string val_prefix, val_linear_idx;
         std::string val_sim_arr, val_sim_member, val_sim_idx;
         if (!val_simple) {
@@ -2666,7 +2678,17 @@ public:
                     resolve_sim_over_array_access(
                         a->m_value, val_sim_arr, val_sim_member,
                         val_sim_idx);
-                if (!val_sim_over_array) return false;
+                if (!val_sim_over_array) {
+                    if (in_inline_function &&
+                            ASR::is_a<ASR::Var_t>(*a->m_value)) {
+                        val_arr = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(
+                                a->m_value)->m_v);
+                        val_scalar_var = true;
+                    } else {
+                        return false;
+                    }
+                }
             }
         }
 
@@ -2695,10 +2717,12 @@ public:
         bool tgt_has_offsets = true;
         bool val_has_offsets = true;
         for (auto &mem : alloc_members) {
-            std::string tgt_key = make_key(tgt_simple, tgt_arr,
+            std::string tgt_key = make_key(
+                tgt_simple || tgt_scalar_var, tgt_arr,
                 tgt_prefix, mem.suffix, tgt_sim_over_array,
                 tgt_sim_arr, tgt_sim_member);
-            std::string val_key = make_key(val_simple, val_arr,
+            std::string val_key = make_key(
+                val_simple || val_scalar_var, val_arr,
                 val_prefix, mem.suffix, val_sim_over_array,
                 val_sim_arr, val_sim_member);
             if (!func_array_data_params.count(tgt_key))
@@ -2751,14 +2775,43 @@ public:
 
         // Deep copy each allocatable member through decomposed buffers
         for (auto &mem : alloc_members) {
-            std::string tgt_key = make_key(tgt_simple, tgt_arr,
+            std::string tgt_key = make_key(
+                tgt_simple || tgt_scalar_var, tgt_arr,
                 tgt_prefix, mem.suffix, tgt_sim_over_array,
                 tgt_sim_arr, tgt_sim_member);
-            std::string val_key = make_key(val_simple, val_arr,
+            std::string val_key = make_key(
+                val_simple || val_scalar_var, val_arr,
                 val_prefix, mem.suffix, val_sim_over_array,
                 val_sim_arr, val_sim_member);
             std::string tgt_data = func_array_data_params[tgt_key];
             std::string val_data = func_array_data_params[val_key];
+
+            if (tgt_scalar_var && val_scalar_var) {
+                // Both sides are scalar struct variables (e.g., inside
+                // an inline function: r = a). Copy data directly
+                // through the decomposed buffer params with no offset.
+                std::string val_size =
+                    func_array_size_params[val_key];
+                std::string tgt_size =
+                    func_array_size_params[tgt_key];
+                src << get_indent() << "{\n";
+                indent_level++;
+                src << get_indent() << "int __n = " << val_size
+                    << ";\n";
+                src << get_indent() << tgt_size << " = __n;\n";
+                src << get_indent()
+                    << "for (int __ci = 0; __ci < __n; __ci++) {\n";
+                indent_level++;
+                src << get_indent() << tgt_data
+                    << "[__ci] = " << val_data
+                    << "[__ci];\n";
+                indent_level--;
+                src << get_indent() << "}\n";
+                indent_level--;
+                src << get_indent() << "}\n";
+                continue;
+            }
+
             std::string tidx = tgt_simple ? tgt_idx
                 : (tgt_sim_over_array ? tgt_sim_idx : tgt_linear_idx);
             std::string vidx = val_simple ? val_idx
