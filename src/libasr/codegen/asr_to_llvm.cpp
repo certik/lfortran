@@ -20533,10 +20533,6 @@ public:
                                             llvm::MaybeAlign(1),
                                             sb);
                                     } else {
-                                        // Copy pre-existing data if
-                                        // the member was allocated.
-                                        // The new dps[k] always points
-                                        // to a valid buffer.
                                         llvm::Value *sb =
                                             builder->CreateMul(
                                                 szs[k],
@@ -20845,18 +20841,102 @@ public:
                                                                 idesc_type
                                                                     ->getPointerTo(),
                                                                 fp);
-                                                    // Check if allocated
-                                                    llvm::Value *is_null =
+                                                    // Check if descriptor
+                                                    // is null OR its data
+                                                    // pointer is null
+                                                    // (pre-allocated but
+                                                    // empty).
+                                                    llvm::Value *dp_pti =
+                                                        builder
+                                                            ->CreatePtrToInt(
+                                                                dp, i64);
+                                                    llvm::Value *desc_null =
                                                         builder
                                                             ->CreateICmpEQ(
-                                                                builder
-                                                                    ->CreatePtrToInt(
-                                                                        dp,
-                                                                        i64),
+                                                                dp_pti,
                                                                 llvm::ConstantInt
                                                                     ::get(
                                                                         i64,
                                                                         0));
+                                                    llvm::Value *is_null;
+                                                    {
+                                                        llvm::BasicBlock
+                                                            *bb_chk_data =
+                                                            llvm::BasicBlock
+                                                                ::Create(
+                                                                    context,
+                                                                    "nsz.chkdata",
+                                                                    loop_fn);
+                                                        llvm::BasicBlock
+                                                            *bb_chk_merge =
+                                                            llvm::BasicBlock
+                                                                ::Create(
+                                                                    context,
+                                                                    "nsz.chkmerge",
+                                                                    loop_fn);
+                                                        builder
+                                                            ->CreateCondBr(
+                                                                desc_null,
+                                                                bb_chk_merge,
+                                                                bb_chk_data);
+                                                        builder
+                                                            ->SetInsertPoint(
+                                                                bb_chk_data);
+                                                        llvm::Value
+                                                            *data_ptr =
+                                                            llvm_utils
+                                                                ->CreateLoad2(
+                                                                    llvm::PointerType
+                                                                        ::getUnqual(
+                                                                            llvm::Type
+                                                                                ::getInt8Ty(
+                                                                                    context)),
+                                                                    arr_descr
+                                                                        ->get_pointer_to_data(
+                                                                            idesc_type,
+                                                                            dp));
+                                                        llvm::Value
+                                                            *data_is_null =
+                                                            builder
+                                                                ->CreateICmpEQ(
+                                                                    builder
+                                                                        ->CreatePtrToInt(
+                                                                            data_ptr,
+                                                                            i64),
+                                                                    llvm::ConstantInt
+                                                                        ::get(
+                                                                            i64,
+                                                                            0));
+                                                        llvm::BasicBlock
+                                                            *bb_chk_end =
+                                                            builder
+                                                                ->GetInsertBlock();
+                                                        builder->CreateBr(
+                                                            bb_chk_merge);
+                                                        builder
+                                                            ->SetInsertPoint(
+                                                                bb_chk_merge);
+                                                        llvm::PHINode
+                                                            *phi_is_null =
+                                                            builder
+                                                                ->CreatePHI(
+                                                                    llvm::Type
+                                                                        ::getInt1Ty(
+                                                                            context),
+                                                                    2);
+                                                        phi_is_null
+                                                            ->addIncoming(
+                                                                llvm::ConstantInt
+                                                                    ::getTrue(
+                                                                        context),
+                                                                lb);
+                                                        phi_is_null
+                                                            ->addIncoming(
+                                                                data_is_null,
+                                                                bb_chk_end);
+                                                        is_null =
+                                                            phi_is_null;
+                                                    }
                                                     llvm::BasicBlock
                                                         *bb_alloc =
                                                         llvm::BasicBlock
@@ -20947,10 +21027,38 @@ public:
                                                                 .find(ps_lk);
                                                         if (ps_fb !=
                                                                 nested_prescan_max
-                                                                    .end())
+                                                                    .end()) {
                                                             ne_n =
                                                                 ps_fb
                                                                     ->second;
+                                                        } else if (
+                                                                !inam
+                                                                    .parent_chain
+                                                                    .empty()) {
+                                                            std::string
+                                                                inh_key = std::string(
+                                                                ASRUtils
+                                                                    ::symbol_name(
+                                                                        (ASR::symbol_t*)
+                                                                        inam
+                                                                            .parent_chain
+                                                                            .back()
+                                                                            .first))
+                                                                + "."
+                                                                + std::string(
+                                                                    inam.var
+                                                                        ->m_name);
+                                                            auto inh_fb =
+                                                                nested_prescan_max
+                                                                    .find(
+                                                                        inh_key);
+                                                            if (inh_fb !=
+                                                                    nested_prescan_max
+                                                                        .end())
+                                                                ne_n =
+                                                                    inh_fb
+                                                                        ->second;
+                                                        }
                                                     }
                                                     llvm::Value *raw_n =
                                                         llvm::ConstantPointerNull
@@ -23018,10 +23126,38 @@ public:
                                                                 .find(ps_lk);
                                                         if (ps_fb !=
                                                                 nested_prescan_max
-                                                                    .end())
+                                                                    .end()) {
                                                             ne_n =
                                                                 ps_fb
                                                                     ->second;
+                                                        } else if (
+                                                                !inam
+                                                                    .parent_chain
+                                                                    .empty()) {
+                                                            std::string
+                                                                inh_key = std::string(
+                                                                ASRUtils
+                                                                    ::symbol_name(
+                                                                        (ASR::symbol_t*)
+                                                                        inam
+                                                                            .parent_chain
+                                                                            .back()
+                                                                            .first))
+                                                                + "."
+                                                                + std::string(
+                                                                    inam.var
+                                                                        ->m_name);
+                                                            auto inh_fb =
+                                                                nested_prescan_max
+                                                                    .find(
+                                                                        inh_key);
+                                                            if (inh_fb !=
+                                                                    nested_prescan_max
+                                                                        .end())
+                                                                ne_n =
+                                                                    inh_fb
+                                                                        ->second;
+                                                        }
                                                     }
                                                     llvm::Value *raw_n =
                                                         llvm::ConstantPointerNull
