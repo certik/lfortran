@@ -201,6 +201,13 @@ public:
     // instead of the undersized thread-local temp buffer.
     std::map<std::string, std::string> fsa_temp_source_array;
 
+    // Stores the source array index expression (Metal C string) used
+    // when a local FSA temp element is populated from a device array
+    // element (temp[idx] = src[i]).  Maps temp_fsa_name -> idx_expr.
+    // Used by the post-call fixup to copy companion data directly
+    // from the source device buffers to the destination.
+    std::map<std::string, std::string> fsa_temp_source_index;
+
     // Tracks per-member source when a local FSA temp element's
     // non-allocatable struct member is populated from a device
     // array element (temp[idx].mem = src[i]).  Maps
@@ -3343,6 +3350,41 @@ public:
             std::string vidx = val_simple ? val_idx
                 : (val_sim_over_array ? val_sim_idx : val_linear_idx);
 
+            // When the target is a local FSA temp populated from a
+            // device struct array (temp[idx]=src[i]), skip copying
+            // companion data to the undersized thread-local buffer.
+            // The post-call fixup will copy directly from the source
+            // device buffers to the destination.
+            bool skip_local_copy = false;
+            if (!tgt_has_offsets && tgt_simple &&
+                    fsa_temp_source_array.count(tgt_arr)) {
+                skip_local_copy = true;
+                fsa_temp_source_index[tgt_arr] = vidx;
+            }
+
+            if (skip_local_copy) {
+                // Only update the local size variable so that
+                // other code can query the element count.
+                std::string tgt_size =
+                    func_array_size_params[tgt_key];
+                src << get_indent() << "{\n";
+                indent_level++;
+                if (val_has_offsets) {
+                    std::string val_sizes =
+                        struct_array_sizes_params[val_key];
+                    src << get_indent() << tgt_size << " = "
+                        << val_sizes << "[" << vidx << "];\n";
+                } else {
+                    std::string val_size =
+                        func_array_size_params[val_key];
+                    src << get_indent() << tgt_size << " = "
+                        << val_size << ";\n";
+                }
+                indent_level--;
+                src << get_indent() << "}\n";
+                continue;
+            }
+
             src << get_indent() << "{\n";
             indent_level++;
             // Source offset and count
@@ -4962,6 +5004,9 @@ public:
         struct_array_sizes_params.clear();
         struct_from_array_elem.clear();
         ptr_struct_array_alias.clear();
+        fsa_temp_source_array.clear();
+        fsa_temp_source_index.clear();
+        fsa_temp_member_source.clear();
         for (size_t i = 0; i < args.size(); i++) {
             if (args[i].is_struct && !args[i].is_array) {
                 ASR::Var_t *v = ASR::down_cast<ASR::Var_t>(x.m_args[i]);
@@ -8779,6 +8824,90 @@ public:
                                     auto fsa_sz_it =
                                         func_array_data_sizes.find(
                                             src_key);
+                                    // When the local FSA was populated
+                                    // from a device struct array
+                                    // (temp[idx]=src[i]), copy the
+                                    // companion data directly from
+                                    // the source's device buffers
+                                    // using the correct runtime size.
+                                    auto fsa_src_it =
+                                        fsa_temp_source_array.find(
+                                            fsa_name);
+                                    auto fsa_idx_it =
+                                        fsa_temp_source_index.find(
+                                            fsa_name);
+                                    if (fsa_src_it !=
+                                            fsa_temp_source_array.end()
+                                        && fsa_idx_it !=
+                                            fsa_temp_source_index
+                                                .end()) {
+                                        std::string orig_arr =
+                                            fsa_src_it->second;
+                                        std::string orig_idx =
+                                            fsa_idx_it->second;
+                                        std::string orig_key =
+                                            orig_arr + "."
+                                            + sub_mem;
+                                        auto orig_data =
+                                            func_array_data_params
+                                                .find(orig_key);
+                                        auto orig_off =
+                                            struct_array_offset_params
+                                                .find(orig_key);
+                                        auto orig_sz =
+                                            struct_array_sizes_params
+                                                .find(orig_key);
+                                        if (orig_data !=
+                                                func_array_data_params
+                                                    .end()
+                                            && orig_off !=
+                                                struct_array_offset_params
+                                                    .end()
+                                            && orig_sz !=
+                                                struct_array_sizes_params
+                                                    .end()) {
+                                            src << get_indent()
+                                                << "{\n";
+                                            indent_level++;
+                                            src << get_indent()
+                                                << "int __src_off = "
+                                                << orig_off->second
+                                                << "[" << orig_idx
+                                                << "];\n";
+                                            src << get_indent()
+                                                << "int __n = "
+                                                << orig_sz->second
+                                                << "[" << orig_idx
+                                                << "];\n";
+                                            src << get_indent()
+                                                << "for (int __nc = 0;"
+                                                << " __nc < __n;"
+                                                << " __nc++) {\n";
+                                            indent_level++;
+                                            src << get_indent()
+                                                << ddit->second
+                                                << "["
+                                                << doit->second
+                                                << "["
+                                                << offset_idx
+                                                << "] + __nc] = "
+                                                << orig_data->second
+                                                << "[__src_off +"
+                                                << " __nc];\n";
+                                            indent_level--;
+                                            src << get_indent()
+                                                << "}\n";
+                                            src << get_indent()
+                                                << dsit->second
+                                                << "["
+                                                << offset_idx
+                                                << "] = __n;\n";
+                                            indent_level--;
+                                            src << get_indent()
+                                                << "}\n";
+                                            continue;
+                                        }
+                                    }
                                     std::string sz_str =
                                         (fsa_sz_it !=
                                             func_array_data_sizes.end()

@@ -9536,67 +9536,78 @@ public:
                             ASR::Assignment_t *pa =
                                 ASR::down_cast<ASR::Assignment_t>(
                                     pstmts[pj]);
-                            if (!ASR::is_a<ASR::FunctionCall_t>(
-                                    *pa->m_value))
-                                continue;
-                            ASR::FunctionCall_t *inner_fc =
-                                ASR::down_cast<ASR::FunctionCall_t>(
-                                    pa->m_value);
+                            ASR::FunctionCall_t *inner_fc = nullptr;
                             ASR::Function_t *inner_fn = nullptr;
-                            {
-                                ASR::symbol_t *ifs =
-                                    ASRUtils::symbol_get_past_external(
-                                        inner_fc->m_name);
-                                if (ASR::is_a<ASR::Function_t>(*ifs))
-                                    inner_fn =
-                                        ASR::down_cast<ASR::Function_t>(
-                                            ifs);
-                            }
-                            if (!inner_fn) continue;
-                            // Resolve submodule Interface to
-                            // Implementation
-                            {
-                                ASR::FunctionType_t *ift =
-                                    ASR::down_cast<
-                                        ASR::FunctionType_t>(
-                                            inner_fn
-                                                ->m_function_signature);
-                                if (ift->m_deftype ==
-                                        ASR::deftypeType::Interface) {
-                                    std::string ipn =
-                                        inner_fn->m_name;
-                                    for (auto &tu_item :
-                                            tu.m_symtab->get_scope()) {
-                                        if (!ASR::is_a<ASR::Module_t>(
-                                                *tu_item.second))
-                                            continue;
-                                        ASR::Module_t *mod =
-                                            ASR::down_cast<
-                                                ASR::Module_t>(
-                                                    tu_item.second);
-                                        ASR::symbol_t *impl_sym =
-                                            mod->m_symtab->get_symbol(
-                                                ipn);
-                                        if (!impl_sym ||
-                                            !ASR::is_a<ASR::Function_t>(
-                                                *impl_sym)) continue;
-                                        ASR::Function_t *impl_func =
-                                            ASR::down_cast<
-                                                ASR::Function_t>(
-                                                    impl_sym);
-                                        ASR::FunctionType_t *impl_ft =
-                                            ASR::down_cast<
-                                                ASR::FunctionType_t>(
-                                                    impl_func
-                                                        ->m_function_signature);
-                                        if (impl_ft->m_deftype ==
-                                                ASR::deftypeType::
-                                                    Implementation) {
-                                            inner_fn = impl_func;
-                                            break;
+                            if (ASR::is_a<ASR::FunctionCall_t>(
+                                    *pa->m_value)) {
+                                inner_fc =
+                                    ASR::down_cast<ASR::FunctionCall_t>(
+                                        pa->m_value);
+                                {
+                                    ASR::symbol_t *ifs =
+                                        ASRUtils::symbol_get_past_external(
+                                            inner_fc->m_name);
+                                    if (ASR::is_a<ASR::Function_t>(*ifs))
+                                        inner_fn =
+                                            ASR::down_cast<ASR::Function_t>(
+                                                ifs);
+                                }
+                                if (!inner_fn) continue;
+                                // Resolve submodule Interface to
+                                // Implementation
+                                {
+                                    ASR::FunctionType_t *ift =
+                                        ASR::down_cast<
+                                            ASR::FunctionType_t>(
+                                                inner_fn
+                                                    ->m_function_signature);
+                                    if (ift->m_deftype ==
+                                            ASR::deftypeType::Interface) {
+                                        std::string ipn =
+                                            inner_fn->m_name;
+                                        for (auto &tu_item :
+                                                tu.m_symtab->get_scope()) {
+                                            if (!ASR::is_a<ASR::Module_t>(
+                                                    *tu_item.second))
+                                                continue;
+                                            ASR::Module_t *mod =
+                                                ASR::down_cast<
+                                                    ASR::Module_t>(
+                                                        tu_item.second);
+                                            ASR::symbol_t *impl_sym =
+                                                mod->m_symtab->get_symbol(
+                                                    ipn);
+                                            if (!impl_sym ||
+                                                !ASR::is_a<ASR::Function_t>(
+                                                    *impl_sym)) continue;
+                                            ASR::Function_t *impl_func =
+                                                ASR::down_cast<
+                                                    ASR::Function_t>(
+                                                        impl_sym);
+                                            ASR::FunctionType_t *impl_ft =
+                                                ASR::down_cast<
+                                                    ASR::FunctionType_t>(
+                                                        impl_func
+                                                            ->m_function_signature);
+                                            if (impl_ft->m_deftype ==
+                                                    ASR::deftypeType::
+                                                        Implementation) {
+                                                inner_fn = impl_func;
+                                                break;
+                                            }
                                         }
                                     }
                                 }
+                            } else {
+                                // Only handle assignments whose
+                                // value is of the inner struct type
+                                ASR::ttype_t *val_t =
+                                    ASRUtils::extract_type(
+                                        ASRUtils::expr_type(
+                                            pa->m_value));
+                                if (!ASR::is_a<ASR::StructType_t>(
+                                        *val_t))
+                                    continue;
                             }
 
                             // For each sub-member of inner_struct
@@ -9622,142 +9633,191 @@ public:
                                 if (!ASR::is_a<ASR::Array_t>(*sub_mi))
                                     continue;
 
-                                // Find sub-member size from inner_fn
+                                // Find sub-member size
                                 ASR::expr_t *sub_size = nullptr;
-                                for (size_t ibi = 0;
-                                        ibi < inner_fn->n_body
-                                        && !sub_size; ibi++) {
-                                    if (!ASR::is_a<ASR::Assignment_t>(
-                                            *inner_fn->m_body[ibi]))
-                                        continue;
-                                    ASR::Assignment_t *ifa =
-                                        ASR::down_cast<
-                                            ASR::Assignment_t>(
-                                                inner_fn->m_body[ibi]);
-                                    if (!ASR::is_a<
-                                            ASR::StructInstanceMember_t>(
-                                                *ifa->m_target))
-                                        continue;
-                                    ASR::StructInstanceMember_t *ism =
-                                        ASR::down_cast<
-                                            ASR::StructInstanceMember_t>(
-                                                ifa->m_target);
-                                    std::string imn =
-                                        ASRUtils::symbol_name(
-                                            ASRUtils::
-                                                symbol_get_past_external(
-                                                    ism->m_m));
-                                    if (imn != std::string(
-                                            inner_struct->m_members[sm]))
-                                        continue;
-                                    if (!ASR::is_a<ASR::Var_t>(
-                                            *ifa->m_value))
-                                        continue;
-                                    std::string isrc =
-                                        ASRUtils::symbol_name(
-                                            ASR::down_cast<ASR::Var_t>(
-                                                ifa->m_value)->m_v);
-                                    for (size_t ipi = 0;
-                                            ipi < inner_fn->n_args;
-                                            ipi++) {
-                                        std::string ipn =
+                                if (inner_fn) {
+                                    // Trace through inner function body
+                                    for (size_t ibi = 0;
+                                            ibi < inner_fn->n_body
+                                            && !sub_size; ibi++) {
+                                        if (!ASR::is_a<ASR::Assignment_t>(
+                                                *inner_fn->m_body[ibi]))
+                                            continue;
+                                        ASR::Assignment_t *ifa =
+                                            ASR::down_cast<
+                                                ASR::Assignment_t>(
+                                                    inner_fn->m_body[ibi]);
+                                        if (!ASR::is_a<
+                                                ASR::StructInstanceMember_t>(
+                                                    *ifa->m_target))
+                                            continue;
+                                        ASR::StructInstanceMember_t *ism =
+                                            ASR::down_cast<
+                                                ASR::StructInstanceMember_t>(
+                                                    ifa->m_target);
+                                        std::string imn =
                                             ASRUtils::symbol_name(
-                                                ASR::down_cast<
-                                                    ASR::Var_t>(
-                                                        inner_fn->
-                                                            m_args[ipi])
-                                                    ->m_v);
-                                        if (ipn != isrc) continue;
-                                        if (ipi >= inner_fc->n_args)
-                                            break;
-                                        ASR::expr_t *iactual =
-                                            inner_fc->m_args[ipi]
-                                                .m_value;
-                                        if (!iactual) break;
-                                        if (ASR::is_a<
-                                                ASR::ArrayPhysicalCast_t>(
-                                                    *iactual))
-                                            iactual = ASR::down_cast<
-                                                ASR::ArrayPhysicalCast_t>(
-                                                    iactual)->m_arg;
-                                        ASRUtils::ExprStmtDuplicator
-                                            dup_sub(al);
-                                        dup_sub.success = true;
-                                        if (ASR::is_a<
-                                                ASR::ArraySection_t>(
-                                                    *iactual)) {
-                                            ASR::ArraySection_t *sec =
-                                                ASR::down_cast<
+                                                ASRUtils::
+                                                    symbol_get_past_external(
+                                                        ism->m_m));
+                                        if (imn != std::string(
+                                                inner_struct->m_members[sm]))
+                                            continue;
+                                        if (!ASR::is_a<ASR::Var_t>(
+                                                *ifa->m_value))
+                                            continue;
+                                        std::string isrc =
+                                            ASRUtils::symbol_name(
+                                                ASR::down_cast<ASR::Var_t>(
+                                                    ifa->m_value)->m_v);
+                                        for (size_t ipi = 0;
+                                                ipi < inner_fn->n_args;
+                                                ipi++) {
+                                            std::string ipn =
+                                                ASRUtils::symbol_name(
+                                                    ASR::down_cast<
+                                                        ASR::Var_t>(
+                                                            inner_fn->
+                                                                m_args[ipi])
+                                                        ->m_v);
+                                            if (ipn != isrc) continue;
+                                            if (ipi >= inner_fc->n_args)
+                                                break;
+                                            ASR::expr_t *iactual =
+                                                inner_fc->m_args[ipi]
+                                                    .m_value;
+                                            if (!iactual) break;
+                                            if (ASR::is_a<
+                                                    ASR::ArrayPhysicalCast_t>(
+                                                        *iactual))
+                                                iactual = ASR::down_cast<
+                                                    ASR::ArrayPhysicalCast_t>(
+                                                        iactual)->m_arg;
+                                            ASRUtils::ExprStmtDuplicator
+                                                dup_sub(al);
+                                            dup_sub.success = true;
+                                            if (ASR::is_a<
                                                     ASR::ArraySection_t>(
-                                                        iactual);
-                                            for (size_t dd = 0;
-                                                    dd < sec->n_args;
-                                                    dd++) {
-                                                if (!sec->m_args[dd]
-                                                        .m_left ||
-                                                    !sec->m_args[dd]
-                                                        .m_right)
-                                                    continue;
-                                                ASR::expr_t *lb_d =
-                                                    dup_sub
-                                                        .duplicate_expr(
-                                                            sec->m_args[dd]
-                                                                .m_left);
-                                                ASR::expr_t *ub_d =
-                                                    dup_sub
-                                                        .duplicate_expr(
-                                                            sec->m_args[dd]
-                                                                .m_right);
-                                                ASR::expr_t *one =
-                                                    ASRUtils::EXPR(
-                                                        ASR::make_IntegerConstant_t(
-                                                            al, loc, 1,
-                                                            int_type_fc,
-                                                            ASR::integerbozType::Decimal));
-                                                ASR::expr_t *diff =
-                                                    ASRUtils::EXPR(
-                                                        ASR::make_IntegerBinOp_t(
-                                                            al, loc,
-                                                            ub_d,
-                                                            ASR::binopType::Sub,
-                                                            lb_d,
-                                                            int_type_fc,
-                                                            nullptr));
-                                                ASR::expr_t *dim_sz =
-                                                    ASRUtils::EXPR(
-                                                        ASR::make_IntegerBinOp_t(
-                                                            al, loc,
-                                                            diff,
-                                                            ASR::binopType::Add,
-                                                            one,
-                                                            int_type_fc,
-                                                            nullptr));
-                                                if (!sub_size) {
-                                                    sub_size = dim_sz;
-                                                } else {
-                                                    sub_size =
+                                                        *iactual)) {
+                                                ASR::ArraySection_t *sec =
+                                                    ASR::down_cast<
+                                                        ASR::ArraySection_t>(
+                                                            iactual);
+                                                for (size_t dd = 0;
+                                                        dd < sec->n_args;
+                                                        dd++) {
+                                                    if (!sec->m_args[dd]
+                                                            .m_left ||
+                                                        !sec->m_args[dd]
+                                                            .m_right)
+                                                        continue;
+                                                    ASR::expr_t *lb_d =
+                                                        dup_sub
+                                                            .duplicate_expr(
+                                                                sec->m_args[dd]
+                                                                    .m_left);
+                                                    ASR::expr_t *ub_d =
+                                                        dup_sub
+                                                            .duplicate_expr(
+                                                                sec->m_args[dd]
+                                                                    .m_right);
+                                                    ASR::expr_t *one =
+                                                        ASRUtils::EXPR(
+                                                            ASR::make_IntegerConstant_t(
+                                                                al, loc, 1,
+                                                                int_type_fc,
+                                                                ASR::integerbozType::Decimal));
+                                                    ASR::expr_t *diff =
                                                         ASRUtils::EXPR(
                                                             ASR::make_IntegerBinOp_t(
                                                                 al, loc,
-                                                                sub_size,
-                                                                ASR::binopType::Mul,
-                                                                dim_sz,
+                                                                ub_d,
+                                                                ASR::binopType::Sub,
+                                                                lb_d,
                                                                 int_type_fc,
                                                                 nullptr));
+                                                    ASR::expr_t *dim_sz =
+                                                        ASRUtils::EXPR(
+                                                            ASR::make_IntegerBinOp_t(
+                                                                al, loc,
+                                                                diff,
+                                                                ASR::binopType::Add,
+                                                                one,
+                                                                int_type_fc,
+                                                                nullptr));
+                                                    if (!sub_size) {
+                                                        sub_size = dim_sz;
+                                                    } else {
+                                                        sub_size =
+                                                            ASRUtils::EXPR(
+                                                                ASR::make_IntegerBinOp_t(
+                                                                    al, loc,
+                                                                    sub_size,
+                                                                    ASR::binopType::Mul,
+                                                                    dim_sz,
+                                                                    int_type_fc,
+                                                                    nullptr));
+                                                    }
                                                 }
+                                            } else {
+                                                sub_size = ASRUtils::EXPR(
+                                                    ASR::make_ArraySize_t(
+                                                        al, loc,
+                                                        dup_sub
+                                                            .duplicate_expr(
+                                                                iactual),
+                                                        nullptr,
+                                                        int_type_fc,
+                                                        nullptr));
                                             }
-                                        } else {
-                                            sub_size = ASRUtils::EXPR(
-                                                ASR::make_ArraySize_t(
-                                                    al, loc,
-                                                    dup_sub
-                                                        .duplicate_expr(
-                                                            iactual),
-                                                    nullptr,
-                                                    int_type_fc,
-                                                    nullptr));
+                                            break;
                                         }
-                                        break;
+                                    }
+                                }
+                                if (!sub_size && !inner_fn) {
+                                    // Source is a plain value (e.g.,
+                                    // arr(i)), not a FunctionCall.
+                                    // Use size(source%sub_member).
+                                    ASR::symbol_t *sub_ext_sz =
+                                        nullptr;
+                                    for (auto &sci :
+                                            current_scope->get_scope()) {
+                                        if (!ASR::is_a<
+                                                ASR::ExternalSymbol_t>(
+                                                    *sci.second))
+                                            continue;
+                                        ASR::ExternalSymbol_t *se =
+                                            ASR::down_cast<
+                                                ASR::ExternalSymbol_t>(
+                                                    sci.second);
+                                        ASR::symbol_t *sres =
+                                            ASRUtils::
+                                                symbol_get_past_external(
+                                                    se->m_external);
+                                        if (sres == sub_sym) {
+                                            sub_ext_sz = sci.second;
+                                            break;
+                                        }
+                                    }
+                                    if (sub_ext_sz) {
+                                        ASRUtils::ExprStmtDuplicator
+                                            dup_src(al);
+                                        dup_src.success = true;
+                                        ASR::expr_t *src_dup =
+                                            dup_src.duplicate_expr(
+                                                pa->m_value);
+                                        ASR::expr_t *src_sub =
+                                            ASRUtils::EXPR(
+                                                ASR::make_StructInstanceMember_t(
+                                                    al, loc, src_dup,
+                                                    sub_ext_sz,
+                                                    sub_mv->m_type,
+                                                    nullptr));
+                                        sub_size = ASRUtils::EXPR(
+                                            ASR::make_ArraySize_t(
+                                                al, loc, src_sub,
+                                                nullptr, int_type_fc,
+                                                nullptr));
                                     }
                                 }
                                 if (!sub_size) continue;
