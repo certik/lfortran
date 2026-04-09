@@ -1928,13 +1928,16 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                             }
                             if (all_c && sz > 0) {
                                 result[key] = sz;
-                            } else if (!all_c &&
-                                    ASR::is_a<ASR::Var_t>(
-                                        *actual)) {
+                            } else if (!all_c) {
+                                ASR::expr_t *actual_unwrapped =
+                                    unwrap_array_physical_cast(
+                                        actual);
+                                if (!ASR::is_a<ASR::Var_t>(
+                                        *actual_unwrapped)) break;
                                 std::string act_name =
                                     ASRUtils::symbol_name(
                                         ASR::down_cast<ASR::Var_t>(
-                                            actual)->m_v);
+                                            actual_unwrapped)->m_v);
                                 auto ws_it2 =
                                     ws_by_name.find(act_name);
                                 if (ws_it2 != ws_by_name.end()) {

@@ -495,15 +495,38 @@ public:
                     src << get_indent() << "device " << elem_type
                         << "* " << vname << " = __vla_" << vname
                         << " + __thread_id * (";
+                    int64_t total_const_size = 1;
+                    bool all_const = true;
                     for (size_t d = 0; d < vla_it->dims.size(); d++) {
                         if (d > 0) src << " * ";
                         if (vla_it->dims[d].is_constant) {
                             src << vla_it->dims[d].constant_value;
+                            total_const_size *= vla_it->dims[d].constant_value;
                         } else {
                             visit_expr(vla_it->dims[d].dim_expr);
+                            all_const = false;
                         }
                     }
                     src << ");\n";
+                    local_alloc_arrays.insert(vname);
+                    if (all_const) {
+                        alloc_array_sizes[vname] = total_const_size;
+                    } else {
+                        std::stringstream save;
+                        save << src.str();
+                        src.str("");
+                        for (size_t d = 0; d < vla_it->dims.size(); d++) {
+                            if (d > 0) src << " * ";
+                            if (vla_it->dims[d].is_constant) {
+                                src << vla_it->dims[d].constant_value;
+                            } else {
+                                visit_expr(vla_it->dims[d].dim_expr);
+                            }
+                        }
+                        alloc_array_size_exprs[vname] = src.str();
+                        src.str("");
+                        src << save.str();
+                    }
                     return;
                 }
             }
@@ -2991,7 +3014,13 @@ public:
                             std::string size_name =
                                 "__size_" + std::string(arg->m_name)
                                 + "_" + st->m_members[m];
-                            src << ", int " << size_name;
+                            if (arg->m_intent == ASR::intentType::Out ||
+                                arg->m_intent == ASR::intentType::InOut) {
+                                src << ", " << member_data_addr_space
+                                    << " int& " << size_name;
+                            } else {
+                                src << ", int " << size_name;
+                            }
                             func_array_size_params[key] = size_name;
                         }
                     }

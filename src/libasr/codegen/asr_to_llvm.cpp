@@ -20063,48 +20063,30 @@ public:
                                                 : new_desc;
                                             builder->CreateStore(sd, fp);
                                         }
-                                        arr_descr
-                                            ->fill_dimension_descriptor(
-                                                desc_type, new_desc, 1);
-                                        llvm::Value *alloc_bytes =
+                                        std::vector<
+                                            std::pair<llvm::Value*,
+                                                      llvm::Value*>> dims;
+                                        dims.push_back({
                                             llvm::ConstantInt::get(
-                                                i64,
-                                                vla_member_sz * me_size);
-                                        llvm::Value *new_dp2 =
-                                            builder->CreateCall(
-                                                mfn2, {alloc_bytes});
+                                                arr_descr->get_index_type(), 1),
+                                            builder->CreateTrunc(
+                                                ne64, arr_descr->get_index_type())});
+                                        arr_descr->fill_array_details(
+                                            desc_type, new_desc,
+                                            mem_el_llvm, 1, dims,
+                                            module.get(), true);
                                         llvm::Value *new_dpp =
                                             arr_descr
                                                 ->get_pointer_to_data(
                                                     desc_type,
                                                     new_desc);
-                                        builder->CreateStore(
+                                        llvm::Value *new_dp2 =
                                             builder->CreatePointerCast(
-                                                new_dp2,
-                                                mem_el_llvm
-                                                    ->getPointerTo()),
-                                            new_dpp);
-                                        llvm::Value *dim_des_arr =
-                                            arr_descr
-                                                ->get_pointer_to_dimension_descriptor_array(
-                                                    desc_type,
-                                                    new_desc);
-                                        llvm::Value *dim0 =
-                                            arr_descr
-                                                ->get_pointer_to_dimension_descriptor(
-                                                    dim_des_arr,
-                                                    llvm::ConstantInt::get(
-                                                        i32, 0));
-                                        llvm::Value *extent_ptr =
-                                            arr_descr
-                                                ->get_dimension_size(
-                                                    dim0, false);
-                                        builder->CreateStore(
-                                            builder->CreateSExtOrTrunc(
-                                                ne64,
-                                                llvm::Type::getInt64Ty(
-                                                    context)),
-                                            extent_ptr);
+                                                llvm_utils->CreateLoad2(
+                                                    mem_el_llvm
+                                                        ->getPointerTo(),
+                                                    new_dpp),
+                                                i8_ptr);
                                         szs.push_back(ne64);
                                         dps.push_back(new_dp2);
                                         }
