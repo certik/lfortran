@@ -29,6 +29,15 @@ struct GpuVlaDim {
     size_t source_dim_index = 0;
 };
 
+// Describes a companion buffer (data, offsets, sizes) for a nested
+// allocatable array member inside a struct-typed VLA workspace element.
+struct GpuVlaCompanion {
+    std::string suffix;       // e.g. "a_vals" (member path)
+    int data_buffer_index;
+    int offsets_buffer_index;
+    int sizes_buffer_index;
+};
+
 // Describes a VLA workspace buffer required by a GPU kernel.
 struct GpuVlaWorkspace {
     std::string var_name;
@@ -36,7 +45,86 @@ struct GpuVlaWorkspace {
     int elem_size; // 0 means struct type, compute at codegen time
     ASR::ttype_t *elem_asr_type = nullptr; // set when elem_size == 0
     std::vector<GpuVlaDim> dims;
+    // Companion buffers for struct-typed VLAs with nested allocatable members
+    std::vector<GpuVlaCompanion> companions;
 };
+
+// Recursively collect nested allocatable array members from a struct type.
+// Each entry gives the underscore-separated member path (e.g. "a_vals").
+struct GpuNestedAllocMember {
+    std::string suffix;
+};
+
+inline void collect_gpu_nested_alloc_members(
+        ASR::Struct_t *st, const std::string &prefix,
+        std::vector<GpuNestedAllocMember> &result) {
+    for (size_t m = 0; m < st->n_members; m++) {
+        ASR::symbol_t *mem = st->m_symtab->get_symbol(st->m_members[m]);
+        if (!mem || !ASR::is_a<ASR::Variable_t>(*mem)) continue;
+        ASR::Variable_t *mv = ASR::down_cast<ASR::Variable_t>(mem);
+        if (ASRUtils::is_allocatable(mv->m_type)) {
+            ASR::ttype_t *inner =
+                ASRUtils::type_get_past_allocatable(mv->m_type);
+            if (ASR::is_a<ASR::Array_t>(*inner)) {
+                std::string suf = prefix.empty()
+                    ? std::string(st->m_members[m])
+                    : prefix + "_" + st->m_members[m];
+                result.push_back({suf});
+            }
+        } else {
+            ASR::ttype_t *base = ASRUtils::extract_type(mv->m_type);
+            if (ASR::is_a<ASR::StructType_t>(*base) &&
+                    mv->m_type_declaration) {
+                ASR::symbol_t *inner_sym =
+                    ASRUtils::symbol_get_past_external(
+                        mv->m_type_declaration);
+                if (ASR::is_a<ASR::Struct_t>(*inner_sym)) {
+                    std::string np = prefix.empty()
+                        ? std::string(st->m_members[m])
+                        : prefix + "_" + st->m_members[m];
+                    collect_gpu_nested_alloc_members(
+                        ASR::down_cast<ASR::Struct_t>(inner_sym),
+                        np, result);
+                }
+            }
+        }
+    }
+}
+
+// Resolve the Struct_t declaration for a Variable_t, if it is a struct type.
+inline ASR::Struct_t* get_struct_decl_for_vla(ASR::Variable_t *var) {
+    ASR::ttype_t *t = ASRUtils::type_get_past_allocatable(var->m_type);
+    if (ASR::is_a<ASR::Array_t>(*t)) {
+        t = ASR::down_cast<ASR::Array_t>(t)->m_type;
+    }
+    if (!ASR::is_a<ASR::StructType_t>(*ASRUtils::extract_type(t)))
+        return nullptr;
+    if (!var->m_type_declaration) return nullptr;
+    ASR::symbol_t *s = ASRUtils::symbol_get_past_external(
+        var->m_type_declaration);
+    if (ASR::is_a<ASR::Struct_t>(*s))
+        return ASR::down_cast<ASR::Struct_t>(s);
+    return nullptr;
+}
+
+// After creating a VLA workspace for a struct type, assign companion
+// buffer indices for each nested allocatable member (3 per member:
+// data, offsets, sizes).
+inline void assign_vla_struct_companions(
+        GpuVlaWorkspace &ws, ASR::Variable_t *var, int &buffer_idx) {
+    ASR::Struct_t *st = get_struct_decl_for_vla(var);
+    if (!st) return;
+    std::vector<GpuNestedAllocMember> nested;
+    collect_gpu_nested_alloc_members(st, "", nested);
+    for (auto &nm : nested) {
+        GpuVlaCompanion comp;
+        comp.suffix = nm.suffix;
+        comp.data_buffer_index = buffer_idx++;
+        comp.offsets_buffer_index = buffer_idx++;
+        comp.sizes_buffer_index = buffer_idx++;
+        ws.companions.push_back(std::move(comp));
+    }
+}
 
 // Recursively count the total number of Metal buffer slots needed for
 // allocatable array members of a struct, including nested decomposition
@@ -635,6 +723,7 @@ inline void scan_kernel_scope_alloc_vlas(
                 }
                 ws.dims.push_back(vd);
             }
+            assign_vla_struct_companions(ws, var, buffer_idx);
             result.push_back(std::move(ws));
         } else {
             // No Allocate: this is likely a function-call result temp
@@ -851,6 +940,8 @@ inline void scan_kernel_scope_alloc_vlas(
                                     vd2.source_array_name = src_arr;
                                     vd2.source_dim_index = src_dim;
                                     ws2.dims.push_back(vd2);
+                                    assign_vla_struct_companions(
+                                        ws2, var, buffer_idx);
                                     result.push_back(
                                         std::move(ws2));
                                     found_func_dep = true;
@@ -931,6 +1022,7 @@ inline void scan_kernel_scope_alloc_vlas(
             vd.is_struct_member_size = true;
             vd.struct_member_key = struct_key;
             ws.dims.push_back(vd);
+            assign_vla_struct_companions(ws, var, buffer_idx);
             result.push_back(std::move(ws));
         }
     }
@@ -1023,6 +1115,7 @@ inline void scan_kernel_scope_alloc_vlas(
                     ws2.elem_size = 4;
                 }
                 ws2.dims = ws_src.dims;
+                assign_vla_struct_companions(ws2, var2, buffer_idx);
                 result.push_back(std::move(ws2));
                 ws_names.insert(vname2);
                 break;
@@ -1118,6 +1211,7 @@ inline void scan_kernel_scope_nonalloc_vlas(
             }
             ws.dims.push_back(vd);
         }
+        assign_vla_struct_companions(ws, var, buffer_idx);
         result.push_back(std::move(ws));
     }
 }
@@ -1339,6 +1433,7 @@ inline std::vector<GpuVlaWorkspace> analyze_gpu_vla_workspaces(
                 }
                 ws.dims.push_back(vd);
             }
+            assign_vla_struct_companions(ws, var, buffer_idx);
             result.push_back(std::move(ws));
         }
 
@@ -1382,6 +1477,7 @@ inline std::vector<GpuVlaWorkspace> analyze_gpu_vla_workspaces(
             vd.is_struct_member_size = true;
             vd.struct_member_key = struct_key;
             ws.dims.push_back(vd);
+            assign_vla_struct_companions(ws, var2, buffer_idx);
             result.push_back(std::move(ws));
         }
     }

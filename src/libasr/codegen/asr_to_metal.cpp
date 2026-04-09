@@ -161,6 +161,12 @@ public:
     // used by the BlockCall handler to emit device pointer offsets.
     std::vector<GpuVlaWorkspace> current_vla_infos;
 
+    // Current kernel's body and symtab, set during kernel codegen
+    // so visit_Variable can look up VLA struct types for companions.
+    ASR::stmt_t **current_kernel_body = nullptr;
+    size_t current_kernel_n_body = 0;
+    SymbolTable *current_kernel_symtab = nullptr;
+
     // Maps array parameter names to their synthesized size parameter
     // names within the current function being emitted. Populated by
     // emit_function_def for DescriptorArray parameters and consumed
@@ -512,6 +518,91 @@ public:
                         src.str("");
                         src << save.str();
                     }
+                    // Emit per-thread companion pointers for struct VLAs
+                    if (!vla_it->companions.empty()) {
+                        std::string per_thread_expr;
+                        if (all_const) {
+                            per_thread_expr = std::to_string(
+                                total_const_size);
+                        } else {
+                            auto eit = alloc_array_size_exprs.find(vname);
+                            if (eit != alloc_array_size_exprs.end()) {
+                                per_thread_expr = eit->second;
+                            } else {
+                                per_thread_expr = "1";
+                            }
+                        }
+                        for (auto &comp : vla_it->companions) {
+                            std::string data_type = "float";
+                            ASR::Variable_t *vla_var2 = nullptr;
+                            ASR::symbol_t *sym2 = nullptr;
+                            for (size_t bi = 0;
+                                    bi < current_kernel_n_body; bi++) {
+                                if (!ASR::is_a<ASR::BlockCall_t>(
+                                        *current_kernel_body[bi]))
+                                    continue;
+                                ASR::BlockCall_t *bc2 =
+                                    ASR::down_cast<ASR::BlockCall_t>(
+                                        current_kernel_body[bi]);
+                                if (!ASR::is_a<ASR::Block_t>(
+                                        *bc2->m_m)) continue;
+                                ASR::Block_t *blk2 =
+                                    ASR::down_cast<ASR::Block_t>(
+                                        bc2->m_m);
+                                sym2 = blk2->m_symtab->resolve_symbol(
+                                    vname);
+                                if (sym2) break;
+                            }
+                            if (!sym2 && current_kernel_symtab) {
+                                sym2 = current_kernel_symtab
+                                    ->resolve_symbol(vname);
+                            }
+                            if (sym2 && ASR::is_a<ASR::Variable_t>(
+                                    *sym2)) {
+                                vla_var2 = ASR::down_cast<
+                                    ASR::Variable_t>(sym2);
+                                ASR::Struct_t *st =
+                                    get_struct_decl(vla_var2);
+                                if (st) {
+                                    std::vector<NestedAllocMember> nested;
+                                    collect_nested_alloc_members(
+                                        st, "", {}, nested);
+                                    for (auto &nm : nested) {
+                                        if (nm.suffix == comp.suffix) {
+                                            ASR::ttype_t *mt =
+                                                ASRUtils::type_get_past_allocatable(
+                                                    nm.var->m_type);
+                                            if (ASR::is_a<ASR::Array_t>(
+                                                    *mt)) {
+                                                data_type = metal_type(
+                                                    ASR::down_cast<
+                                                        ASR::Array_t>(
+                                                        mt)->m_type);
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            src << get_indent() << "device "
+                                << data_type << "* __data_" << vname
+                                << "_" << comp.suffix
+                                << " = __vla___data_" << vname << "_"
+                                << comp.suffix << ";\n";
+                            src << get_indent()
+                                << "device int* __offsets_" << vname
+                                << "_" << comp.suffix
+                                << " = __vla___offsets_" << vname << "_"
+                                << comp.suffix << " + __thread_id * ("
+                                << per_thread_expr << ");\n";
+                            src << get_indent()
+                                << "device int* __sizes_" << vname
+                                << "_" << comp.suffix
+                                << " = __vla___sizes_" << vname << "_"
+                                << comp.suffix << " + __thread_id * ("
+                                << per_thread_expr << ");\n";
+                        }
+                    }
                     return;
                 }
             }
@@ -569,6 +660,91 @@ public:
                         alloc_array_size_exprs[vname] = src.str();
                         src.str("");
                         src << save.str();
+                    }
+                    // Emit per-thread companion pointers for non-alloc VLA
+                    if (!vla_it->companions.empty()) {
+                        std::string per_thread_expr;
+                        if (all_const) {
+                            per_thread_expr = std::to_string(
+                                total_const_size);
+                        } else {
+                            auto eit = alloc_array_size_exprs.find(vname);
+                            if (eit != alloc_array_size_exprs.end()) {
+                                per_thread_expr = eit->second;
+                            } else {
+                                per_thread_expr = "1";
+                            }
+                        }
+                        for (auto &comp : vla_it->companions) {
+                            std::string data_type = "float";
+                            ASR::symbol_t *sym2 = nullptr;
+                            for (size_t bi = 0;
+                                    bi < current_kernel_n_body; bi++) {
+                                if (!ASR::is_a<ASR::BlockCall_t>(
+                                        *current_kernel_body[bi]))
+                                    continue;
+                                ASR::BlockCall_t *bc2 =
+                                    ASR::down_cast<ASR::BlockCall_t>(
+                                        current_kernel_body[bi]);
+                                if (!ASR::is_a<ASR::Block_t>(
+                                        *bc2->m_m)) continue;
+                                ASR::Block_t *blk2 =
+                                    ASR::down_cast<ASR::Block_t>(
+                                        bc2->m_m);
+                                sym2 = blk2->m_symtab->resolve_symbol(
+                                    vname);
+                                if (sym2) break;
+                            }
+                            if (!sym2 && current_kernel_symtab) {
+                                sym2 = current_kernel_symtab
+                                    ->resolve_symbol(vname);
+                            }
+                            if (sym2 && ASR::is_a<ASR::Variable_t>(
+                                    *sym2)) {
+                                ASR::Variable_t *vla_var2 =
+                                    ASR::down_cast<ASR::Variable_t>(
+                                        sym2);
+                                ASR::Struct_t *st =
+                                    get_struct_decl(vla_var2);
+                                if (st) {
+                                    std::vector<NestedAllocMember> nested;
+                                    collect_nested_alloc_members(
+                                        st, "", {}, nested);
+                                    for (auto &nm : nested) {
+                                        if (nm.suffix == comp.suffix) {
+                                            ASR::ttype_t *mt =
+                                                ASRUtils::type_get_past_allocatable(
+                                                    nm.var->m_type);
+                                            if (ASR::is_a<ASR::Array_t>(
+                                                    *mt)) {
+                                                data_type = metal_type(
+                                                    ASR::down_cast<
+                                                        ASR::Array_t>(
+                                                        mt)->m_type);
+                                            }
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            src << get_indent() << "device "
+                                << data_type << "* __data_" << vname
+                                << "_" << comp.suffix
+                                << " = __vla___data_" << vname << "_"
+                                << comp.suffix << ";\n";
+                            src << get_indent()
+                                << "device int* __offsets_" << vname
+                                << "_" << comp.suffix
+                                << " = __vla___offsets_" << vname << "_"
+                                << comp.suffix << " + __thread_id * ("
+                                << per_thread_expr << ");\n";
+                            src << get_indent()
+                                << "device int* __sizes_" << vname
+                                << "_" << comp.suffix
+                                << " = __vla___sizes_" << vname << "_"
+                                << comp.suffix << " + __thread_id * ("
+                                << per_thread_expr << ");\n";
+                        }
                     }
                     return;
                 }
@@ -3324,8 +3500,12 @@ public:
                             std::string data_name =
                                 "__data_" + std::string(arg->m_name)
                                 + "_" + nam.suffix;
-                            std::string elem_type_str =
-                                metal_type(mem_arr->m_type);
+                            std::string elem_type_str;
+                            if (is_struct_type(mem_arr->m_type)) {
+                                elem_type_str = get_struct_name(nam.var);
+                            } else {
+                                elem_type_str = metal_type(mem_arr->m_type);
+                            }
                             src << ", " << member_data_addr_space << " "
                                 << elem_type_str
                                 << "* " << data_name;
@@ -3965,6 +4145,11 @@ public:
         // can identify VLA workspace variables.
         current_vla_infos = analyze_gpu_vla_workspaces(x);
 
+        // Set kernel body/symtab for visit_Variable companion lookup
+        current_kernel_body = x.m_body;
+        current_kernel_n_body = x.n_body;
+        current_kernel_symtab = x.m_symtab;
+
         // Pre-scan Allocate statements to determine sizes
         // for local allocatable array variables.
         prescan_alloc_sizes(x);
@@ -4320,8 +4505,12 @@ public:
                                         ASR::Array_t *sn_arr =
                                             ASR::down_cast<
                                                 ASR::Array_t>(sn_inner);
-                                        std::string sn_et =
-                                            metal_type(sn_arr->m_type);
+                                        std::string sn_et;
+                                        if (is_struct_type(sn_arr->m_type)) {
+                                            sn_et = get_struct_name(sn.var);
+                                        } else {
+                                            sn_et = metal_type(sn_arr->m_type);
+                                        }
                                         std::string sn_data =
                                             "__data_" + args[i].name
                                             + "_" + nam.suffix + "_"
@@ -4463,9 +4652,13 @@ public:
                                                 ASR::down_cast<
                                                     ASR::Array_t>(
                                                         sn_inner);
-                                            std::string sn_et =
-                                                metal_type(
+                                            std::string sn_et;
+                                            if (is_struct_type(sn_arr->m_type)) {
+                                                sn_et = get_struct_name(sn.var);
+                                            } else {
+                                                sn_et = metal_type(
                                                     sn_arr->m_type);
+                                            }
                                             std::string sn_data =
                                                 "__data_" + args[i].name
                                                 + "_" + nam.suffix + "_"
@@ -4566,6 +4759,46 @@ public:
                 << "* __vla_" << current_vla_infos[v].var_name
                 << " [[buffer(" << buffer_idx++ << ")]]";
             has_prev = true;
+
+            // Emit companion buffer params for struct-typed VLAs
+            for (auto &comp : current_vla_infos[v].companions) {
+                std::string vla_name = current_vla_infos[v].var_name;
+                // Determine the data element type from the nested member
+                std::string data_type = "float";
+                if (vla_var) {
+                    ASR::Struct_t *st = get_struct_decl(vla_var);
+                    if (st) {
+                        std::vector<NestedAllocMember> nested;
+                        collect_nested_alloc_members(st, "", {}, nested);
+                        for (auto &nm : nested) {
+                            if (nm.suffix == comp.suffix) {
+                                ASR::ttype_t *mt =
+                                    ASRUtils::type_get_past_allocatable(
+                                        nm.var->m_type);
+                                if (ASR::is_a<ASR::Array_t>(*mt)) {
+                                    data_type = metal_type(
+                                        ASR::down_cast<ASR::Array_t>(
+                                            mt)->m_type);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                LCOMPILERS_ASSERT(comp.data_buffer_index == buffer_idx);
+                src << ",\n    device " << data_type
+                    << "* __vla___data_" << vla_name << "_"
+                    << comp.suffix
+                    << " [[buffer(" << buffer_idx++ << ")]]";
+                LCOMPILERS_ASSERT(comp.offsets_buffer_index == buffer_idx);
+                src << ",\n    device int* __vla___offsets_"
+                    << vla_name << "_" << comp.suffix
+                    << " [[buffer(" << buffer_idx++ << ")]]";
+                LCOMPILERS_ASSERT(comp.sizes_buffer_index == buffer_idx);
+                src << ",\n    device int* __vla___sizes_"
+                    << vla_name << "_" << comp.suffix
+                    << " [[buffer(" << buffer_idx++ << ")]]";
+            }
         }
 
         if (has_prev) src << ",\n";
@@ -4704,6 +4937,22 @@ public:
                         }
                     }
                 }
+            }
+        }
+
+        // Register VLA workspace struct companion buffers in maps
+        for (auto &ws : current_vla_infos) {
+            for (auto &comp : ws.companions) {
+                std::string key = ws.var_name + "." + comp.suffix;
+                std::string data_name = "__data_" + ws.var_name
+                    + "_" + comp.suffix;
+                func_array_data_params[key] = data_name;
+                std::string off_name = "__offsets_" + ws.var_name
+                    + "_" + comp.suffix;
+                struct_array_offset_params[key] = off_name;
+                std::string sizes_name = "__sizes_" + ws.var_name
+                    + "_" + comp.suffix;
+                struct_array_sizes_params[key] = sizes_name;
             }
         }
 
@@ -7520,9 +7769,14 @@ public:
                         ASR::ttype_t *vtype =
                             ASRUtils::type_get_past_allocatable(v->m_type);
                         if (ASR::is_a<ASR::Array_t>(*vtype)) {
-                            elem_type_str = metal_type(
+                            ASR::ttype_t *arr_elem =
                                 ASR::down_cast<ASR::Array_t>(
-                                    vtype)->m_type);
+                                    vtype)->m_type;
+                            if (is_struct_type(arr_elem)) {
+                                elem_type_str = get_struct_name(v);
+                            } else {
+                                elem_type_str = metal_type(arr_elem);
+                            }
                         }
                         // Emit a device pointer into the per-thread slice
                         src << get_indent() << "device "

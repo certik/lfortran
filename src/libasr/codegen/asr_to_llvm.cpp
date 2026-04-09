@@ -23898,6 +23898,159 @@ public:
                     llvm::ConstantInt::get(i32, ws.buffer_index);
                 builder->CreateCall(set_buffer_fn,
                     {gpu_kernel, buf_idx, ptr, workspace_size});
+
+                // Allocate companion buffers for struct-typed VLAs
+                for (auto &comp : ws.companions) {
+                    std::string sm_key = ws.var_name + "." + comp.suffix;
+                    // Determine per-element data size for this member.
+                    // Use struct_member_vla_sizes if available,
+                    // otherwise fall back to struct_member_first_sizes.
+                    llvm::Value *member_alloc_count = nullptr;
+                    int member_elem_bytes = 4; // default to float
+                    {
+                        auto vit = struct_member_vla_sizes.find(sm_key);
+                        if (vit != struct_member_vla_sizes.end()) {
+                            member_alloc_count =
+                                llvm::ConstantInt::get(i64,
+                                    vit->second);
+                        }
+                    }
+                    if (!member_alloc_count) {
+                        auto fit =
+                            struct_member_first_sizes.find(sm_key);
+                        if (fit != struct_member_first_sizes.end()) {
+                            member_alloc_count =
+                                builder->CreateIntCast(
+                                    fit->second, i64, true);
+                        }
+                    }
+                    if (!member_alloc_count) {
+                        // Check source arrays for matching suffix
+                        for (auto &entry : struct_member_first_sizes) {
+                            size_t dot = entry.first.rfind('.');
+                            if (dot != std::string::npos &&
+                                    entry.first.substr(dot + 1)
+                                    == comp.suffix) {
+                                member_alloc_count =
+                                    builder->CreateIntCast(
+                                        entry.second, i64, true);
+                                break;
+                            }
+                        }
+                    }
+                    if (!member_alloc_count) {
+                        member_alloc_count =
+                            llvm::ConstantInt::get(i64, 16);
+                    }
+
+                    // total_companion_elems = total_threads *
+                    //     per_thread_elems
+                    llvm::Value *total_companion_elems =
+                        builder->CreateMul(total_threads,
+                            per_thread_elems);
+
+                    // Data buffer: total_companion_elems *
+                    //     member_alloc_count * member_elem_bytes
+                    llvm::Value *data_size = builder->CreateMul(
+                        builder->CreateMul(total_companion_elems,
+                            member_alloc_count),
+                        llvm::ConstantInt::get(i64,
+                            member_elem_bytes));
+                    llvm::Value *data_ptr =
+                        builder->CreateCall(malloc_fn, {data_size});
+                    llvm::Value *data_idx =
+                        llvm::ConstantInt::get(i32,
+                            comp.data_buffer_index);
+                    builder->CreateCall(set_buffer_fn,
+                        {gpu_kernel, data_idx, data_ptr, data_size});
+
+                    // Offsets buffer: total_companion_elems *
+                    //     sizeof(int32)
+                    llvm::Value *off_size = builder->CreateMul(
+                        total_companion_elems,
+                        llvm::ConstantInt::get(i64, 4));
+                    llvm::Value *off_ptr =
+                        builder->CreateCall(malloc_fn, {off_size});
+                    llvm::Value *off_ptr_i32 =
+                        builder->CreatePointerCast(off_ptr,
+                            llvm::PointerType::getUnqual(
+                                llvm::Type::getInt32Ty(context)));
+                    // Initialize offsets: each element offset =
+                    //     elem_index * member_alloc_count *
+                    //     member_elem_bytes
+                    {
+                        // Create a loop to initialize offsets
+                        llvm::Function *curr_fn =
+                            builder->GetInsertBlock()->getParent();
+                        llvm::BasicBlock *init_bb =
+                            llvm::BasicBlock::Create(context,
+                                "vla_comp_init", curr_fn);
+                        llvm::BasicBlock *init_body =
+                            llvm::BasicBlock::Create(context,
+                                "vla_comp_body", curr_fn);
+                        llvm::BasicBlock *init_done =
+                            llvm::BasicBlock::Create(context,
+                                "vla_comp_done", curr_fn);
+                        builder->CreateBr(init_bb);
+                        builder->SetInsertPoint(init_bb);
+                        llvm::PHINode *idx_phi =
+                            builder->CreatePHI(i64, 2);
+                        idx_phi->addIncoming(
+                            llvm::ConstantInt::get(i64, 0),
+                            builder->GetInsertBlock()
+                                ->getSinglePredecessor());
+                        llvm::Value *cmp = builder->CreateICmpSLT(
+                            idx_phi, total_companion_elems);
+                        builder->CreateCondBr(cmp, init_body,
+                            init_done);
+                        builder->SetInsertPoint(init_body);
+                        llvm::Value *off_val = builder->CreateMul(
+                            idx_phi,
+                            builder->CreateMul(member_alloc_count,
+                                llvm::ConstantInt::get(i64,
+                                    member_elem_bytes)));
+                        llvm::Value *off_val32 =
+                            builder->CreateTrunc(off_val,
+                                llvm::Type::getInt32Ty(context));
+                        llvm::Value *off_elem_ptr =
+                            builder->CreateGEP(
+                                llvm::Type::getInt32Ty(context),
+                                off_ptr_i32,
+                                {idx_phi});
+                        builder->CreateStore(off_val32, off_elem_ptr);
+                        llvm::Value *next_idx = builder->CreateAdd(
+                            idx_phi,
+                            llvm::ConstantInt::get(i64, 1));
+                        idx_phi->addIncoming(next_idx, init_body);
+                        builder->CreateBr(init_bb);
+                        builder->SetInsertPoint(init_done);
+                    }
+                    llvm::Value *off_idx =
+                        llvm::ConstantInt::get(i32,
+                            comp.offsets_buffer_index);
+                    builder->CreateCall(set_buffer_fn,
+                        {gpu_kernel, off_idx, off_ptr, off_size});
+
+                    // Sizes buffer: total_companion_elems *
+                    //     sizeof(int32), zero-initialized
+                    llvm::Value *sz_size = off_size;
+                    llvm::Value *sz_ptr =
+                        builder->CreateCall(malloc_fn, {sz_size});
+                    // Zero-initialize sizes
+                    builder->CreateMemSet(sz_ptr,
+                        llvm::ConstantInt::get(
+                            llvm::Type::getInt8Ty(context), 0),
+                        sz_size, llvm::MaybeAlign(4));
+                    llvm::Value *sz_idx =
+                        llvm::ConstantInt::get(i32,
+                            comp.sizes_buffer_index);
+                    builder->CreateCall(set_buffer_fn,
+                        {gpu_kernel, sz_idx, sz_ptr, sz_size});
+
+                    vla_workspace_ptrs.push_back(data_ptr);
+                    vla_workspace_ptrs.push_back(off_ptr);
+                    vla_workspace_ptrs.push_back(sz_ptr);
+                }
             }
         }
 
