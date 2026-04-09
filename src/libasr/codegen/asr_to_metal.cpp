@@ -2897,22 +2897,19 @@ public:
         arr_name = ASRUtils::symbol_name(
             ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
 
-        ASR::expr_t *idx_expr = ai->m_args[0].m_right
-            ? ai->m_args[0].m_right : ai->m_args[0].m_left;
-        if (!idx_expr) return false;
-
-        std::stringstream saved;
-        saved.swap(src);
-        visit_expr(idx_expr);
         ASR::ttype_t *arr_type = ASRUtils::type_get_past_allocatable(
             ASRUtils::expr_type(ai->m_v));
         ASR::Array_t *sa_arr = nullptr;
         if (ASR::is_a<ASR::Array_t>(*arr_type)) {
             sa_arr = ASR::down_cast<ASR::Array_t>(arr_type);
         }
-        std::string lb = get_lower_bound_str(sa_arr, 0);
-        idx_str = "((int)(" + src.str() + ") - (" + lb + "))";
+
+        std::stringstream saved;
         saved.swap(src);
+        emit_linearized_index(ai, arr_type);
+        idx_str = src.str();
+        saved.swap(src);
+        if (idx_str.empty()) return false;
         return true;
     }
 
@@ -2946,22 +2943,15 @@ public:
         arr_name = ASRUtils::symbol_name(
             ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
 
-        ASR::expr_t *idx_expr = ai->m_args[0].m_right
-            ? ai->m_args[0].m_right : ai->m_args[0].m_left;
-        if (!idx_expr) return false;
+        ASR::ttype_t *arr_type = ASRUtils::type_get_past_allocatable(
+            ASRUtils::expr_type(ai->m_v));
 
         std::stringstream saved;
         saved.swap(src);
-        visit_expr(idx_expr);
-        ASR::ttype_t *arr_type = ASRUtils::type_get_past_allocatable(
-            ASRUtils::expr_type(ai->m_v));
-        ASR::Array_t *sa_arr = nullptr;
-        if (ASR::is_a<ASR::Array_t>(*arr_type)) {
-            sa_arr = ASR::down_cast<ASR::Array_t>(arr_type);
-        }
-        std::string lb = get_lower_bound_str(sa_arr, 0);
-        idx_str = "((int)(" + src.str() + ") - (" + lb + "))";
+        emit_linearized_index(ai, arr_type);
+        idx_str = src.str();
         saved.swap(src);
+        if (idx_str.empty()) return false;
         return true;
     }
 

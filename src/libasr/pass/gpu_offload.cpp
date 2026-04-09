@@ -8353,20 +8353,40 @@ public:
                         dup_lp.duplicate_expr(x.m_head[0].m_end);
                     lh.m_increment = nullptr;
 
-                    // Build: tgt_arr(k)%member
+                    // Build: tgt_arr(...)%member
+                    // Duplicate original target indices, replacing
+                    // the do concurrent loop variable with the new one.
                     ASR::expr_t *loop_var =
                         dup_lp.duplicate_expr(x.m_head[0].m_v);
+                    ASR::symbol_t *lv_sym2 = ASR::down_cast<ASR::Var_t>(
+                        x.m_head[0].m_v)->m_v;
                     ASR::array_index_t *tgt_idx =
-                        al.allocate<ASR::array_index_t>(1);
-                    tgt_idx[0].loc = loc;
-                    tgt_idx[0].m_left = nullptr;
-                    tgt_idx[0].m_right = loop_var;
-                    tgt_idx[0].m_step = nullptr;
+                        al.allocate<ASR::array_index_t>(tgt_ai->n_args);
+                    for (size_t ti = 0; ti < tgt_ai->n_args; ti++) {
+                        tgt_idx[ti].loc = loc;
+                        ASR::expr_t *orig_right = tgt_ai->m_args[ti].m_right;
+                        if (orig_right && ASR::is_a<ASR::Var_t>(*orig_right) &&
+                            ASR::down_cast<ASR::Var_t>(orig_right)->m_v == lv_sym2) {
+                            tgt_idx[ti].m_left = nullptr;
+                            tgt_idx[ti].m_right = loop_var;
+                            tgt_idx[ti].m_step = nullptr;
+                        } else {
+                            tgt_idx[ti].m_left = tgt_ai->m_args[ti].m_left
+                                ? dup_lp.duplicate_expr(tgt_ai->m_args[ti].m_left)
+                                : nullptr;
+                            tgt_idx[ti].m_right = tgt_ai->m_args[ti].m_right
+                                ? dup_lp.duplicate_expr(tgt_ai->m_args[ti].m_right)
+                                : nullptr;
+                            tgt_idx[ti].m_step = tgt_ai->m_args[ti].m_step
+                                ? dup_lp.duplicate_expr(tgt_ai->m_args[ti].m_step)
+                                : nullptr;
+                        }
+                    }
                     ASR::expr_t *tgt_elem = ASRUtils::EXPR(
                         ASR::make_ArrayItem_t(al, loc,
                             ASRUtils::EXPR(ASR::make_Var_t(
                                 al, loc, tgt_sym)),
-                            tgt_idx, 1, elem_type,
+                            tgt_idx, tgt_ai->n_args, elem_type,
                             ASR::arraystorageType::ColMajor,
                             nullptr));
                     ASR::expr_t *tgt_member = ASRUtils::EXPR(
@@ -8374,20 +8394,38 @@ public:
                             tgt_elem, mem_ext,
                             mv->m_type, nullptr));
 
-                    // Build: size(src_arr(k)%member)
+                    // Build: size(src_arr(...)%member)
+                    // Duplicate original source indices, replacing
+                    // the do concurrent loop variable with the new one.
                     ASR::expr_t *loop_var2 =
                         dup_lp.duplicate_expr(x.m_head[0].m_v);
                     ASR::array_index_t *src_idx =
-                        al.allocate<ASR::array_index_t>(1);
-                    src_idx[0].loc = loc;
-                    src_idx[0].m_left = nullptr;
-                    src_idx[0].m_right = loop_var2;
-                    src_idx[0].m_step = nullptr;
+                        al.allocate<ASR::array_index_t>(src_ai->n_args);
+                    for (size_t ti = 0; ti < src_ai->n_args; ti++) {
+                        src_idx[ti].loc = loc;
+                        ASR::expr_t *orig_right = src_ai->m_args[ti].m_right;
+                        if (orig_right && ASR::is_a<ASR::Var_t>(*orig_right) &&
+                            ASR::down_cast<ASR::Var_t>(orig_right)->m_v == lv_sym2) {
+                            src_idx[ti].m_left = nullptr;
+                            src_idx[ti].m_right = loop_var2;
+                            src_idx[ti].m_step = nullptr;
+                        } else {
+                            src_idx[ti].m_left = src_ai->m_args[ti].m_left
+                                ? dup_lp.duplicate_expr(src_ai->m_args[ti].m_left)
+                                : nullptr;
+                            src_idx[ti].m_right = src_ai->m_args[ti].m_right
+                                ? dup_lp.duplicate_expr(src_ai->m_args[ti].m_right)
+                                : nullptr;
+                            src_idx[ti].m_step = src_ai->m_args[ti].m_step
+                                ? dup_lp.duplicate_expr(src_ai->m_args[ti].m_step)
+                                : nullptr;
+                        }
+                    }
                     ASR::expr_t *src_elem = ASRUtils::EXPR(
                         ASR::make_ArrayItem_t(al, loc,
                             ASRUtils::EXPR(ASR::make_Var_t(
                                 al, loc, src_sym)),
-                            src_idx, 1, elem_type,
+                            src_idx, src_ai->n_args, elem_type,
                             ASR::arraystorageType::ColMajor,
                             nullptr));
                     ASR::expr_t *src_member = ASRUtils::EXPR(
