@@ -8055,6 +8055,7 @@ public:
                                 ASRUtils::type_get_past_allocatable(
                                     farg->m_type);
                             if (!ASR::is_a<ASR::Pointer_t>(*ft)
+                                && !is_array_type(ft)
                                 && is_struct_type(ft)) {
                                 src << "*";
                             }
