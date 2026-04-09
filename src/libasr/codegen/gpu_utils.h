@@ -678,7 +678,238 @@ inline void scan_kernel_scope_alloc_vlas(
                 }
                 if (!struct_key.empty()) break;
             }
-            if (struct_key.empty()) continue;
+            if (struct_key.empty()) {
+                // No struct dependency. Try to resolve size from the
+                // called function's Allocate for this temp variable.
+                // Scan SubroutineCalls in the kernel body to find one
+                // that uses this temp as an argument, then check if the
+                // corresponding function parameter's Allocate depends
+                // on another parameter's ArraySize.
+                bool found_func_dep = false;
+                auto scan_for_func_dep =
+                    [&](ASR::stmt_t **stmts, size_t n,
+                        auto &&self) -> void {
+                    for (size_t si = 0; si < n; si++) {
+                        if (found_func_dep) return;
+                        if (stmts[si]->type ==
+                                ASR::stmtType::SubroutineCall) {
+                            ASR::SubroutineCall_t *sc =
+                                ASR::down_cast<ASR::SubroutineCall_t>(
+                                    stmts[si]);
+                            size_t out_idx2 = SIZE_MAX;
+                            for (size_t a = 0; a < sc->n_args; a++) {
+                                ASR::expr_t *arg_e =
+                                    sc->m_args[a].m_value;
+                                if (!arg_e) continue;
+                                if (!ASR::is_a<ASR::Var_t>(*arg_e))
+                                    continue;
+                                std::string aname =
+                                    ASRUtils::symbol_name(
+                                        ASR::down_cast<ASR::Var_t>(
+                                            arg_e)->m_v);
+                                if (aname == vname) {
+                                    out_idx2 = a;
+                                    break;
+                                }
+                            }
+                            if (out_idx2 == SIZE_MAX) continue;
+                            ASR::symbol_t *fn_sym =
+                                ASRUtils::symbol_get_past_external(
+                                    sc->m_name);
+                            if (!ASR::is_a<ASR::Function_t>(*fn_sym))
+                                continue;
+                            ASR::Function_t *fn =
+                                ASR::down_cast<ASR::Function_t>(
+                                    fn_sym);
+                            if (out_idx2 >= fn->n_args) continue;
+                            ASR::Variable_t *out_param =
+                                ASR::down_cast<ASR::Variable_t>(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        fn->m_args[out_idx2])->m_v);
+                            std::string out_pname(out_param->m_name);
+                            for (size_t fi = 0;
+                                    fi < fn->n_body; fi++) {
+                                if (fn->m_body[fi]->type !=
+                                        ASR::stmtType::Allocate)
+                                    continue;
+                                ASR::Allocate_t *al =
+                                    ASR::down_cast<
+                                        ASR::Allocate_t>(
+                                            fn->m_body[fi]);
+                                for (size_t ai2 = 0;
+                                        ai2 < al->n_args; ai2++) {
+                                    if (!al->m_args[ai2].m_a)
+                                        continue;
+                                    if (!ASR::is_a<ASR::Var_t>(
+                                            *al->m_args[ai2].m_a))
+                                        continue;
+                                    std::string av2 =
+                                        ASRUtils::symbol_name(
+                                            ASR::down_cast<
+                                                ASR::Var_t>(
+                                                    al->m_args[ai2]
+                                                    .m_a)->m_v);
+                                    if (av2 != out_pname) continue;
+                                    if (al->m_args[ai2].n_dims != 1)
+                                        continue;
+                                    ASR::expr_t *le =
+                                        al->m_args[ai2]
+                                            .m_dims[0].m_length;
+                                    if (!le) continue;
+                                    std::string src_param;
+                                    size_t src_dim = 0;
+                                    if (ASR::is_a<ASR::ArraySize_t>(
+                                            *le)) {
+                                        ASR::ArraySize_t *as2 =
+                                            ASR::down_cast<
+                                                ASR::ArraySize_t>(
+                                                    le);
+                                        if (ASR::is_a<ASR::Var_t>(
+                                                *as2->m_v)
+                                                && as2->m_dim
+                                                && ASR::is_a<ASR::IntegerConstant_t>(
+                                                    *as2->m_dim)) {
+                                            src_param =
+                                                ASRUtils::symbol_name(
+                                                    ASR::down_cast<
+                                                        ASR::Var_t>(
+                                                            as2->m_v
+                                                        )->m_v);
+                                            src_dim = ASR::down_cast<
+                                                ASR::IntegerConstant_t>(
+                                                    as2->m_dim)->m_n
+                                                - 1;
+                                        }
+                                    }
+                                    if (src_param.empty()) continue;
+                                    size_t src_idx = SIZE_MAX;
+                                    for (size_t pi = 0;
+                                            pi < fn->n_args; pi++) {
+                                        std::string pn(
+                                            ASRUtils::symbol_name(
+                                                ASR::down_cast<
+                                                    ASR::Var_t>(
+                                                        fn->m_args[pi]
+                                                    )->m_v));
+                                        if (pn == src_param) {
+                                            src_idx = pi;
+                                            break;
+                                        }
+                                    }
+                                    if (src_idx == SIZE_MAX ||
+                                            src_idx >= sc->n_args)
+                                        continue;
+                                    ASR::expr_t *src_actual =
+                                        sc->m_args[src_idx].m_value;
+                                    if (!src_actual) continue;
+                                    if (ASR::is_a<
+                                            ASR::ArrayPhysicalCast_t>(
+                                                *src_actual)) {
+                                        src_actual =
+                                            ASR::down_cast<
+                                                ASR::ArrayPhysicalCast_t>(
+                                                    src_actual)->m_arg;
+                                    }
+                                    if (!ASR::is_a<ASR::Var_t>(
+                                            *src_actual))
+                                        continue;
+                                    std::string src_arr =
+                                        ASRUtils::symbol_name(
+                                            ASR::down_cast<
+                                                ASR::Var_t>(
+                                                    src_actual)->m_v);
+                                    ASR::Array_t *arr2 =
+                                        ASR::down_cast<ASR::Array_t>(
+                                            inner);
+                                    GpuVlaWorkspace ws2;
+                                    ws2.var_name = vname;
+                                    ws2.buffer_index = buffer_idx++;
+                                    if (ASR::is_a<ASR::Real_t>(
+                                            *arr2->m_type)) {
+                                        ws2.elem_size =
+                                            ASR::down_cast<
+                                                ASR::Real_t>(
+                                                    arr2->m_type)
+                                            ->m_kind;
+                                    } else if (ASR::is_a<
+                                            ASR::Integer_t>(
+                                                *arr2->m_type)) {
+                                        ws2.elem_size =
+                                            ASR::down_cast<
+                                                ASR::Integer_t>(
+                                                    arr2->m_type)
+                                            ->m_kind;
+                                    } else {
+                                        ws2.elem_size = 4;
+                                    }
+                                    GpuVlaDim vd2;
+                                    vd2.dim_expr = nullptr;
+                                    vd2.is_constant = false;
+                                    vd2.constant_value = 0;
+                                    vd2.call_arg_index = 0;
+                                    vd2.is_array_dim_size = true;
+                                    vd2.source_array_name = src_arr;
+                                    vd2.source_dim_index = src_dim;
+                                    ws2.dims.push_back(vd2);
+                                    result.push_back(
+                                        std::move(ws2));
+                                    found_func_dep = true;
+                                    return;
+                                }
+                            }
+                        }
+                        switch (stmts[si]->type) {
+                            case ASR::stmtType::DoLoop: {
+                                ASR::DoLoop_t *dl =
+                                    ASR::down_cast<ASR::DoLoop_t>(
+                                        stmts[si]);
+                                self(dl->m_body, dl->n_body, self);
+                                break;
+                            }
+                            case ASR::stmtType::WhileLoop: {
+                                ASR::WhileLoop_t *wl =
+                                    ASR::down_cast<ASR::WhileLoop_t>(
+                                        stmts[si]);
+                                self(wl->m_body, wl->n_body, self);
+                                break;
+                            }
+                            case ASR::stmtType::If: {
+                                ASR::If_t *ifs =
+                                    ASR::down_cast<ASR::If_t>(
+                                        stmts[si]);
+                                self(ifs->m_body, ifs->n_body, self);
+                                self(ifs->m_orelse, ifs->n_orelse,
+                                    self);
+                                break;
+                            }
+                            case ASR::stmtType::AssociateBlockCall: {
+                                ASR::AssociateBlock_t *ab =
+                                    ASR::down_cast<
+                                        ASR::AssociateBlock_t>(
+                                            ASR::down_cast<
+                                                ASR::AssociateBlockCall_t>(
+                                                    stmts[si])->m_m);
+                                self(ab->m_body, ab->n_body, self);
+                                break;
+                            }
+                            case ASR::stmtType::BlockCall: {
+                                ASR::Block_t *blk =
+                                    ASR::down_cast<ASR::Block_t>(
+                                        ASR::down_cast<
+                                            ASR::BlockCall_t>(
+                                                stmts[si])->m_m);
+                                self(blk->m_body, blk->n_body, self);
+                                break;
+                            }
+                            default: break;
+                        }
+                    }
+                };
+                scan_for_func_dep(kernel.m_body, kernel.n_body,
+                    scan_for_func_dep);
+                if (found_func_dep) continue;
+                continue;
+            }
             ASR::Array_t *arr = ASR::down_cast<ASR::Array_t>(inner);
             GpuVlaWorkspace ws;
             ws.var_name = vname;
@@ -701,6 +932,101 @@ inline void scan_kernel_scope_alloc_vlas(
             vd.struct_member_key = struct_key;
             ws.dims.push_back(vd);
             result.push_back(std::move(ws));
+        }
+    }
+    // Second pass: propagate VLA workspace info through assignments.
+    // If a kernel-scope allocatable temp `a` is assigned from another
+    // temp `b` that already has a VLA workspace, give `a` the same dims.
+    {
+        std::set<std::string> ws_names;
+        for (auto &ws : result) ws_names.insert(ws.var_name);
+
+        for (auto &item : kernel.m_symtab->get_scope()) {
+            if (!ASR::is_a<ASR::Variable_t>(*item.second)) continue;
+            ASR::Variable_t *var2 =
+                ASR::down_cast<ASR::Variable_t>(item.second);
+            if (!ASRUtils::is_allocatable(var2->m_type)) continue;
+            ASR::ttype_t *inner2 =
+                ASRUtils::type_get_past_allocatable(var2->m_type);
+            if (!ASR::is_a<ASR::Array_t>(*inner2)) continue;
+            std::string vname2(var2->m_name);
+            if (arg_set.count(vname2)) continue;
+            if (ws_names.count(vname2)) continue;
+
+            // Scan kernel body for assignment vname2 = src_var
+            auto find_assign_src =
+                [&](ASR::stmt_t **stmts, size_t n,
+                    auto &&self) -> std::string {
+                for (size_t si = 0; si < n; si++) {
+                    if (stmts[si]->type == ASR::stmtType::Assignment) {
+                        ASR::Assignment_t *asgn =
+                            ASR::down_cast<ASR::Assignment_t>(
+                                stmts[si]);
+                        if (!ASR::is_a<ASR::Var_t>(*asgn->m_target))
+                            continue;
+                        std::string tname = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(
+                                asgn->m_target)->m_v);
+                        if (tname != vname2) continue;
+                        if (ASR::is_a<ASR::Var_t>(*asgn->m_value)) {
+                            return ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    asgn->m_value)->m_v);
+                        }
+                    }
+                    switch (stmts[si]->type) {
+                        case ASR::stmtType::AssociateBlockCall: {
+                            ASR::AssociateBlock_t *ab2 =
+                                ASR::down_cast<ASR::AssociateBlock_t>(
+                                    ASR::down_cast<
+                                        ASR::AssociateBlockCall_t>(
+                                            stmts[si])->m_m);
+                            auto r = self(ab2->m_body, ab2->n_body,
+                                self);
+                            if (!r.empty()) return r;
+                            break;
+                        }
+                        case ASR::stmtType::BlockCall: {
+                            ASR::Block_t *blk2 =
+                                ASR::down_cast<ASR::Block_t>(
+                                    ASR::down_cast<ASR::BlockCall_t>(
+                                        stmts[si])->m_m);
+                            auto r = self(blk2->m_body, blk2->n_body,
+                                self);
+                            if (!r.empty()) return r;
+                            break;
+                        }
+                        default: break;
+                    }
+                }
+                return "";
+            };
+            std::string src_name = find_assign_src(
+                kernel.m_body, kernel.n_body, find_assign_src);
+            if (src_name.empty() || !ws_names.count(src_name)) continue;
+
+            // Copy VLA workspace dims from the source
+            for (auto &ws_src : result) {
+                if (ws_src.var_name != src_name) continue;
+                ASR::Array_t *arr2 =
+                    ASR::down_cast<ASR::Array_t>(inner2);
+                GpuVlaWorkspace ws2;
+                ws2.var_name = vname2;
+                ws2.buffer_index = buffer_idx++;
+                if (ASR::is_a<ASR::Real_t>(*arr2->m_type)) {
+                    ws2.elem_size = ASR::down_cast<ASR::Real_t>(
+                        arr2->m_type)->m_kind;
+                } else if (ASR::is_a<ASR::Integer_t>(*arr2->m_type)) {
+                    ws2.elem_size = ASR::down_cast<ASR::Integer_t>(
+                        arr2->m_type)->m_kind;
+                } else {
+                    ws2.elem_size = 4;
+                }
+                ws2.dims = ws_src.dims;
+                result.push_back(std::move(ws2));
+                ws_names.insert(vname2);
+                break;
+            }
         }
     }
 }

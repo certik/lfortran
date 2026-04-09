@@ -457,6 +457,12 @@ public:
                             src << "__sizes_" << arr_name << "_"
                                 << mem_name << "[0]";
                             all_const = false;
+                        } else if (vla_it->dims[d].is_array_dim_size) {
+                            src << "__size_"
+                                << vla_it->dims[d].source_array_name
+                                << "_dim"
+                                << (vla_it->dims[d].source_dim_index + 1);
+                            all_const = false;
                         } else {
                             visit_expr(vla_it->dims[d].dim_expr);
                             all_const = false;
@@ -482,6 +488,11 @@ public:
                                 std::string mem_name = key.substr(dot + 1);
                                 src << "__sizes_" << arr_name << "_"
                                     << mem_name << "[0]";
+                            } else if (vla_it->dims[d].is_array_dim_size) {
+                                src << "__size_"
+                                    << vla_it->dims[d].source_array_name
+                                    << "_dim"
+                                    << (vla_it->dims[d].source_dim_index + 1);
                             } else {
                                 visit_expr(vla_it->dims[d].dim_expr);
                             }
@@ -512,6 +523,12 @@ public:
                         if (vla_it->dims[d].is_constant) {
                             src << vla_it->dims[d].constant_value;
                             total_const_size *= vla_it->dims[d].constant_value;
+                        } else if (vla_it->dims[d].is_array_dim_size) {
+                            src << "__size_"
+                                << vla_it->dims[d].source_array_name
+                                << "_dim"
+                                << (vla_it->dims[d].source_dim_index + 1);
+                            all_const = false;
                         } else {
                             visit_expr(vla_it->dims[d].dim_expr);
                             all_const = false;
@@ -529,6 +546,11 @@ public:
                             if (d > 0) src << " * ";
                             if (vla_it->dims[d].is_constant) {
                                 src << vla_it->dims[d].constant_value;
+                            } else if (vla_it->dims[d].is_array_dim_size) {
+                                src << "__size_"
+                                    << vla_it->dims[d].source_array_name
+                                    << "_dim"
+                                    << (vla_it->dims[d].source_dim_index + 1);
                             } else {
                                 visit_expr(vla_it->dims[d].dim_expr);
                             }
@@ -644,11 +666,14 @@ public:
                 std::map<size_t, std::pair<size_t, std::string>>>
                 &func_struct_deps = {},
             const std::map<std::string, std::string>
-                &struct_origin_array = {}) {
+                &struct_origin_array = {},
+            const std::map<std::string,
+                std::map<size_t, std::pair<size_t, size_t>>>
+                &func_alloc_dim_deps = {}) {
         for (size_t i = 0; i < n; i++) {
             scan_stmt_for_alloc_sizes(stmts[i], func_allocs,
                 func_param_copies, func_struct_deps,
-                struct_origin_array);
+                struct_origin_array, func_alloc_dim_deps);
             // Recurse into nested control flow
             switch (stmts[i]->type) {
                 case ASR::stmtType::WhileLoop: {
@@ -656,7 +681,8 @@ public:
                         ASR::down_cast<ASR::WhileLoop_t>(stmts[i]);
                     scan_stmts_recursive(wl->m_body, wl->n_body,
                         func_allocs, func_param_copies,
-                        func_struct_deps, struct_origin_array);
+                        func_struct_deps, struct_origin_array,
+                        func_alloc_dim_deps);
                     break;
                 }
                 case ASR::stmtType::DoLoop: {
@@ -664,7 +690,8 @@ public:
                         ASR::down_cast<ASR::DoLoop_t>(stmts[i]);
                     scan_stmts_recursive(dl->m_body, dl->n_body,
                         func_allocs, func_param_copies,
-                        func_struct_deps, struct_origin_array);
+                        func_struct_deps, struct_origin_array,
+                        func_alloc_dim_deps);
                     break;
                 }
                 case ASR::stmtType::If: {
@@ -672,10 +699,12 @@ public:
                         ASR::down_cast<ASR::If_t>(stmts[i]);
                     scan_stmts_recursive(if_s->m_body, if_s->n_body,
                         func_allocs, func_param_copies,
-                        func_struct_deps, struct_origin_array);
+                        func_struct_deps, struct_origin_array,
+                        func_alloc_dim_deps);
                     scan_stmts_recursive(if_s->m_orelse, if_s->n_orelse,
                         func_allocs, func_param_copies,
-                        func_struct_deps, struct_origin_array);
+                        func_struct_deps, struct_origin_array,
+                        func_alloc_dim_deps);
                     break;
                 }
                 case ASR::stmtType::AssociateBlockCall: {
@@ -685,7 +714,8 @@ public:
                                 stmts[i])->m_m);
                     scan_stmts_recursive(ab->m_body, ab->n_body,
                         func_allocs, func_param_copies,
-                        func_struct_deps, struct_origin_array);
+                        func_struct_deps, struct_origin_array,
+                        func_alloc_dim_deps);
                     break;
                 }
                 case ASR::stmtType::BlockCall: {
@@ -695,7 +725,8 @@ public:
                                 stmts[i])->m_m);
                     scan_stmts_recursive(block->m_body, block->n_body,
                         func_allocs, func_param_copies,
-                        func_struct_deps, struct_origin_array);
+                        func_struct_deps, struct_origin_array,
+                        func_alloc_dim_deps);
                     break;
                 }
                 default:
@@ -821,6 +852,13 @@ public:
         std::map<std::string,
             std::map<size_t, std::pair<size_t, std::string>>>
             func_struct_member_deps;
+        // Maps fn_name -> {out_param_idx -> (in_param_idx, dim_number)}
+        // for allocate(out_param(size(in_param, dim))). Used to resolve
+        // dynamic sizes at call sites by mapping to the actual argument's
+        // per-dimension size parameter.
+        std::map<std::string,
+            std::map<size_t, std::pair<size_t, size_t>>>
+            func_alloc_param_dim_deps;
         for (auto &item : kf.m_symtab->get_scope()) {
             if (!ASR::is_a<ASR::Function_t>(*item.second)) continue;
             ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(
@@ -878,7 +916,92 @@ public:
                                 alloc->m_args[ai].m_a)->m_v);
                         int64_t sz = compute_alloc_size(
                             alloc->m_args[ai]);
-                        if (sz <= 0) continue;
+                        if (sz <= 0) {
+                            // Check for allocate(v(size(param, dim)))
+                            // to track dynamic size dependencies
+                            if (alloc->m_args[ai].n_dims == 1 &&
+                                    alloc->m_args[ai].m_dims[0].m_length) {
+                                ASR::expr_t *len_expr =
+                                    alloc->m_args[ai].m_dims[0].m_length;
+                                std::string arr_param;
+                                size_t dim_num = 1;
+                                bool found = false;
+                                if (ASR::is_a<ASR::ArraySize_t>(
+                                        *len_expr)) {
+                                    ASR::ArraySize_t *as =
+                                        ASR::down_cast<
+                                            ASR::ArraySize_t>(len_expr);
+                                    if (ASR::is_a<ASR::Var_t>(
+                                            *as->m_v) && as->m_dim) {
+                                        arr_param =
+                                            ASRUtils::symbol_name(
+                                                ASR::down_cast<
+                                                    ASR::Var_t>(
+                                                        as->m_v)->m_v);
+                                        if (param_names.count(arr_param)
+                                                && ASR::is_a<
+                                                    ASR::IntegerConstant_t>(
+                                                        *as->m_dim)) {
+                                            dim_num = ASR::down_cast<
+                                                ASR::IntegerConstant_t>(
+                                                    as->m_dim)->m_n;
+                                            found = true;
+                                        }
+                                    }
+                                } else if (ASR::is_a<
+                                        ASR::IntrinsicArrayFunction_t>(
+                                            *len_expr)) {
+                                    ASR::IntrinsicArrayFunction_t *iaf =
+                                        ASR::down_cast<
+                                            ASR::IntrinsicArrayFunction_t>(
+                                                len_expr);
+                                    if (iaf->m_arr_intrinsic_id == 6
+                                            && iaf->n_args >= 2
+                                            && ASR::is_a<ASR::Var_t>(
+                                                *iaf->m_args[0])) {
+                                        arr_param =
+                                            ASRUtils::symbol_name(
+                                                ASR::down_cast<
+                                                    ASR::Var_t>(
+                                                        iaf->m_args[0]
+                                                    )->m_v);
+                                        if (param_names.count(arr_param)
+                                                && ASR::is_a<
+                                                    ASR::IntegerConstant_t>(
+                                                        *iaf->m_args[1]
+                                                    )) {
+                                            dim_num = ASR::down_cast<
+                                                ASR::IntegerConstant_t>(
+                                                    iaf->m_args[1])->m_n;
+                                            found = true;
+                                        }
+                                    }
+                                }
+                                if (found) {
+                                    size_t arr_idx = SIZE_MAX;
+                                    size_t out_idx = SIZE_MAX;
+                                    for (size_t pi = 0;
+                                            pi < fn->n_args; pi++) {
+                                        std::string pname(
+                                            ASRUtils::symbol_name(
+                                                ASR::down_cast<ASR::Var_t>(
+                                                    fn->m_args[pi]
+                                                )->m_v));
+                                        if (pname == arr_param)
+                                            arr_idx = pi;
+                                        if (pname == alloc_var)
+                                            out_idx = pi;
+                                    }
+                                    if (arr_idx != SIZE_MAX &&
+                                            out_idx != SIZE_MAX) {
+                                        func_alloc_param_dim_deps
+                                            [fn_name][out_idx] =
+                                            {arr_idx, dim_num};
+                                    }
+                                }
+                            }
+                            continue;
+                        }
                         for (size_t pi = 0; pi < fn->n_args; pi++) {
                             ASR::Variable_t *pv =
                                 ASR::down_cast<ASR::Variable_t>(
@@ -1077,7 +1200,7 @@ public:
         // (including inside WhileLoops, DoLoops, If blocks)
         scan_stmts_recursive(kf.m_body, kf.n_body, func_allocs,
             func_param_copies, func_struct_member_deps,
-            struct_origin_array);
+            struct_origin_array, func_alloc_param_dim_deps);
         // Step 4: Scan blocks in kernel body for the same
         for (size_t bi = 0; bi < kf.n_body; bi++) {
             if (kf.m_body[bi]->type == ASR::stmtType::BlockCall) {
@@ -1086,7 +1209,8 @@ public:
                         kf.m_body[bi])->m_m);
                 scan_stmts_recursive(block->m_body, block->n_body,
                     func_allocs, func_param_copies,
-                    func_struct_member_deps, struct_origin_array);
+                    func_struct_member_deps, struct_origin_array,
+                    func_alloc_param_dim_deps);
             } else if (kf.m_body[bi]->type ==
                     ASR::stmtType::AssociateBlockCall) {
                 ASR::AssociateBlock_t *ab =
@@ -1095,7 +1219,8 @@ public:
                             kf.m_body[bi])->m_m);
                 scan_stmts_recursive(ab->m_body, ab->n_body,
                     func_allocs, func_param_copies,
-                    func_struct_member_deps, struct_origin_array);
+                    func_struct_member_deps, struct_origin_array,
+                    func_alloc_param_dim_deps);
             }
         }
         // Step 5: Propagate sizes through assignments
@@ -1134,7 +1259,10 @@ public:
                 std::map<size_t, std::pair<size_t, std::string>>>
                 &func_struct_deps = {},
             const std::map<std::string, std::string>
-                &struct_origin_array = {}) {
+                &struct_origin_array = {},
+            const std::map<std::string,
+                std::map<size_t, std::pair<size_t, size_t>>>
+                &func_alloc_dim_deps = {}) {
         if (stmt->type == ASR::stmtType::SubroutineCall) {
             ASR::SubroutineCall_t *sc =
                 ASR::down_cast<ASR::SubroutineCall_t>(stmt);
@@ -1273,6 +1401,53 @@ public:
                                 "__size_" + sname + "_" + mem_name;
                             alloc_array_size_exprs[out_name] =
                                 size_key;
+                        }
+                    }
+                }
+            }
+            // allocate(out_param(size(in_param, dim))): resolve
+            // the size from the actual in arg's size parameter.
+            auto dit = func_alloc_dim_deps.find(fn_name);
+            if (dit != func_alloc_dim_deps.end()) {
+                for (auto &[out_idx, dep] : dit->second) {
+                    size_t in_idx = dep.first;
+                    size_t dim_num = dep.second;
+                    if (out_idx >= sc->n_args ||
+                            in_idx >= sc->n_args) continue;
+                    ASR::expr_t *out_actual =
+                        sc->m_args[out_idx].m_value;
+                    ASR::expr_t *in_actual =
+                        sc->m_args[in_idx].m_value;
+                    if (!out_actual || !in_actual) continue;
+                    if (!ASR::is_a<ASR::Var_t>(*out_actual)) continue;
+                    std::string out_name = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(out_actual)->m_v);
+                    if (alloc_array_sizes.count(out_name) ||
+                            alloc_array_size_exprs.count(out_name))
+                        continue;
+                    if (ASR::is_a<ASR::Var_t>(*in_actual)) {
+                        std::string in_name = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(
+                                in_actual)->m_v);
+                        std::string size_expr =
+                            "__size_" + in_name + "_dim"
+                            + std::to_string(dim_num);
+                        alloc_array_size_exprs[out_name] = size_expr;
+                    } else if (ASR::is_a<ASR::ArrayPhysicalCast_t>(
+                            *in_actual)) {
+                        ASR::expr_t *inner =
+                            ASR::down_cast<ASR::ArrayPhysicalCast_t>(
+                                in_actual)->m_arg;
+                        if (ASR::is_a<ASR::Var_t>(*inner)) {
+                            std::string in_name =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        inner)->m_v);
+                            std::string size_expr =
+                                "__size_" + in_name + "_dim"
+                                + std::to_string(dim_num);
+                            alloc_array_size_exprs[out_name] =
+                                size_expr;
                         }
                     }
                 }
@@ -6166,6 +6341,35 @@ public:
                     src << "[__copy_i] = ";
                     visit_expr(a->m_value);
                     src << "[__copy_i];\n";
+                } else if (target_is_func_array_param && !rhs_is_array_or_alloc) {
+                    // Scalar broadcast to an array function parameter
+                    // (thread T*): v = 1.0 where v is an out array param.
+                    // Generate element-wise assignment using the size param.
+                    std::string tname = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(a->m_target)->m_v);
+                    auto sit = func_array_size_params.find(tname);
+                    auto asit = alloc_array_sizes.find(tname);
+                    if (asit != alloc_array_sizes.end() && asit->second > 1) {
+                        for (int64_t ei = 0; ei < asit->second; ei++) {
+                            visit_expr(a->m_target);
+                            src << "[" << ei << "] = ";
+                            visit_expr(a->m_value);
+                            src << ";\n";
+                            if (ei + 1 < asit->second) src << get_indent();
+                        }
+                    } else if (sit != func_array_size_params.end()) {
+                        src << "for (int __ei = 0; __ei < "
+                            << sit->second << "; __ei++) ";
+                        visit_expr(a->m_target);
+                        src << "[__ei] = ";
+                        visit_expr(a->m_value);
+                        src << ";\n";
+                    } else {
+                        visit_expr(a->m_target);
+                        src << "[0] = ";
+                        visit_expr(a->m_value);
+                        src << ";\n";
+                    }
                 } else if (target_is_array_buffer) {
                     // Compute the fixed size of the target array
                     int64_t fixed_sz = 1;
