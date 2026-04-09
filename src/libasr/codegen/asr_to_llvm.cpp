@@ -20112,6 +20112,56 @@ public:
                                         // Size determined at runtime from
                                         // another struct member (e.g.,
                                         // b(i)%v sized from a(i)%v).
+                                        // Check if descriptor is already
+                                        // allocated (e.g., by pre-launch
+                                        // pre-allocation). If so, read
+                                        // its actual size. Otherwise,
+                                        // use the runtime source size.
+                                        llvm::Value *dp_pti_rs =
+                                            builder->CreatePtrToInt(
+                                                dp, i64);
+                                        llvm::Value *dp_nonnull_rs =
+                                            builder->CreateICmpNE(
+                                                dp_pti_rs,
+                                                llvm::ConstantInt::get(
+                                                    i64, 0));
+                                        llvm::Function *cur_fn_rs =
+                                            builder->GetInsertBlock()
+                                                ->getParent();
+                                        llvm::BasicBlock *bb_pre_rs =
+                                            llvm::BasicBlock::Create(
+                                                context,
+                                                "rts.preallocd",
+                                                cur_fn_rs);
+                                        llvm::BasicBlock *bb_fresh_rs =
+                                            llvm::BasicBlock::Create(
+                                                context, "rts.fresh",
+                                                cur_fn_rs);
+                                        llvm::BasicBlock *bb_mrg_rs =
+                                            llvm::BasicBlock::Create(
+                                                context, "rts.merge",
+                                                cur_fn_rs);
+                                        builder->CreateCondBr(
+                                            dp_nonnull_rs, bb_pre_rs,
+                                            bb_fresh_rs);
+                                        // Pre-allocated path: read size
+                                        // from existing descriptor
+                                        builder->SetInsertPoint(
+                                            bb_pre_rs);
+                                        llvm::Value *pre_ne_rs =
+                                            arr_descr->get_array_size(
+                                                desc_type, dp,
+                                                nullptr, 4);
+                                        llvm::Value *pre_ne64_rs =
+                                            builder->CreateSExtOrTrunc(
+                                                pre_ne_rs, i64);
+                                        llvm::BasicBlock *bb_pre_rs_end =
+                                            builder->GetInsertBlock();
+                                        builder->CreateBr(bb_mrg_rs);
+                                        // Fresh path: use runtime source
+                                        // size or create new descriptor
+                                        builder->SetInsertPoint(
+                                            bb_fresh_rs);
                                         auto sit =
                                             struct_member_first_sizes
                                                 .find(runtime_src_key);
@@ -20127,7 +20177,6 @@ public:
                                                 llvm::ConstantInt::get(
                                                     i64, 1);
                                         }
-                                        szs.push_back(ne64);
                                         llvm::DataLayout dl(
                                             module.get());
                                         uint64_t desc_sz =
@@ -20211,7 +20260,27 @@ public:
                                                 llvm::Type::getInt64Ty(
                                                     context), 1),
                                             stride_ptr);
-                                        dps.push_back(new_dp);
+                                        llvm::BasicBlock *bb_fresh_rs_end =
+                                            builder->GetInsertBlock();
+                                        builder->CreateBr(bb_mrg_rs);
+                                        // Merge
+                                        builder->SetInsertPoint(
+                                            bb_mrg_rs);
+                                        llvm::PHINode *phi_sz_rs =
+                                            builder->CreatePHI(i64, 2);
+                                        phi_sz_rs->addIncoming(
+                                            pre_ne64_rs, bb_pre_rs_end);
+                                        phi_sz_rs->addIncoming(
+                                            ne64, bb_fresh_rs_end);
+                                        llvm::PHINode *phi_dp_rs =
+                                            builder->CreatePHI(
+                                                i8_ptr, 2);
+                                        phi_dp_rs->addIncoming(
+                                            raw, bb_pre_rs_end);
+                                        phi_dp_rs->addIncoming(
+                                            new_dp, bb_fresh_rs_end);
+                                        szs.push_back(phi_sz_rs);
+                                        dps.push_back(phi_dp_rs);
                                     } else {
                                         // Check if descriptor pointer
                                         // is null (unallocated member).
