@@ -188,6 +188,13 @@ public:
     // Used by emit_struct_member_data_ptrs/sizes to offset into flat buffers.
     std::map<std::string, std::pair<std::string, std::string>> struct_from_array_elem;
 
+    // Tracks FSA-of-struct temp variables populated from a device
+    // struct array element (temp[idx]=src[i]).  Maps temp_fsa_name
+    // -> source_device_array_name.  Used by the nested-member deep
+    // copy to read data directly from the source companion buffers
+    // instead of the undersized thread-local temp buffer.
+    std::map<std::string, std::string> fsa_temp_source_array;
+
     // Tracks local pointer variables that are aliases into an
     // array-of-struct (via Associate with ArraySection).
     // Maps ptr_name -> base_array_name. Used by the elemental call
@@ -5301,6 +5308,37 @@ public:
                     }
                 }
 
+                // Track FSA temp populated from device struct array:
+                // ArrayItem(Var(temp_fsa)) = ArrayItem(Var(src_arr))
+                if (ASR::is_a<ASR::ArrayItem_t>(*a->m_target) &&
+                        ASR::is_a<ASR::ArrayItem_t>(*a->m_value)) {
+                    ASR::ArrayItem_t *tai2 =
+                        ASR::down_cast<ASR::ArrayItem_t>(a->m_target);
+                    ASR::ArrayItem_t *vai2 =
+                        ASR::down_cast<ASR::ArrayItem_t>(a->m_value);
+                    if (ASR::is_a<ASR::Var_t>(*tai2->m_v) &&
+                            ASR::is_a<ASR::Var_t>(*vai2->m_v)) {
+                        std::string tgt_n = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(
+                                tai2->m_v)->m_v);
+                        std::string val_n = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(
+                                vai2->m_v)->m_v);
+                        ASR::ttype_t *tgt_t =
+                            ASRUtils::expr_type(tai2->m_v);
+                        ASR::ttype_t *val_t =
+                            ASRUtils::expr_type(vai2->m_v);
+                        if (is_struct_type(tgt_t) &&
+                                is_array_type(tgt_t) &&
+                                is_struct_type(val_t) &&
+                                is_array_type(val_t) &&
+                                kernel_arg_names.count(val_n) > 0 &&
+                                kernel_arg_names.count(tgt_n) == 0) {
+                            fsa_temp_source_array[tgt_n] = val_n;
+                        }
+                    }
+                }
+
                 // Track pointer aliases: when a local pointer is
                 // assigned from a variable whose array size is known
                 // (e.g. temp = assumed_shape_param), propagate size
@@ -6170,6 +6208,386 @@ public:
                                         << "[__off] = ";
                                     visit_expr(a->m_value);
                                     src << "[0];\n";
+                                }
+                                // Deep-copy nested allocatable members
+                                // from the source device buffer (or
+                                // local temp) to the device destination
+                                // buffer. The struct copies above only
+                                // copy the placeholder handle; the
+                                // actual allocatable data lives in
+                                // separate flat buffers and must be
+                                // propagated explicitly.
+                                {
+                                    ASR::symbol_t *mem_sym_r =
+                                        ASRUtils::symbol_get_past_external(
+                                            sm->m_m);
+                                    ASR::Struct_t *elem_st = nullptr;
+                                    if (ASR::is_a<ASR::Variable_t>(
+                                            *mem_sym_r)) {
+                                        ASR::Variable_t *mv2 =
+                                            ASR::down_cast<
+                                                ASR::Variable_t>(
+                                                    mem_sym_r);
+                                        elem_st = get_struct_decl(mv2);
+                                    }
+                                    std::string rhs_var_name;
+                                    if (ASR::is_a<ASR::Var_t>(
+                                            *a->m_value)) {
+                                        rhs_var_name =
+                                            ASRUtils::symbol_name(
+                                                ASR::down_cast<
+                                                    ASR::Var_t>(
+                                                        a->m_value)
+                                                    ->m_v);
+                                    }
+                                    // Check if the RHS temp was
+                                    // populated from a device struct
+                                    // array (temp[idx]=src[i]). If so,
+                                    // read nested member data directly
+                                    // from the source's companion
+                                    // buffers using the same index as
+                                    // the destination.
+                                    std::string orig_src;
+                                    auto fsa_it =
+                                        fsa_temp_source_array.find(
+                                            rhs_var_name);
+                                    if (fsa_it !=
+                                            fsa_temp_source_array.end())
+                                        orig_src = fsa_it->second;
+                                    if (elem_st &&
+                                        struct_has_allocatable_members(
+                                            elem_st) &&
+                                        !rhs_var_name.empty()) {
+                                        std::vector<NestedAllocMember>
+                                            nested;
+                                        collect_nested_alloc_members(
+                                            elem_st, "", {}, nested);
+                                        for (auto &nam : nested) {
+                                            std::string tgt_nk =
+                                                sname + "_" + mem_name
+                                                + "." + nam.suffix;
+                                            auto tnd =
+                                                func_array_data_params
+                                                    .find(tgt_nk);
+                                            auto tno =
+                                                struct_array_offset_params
+                                                    .find(tgt_nk);
+                                            auto tns =
+                                                struct_array_sizes_params
+                                                    .find(tgt_nk);
+                                            if (tnd ==
+                                                func_array_data_params
+                                                    .end() ||
+                                                tno ==
+                                                struct_array_offset_params
+                                                    .end() ||
+                                                tns ==
+                                                struct_array_sizes_params
+                                                    .end())
+                                                continue;
+                                            // When the original source
+                                            // is known, read directly
+                                            // from it instead of the
+                                            // local temp buffer.
+                                            if (!orig_src.empty()) {
+                                                std::string src_nk =
+                                                    orig_src + "."
+                                                    + nam.suffix;
+                                                auto snd =
+                                                    func_array_data_params
+                                                        .find(src_nk);
+                                                auto sno =
+                                                    struct_array_offset_params
+                                                        .find(src_nk);
+                                                auto sns =
+                                                    struct_array_sizes_params
+                                                        .find(src_nk);
+                                                if (snd !=
+                                                    func_array_data_params
+                                                        .end() &&
+                                                    sno !=
+                                                    struct_array_offset_params
+                                                        .end() &&
+                                                    sns !=
+                                                    struct_array_sizes_params
+                                                        .end()) {
+                                                    if (rhs_fixed_sz > 0) {
+                                                        for (int64_t ei = 0;
+                                                            ei < rhs_fixed_sz;
+                                                            ei++) {
+                                                            src << get_indent()
+                                                                << "{\n";
+                                                            indent_level++;
+                                                            src << get_indent()
+                                                                << "int __src_off = "
+                                                                << sno->second
+                                                                << "["
+                                                                << idx_ss.str()
+                                                                << "];\n";
+                                                            src << get_indent()
+                                                                << "int __n = "
+                                                                << sns->second
+                                                                << "["
+                                                                << idx_ss.str()
+                                                                << "];\n";
+                                                            src << get_indent()
+                                                                << "int __dst_off = "
+                                                                << tno->second
+                                                                << "[__off + "
+                                                                << ei
+                                                                << "];\n";
+                                                            src << get_indent()
+                                                                << tns->second
+                                                                << "[__off + "
+                                                                << ei
+                                                                << "] = __n;\n";
+                                                            src << get_indent()
+                                                                << "for (int __ci = 0;"
+                                                                << " __ci < __n;"
+                                                                << " __ci++) {\n";
+                                                            indent_level++;
+                                                            src << get_indent()
+                                                                << tnd->second
+                                                                << "[__dst_off + __ci] = "
+                                                                << snd->second
+                                                                << "[__src_off + __ci];\n";
+                                                            indent_level--;
+                                                            src << get_indent()
+                                                                << "}\n";
+                                                            indent_level--;
+                                                            src << get_indent()
+                                                                << "}\n";
+                                                        }
+                                                    } else if (
+                                                        !rhs_runtime_size
+                                                            .empty()) {
+                                                        src << get_indent()
+                                                            << "for (int __ne = 0;"
+                                                            << " __ne < "
+                                                            << rhs_runtime_size
+                                                            << "; __ne++) {\n";
+                                                        indent_level++;
+                                                        src << get_indent()
+                                                            << "int __src_off = "
+                                                            << sno->second
+                                                            << "["
+                                                            << idx_ss.str()
+                                                            << "];\n";
+                                                        src << get_indent()
+                                                            << "int __n = "
+                                                            << sns->second
+                                                            << "["
+                                                            << idx_ss.str()
+                                                            << "];\n";
+                                                        src << get_indent()
+                                                            << "int __dst_off = "
+                                                            << tno->second
+                                                            << "[__off + __ne];\n";
+                                                        src << get_indent()
+                                                            << tns->second
+                                                            << "[__off + __ne] = __n;\n";
+                                                        src << get_indent()
+                                                            << "for (int __ci = 0;"
+                                                            << " __ci < __n;"
+                                                            << " __ci++) {\n";
+                                                        indent_level++;
+                                                        src << get_indent()
+                                                            << tnd->second
+                                                            << "[__dst_off + __ci] = "
+                                                            << snd->second
+                                                            << "[__src_off + __ci];\n";
+                                                        indent_level--;
+                                                        src << get_indent()
+                                                            << "}\n";
+                                                        indent_level--;
+                                                        src << get_indent()
+                                                            << "}\n";
+                                                    } else {
+                                                        src << get_indent()
+                                                            << "{\n";
+                                                        indent_level++;
+                                                        src << get_indent()
+                                                            << "int __src_off = "
+                                                            << sno->second
+                                                            << "["
+                                                            << idx_ss.str()
+                                                            << "];\n";
+                                                        src << get_indent()
+                                                            << "int __n = "
+                                                            << sns->second
+                                                            << "["
+                                                            << idx_ss.str()
+                                                            << "];\n";
+                                                        src << get_indent()
+                                                            << "int __dst_off = "
+                                                            << tno->second
+                                                            << "[__off];\n";
+                                                        src << get_indent()
+                                                            << tns->second
+                                                            << "[__off] = __n;\n";
+                                                        src << get_indent()
+                                                            << "for (int __ci = 0;"
+                                                            << " __ci < __n;"
+                                                            << " __ci++) {\n";
+                                                        indent_level++;
+                                                        src << get_indent()
+                                                            << tnd->second
+                                                            << "[__dst_off + __ci] = "
+                                                            << snd->second
+                                                            << "[__src_off + __ci];\n";
+                                                        indent_level--;
+                                                        src << get_indent()
+                                                            << "}\n";
+                                                        indent_level--;
+                                                        src << get_indent()
+                                                            << "}\n";
+                                                    }
+                                                    continue;
+                                                }
+                                            }
+                                            // Fallback: read from the
+                                            // local temp buffer.
+                                            std::string val_nk =
+                                                rhs_var_name + "."
+                                                + nam.suffix;
+                                            auto vnd =
+                                                func_array_data_params
+                                                    .find(val_nk);
+                                            auto vns =
+                                                func_array_size_params
+                                                    .find(val_nk);
+                                            if (vnd ==
+                                                func_array_data_params
+                                                    .end() ||
+                                                vns ==
+                                                func_array_size_params
+                                                    .end())
+                                                continue;
+                                            int64_t buf_sz = 1;
+                                            auto bsit =
+                                                func_array_data_sizes
+                                                    .find(val_nk);
+                                            if (bsit !=
+                                                func_array_data_sizes
+                                                    .end())
+                                                buf_sz = bsit->second;
+                                            if (rhs_fixed_sz > 0) {
+                                                for (int64_t ei = 0;
+                                                    ei < rhs_fixed_sz;
+                                                    ei++) {
+                                                    src << get_indent()
+                                                        << "{\n";
+                                                    indent_level++;
+                                                    src << get_indent()
+                                                        << "int __src_off = "
+                                                        << ei << " * "
+                                                        << buf_sz
+                                                        << ";\n";
+                                                    src << get_indent()
+                                                        << "int __n = "
+                                                        << vns->second
+                                                        << ";\n";
+                                                    src << get_indent()
+                                                        << "int __dst_off = "
+                                                        << tno->second
+                                                        << "[__off + "
+                                                        << ei << "];\n";
+                                                    src << get_indent()
+                                                        << tns->second
+                                                        << "[__off + "
+                                                        << ei
+                                                        << "] = __n;\n";
+                                                    src << get_indent()
+                                                        << "for (int __ci = 0;"
+                                                        << " __ci < __n;"
+                                                        << " __ci++) {\n";
+                                                    indent_level++;
+                                                    src << get_indent()
+                                                        << tnd->second
+                                                        << "[__dst_off + __ci] = "
+                                                        << vnd->second
+                                                        << "[__src_off + __ci];\n";
+                                                    indent_level--;
+                                                    src << get_indent()
+                                                        << "}\n";
+                                                    indent_level--;
+                                                    src << get_indent()
+                                                        << "}\n";
+                                                }
+                                            } else if (
+                                                !rhs_runtime_size
+                                                    .empty()) {
+                                                src << get_indent()
+                                                    << "for (int __ne = 0;"
+                                                    << " __ne < "
+                                                    << rhs_runtime_size
+                                                    << "; __ne++) {\n";
+                                                indent_level++;
+                                                src << get_indent()
+                                                    << "int __src_off = "
+                                                    << "__ne * "
+                                                    << buf_sz << ";\n";
+                                                src << get_indent()
+                                                    << "int __n = "
+                                                    << vns->second
+                                                    << ";\n";
+                                                src << get_indent()
+                                                    << "int __dst_off = "
+                                                    << tno->second
+                                                    << "[__off + __ne];\n";
+                                                src << get_indent()
+                                                    << tns->second
+                                                    << "[__off + __ne] = __n;\n";
+                                                src << get_indent()
+                                                    << "for (int __ci = 0;"
+                                                    << " __ci < __n;"
+                                                    << " __ci++) {\n";
+                                                indent_level++;
+                                                src << get_indent()
+                                                    << tnd->second
+                                                    << "[__dst_off + __ci] = "
+                                                    << vnd->second
+                                                    << "[__src_off + __ci];\n";
+                                                indent_level--;
+                                                src << get_indent()
+                                                    << "}\n";
+                                                indent_level--;
+                                                src << get_indent()
+                                                    << "}\n";
+                                            } else {
+                                                src << get_indent()
+                                                    << "{\n";
+                                                indent_level++;
+                                                src << get_indent()
+                                                    << "int __n = "
+                                                    << vns->second
+                                                    << ";\n";
+                                                src << get_indent()
+                                                    << "int __dst_off = "
+                                                    << tno->second
+                                                    << "[__off];\n";
+                                                src << get_indent()
+                                                    << tns->second
+                                                    << "[__off] = __n;\n";
+                                                src << get_indent()
+                                                    << "for (int __ci = 0;"
+                                                    << " __ci < __n;"
+                                                    << " __ci++) {\n";
+                                                indent_level++;
+                                                src << get_indent()
+                                                    << tnd->second
+                                                    << "[__dst_off + __ci] = "
+                                                    << vnd->second
+                                                    << "[__ci];\n";
+                                                indent_level--;
+                                                src << get_indent()
+                                                    << "}\n";
+                                                indent_level--;
+                                                src << get_indent()
+                                                    << "}\n";
+                                            }
+                                        }
+                                    }
                                 }
                                 indent_level--;
                                 src << get_indent() << "}\n";
