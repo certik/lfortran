@@ -380,6 +380,10 @@ public:
                 ASR::Allocatable_t *alloc = ASR::down_cast<ASR::Allocatable_t>(type);
                 return metal_type(alloc->m_type);
             }
+            case ASR::ttypeType::Pointer: {
+                ASR::Pointer_t *ptr = ASR::down_cast<ASR::Pointer_t>(type);
+                return metal_type(ptr->m_type);
+            }
             case ASR::ttypeType::StructType: {
                 return "/* unsupported struct type */";
             }
