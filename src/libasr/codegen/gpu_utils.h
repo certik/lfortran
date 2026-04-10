@@ -1426,6 +1426,31 @@ inline std::vector<GpuVlaWorkspace> analyze_gpu_vla_workspaces(
                             break;
                         }
                     }
+                } else if (dim && ASR::is_a<ASR::ArraySize_t>(*dim)) {
+                    ASR::ArraySize_t *as =
+                        ASR::down_cast<ASR::ArraySize_t>(dim);
+                    if (ASR::is_a<ASR::Var_t>(*as->m_v) && as->m_dim) {
+                        std::string src_name = ASRUtils::symbol_name(
+                            ASR::down_cast<ASR::Var_t>(
+                                as->m_v)->m_v);
+                        int dim_index = 0;
+                        if (ASR::is_a<ASR::IntegerConstant_t>(
+                                *as->m_dim)) {
+                            dim_index =
+                                ASR::down_cast<ASR::IntegerConstant_t>(
+                                    as->m_dim)->m_n - 1;
+                        }
+                        vd.is_constant = false;
+                        vd.constant_value = 0;
+                        vd.call_arg_index = 0;
+                        vd.is_array_dim_size = true;
+                        vd.source_array_name = src_name;
+                        vd.source_dim_index = dim_index;
+                    } else {
+                        vd.is_constant = true;
+                        vd.constant_value = 1;
+                        vd.call_arg_index = 0;
+                    }
                 } else {
                     vd.is_constant = true;
                     vd.constant_value = 1;

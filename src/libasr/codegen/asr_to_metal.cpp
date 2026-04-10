@@ -10057,6 +10057,23 @@ public:
                 } else if (ASR::is_a<ASR::Var_t>(*as->m_v)) {
                     std::string arr_name = ASRUtils::symbol_name(
                         ASR::down_cast<ASR::Var_t>(as->m_v)->m_v);
+                    // When a specific dimension is requested, try
+                    // the per-dimension key first
+                    if (as->m_dim &&
+                            ASR::is_a<ASR::IntegerConstant_t>(
+                                *as->m_dim)) {
+                        int dim_idx =
+                            ASR::down_cast<ASR::IntegerConstant_t>(
+                                as->m_dim)->m_n;
+                        std::string dim_key = arr_name + "__dim"
+                            + std::to_string(dim_idx);
+                        auto dit =
+                            func_array_size_params.find(dim_key);
+                        if (dit != func_array_size_params.end()) {
+                            src << dit->second;
+                            break;
+                        }
+                    }
                     auto it = func_array_size_params.find(arr_name);
                     if (it != func_array_size_params.end()) {
                         src << it->second;
