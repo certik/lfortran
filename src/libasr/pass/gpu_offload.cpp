@@ -6054,6 +6054,91 @@ public:
                 carg.loc = loc;
                 carg.m_value = host_size;
                 call_args.push_back(al, carg);
+
+                // For multi-dimensional arrays, also add per-dimension
+                // extent (__dim_) and lower-bound (__lb_) parameters so
+                // the Metal codegen can compute correct linearized indices.
+                ASR::ttype_t *mem_inner =
+                    ASRUtils::type_get_past_allocatable(nm.var->m_type);
+                if (ASR::is_a<ASR::Array_t>(*mem_inner)) {
+                    ASR::Array_t *mem_arr =
+                        ASR::down_cast<ASR::Array_t>(mem_inner);
+                    if (mem_arr->n_dims > 1) {
+                        for (size_t d = 0; d < mem_arr->n_dims; d++) {
+                            std::string dim_name = "__dim_" + sym_name
+                                + "_" + nm.suffix + "_"
+                                + std::to_string(d);
+                            ASR::symbol_t *dim_sym =
+                                ASR::down_cast<ASR::symbol_t>(
+                                    ASRUtils::make_Variable_t_util(
+                                        al, loc, kernel_scope,
+                                        s2c(al, dim_name),
+                                        nullptr, 0,
+                                        ASR::intentType::InOut,
+                                        nullptr, nullptr,
+                                        ASR::storage_typeType::Default,
+                                        ASRUtils::duplicate_type(
+                                            al, int_type_sz),
+                                        nullptr, ASR::abiType::Source,
+                                        ASR::accessType::Public,
+                                        ASR::presenceType::Required,
+                                        false));
+                            kernel_scope->add_symbol(dim_name, dim_sym);
+                            kernel_args.push_back(al,
+                                ASRUtils::EXPR(ASR::make_Var_t(
+                                    al, loc, dim_sym)));
+                            ASR::expr_t *dim_expr = ASRUtils::EXPR(
+                                ASR::make_IntegerConstant_t(al, loc,
+                                    (int64_t)(d + 1), int_type_sz,
+                                    ASR::integerbozType::Decimal));
+                            ASR::expr_t *host_dim_size = ASRUtils::EXPR(
+                                ASR::make_ArraySize_t(al, loc,
+                                    host_member, dim_expr,
+                                    int_type_sz, nullptr));
+                            ASR::call_arg_t dim_carg;
+                            dim_carg.loc = loc;
+                            dim_carg.m_value = host_dim_size;
+                            call_args.push_back(al, dim_carg);
+
+                            std::string lb_name = "__lb_" + sym_name
+                                + "_" + nm.suffix + "_"
+                                + std::to_string(d);
+                            ASR::symbol_t *lb_sym =
+                                ASR::down_cast<ASR::symbol_t>(
+                                    ASRUtils::make_Variable_t_util(
+                                        al, loc, kernel_scope,
+                                        s2c(al, lb_name),
+                                        nullptr, 0,
+                                        ASR::intentType::InOut,
+                                        nullptr, nullptr,
+                                        ASR::storage_typeType::Default,
+                                        ASRUtils::duplicate_type(
+                                            al, int_type_sz),
+                                        nullptr, ASR::abiType::Source,
+                                        ASR::accessType::Public,
+                                        ASR::presenceType::Required,
+                                        false));
+                            kernel_scope->add_symbol(lb_name, lb_sym);
+                            kernel_args.push_back(al,
+                                ASRUtils::EXPR(ASR::make_Var_t(
+                                    al, loc, lb_sym)));
+                            ASR::expr_t *lb_dim_expr = ASRUtils::EXPR(
+                                ASR::make_IntegerConstant_t(al, loc,
+                                    (int64_t)(d + 1), int_type_sz,
+                                    ASR::integerbozType::Decimal));
+                            ASR::expr_t *host_lb = ASRUtils::EXPR(
+                                ASR::make_ArrayBound_t(al, loc,
+                                    host_member, lb_dim_expr,
+                                    int_type_sz,
+                                    ASR::arrayboundType::LBound,
+                                    nullptr));
+                            ASR::call_arg_t lb_carg;
+                            lb_carg.loc = loc;
+                            lb_carg.m_value = host_lb;
+                            call_args.push_back(al, lb_carg);
+                        }
+                    }
+                }
             }
         }
 

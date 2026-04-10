@@ -10144,6 +10144,22 @@ public:
             arr_var_name = ASRUtils::symbol_name(
                 ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
         }
+        // For struct member arrays (StructInstanceMember), build a prefix
+        // for per-dimension __dim_/__lb_ parameters passed by the GPU pass.
+        std::string struct_dim_prefix;
+        if (arr_var_name.empty() &&
+                ASR::is_a<ASR::StructInstanceMember_t>(*ai->m_v)) {
+            ASR::StructInstanceMember_t *sm =
+                ASR::down_cast<ASR::StructInstanceMember_t>(ai->m_v);
+            std::string member_suffix;
+            ASR::expr_t *root =
+                resolve_nested_struct_member_path(sm, member_suffix);
+            if (ASR::is_a<ASR::Var_t>(*root)) {
+                std::string struct_name = ASRUtils::symbol_name(
+                    ASR::down_cast<ASR::Var_t>(root)->m_v);
+                struct_dim_prefix = struct_name + "_" + member_suffix;
+            }
+        }
         bool first = true;
         std::string stride = "1";
         for (size_t d = 0; d < ai->n_args; d++) {
@@ -10153,6 +10169,10 @@ public:
             if (!first) src << " + ";
             first = false;
             std::string lb = get_lower_bound_str(arr, d);
+            if (lb == "1" && !struct_dim_prefix.empty()) {
+                lb = "__lb_" + struct_dim_prefix + "_"
+                    + std::to_string(d);
+            }
             if (stride == "1") {
                 src << "((int)(";
                 visit_expr(idx);
@@ -10177,6 +10197,9 @@ public:
                 } else if (!arr_var_name.empty()) {
                     len_str = "__size_" + arr_var_name + "_dim"
                         + std::to_string(d + 1);
+                } else if (!struct_dim_prefix.empty()) {
+                    len_str = "__dim_" + struct_dim_prefix + "_"
+                        + std::to_string(d);
                 }
                 if (stride == "1") {
                     stride = len_str;

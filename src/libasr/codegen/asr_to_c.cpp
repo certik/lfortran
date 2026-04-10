@@ -821,6 +821,9 @@ R"(
         // and then define them in the right order
         std::vector<std::string> func_order = ASRUtils::determine_function_definition_order(x.m_symtab);
 
+        SymbolTable* current_scope_copy = current_scope;
+        current_scope = x.m_symtab;
+
         // Generate code for nested subroutines and functions first:
         std::string contains;
         for (auto &item : func_order) {
@@ -918,6 +921,7 @@ R"(    // Initialise Numpy
                 + decl + body
                 + indent1 + "return 0;\n}\n";
         indentation_level -= 2;
+        current_scope = current_scope_copy;
     }
 
     template <typename T>
