@@ -86,13 +86,17 @@ public:
                     return;
                 }
             }
-            // Skip variables local to AssociateBlock scopes — they are
-            // internal aliases that stay in the AssociateBlock's symtab
+            // Skip array variables local to AssociateBlock scopes — they
+            // are resolved to their targets by AssociateVarResolver.
+            // Scalar associates are NOT resolved (they become direct
+            // kernel parameters) so they must be collected here.
             if (var->m_parent_symtab->asr_owner &&
                 ASR::is_a<ASR::AssociateBlock_t>(
                     *ASR::down_cast<ASR::symbol_t>(
                         var->m_parent_symtab->asr_owner))) {
-                return;
+                if (ASRUtils::is_array(var->m_type)) {
+                    return;
+                }
             }
         }
         std::string name = ASRUtils::symbol_name(x.m_v);
@@ -4817,6 +4821,15 @@ public:
                         if (is_a<ASR::Var_t>(*assoc->m_target)) {
                             ASR::symbol_t *assoc_sym =
                                 down_cast<ASR::Var_t>(assoc->m_target)->m_v;
+                            // Scalar associate variables become direct
+                            // kernel parameters instead of being resolved
+                            // to their target expressions. This avoids
+                            // pulling arrays into the kernel that are
+                            // only used for metadata (e.g., size(arr)).
+                            if (!ASRUtils::is_array(
+                                    ASRUtils::symbol_type(assoc_sym))) {
+                                continue;
+                            }
                             assoc_map[assoc_sym] = assoc->m_value;
                         }
                     } else if (is_a<ASR::Assignment_t>(*ab->m_body[i])) {
@@ -4839,6 +4852,12 @@ public:
                                 down_cast<ASR::Variable_t>(sym)->m_parent_symtab
                                     == ab->m_symtab &&
                                 assoc_map.find(sym) == assoc_map.end()) {
+                                // Skip scalar associates (same rationale
+                                // as the Associate_t case above).
+                                if (!ASRUtils::is_array(
+                                        ASRUtils::symbol_type(sym))) {
+                                    continue;
+                                }
                                 assoc_map[sym] = asgn->m_value;
                             }
                         }
