@@ -8412,6 +8412,15 @@ class RemoveArrayProcessingNodeReplacer: public ASR::BaseExprReplacer<RemoveArra
         *current_expr = x->m_array;
     }
 
+    void replace_ArrayItem(ASR::ArrayItem_t* x) {
+        if (ASR::is_a<ASR::ArrayBroadcast_t>(*x->m_v)) {
+            ASR::ArrayBroadcast_t* ab = ASR::down_cast<ASR::ArrayBroadcast_t>(x->m_v);
+            *current_expr = ab->m_array;
+            return;
+        }
+        ASR::BaseExprReplacer<RemoveArrayProcessingNodeReplacer>::replace_ArrayItem(x);
+    }
+
     void replace_ArrayPhysicalCast(ASR::ArrayPhysicalCast_t* x) {
         if( x->m_new == ASR::array_physical_typeType::SIMDArray ) {
             return ;
