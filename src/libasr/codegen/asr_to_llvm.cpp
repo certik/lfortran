@@ -21867,12 +21867,67 @@ public:
                                                                 ->m_type);
                                                 llvm::Type
                                                     *src_desc_type =
-                                                    llvm_utils
-                                                        ->get_type_from_ttype_t_util(
-                                                            nullptr,
-                                                            src_asr_type,
-                                                            module
-                                                                .get());
+                                                    nullptr;
+                                                if (ASR::is_a<ASR::Array_t>(
+                                                        *src_asr_type)) {
+                                                    ASR::Array_t
+                                                        *src_arr =
+                                                        ASR::down_cast<
+                                                            ASR::Array_t>(
+                                                                src_asr_type);
+                                                    llvm::Type
+                                                        *el_type =
+                                                        nullptr;
+                                                    if (ASR::is_a<
+                                                            ASR::StructType_t>(
+                                                                *src_arr
+                                                                    ->m_type) &&
+                                                        src_var
+                                                            ->m_type_declaration) {
+                                                        ASR::symbol_t
+                                                            *struct_sym =
+                                                            ASRUtils::
+                                                                symbol_get_past_external(
+                                                                    src_var
+                                                                        ->m_type_declaration);
+                                                        if (ASR::down_cast<
+                                                                ASR::StructType_t>(
+                                                                    src_arr
+                                                                        ->m_type)
+                                                                ->m_is_cstruct) {
+                                                            el_type =
+                                                                llvm_utils
+                                                                    ->getStructType(
+                                                                        ASR::down_cast<
+                                                                            ASR::Struct_t>(
+                                                                                struct_sym),
+                                                                        module
+                                                                            .get());
+                                                        } else {
+                                                            el_type =
+                                                                llvm_utils
+                                                                    ->getClassType(
+                                                                        ASR::down_cast<
+                                                                            ASR::Struct_t>(
+                                                                                struct_sym));
+                                                        }
+                                                    } else {
+                                                        el_type =
+                                                            llvm_utils
+                                                                ->get_el_type(
+                                                                    nullptr,
+                                                                    src_arr
+                                                                        ->m_type,
+                                                                    module
+                                                                        .get());
+                                                    }
+                                                    src_desc_type =
+                                                        arr_descr
+                                                            ->get_array_type(
+                                                                nullptr,
+                                                                src_asr_type,
+                                                                el_type);
+                                                }
                                                 if (ASRUtils::
                                                         is_allocatable(
                                                             src_var
@@ -24134,10 +24189,7 @@ public:
                             init_done);
                         builder->SetInsertPoint(init_body);
                         llvm::Value *off_val = builder->CreateMul(
-                            idx_phi,
-                            builder->CreateMul(member_alloc_count,
-                                llvm::ConstantInt::get(i64,
-                                    member_elem_bytes)));
+                            idx_phi, member_alloc_count);
                         llvm::Value *off_val32 =
                             builder->CreateTrunc(off_val,
                                 llvm::Type::getInt32Ty(context));

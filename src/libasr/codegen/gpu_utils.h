@@ -2760,6 +2760,17 @@ find_struct_member_section_sources(
             continue;
         }
 
+        // Case 3: Lowered function call (subroutine_from_function):
+        //   SubroutineCall(f, [..., ArrayItem(struct_arr, idx)])
+        // The last argument is the return variable (originally the
+        // LHS of arr(i) = FunctionCall(f, ...)).  Trace into f's
+        // body to find ret_param%member = some_param, then map
+        // some_param back through the call chain (possibly via
+        // associate-map and intermediate SubroutineCalls to elemental
+        // functions) to an ArraySection source.
+        // (The old FunctionCall case never fires because
+        //  subroutine_from_function lowers them before codegen.)
+
         // Case 2: Lowered StructConstructor pattern:
         //   arr(i)%member = Var (where Var is associated with
         //   an ArraySection)
@@ -2806,6 +2817,190 @@ find_struct_member_section_sources(
             }
         }
     }
+    // Case 3: Lowered function call (subroutine_from_function):
+    //   SubroutineCall(f, [..., ArrayItem(struct_arr, idx)])
+    // The last argument is the return variable (the original LHS).
+    // Trace into f's body to find ret_param%member = some_param,
+    // then map some_param back through the actual arguments.  If
+    // the actual arg ultimately traces (via assoc_map and elemental
+    // SubroutineCall chains) to an ArraySection, use it as the
+    // runtime section source.
+    for (size_t si = 0; si < kernel.n_body; si++) {
+        ASR::stmt_t *stmt = kernel.m_body[si];
+        if (stmt->type != ASR::stmtType::SubroutineCall) continue;
+        ASR::SubroutineCall_t *sc =
+            ASR::down_cast<ASR::SubroutineCall_t>(stmt);
+        if (sc->n_args < 2) continue;
+        // The last arg should be ArrayItem(struct_arr, idx)
+        ASR::expr_t *last_arg = sc->m_args[sc->n_args - 1].m_value;
+        if (!last_arg || !ASR::is_a<ASR::ArrayItem_t>(*last_arg))
+            continue;
+        ASR::ArrayItem_t *ai =
+            ASR::down_cast<ASR::ArrayItem_t>(last_arg);
+        if (!ASR::is_a<ASR::Var_t>(*ai->m_v)) continue;
+        std::string arr_name = ASRUtils::symbol_name(
+            ASR::down_cast<ASR::Var_t>(ai->m_v)->m_v);
+        ASR::symbol_t *fn_sym =
+            ASRUtils::symbol_get_past_external(sc->m_name);
+        if (!ASR::is_a<ASR::Function_t>(*fn_sym)) continue;
+        ASR::Function_t *fn =
+            ASR::down_cast<ASR::Function_t>(fn_sym);
+        if (fn->n_args < 1) continue;
+        // The last formal parameter is the return variable
+        std::string ret_name;
+        {
+            ASR::expr_t *last_formal = fn->m_args[fn->n_args - 1];
+            if (ASR::is_a<ASR::Var_t>(*last_formal)) {
+                ret_name = ASRUtils::symbol_name(
+                    ASR::down_cast<ASR::Var_t>(last_formal)->m_v);
+            }
+        }
+        if (ret_name.empty()) continue;
+        // Look in fn body for ret_param%member = some_param
+        for (size_t fi = 0; fi < fn->n_body; fi++) {
+            if (fn->m_body[fi]->type != ASR::stmtType::Assignment)
+                continue;
+            ASR::Assignment_t *fa =
+                ASR::down_cast<ASR::Assignment_t>(fn->m_body[fi]);
+            if (!ASR::is_a<ASR::StructInstanceMember_t>(
+                    *fa->m_target))
+                continue;
+            ASR::StructInstanceMember_t *fsm =
+                ASR::down_cast<ASR::StructInstanceMember_t>(
+                    fa->m_target);
+            if (!ASR::is_a<ASR::Var_t>(*fsm->m_v)) continue;
+            std::string tgt_name = ASRUtils::symbol_name(
+                ASR::down_cast<ASR::Var_t>(fsm->m_v)->m_v);
+            if (tgt_name != ret_name) continue;
+            std::string mem_name = ASRUtils::symbol_name(
+                ASRUtils::symbol_get_past_external(fsm->m_m));
+            std::string key = arr_name + "." + mem_name;
+            if (result.count(key)) continue;
+            ASR::symbol_t *mem_sym =
+                ASRUtils::symbol_get_past_external(fsm->m_m);
+            if (!ASR::is_a<ASR::Variable_t>(*mem_sym)) continue;
+            ASR::Variable_t *mem_var =
+                ASR::down_cast<ASR::Variable_t>(mem_sym);
+            if (!ASRUtils::is_allocatable(mem_var->m_type)) continue;
+            if (!ASR::is_a<ASR::Var_t>(*fa->m_value)) continue;
+            std::string rhs_name = ASRUtils::symbol_name(
+                ASR::down_cast<ASR::Var_t>(fa->m_value)->m_v);
+            // Map formal parameter to actual argument position
+            for (size_t pi = 0; pi < fn->n_args; pi++) {
+                if (!ASR::is_a<ASR::Var_t>(*fn->m_args[pi]))
+                    continue;
+                std::string fp_name = ASRUtils::symbol_name(
+                    ASR::down_cast<ASR::Var_t>(
+                        fn->m_args[pi])->m_v);
+                if (fp_name != rhs_name) continue;
+                if (pi >= sc->n_args) break;
+                ASR::expr_t *actual = sc->m_args[pi].m_value;
+                if (!actual) break;
+                ASR::expr_t *resolved =
+                    unwrap_array_physical_cast(actual);
+                if (ASR::is_a<ASR::Var_t>(*resolved)) {
+                    std::string vn = ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(
+                            resolved)->m_v);
+                    // Check if this var is the output of another
+                    // SubroutineCall (an elemental function chain).
+                    for (size_t sj = 0; sj < kernel.n_body; sj++) {
+                        if (kernel.m_body[sj]->type !=
+                                ASR::stmtType::SubroutineCall)
+                            continue;
+                        ASR::SubroutineCall_t *inner_sc =
+                            ASR::down_cast<ASR::SubroutineCall_t>(
+                                kernel.m_body[sj]);
+                        if (inner_sc->n_args < 2) continue;
+                        ASR::expr_t *inner_last =
+                            inner_sc->m_args[
+                                inner_sc->n_args - 1].m_value;
+                        if (!inner_last) continue;
+                        ASR::expr_t *inner_last_u =
+                            unwrap_array_physical_cast(inner_last);
+                        if (!ASR::is_a<ASR::Var_t>(*inner_last_u))
+                            continue;
+                        std::string inner_out =
+                            ASRUtils::symbol_name(
+                                ASR::down_cast<ASR::Var_t>(
+                                    inner_last_u)->m_v);
+                        if (inner_out != vn) continue;
+                        // vn is the output of inner_sc.  Check if
+                        // it is an elemental function; if so, trace
+                        // its input to an ArraySection.
+                        ASR::symbol_t *inner_fn_sym =
+                            ASRUtils::symbol_get_past_external(
+                                inner_sc->m_name);
+                        if (!ASR::is_a<ASR::Function_t>(
+                                *inner_fn_sym))
+                            continue;
+                        ASR::Function_t *inner_fn =
+                            ASR::down_cast<ASR::Function_t>(
+                                inner_fn_sym);
+                        ASR::FunctionType_t *inner_ft =
+                            ASR::down_cast<ASR::FunctionType_t>(
+                                inner_fn->m_function_signature);
+                        if (!inner_ft->m_elemental) continue;
+                        for (size_t ia = 0;
+                                ia < inner_sc->n_args - 1; ia++) {
+                            if (!inner_sc->m_args[ia].m_value)
+                                continue;
+                            ASR::expr_t *iarg =
+                                unwrap_array_physical_cast(
+                                    inner_sc->m_args[ia].m_value);
+                            if (ASR::is_a<ASR::Var_t>(*iarg)) {
+                                std::string ivn =
+                                    ASRUtils::symbol_name(
+                                        ASR::down_cast<ASR::Var_t>(
+                                            iarg)->m_v);
+                                auto ait = assoc_map.find(ivn);
+                                if (ait != assoc_map.end()) {
+                                    iarg =
+                                        unwrap_array_physical_cast(
+                                            ait->second);
+                                }
+                            }
+                            if (ASR::is_a<ASR::ArraySection_t>(
+                                    *iarg)) {
+                                StructMemberSectionSource src;
+                                if (get_runtime_section_source(
+                                        ASR::down_cast<
+                                            ASR::ArraySection_t>(
+                                                iarg),
+                                        src)) {
+                                    result[key] = src;
+                                }
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                    // Also try direct assoc_map lookup
+                    if (!result.count(key)) {
+                        auto ait = assoc_map.find(vn);
+                        if (ait != assoc_map.end()) {
+                            ASR::expr_t *assoc_val =
+                                unwrap_array_physical_cast(
+                                    ait->second);
+                            if (ASR::is_a<ASR::ArraySection_t>(
+                                    *assoc_val)) {
+                                StructMemberSectionSource src;
+                                if (get_runtime_section_source(
+                                        ASR::down_cast<
+                                            ASR::ArraySection_t>(
+                                                assoc_val),
+                                        src)) {
+                                    result[key] = src;
+                                }
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+        }
+    }
+
     return result;
 }
 
