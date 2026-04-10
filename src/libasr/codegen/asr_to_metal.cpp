@@ -6983,6 +6983,9 @@ public:
                                 if (sit !=
                                         alloc_array_sizes.end()) {
                                     int64_t sz = sit->second;
+                                    src << size_it->second
+                                        << " = " << sz << ";\n";
+                                    src << get_indent();
                                     for (int64_t ei = 0;
                                             ei < sz; ei++) {
                                         src << data_it->second
@@ -6994,6 +6997,10 @@ public:
                                     }
                                 } else if (seit !=
                                         alloc_array_size_exprs.end()) {
+                                    src << size_it->second
+                                        << " = ("
+                                        << seit->second << ");\n";
+                                    src << get_indent();
                                     src << "for (int __copy_i = 0;"
                                         << " __copy_i < ("
                                         << seit->second
@@ -8779,9 +8786,31 @@ public:
                                         func_array_size_params.find(
                                             src_key);
                                     if (sdit ==
-                                            func_array_data_params.end()
-                                        || ssit ==
-                                            func_array_size_params.end())
+                                            func_array_data_params.end())
+                                        continue;
+                                    // Check for VLA-style source
+                                    // (per-element offsets/sizes,
+                                    // no flat size param)
+                                    auto src_oit =
+                                        struct_array_offset_params
+                                            .find(src_key);
+                                    auto src_sit =
+                                        struct_array_sizes_params
+                                            .find(src_key);
+                                    bool is_vla_source = (
+                                        ssit ==
+                                            func_array_size_params
+                                                .end()
+                                        && src_oit !=
+                                            struct_array_offset_params
+                                                .end()
+                                        && src_sit !=
+                                            struct_array_sizes_params
+                                                .end());
+                                    if (!is_vla_source
+                                        && ssit ==
+                                            func_array_size_params
+                                                .end())
                                         continue;
                                     // Dest nested companion
                                     std::string dst_nkey =
@@ -8826,6 +8855,108 @@ public:
                                     std::string offset_idx =
                                         "((int)(" + idx_expr
                                         + ") - (" + lb_str + "))";
+                                    // VLA-to-device companion copy:
+                                    // loop over each element and
+                                    // copy nested data using offsets
+                                    if (is_vla_source) {
+                                        std::string dst_parent_key =
+                                            dst_arr + "." + dst_mem;
+                                        auto dst_parent_off_it =
+                                            struct_array_offset_params
+                                                .find(dst_parent_key);
+                                        if (dst_parent_off_it ==
+                                                struct_array_offset_params
+                                                    .end())
+                                            continue;
+                                        std::string count_expr;
+                                        for (auto &ws :
+                                                current_vla_infos) {
+                                            if (ws.var_name !=
+                                                    fsa_name)
+                                                continue;
+                                            if (!ws.dims.empty()) {
+                                                if (ws.dims[0]
+                                                        .is_constant) {
+                                                    count_expr =
+                                                        std::to_string(
+                                                            ws.dims[0]
+                                                            .constant_value);
+                                                } else if (
+                                                        ws.dims[0]
+                                                        .dim_expr) {
+                                                    std::stringstream
+                                                        ss2;
+                                                    std::swap(
+                                                        ss2, src);
+                                                    visit_expr(
+                                                        ws.dims[0]
+                                                        .dim_expr);
+                                                    count_expr =
+                                                        src.str();
+                                                    src.str("");
+                                                    std::swap(
+                                                        ss2, src);
+                                                }
+                                            }
+                                            break;
+                                        }
+                                        if (count_expr.empty())
+                                            count_expr = "1";
+                                        src << get_indent()
+                                            << "{\n";
+                                        indent_level++;
+                                        src << get_indent()
+                                            << "int __dst_base = "
+                                            << dst_parent_off_it
+                                                ->second
+                                            << "[" << offset_idx
+                                            << "];\n";
+                                        src << get_indent()
+                                            << "for (int __nc_j = 0;"
+                                            << " __nc_j < "
+                                            << count_expr
+                                            << "; __nc_j++) {\n";
+                                        indent_level++;
+                                        src << get_indent()
+                                            << "int __src_off = "
+                                            << src_oit->second
+                                            << "[__nc_j];\n";
+                                        src << get_indent()
+                                            << "int __n = "
+                                            << src_sit->second
+                                            << "[__nc_j];\n";
+                                        src << get_indent()
+                                            << "for (int __nc = 0;"
+                                            << " __nc < __n;"
+                                            << " __nc++) {\n";
+                                        indent_level++;
+                                        src << get_indent()
+                                            << ddit->second
+                                            << "["
+                                            << doit->second
+                                            << "[__dst_base +"
+                                            << " __nc_j] + __nc"
+                                            << "] = "
+                                            << sdit->second
+                                            << "["
+                                            << src_oit->second
+                                            << "[__nc_j] + __nc"
+                                            << "];\n";
+                                        indent_level--;
+                                        src << get_indent()
+                                            << "}\n";
+                                        src << get_indent()
+                                            << dsit->second
+                                            << "[__dst_base +"
+                                            << " __nc_j] = __n;\n";
+                                        indent_level--;
+                                        src << get_indent()
+                                            << "}\n";
+                                        indent_level--;
+                                        src << get_indent()
+                                            << "}\n";
+                                        continue;
+                                    }
                                     // Use declared buffer size if
                                     // available (size var is passed
                                     // by value so stays 0)
