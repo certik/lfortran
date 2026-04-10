@@ -1102,6 +1102,94 @@ static void emit_prealloc_deep_through_alloc_member(
     }
 }
 
+// Info about a (possibly nested) allocatable array member of a struct,
+// used to add __size_ / __data_ kernel parameters for Metal GPU offloading.
+struct NestedAllocMemberGpu {
+    std::string suffix;     // underscore-separated path, e.g. "weights_" or "input_map__intercept_"
+    ASR::Variable_t *var;   // the leaf allocatable Variable_t
+    // Chain of (member_sym, member_type) from the top-level struct down
+    // to the allocatable member.  For direct members this has one entry;
+    // for struct%inner%member it has entries for inner then member.
+    std::vector<std::pair<ASR::symbol_t*, ASR::ttype_t*>> member_chain;
+};
+
+// Recursively collect all allocatable array members from a struct,
+// including those inside nested (non-allocatable) struct members.
+static void collect_nested_alloc_members_gpu(
+        ASR::Struct_t *st,
+        const std::string &prefix,
+        const std::vector<std::pair<ASR::symbol_t*, ASR::ttype_t*>> &parent_chain,
+        std::vector<NestedAllocMemberGpu> &result) {
+    for (size_t m = 0; m < st->n_members; m++) {
+        ASR::symbol_t *mem_sym =
+            st->m_symtab->get_symbol(st->m_members[m]);
+        if (!mem_sym || !is_a<ASR::Variable_t>(*mem_sym))
+            continue;
+        ASR::Variable_t *mv = down_cast<ASR::Variable_t>(mem_sym);
+        if (ASRUtils::is_allocatable(mv->m_type)) {
+            ASR::ttype_t *inner =
+                ASRUtils::type_get_past_allocatable(mv->m_type);
+            if (ASR::is_a<ASR::Array_t>(*inner)) {
+                std::string suf = prefix.empty()
+                    ? std::string(st->m_members[m])
+                    : prefix + "_" + st->m_members[m];
+                auto chain = parent_chain;
+                chain.push_back({mem_sym, mv->m_type});
+                result.push_back({suf, mv, chain});
+            }
+        } else if (ASR::is_a<ASR::StructType_t>(
+                       *ASRUtils::extract_type(mv->m_type)) &&
+                   mv->m_type_declaration) {
+            ASR::symbol_t *inner_sym =
+                ASRUtils::symbol_get_past_external(
+                    mv->m_type_declaration);
+            if (is_a<ASR::Struct_t>(*inner_sym)) {
+                std::string new_prefix = prefix.empty()
+                    ? std::string(st->m_members[m])
+                    : prefix + "_" + st->m_members[m];
+                auto new_chain = parent_chain;
+                new_chain.push_back({mem_sym, mv->m_type});
+                collect_nested_alloc_members_gpu(
+                    down_cast<ASR::Struct_t>(inner_sym),
+                    new_prefix, new_chain, result);
+            }
+        }
+    }
+}
+
+// Look up an ExternalSymbol in `scope` that resolves to `target`,
+// falling back to `target` itself if not found.
+static ASR::symbol_t* find_extern_ref(
+        SymbolTable *scope, ASR::symbol_t *target) {
+    for (auto &scope_item : scope->get_scope()) {
+        if (!is_a<ASR::ExternalSymbol_t>(*scope_item.second))
+            continue;
+        ASR::ExternalSymbol_t *es =
+            down_cast<ASR::ExternalSymbol_t>(scope_item.second);
+        ASR::symbol_t *resolved =
+            ASRUtils::symbol_get_past_external(es->m_external);
+        if (resolved == target) return scope_item.second;
+    }
+    return target;
+}
+
+// Build a host-side StructInstanceMember chain from a root symbol
+// through the given member_chain.
+static ASR::expr_t* build_host_member_chain(
+        Allocator &al, const Location &loc,
+        ASR::symbol_t *root_sym, SymbolTable *orig_scope,
+        const std::vector<std::pair<ASR::symbol_t*, ASR::ttype_t*>> &chain) {
+    ASR::expr_t *expr = ASRUtils::EXPR(
+        ASR::make_Var_t(al, loc, root_sym));
+    for (auto &[mem_sym, mem_type] : chain) {
+        ASR::symbol_t *ref = find_extern_ref(orig_scope, mem_sym);
+        expr = ASRUtils::EXPR(
+            ASR::make_StructInstanceMember_t(
+                al, loc, expr, ref, mem_type, nullptr));
+    }
+    return expr;
+}
+
 class GpuOffloadVisitor : public ASR::StatementWalkVisitor<GpuOffloadVisitor>
 {
 public:
@@ -5879,8 +5967,10 @@ public:
         }
 
         // Add total-size kernel parameters for allocatable array members
-        // of struct-typed kernel parameters. These sizes are needed by
-        // Metal inline functions that call size() on struct members.
+        // of struct-typed kernel parameters, recursively including members
+        // inside nested non-allocatable struct members. These sizes are
+        // needed by Metal inline functions that call size() on struct
+        // members.
         // Skip array-of-structs variables — StructInstanceMember requires
         // a scalar struct base, not an array of structs.
         for (auto &[sym_name, sym_info] : involved_syms) {
@@ -5902,19 +5992,22 @@ public:
             ASR::Struct_t *st = down_cast<ASR::Struct_t>(struct_sym);
             ASR::ttype_t *int_type_sz = ASRUtils::TYPE(
                 ASR::make_Integer_t(al, loc, 4));
-            for (size_t m = 0; m < st->n_members; m++) {
-                ASR::symbol_t *mem_sym =
-                    st->m_symtab->get_symbol(st->m_members[m]);
-                if (!mem_sym || !is_a<ASR::Variable_t>(*mem_sym))
-                    continue;
-                ASR::Variable_t *mv =
-                    down_cast<ASR::Variable_t>(mem_sym);
-                if (!ASRUtils::is_allocatable(mv->m_type)) continue;
-                ASR::ttype_t *mem_inner =
-                    ASRUtils::type_get_past_allocatable(mv->m_type);
-                if (!ASR::is_a<ASR::Array_t>(*mem_inner)) continue;
+            std::vector<NestedAllocMemberGpu> nested_members;
+            collect_nested_alloc_members_gpu(st, "", {}, nested_members);
+            for (auto &nm : nested_members) {
+                // Skip members already decomposed into separate flat-array
+                // kernel parameters — their sizes are handled by the
+                // decomposition logic and adding a duplicate buffer would
+                // cause stale data to overwrite correct GPU results during
+                // copy-back.
+                if (nm.member_chain.size() == 1) {
+                    std::string leaf_name(
+                        ASRUtils::symbol_name(nm.member_chain.back().first));
+                    if (decomp_map.count({sym_name, leaf_name}))
+                        continue;
+                }
                 std::string size_name = "__size_" + sym_name + "_"
-                    + std::string(st->m_members[m]);
+                    + nm.suffix;
                 ASR::symbol_t *size_sym =
                     ASR::down_cast<ASR::symbol_t>(
                         ASRUtils::make_Variable_t_util(al, loc,
@@ -5931,32 +6024,8 @@ public:
                 kernel_args.push_back(al,
                     ASRUtils::EXPR(ASR::make_Var_t(al, loc,
                         size_sym)));
-                // Host-side: size(struct%member) (total size)
-                // Look up the member symbol in the original struct's
-                // scope for the ExternalSymbol reference used in the
-                // program scope (needed for StructInstanceMember).
-                ASR::symbol_t *orig_mem_ref = nullptr;
-                for (auto &scope_item :
-                        orig_scope->get_scope()) {
-                    if (!is_a<ASR::ExternalSymbol_t>(
-                            *scope_item.second)) continue;
-                    ASR::ExternalSymbol_t *es =
-                        down_cast<ASR::ExternalSymbol_t>(
-                            scope_item.second);
-                    ASR::symbol_t *resolved =
-                        ASRUtils::symbol_get_past_external(
-                            es->m_external);
-                    if (resolved == mem_sym) {
-                        orig_mem_ref = scope_item.second;
-                        break;
-                    }
-                }
-                if (!orig_mem_ref) orig_mem_ref = mem_sym;
-                ASR::expr_t *host_member = ASRUtils::EXPR(
-                    ASR::make_StructInstanceMember_t(al, loc,
-                        ASRUtils::EXPR(ASR::make_Var_t(al, loc,
-                            orig_sym)),
-                        orig_mem_ref, mv->m_type, nullptr));
+                ASR::expr_t *host_member = build_host_member_chain(
+                    al, loc, orig_sym, orig_scope, nm.member_chain);
                 ASR::expr_t *host_size = ASRUtils::EXPR(
                     ASR::make_ArraySize_t(al, loc,
                         host_member, nullptr, int_type_sz,
@@ -5969,9 +6038,10 @@ public:
         }
 
         // Add allocatable-member data kernel parameters for struct-typed
-        // kernel parameters that were NOT fully decomposed. These provide
-        // the actual array data as separate device buffers so that Metal
-        // inline functions can index into allocatable members.
+        // kernel parameters that were NOT fully decomposed, recursively
+        // including members inside nested non-allocatable struct members.
+        // These provide the actual array data as separate device buffers
+        // so that Metal inline functions can index into allocatable members.
         // Skip array-of-structs variables — StructInstanceMember requires
         // a scalar struct base, not an array of structs.
         for (auto &[sym_name, sym_info] : involved_syms) {
@@ -5991,28 +6061,30 @@ public:
                     orig_var->m_type_declaration);
             if (!is_a<ASR::Struct_t>(*struct_sym)) continue;
             ASR::Struct_t *st = down_cast<ASR::Struct_t>(struct_sym);
-            for (size_t m = 0; m < st->n_members; m++) {
-                ASR::symbol_t *mem_sym =
-                    st->m_symtab->get_symbol(st->m_members[m]);
-                if (!mem_sym || !is_a<ASR::Variable_t>(*mem_sym))
-                    continue;
-                ASR::Variable_t *mv =
-                    down_cast<ASR::Variable_t>(mem_sym);
-                if (!ASRUtils::is_allocatable(mv->m_type)) continue;
-                ASR::ttype_t *mem_inner =
-                    ASRUtils::type_get_past_allocatable(mv->m_type);
-                if (!ASR::is_a<ASR::Array_t>(*mem_inner)) continue;
+            std::vector<NestedAllocMemberGpu> nested_members;
+            collect_nested_alloc_members_gpu(st, "", {}, nested_members);
+            for (auto &nm : nested_members) {
+                // Skip members already decomposed into separate flat-array
+                // kernel parameters (same reason as in the __size_ loop).
+                if (nm.member_chain.size() == 1) {
+                    std::string leaf_name(
+                        ASRUtils::symbol_name(nm.member_chain.back().first));
+                    if (decomp_map.count({sym_name, leaf_name}))
+                        continue;
+                }
                 std::string data_name = "__data_" + sym_name + "_"
-                    + std::string(st->m_members[m]);
+                    + nm.suffix;
+                ASR::ttype_t *mem_inner =
+                    ASRUtils::type_get_past_allocatable(nm.var->m_type);
                 ASR::ttype_t *data_type =
                     ASRUtils::duplicate_type(al, mem_inner);
                 ASR::symbol_t *data_type_decl = nullptr;
                 if (ASR::is_a<ASR::StructType_t>(
                         *ASRUtils::extract_type(data_type)) &&
-                        mv->m_type_declaration) {
+                        nm.var->m_type_declaration) {
                     ASR::symbol_t *inner_struct_sym =
                         ASRUtils::symbol_get_past_external(
-                            mv->m_type_declaration);
+                            nm.var->m_type_declaration);
                     if (is_a<ASR::Struct_t>(*inner_struct_sym)) {
                         data_type_decl = import_struct_def(
                             down_cast<ASR::Struct_t>(inner_struct_sym),
@@ -6040,30 +6112,11 @@ public:
                 kernel_args.push_back(al,
                     ASRUtils::EXPR(ASR::make_Var_t(al, loc,
                         data_sym)));
-                ASR::symbol_t *orig_mem_ref = nullptr;
-                for (auto &scope_item :
-                        orig_scope->get_scope()) {
-                    if (!is_a<ASR::ExternalSymbol_t>(
-                            *scope_item.second)) continue;
-                    ASR::ExternalSymbol_t *es =
-                        down_cast<ASR::ExternalSymbol_t>(
-                            scope_item.second);
-                    ASR::symbol_t *resolved =
-                        ASRUtils::symbol_get_past_external(
-                            es->m_external);
-                    if (resolved == mem_sym) {
-                        orig_mem_ref = scope_item.second;
-                        break;
-                    }
-                }
-                if (!orig_mem_ref) orig_mem_ref = mem_sym;
+                ASR::expr_t *host_member = build_host_member_chain(
+                    al, loc, orig_sym, orig_scope, nm.member_chain);
                 ASR::call_arg_t carg;
                 carg.loc = loc;
-                carg.m_value = ASRUtils::EXPR(
-                    ASR::make_StructInstanceMember_t(al, loc,
-                        ASRUtils::EXPR(ASR::make_Var_t(al, loc,
-                            orig_sym)),
-                        orig_mem_ref, mv->m_type, nullptr));
+                carg.m_value = host_member;
                 call_args.push_back(al, carg);
             }
         }
