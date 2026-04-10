@@ -214,6 +214,11 @@ public:
     // "temp_name.member_name" -> source_device_array_name.
     std::map<std::string, std::string> fsa_temp_member_source;
 
+    // Source index expression for the member-level source, recorded
+    // during emit_struct_deep_copy when the filling copy is skipped.
+    // Maps "temp_name.member_name" -> source_index_expr.
+    std::map<std::string, std::string> fsa_temp_member_source_index;
+
     // Maps a kernel-local FSA's nested alloc member key
     // (fsa_name + "." + alloc_suffix) to the destination device
     // array's buffer info (dest_prefix, base_idx_expr).  Used when
@@ -3361,6 +3366,17 @@ public:
                 skip_local_copy = true;
                 fsa_temp_source_index[tgt_arr] = vidx;
             }
+            // Also handle the SIM-over-array case: temp[idx].mem = src[i]
+            // where the member-level source was detected by the pre-scan.
+            if (!skip_local_copy && !tgt_has_offsets &&
+                    tgt_sim_over_array) {
+                std::string member_key =
+                    tgt_sim_arr + "." + tgt_sim_member;
+                if (fsa_temp_member_source.count(member_key)) {
+                    skip_local_copy = true;
+                    fsa_temp_member_source_index[member_key] = vidx;
+                }
+            }
 
             if (skip_local_copy) {
                 // Only update the local size variable so that
@@ -5007,6 +5023,7 @@ public:
         fsa_temp_source_array.clear();
         fsa_temp_source_index.clear();
         fsa_temp_member_source.clear();
+        fsa_temp_member_source_index.clear();
         for (size_t i = 0; i < args.size(); i++) {
             if (args[i].is_struct && !args[i].is_array) {
                 ASR::Var_t *v = ASR::down_cast<ASR::Var_t>(x.m_args[i]);
@@ -8742,25 +8759,16 @@ public:
                                                 es);
                                 }
                                 if (!sub_st) continue;
-                                // For each alloc member of inner_t
-                                for (size_t sm2 = 0;
-                                        sm2 < sub_st->n_members;
-                                        sm2++) {
-                                    ASR::symbol_t *sms =
-                                        sub_st->m_symtab->get_symbol(
-                                            sub_st->m_members[sm2]);
-                                    if (!sms ||
-                                        !ASR::is_a<ASR::Variable_t>(
-                                            *sms))
-                                        continue;
-                                    ASR::Variable_t *smv =
-                                        ASR::down_cast<ASR::Variable_t>(
-                                            sms);
-                                    if (!ASRUtils::is_allocatable(
-                                            smv->m_type))
-                                        continue;
-                                    std::string sub_mem(
-                                        sub_st->m_members[sm2]);
+                                // Collect all allocatable members
+                                // at any nesting depth (e.g.,
+                                // mid_t.a.v through inner_t).
+                                std::vector<NestedAllocMember>
+                                    sub_allocs;
+                                collect_nested_alloc_members(
+                                    sub_st, "", {}, sub_allocs);
+                                for (auto &sub_nam : sub_allocs) {
+                                    std::string sub_mem =
+                                        sub_nam.suffix;
                                     // Source companion
                                     std::string src_key =
                                         fsa_name + "." + sub_mem;
@@ -8836,6 +8844,55 @@ public:
                                     auto fsa_idx_it =
                                         fsa_temp_source_index.find(
                                             fsa_name);
+                                    // Also check member-level source
+                                    // (temp[idx].mem = src[i])
+                                    std::string mem_src_arr;
+                                    std::string mem_src_idx;
+                                    std::string mem_src_suffix;
+                                    if (fsa_src_it ==
+                                            fsa_temp_source_array.end()
+                                        && !sub_nam
+                                            .parent_field_indices
+                                            .empty()) {
+                                        std::string top_mem(
+                                            sub_st->m_members[
+                                                sub_nam
+                                                .parent_field_indices
+                                                [0]]);
+                                        std::string member_key =
+                                            fsa_name + "." + top_mem;
+                                        auto ms_it =
+                                            fsa_temp_member_source
+                                                .find(member_key);
+                                        auto mi_it =
+                                            fsa_temp_member_source_index
+                                                .find(member_key);
+                                        if (ms_it !=
+                                                fsa_temp_member_source
+                                                    .end()
+                                            && mi_it !=
+                                                fsa_temp_member_source_index
+                                                    .end()) {
+                                            mem_src_arr =
+                                                ms_it->second;
+                                            mem_src_idx =
+                                                mi_it->second;
+                                            std::string pfx =
+                                                top_mem + "_";
+                                            if (sub_mem.size()
+                                                    > pfx.size()
+                                                && sub_mem.substr(
+                                                    0, pfx.size())
+                                                    == pfx) {
+                                                mem_src_suffix =
+                                                    sub_mem.substr(
+                                                        pfx.size());
+                                            } else {
+                                                mem_src_suffix =
+                                                    sub_mem;
+                                            }
+                                        }
+                                    }
                                     if (fsa_src_it !=
                                             fsa_temp_source_array.end()
                                         && fsa_idx_it !=
@@ -8878,6 +8935,74 @@ public:
                                                 << "int __n = "
                                                 << orig_sz->second
                                                 << "[" << orig_idx
+                                                << "];\n";
+                                            src << get_indent()
+                                                << "for (int __nc = 0;"
+                                                << " __nc < __n;"
+                                                << " __nc++) {\n";
+                                            indent_level++;
+                                            src << get_indent()
+                                                << ddit->second
+                                                << "["
+                                                << doit->second
+                                                << "["
+                                                << offset_idx
+                                                << "] + __nc] = "
+                                                << orig_data->second
+                                                << "[__src_off +"
+                                                << " __nc];\n";
+                                            indent_level--;
+                                            src << get_indent()
+                                                << "}\n";
+                                            src << get_indent()
+                                                << dsit->second
+                                                << "["
+                                                << offset_idx
+                                                << "] = __n;\n";
+                                            indent_level--;
+                                            src << get_indent()
+                                                << "}\n";
+                                            continue;
+                                        }
+                                    }
+                                    // Fallback: check member-level
+                                    // source (temp[idx].mem = src[i])
+                                    if (!mem_src_arr.empty()) {
+                                        std::string orig_key =
+                                            mem_src_arr + "."
+                                            + mem_src_suffix;
+                                        auto orig_data =
+                                            func_array_data_params
+                                                .find(orig_key);
+                                        auto orig_off =
+                                            struct_array_offset_params
+                                                .find(orig_key);
+                                        auto orig_sz =
+                                            struct_array_sizes_params
+                                                .find(orig_key);
+                                        if (orig_data !=
+                                                func_array_data_params
+                                                    .end()
+                                            && orig_off !=
+                                                struct_array_offset_params
+                                                    .end()
+                                            && orig_sz !=
+                                                struct_array_sizes_params
+                                                    .end()) {
+                                            src << get_indent()
+                                                << "{\n";
+                                            indent_level++;
+                                            src << get_indent()
+                                                << "int __src_off = "
+                                                << orig_off->second
+                                                << "["
+                                                << mem_src_idx
+                                                << "];\n";
+                                            src << get_indent()
+                                                << "int __n = "
+                                                << orig_sz->second
+                                                << "["
+                                                << mem_src_idx
                                                 << "];\n";
                                             src << get_indent()
                                                 << "for (int __nc = 0;"
