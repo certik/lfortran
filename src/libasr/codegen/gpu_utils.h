@@ -2261,6 +2261,371 @@ inline std::map<std::string, int64_t> find_struct_member_vla_write_sizes(
                         }
                         continue;
                     }
+                    // Handle ReAlloc on formal%member (same
+                    // pattern as Allocate above).
+                    if (fn->m_body[fi]->type ==
+                            ASR::stmtType::ReAlloc) {
+                        ASR::ReAlloc_t *realloc =
+                            ASR::down_cast<ASR::ReAlloc_t>(
+                                fn->m_body[fi]);
+                        for (size_t ali = 0;
+                                ali < realloc->n_args; ali++) {
+                            if (!realloc->m_args[ali].m_a)
+                                continue;
+                            if (!ASR::is_a<ASR::
+                                    StructInstanceMember_t>(
+                                        *realloc->m_args[ali].m_a))
+                                continue;
+                            ASR::StructInstanceMember_t *fsm =
+                                ASR::down_cast<ASR::
+                                    StructInstanceMember_t>(
+                                        realloc->m_args[ali].m_a);
+                            if (!ASR::is_a<ASR::Var_t>(
+                                    *fsm->m_v))
+                                continue;
+                            std::string tgt_name =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        fsm->m_v)->m_v);
+                            if (tgt_name != formal_name)
+                                continue;
+                            std::string mem_name =
+                                ASRUtils::symbol_name(
+                                    ASRUtils::
+                                        symbol_get_past_external(
+                                            fsm->m_m));
+                            std::string key =
+                                arr_name + "." + mem_name;
+                            if (result.count(key)) continue;
+                            int64_t total = 1;
+                            bool all_const = true;
+                            for (size_t d = 0;
+                                    d < realloc->m_args[ali]
+                                        .n_dims;
+                                    d++) {
+                                int64_t len_val = 0;
+                                ASR::expr_t *len_expr =
+                                    realloc->m_args[ali]
+                                        .m_dims[d].m_length;
+                                if (len_expr &&
+                                        extract_const_int(
+                                            len_expr,
+                                            len_val)) {
+                                    total *= len_val;
+                                } else {
+                                    all_const = false;
+                                    break;
+                                }
+                            }
+                            if (all_const && total > 0) {
+                                result[key] = total;
+                            }
+                        }
+                        continue;
+                    }
+                    // Trace through nested SubroutineCalls that
+                    // pass the formal parameter to another
+                    // function. Scan one level deeper for
+                    // Allocate/ReAlloc on the inner formal's
+                    // struct members.
+                    if (fn->m_body[fi]->type ==
+                            ASR::stmtType::SubroutineCall) {
+                        ASR::SubroutineCall_t *inner_sc =
+                            ASR::down_cast<ASR::SubroutineCall_t>(
+                                fn->m_body[fi]);
+                        ASR::symbol_t *inner_sym =
+                            ASRUtils::symbol_get_past_external(
+                                inner_sc->m_name);
+                        if (!ASR::is_a<ASR::Function_t>(
+                                *inner_sym))
+                            continue;
+                        ASR::Function_t *inner_fn =
+                            ASR::down_cast<ASR::Function_t>(
+                                inner_sym);
+                        for (size_t iai = 0;
+                                iai < inner_sc->n_args; iai++) {
+                            if (!inner_sc->m_args[iai].m_value)
+                                continue;
+                            if (!ASR::is_a<ASR::Var_t>(
+                                    *inner_sc->m_args[iai]
+                                        .m_value))
+                                continue;
+                            std::string iarg_name =
+                                ASRUtils::symbol_name(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        inner_sc->m_args[iai]
+                                            .m_value)->m_v);
+                            if (iarg_name != formal_name)
+                                continue;
+                            if (iai >= inner_fn->n_args) break;
+                            ASR::Variable_t *inner_formal =
+                                ASR::down_cast<ASR::Variable_t>(
+                                    ASR::down_cast<ASR::Var_t>(
+                                        inner_fn->m_args[iai])
+                                            ->m_v);
+                            std::string inner_formal_name(
+                                inner_formal->m_name);
+                            // Map inner formals to actual arg
+                            // sizes for resolving ArraySize
+                            // dimension expressions.
+                            std::map<std::string, int64_t>
+                                iformal_sz;
+                            for (size_t ipi = 0;
+                                    ipi < inner_sc->n_args &&
+                                    ipi < inner_fn->n_args;
+                                    ipi++) {
+                                if (!inner_sc->m_args[ipi]
+                                        .m_value)
+                                    continue;
+                                ASR::Variable_t *ifp =
+                                    ASR::down_cast<
+                                        ASR::Variable_t>(
+                                        ASR::down_cast<
+                                            ASR::Var_t>(
+                                            inner_fn->m_args[ipi])
+                                                ->m_v);
+                                ASR::ttype_t *at =
+                                    ASRUtils::expr_type(
+                                        inner_sc->m_args[ipi]
+                                            .m_value);
+                                ASR::ttype_t *past_at =
+                                    ASRUtils::
+                                    type_get_past_allocatable(
+                                        at);
+                                int64_t sz = 0;
+                                if (ASR::is_a<ASR::Array_t>(
+                                        *past_at)) {
+                                    ASR::Array_t *arr_t =
+                                        ASR::down_cast<
+                                            ASR::Array_t>(
+                                                past_at);
+                                    int64_t prod = 1;
+                                    bool all_c = true;
+                                    for (size_t d = 0;
+                                            d < arr_t->n_dims;
+                                            d++) {
+                                        int64_t lv = 0;
+                                        if (arr_t->m_dims[d]
+                                                .m_length &&
+                                                extract_const_int(
+                                                    arr_t->
+                                                        m_dims[d]
+                                                        .m_length,
+                                                    lv)) {
+                                            prod *= lv;
+                                        } else {
+                                            all_c = false;
+                                            break;
+                                        }
+                                    }
+                                    if (all_c && prod > 0) {
+                                        sz = prod;
+                                    }
+                                }
+                                if (sz > 0) {
+                                    iformal_sz[std::string(
+                                        ifp->m_name)] = sz;
+                                }
+                            }
+                            // Scan inner function body for
+                            // Allocate/ReAlloc of
+                            // inner_formal%member, or Assignment
+                            // to inner_formal%member.
+                            for (size_t ifi = 0;
+                                    ifi < inner_fn->n_body;
+                                    ifi++) {
+                                // Handle Allocate/ReAlloc
+                                ASR::alloc_arg_t *aargs = nullptr;
+                                size_t n_aargs = 0;
+                                if (inner_fn->m_body[ifi]->type
+                                        == ASR::stmtType::
+                                            Allocate) {
+                                    ASR::Allocate_t *al =
+                                        ASR::down_cast<
+                                            ASR::Allocate_t>(
+                                            inner_fn->
+                                                m_body[ifi]);
+                                    aargs = al->m_args;
+                                    n_aargs = al->n_args;
+                                } else if (inner_fn->
+                                        m_body[ifi]->type
+                                        == ASR::stmtType::
+                                            ReAlloc) {
+                                    ASR::ReAlloc_t *ra =
+                                        ASR::down_cast<
+                                            ASR::ReAlloc_t>(
+                                            inner_fn->
+                                                m_body[ifi]);
+                                    aargs = ra->m_args;
+                                    n_aargs = ra->n_args;
+                                }
+                                if (aargs) {
+                                    for (size_t ali = 0;
+                                            ali < n_aargs;
+                                            ali++) {
+                                        if (!aargs[ali].m_a)
+                                            continue;
+                                        if (!ASR::is_a<ASR::
+                                            StructInstanceMember_t>(
+                                                *aargs[ali].m_a))
+                                            continue;
+                                        ASR::StructInstanceMember_t
+                                            *ifsm = ASR::down_cast<
+                                            ASR::StructInstanceMember_t>(
+                                                aargs[ali].m_a);
+                                        if (!ASR::is_a<ASR::Var_t>(
+                                                *ifsm->m_v))
+                                            continue;
+                                        std::string itgt =
+                                            ASRUtils::symbol_name(
+                                                ASR::down_cast<
+                                                    ASR::Var_t>(
+                                                    ifsm->m_v)
+                                                        ->m_v);
+                                        if (itgt !=
+                                                inner_formal_name)
+                                            continue;
+                                        std::string imem =
+                                            ASRUtils::symbol_name(
+                                                ASRUtils::
+                                                symbol_get_past_external(
+                                                    ifsm->m_m));
+                                        std::string ikey =
+                                            arr_name + "." + imem;
+                                        if (result.count(ikey))
+                                            continue;
+                                        int64_t itotal = 1;
+                                        bool iall_const = true;
+                                        for (size_t d = 0;
+                                                d < aargs[ali]
+                                                    .n_dims;
+                                                d++) {
+                                            int64_t lv = 0;
+                                            ASR::expr_t *le =
+                                                aargs[ali]
+                                                    .m_dims[d]
+                                                    .m_length;
+                                            if (le &&
+                                                    extract_const_int(
+                                                        le, lv)) {
+                                                itotal *= lv;
+                                            } else if (le &&
+                                                    ASR::is_a<ASR::
+                                                    ArraySize_t>(
+                                                        *le)) {
+                                                ASR::ArraySize_t
+                                                    *asz =
+                                                    ASR::down_cast<
+                                                        ASR::ArraySize_t>(
+                                                            le);
+                                                if (ASR::is_a<
+                                                        ASR::Var_t>(
+                                                        *asz->m_v)) {
+                                                    std::string sn =
+                                                        ASRUtils::
+                                                        symbol_name(
+                                                            ASR::down_cast<
+                                                                ASR::Var_t>(
+                                                                asz->m_v)
+                                                                    ->m_v);
+                                                    auto it =
+                                                        iformal_sz
+                                                            .find(sn);
+                                                    if (it !=
+                                                            iformal_sz
+                                                            .end()) {
+                                                        itotal *=
+                                                            it->second;
+                                                    } else {
+                                                        iall_const
+                                                            = false;
+                                                        break;
+                                                    }
+                                                } else {
+                                                    iall_const =
+                                                        false;
+                                                    break;
+                                                }
+                                            } else {
+                                                iall_const = false;
+                                                break;
+                                            }
+                                        }
+                                        if (iall_const &&
+                                                itotal > 0) {
+                                            result[ikey] = itotal;
+                                        }
+                                    }
+                                    continue;
+                                }
+                                // Handle Assignment to
+                                // inner_formal%member = rhs
+                                if (inner_fn->m_body[ifi]->type
+                                        != ASR::stmtType::
+                                            Assignment)
+                                    continue;
+                                ASR::Assignment_t *ia =
+                                    ASR::down_cast<
+                                        ASR::Assignment_t>(
+                                        inner_fn->m_body[ifi]);
+                                if (!ASR::is_a<ASR::
+                                        StructInstanceMember_t>(
+                                            *ia->m_target))
+                                    continue;
+                                ASR::StructInstanceMember_t
+                                    *ifsm = ASR::down_cast<
+                                    ASR::StructInstanceMember_t>(
+                                        ia->m_target);
+                                if (!ASR::is_a<ASR::Var_t>(
+                                        *ifsm->m_v))
+                                    continue;
+                                std::string itgt =
+                                    ASRUtils::symbol_name(
+                                        ASR::down_cast<
+                                            ASR::Var_t>(
+                                            ifsm->m_v)->m_v);
+                                if (itgt != inner_formal_name)
+                                    continue;
+                                std::string imem =
+                                    ASRUtils::symbol_name(
+                                        ASRUtils::
+                                        symbol_get_past_external(
+                                            ifsm->m_m));
+                                std::string ikey =
+                                    arr_name + "." + imem;
+                                if (result.count(ikey))
+                                    continue;
+                                // Check fixed-size RHS type
+                                int64_t rhs_fsz =
+                                    get_fixed_size_array_size(
+                                        ASRUtils::expr_type(
+                                            ia->m_value));
+                                if (rhs_fsz > 0) {
+                                    result[ikey] = rhs_fsz;
+                                    continue;
+                                }
+                                // RHS is a Var — resolve through
+                                // inner formal-to-actual mapping.
+                                if (!ASR::is_a<ASR::Var_t>(
+                                        *ia->m_value))
+                                    continue;
+                                std::string rhs_name =
+                                    ASRUtils::symbol_name(
+                                        ASR::down_cast<
+                                            ASR::Var_t>(
+                                            ia->m_value)->m_v);
+                                auto isz_it =
+                                    iformal_sz.find(rhs_name);
+                                if (isz_it !=
+                                        iformal_sz.end()) {
+                                    result[ikey] =
+                                        isz_it->second;
+                                }
+                            }
+                            break;
+                        }
+                        continue;
+                    }
                     if (fn->m_body[fi]->type !=
                             ASR::stmtType::Assignment) continue;
                     ASR::Assignment_t *fa =
