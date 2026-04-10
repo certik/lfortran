@@ -530,6 +530,20 @@ public:
         ASR::BaseWalkVisitor<GpuAllocStructMemberCollector>::
             visit_StructInstanceMember(x);
     }
+
+    void visit_FunctionCall(const ASR::FunctionCall_t &x) {
+        // A type-bound procedure call like x%get_n() references the
+        // struct variable x via FunctionCall.m_dt.  This counts as a
+        // non-allocatable access so the struct must remain in
+        // involved_syms and be passed as a kernel parameter.
+        if (x.m_dt && ASR::is_a<ASR::Var_t>(*x.m_dt)) {
+            ASR::Var_t *v = ASR::down_cast<ASR::Var_t>(x.m_dt);
+            std::string struct_name = ASRUtils::symbol_name(v->m_v);
+            has_non_alloc_access.insert(struct_name);
+        }
+        ASR::BaseWalkVisitor<GpuAllocStructMemberCollector>::
+            visit_FunctionCall(x);
+    }
 };
 
 // Replaces StructInstanceMember(Var(x), a) with Var(x__a) for
@@ -5612,19 +5626,25 @@ public:
                 alloc_collector.alloc_members) {
             if (involved_syms.find(struct_name) == involved_syms.end())
                 continue;
+            // Skip decomposition for structs that have non-allocatable
+            // access (e.g., type-bound procedure calls via
+            // FunctionCall.m_dt).  The struct must be passed whole so
+            // the Metal codegen can flatten it consistently for both
+            // direct member access and function call arguments.
+            if (alloc_collector.has_non_alloc_access.find(struct_name)
+                    != alloc_collector.has_non_alloc_access.end()) {
+                continue;
+            }
             for (auto &[mem_name, mem_info] : members) {
                 std::string param_name = struct_name + "__" + mem_name;
                 decomp_map[{struct_name, mem_name}] = param_name;
                 decomp_infos.push_back({struct_name, mem_name,
                     param_name, mem_info.first, mem_info.second});
             }
-            // If struct only accessed through allocatable members,
+            // Struct only accessed through allocatable members,
             // remove from involved_syms (it won't be passed as a
             // kernel parameter)
-            if (alloc_collector.has_non_alloc_access.find(struct_name)
-                    == alloc_collector.has_non_alloc_access.end()) {
-                involved_syms.erase(struct_name);
-            }
+            involved_syms.erase(struct_name);
         }
 
         // 2. Create kernel scope and parameters
