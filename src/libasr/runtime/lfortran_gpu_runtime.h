@@ -18,7 +18,7 @@ lfortran_gpu_kernel* lfortran_gpu_load_kernel(
 void                 lfortran_gpu_release_kernel(lfortran_gpu_kernel* k);
 
 void lfortran_gpu_set_buffer_arg(lfortran_gpu_kernel* k, int idx,
-    void* ptr, size_t size);
+    void* ptr, size_t size, int read_only);
 void lfortran_gpu_set_scalar_arg(lfortran_gpu_kernel* k, int idx,
     const void* val, size_t size);
 

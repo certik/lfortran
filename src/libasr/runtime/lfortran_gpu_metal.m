@@ -26,6 +26,7 @@ struct lfortran_gpu_kernel {
     size_t buffer_sizes[MAX_ARGS];
     scalar_arg scalar_args[MAX_ARGS];
     int arg_is_buffer[MAX_ARGS]; // 1 = buffer, 0 = scalar
+    int arg_read_only[MAX_ARGS]; // 1 = read-only (skip copy-back)
     int n_args;
 };
 
@@ -139,12 +140,13 @@ void lfortran_gpu_release_kernel(lfortran_gpu_kernel* k) {
 }
 
 void lfortran_gpu_set_buffer_arg(lfortran_gpu_kernel* k, int idx,
-    void* ptr, size_t size)
+    void* ptr, size_t size, int read_only)
 {
     if (!k || idx >= MAX_ARGS) return;
     k->buffer_ptrs[idx] = ptr;
     k->buffer_sizes[idx] = size;
     k->arg_is_buffer[idx] = 1;
+    k->arg_read_only[idx] = read_only;
     if (idx >= k->n_args) k->n_args = idx + 1;
 }
 
@@ -218,7 +220,7 @@ void lfortran_gpu_launch(lfortran_gpu_ctx* ctx, lfortran_gpu_kernel* k,
 
     // Copy results back from Metal buffers to host memory
     for (int i = 0; i < k->n_args; i++) {
-        if (k->arg_is_buffer[i] && buffers[i]) {
+        if (k->arg_is_buffer[i] && buffers[i] && !k->arg_read_only[i]) {
             if (getenv("LFORTRAN_DEBUG_METAL_SOURCE")) {
                 fprintf(stderr, "[gpu_launch] copy-back buf[%d]: dst=%p src=%p size=%zu\n",
                     i, k->buffer_ptrs[i], [buffers[i] contents],

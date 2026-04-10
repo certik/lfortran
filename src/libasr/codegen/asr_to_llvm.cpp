@@ -19105,7 +19105,7 @@ public:
 
         // 4. Set arguments
         llvm::FunctionType *set_buffer_ft = llvm::FunctionType::get(
-            void_type, {i8_ptr, i32, i8_ptr, i64}, false);
+            void_type, {i8_ptr, i32, i8_ptr, i64, i32}, false);
         llvm::Function *set_buffer_fn = get_gpu_runtime_func(
             "lfortran_gpu_set_buffer_arg", set_buffer_ft);
 
@@ -19134,6 +19134,7 @@ public:
         struct BufferArgInfo {
             llvm::Value *data_ptr;
             llvm::Value *byte_size;
+            bool read_only;
         };
         std::vector<BufferArgInfo> buffer_arg_infos;
 
@@ -19552,6 +19553,27 @@ public:
             ASR::expr_t *arg_expr = x.m_args[i].m_value;
             if (!arg_expr) continue;
 
+            // Determine if this kernel parameter is intent(in) (read-only).
+            bool arg_is_read_only = false;
+            if (i < kernel_func->n_args) {
+                ASR::Variable_t *kparam = ASR::down_cast<ASR::Variable_t>(
+                    ASR::down_cast<ASR::Var_t>(
+                        kernel_func->m_args[i])->m_v);
+                arg_is_read_only = (kparam->m_intent == ASR::intentType::In);
+                // Also check the actual call argument: if the variable
+                // is intent(in) in the enclosing scope or is a Parameter,
+                // the buffer is read-only.
+                if (!arg_is_read_only && ASR::is_a<ASR::Var_t>(*arg_expr)) {
+                    ASR::Variable_t *actual_var = ASR::down_cast<ASR::Variable_t>(
+                        ASRUtils::symbol_get_past_external(
+                            ASR::down_cast<ASR::Var_t>(arg_expr)->m_v));
+                    if (actual_var->m_intent == ASR::intentType::In
+                        || actual_var->m_storage == ASR::storage_typeType::Parameter) {
+                        arg_is_read_only = true;
+                    }
+                }
+            }
+
             ASR::ttype_t *arg_type = ASRUtils::expr_type(arg_expr);
             bool is_allocatable_array = ASR::is_a<ASR::Allocatable_t>(*arg_type)
                 && ASRUtils::is_array(arg_type);
@@ -19715,10 +19737,11 @@ public:
                         llvm::ConstantInt::get(i64, elem_size));
                 }
                 if (packed_mode) {
-                    buffer_arg_infos.push_back({data_ptr, byte_size});
+                    buffer_arg_infos.push_back({data_ptr, byte_size, arg_is_read_only});
                 } else {
                     llvm::Value *idx = llvm::ConstantInt::get(i32, buffer_idx++);
-                    builder->CreateCall(set_buffer_fn, {gpu_kernel, idx, data_ptr, byte_size});
+                    llvm::Value *ro = llvm::ConstantInt::get(i32, arg_is_read_only ? 1 : 0);
+                    builder->CreateCall(set_buffer_fn, {gpu_kernel, idx, data_ptr, byte_size, ro});
                 }
 
                 // For struct arrays with allocatable members, pass
@@ -19728,12 +19751,12 @@ public:
                 auto emit_gpu_buffer = [&](llvm::Value *ptr,
                         llvm::Value *sz) {
                     if (packed_mode) {
-                        buffer_arg_infos.push_back({ptr, sz});
+                        buffer_arg_infos.push_back({ptr, sz, false});
                     } else {
                         llvm::Value *bi = llvm::ConstantInt::get(
                             i32, buffer_idx++);
                         builder->CreateCall(set_buffer_fn,
-                            {gpu_kernel, bi, ptr, sz});
+                            {gpu_kernel, bi, ptr, sz, llvm::ConstantInt::get(i32, 0)});
                     }
                 };
                 if (all_constant &&
@@ -23779,10 +23802,11 @@ public:
                 uint64_t sz = module->getDataLayout().getTypeAllocSize(struct_type);
                 llvm::Value *struct_size = llvm::ConstantInt::get(i64, sz);
                 if (packed_mode) {
-                    buffer_arg_infos.push_back({struct_ptr, struct_size});
+                    buffer_arg_infos.push_back({struct_ptr, struct_size, arg_is_read_only});
                 } else {
                     llvm::Value *idx = llvm::ConstantInt::get(i32, buffer_idx++);
-                    builder->CreateCall(set_buffer_fn, {gpu_kernel, idx, struct_ptr, struct_size});
+                    llvm::Value *ro = llvm::ConstantInt::get(i32, arg_is_read_only ? 1 : 0);
+                    builder->CreateCall(set_buffer_fn, {gpu_kernel, idx, struct_ptr, struct_size, ro});
                 }
             } else {
                 // Scalar: collect for packing into a single struct buffer
@@ -23946,7 +23970,8 @@ public:
             buffer_idx = 0;
             llvm::Value *buf0_idx = llvm::ConstantInt::get(i32, buffer_idx++);
             builder->CreateCall(set_buffer_fn,
-                {gpu_kernel, buf0_idx, packed_buf_ptr, total_size});
+                {gpu_kernel, buf0_idx, packed_buf_ptr, total_size,
+                 llvm::ConstantInt::get(i32, 0)});
         }
 
         // Pack all scalar args (and offsets in packed mode) into a struct
@@ -24081,7 +24106,8 @@ public:
                 llvm::Value *buf_idx =
                     llvm::ConstantInt::get(i32, ws.buffer_index);
                 builder->CreateCall(set_buffer_fn,
-                    {gpu_kernel, buf_idx, ptr, workspace_size});
+                    {gpu_kernel, buf_idx, ptr, workspace_size,
+                     llvm::ConstantInt::get(i32, 0)});
 
                 // Allocate companion buffers for struct-typed VLAs
                 for (auto &comp : ws.companions) {
@@ -24146,7 +24172,8 @@ public:
                         llvm::ConstantInt::get(i32,
                             comp.data_buffer_index);
                     builder->CreateCall(set_buffer_fn,
-                        {gpu_kernel, data_idx, data_ptr, data_size});
+                        {gpu_kernel, data_idx, data_ptr, data_size,
+                         llvm::ConstantInt::get(i32, 0)});
 
                     // Offsets buffer: total_companion_elems *
                     //     sizeof(int32)
@@ -24210,7 +24237,8 @@ public:
                         llvm::ConstantInt::get(i32,
                             comp.offsets_buffer_index);
                     builder->CreateCall(set_buffer_fn,
-                        {gpu_kernel, off_idx, off_ptr, off_size});
+                        {gpu_kernel, off_idx, off_ptr, off_size,
+                         llvm::ConstantInt::get(i32, 0)});
 
                     // Sizes buffer: total_companion_elems *
                     //     sizeof(int32), zero-initialized
@@ -24226,7 +24254,8 @@ public:
                         llvm::ConstantInt::get(i32,
                             comp.sizes_buffer_index);
                     builder->CreateCall(set_buffer_fn,
-                        {gpu_kernel, sz_idx, sz_ptr, sz_size});
+                        {gpu_kernel, sz_idx, sz_ptr, sz_size,
+                         llvm::ConstantInt::get(i32, 0)});
 
                     vla_workspace_ptrs.push_back(data_ptr);
                     vla_workspace_ptrs.push_back(off_ptr);
@@ -24278,6 +24307,7 @@ public:
         // to the original host arrays, then free the combined buffer.
         if (packed_mode && packed_buf_ptr) {
             for (size_t bi = 0; bi < buffer_arg_infos.size(); bi++) {
+                if (buffer_arg_infos[bi].read_only) continue;
                 llvm::Value *src_ptr = builder->CreateGEP(
                     llvm::Type::getInt8Ty(context), packed_buf_ptr,
                     packed_offsets[bi]);
