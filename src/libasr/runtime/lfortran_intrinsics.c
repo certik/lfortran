@@ -2870,6 +2870,10 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
         default: rounding_mode = 'n'; break; // PROCESSOR_DEFINED -> nearest
     }
     int scale = 0;
+    // Track the end of actual content per record (for trailing blank trimming).
+    // X edit descriptors advance position but don't produce content, so trailing
+    // blanks from X should be trimmed from the output record.
+    int64_t content_end = 0;  // end of real content in current record
     while (1) {
         bool consumed_data_item_in_cycle = false;
         bool is_array = false;
@@ -2911,8 +2915,14 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                 if (!move_to_next_element(&s_info, true)) break;
                 continue;
             } else if (value[0] == '/') {
+                // Trim trailing blanks from the current record before newline
+                while (result_len > content_end && result[result_len - 1] == ' ') {
+                    result_len--;
+                }
+                result[result_len] = '\0';
                 result = append_to_string_NTI(al, result, result_len, "\n", 1);
                 result_len += 1;
+                content_end = result_len;  // reset for next record
             } else if (value[0] == '*') {
                 array = true;
             } else if (isdigit(value[0]) && tolower(value[1]) == 'p') {
@@ -2930,6 +2940,7 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                 char* unescaped_value = unescape_quoted_literal(inner_value, strlen(inner_value), quote_char, &val_len);
                 result = append_to_string_NTI(al, result, result_len, unescaped_value, val_len);
                 result_len += val_len;
+                content_end = result_len;
                 internal_free(inner_value);
                 internal_free(unescaped_value);
             } else if (tolower(value[strlen(value) - 1]) == 'x') {
@@ -3086,6 +3097,7 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                                 result_len += 1;
                             }
                         }
+                        content_end = result_len;
                         continue;
                     }
 
@@ -3099,6 +3111,7 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                         result = append_to_string_NTI(al, result, result_len, temp_buf, temp_len);
                         result_len += temp_len;
                         internal_free(temp_buf);
+                        content_end = result_len;
                         continue;
                     }
                     char* arg = *(char**)s_info.current_arg_info.current_arg;
@@ -3407,7 +3420,7 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                 } else if (strlen(value) != 0) {
                     printf("Printing support is not available for %s format.\n",value);
                 }
-
+                content_end = result_len;
             }
         }
         if(BreakWhileLoop) break;
@@ -3422,8 +3435,14 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                 break;
             }
             if (!array) {
+                // Trim trailing blanks from X/T positioning before record separator
+                while (result_len > content_end && result[result_len - 1] == ' ') {
+                    result_len--;
+                }
+                result[result_len] = '\0';
                 result = append_to_string_NTI(al, result, result_len, "\n", 1);
                 result_len += 1;
+                content_end = result_len;
             }
             item_start = item_start_idx;
         } else {
@@ -3437,6 +3456,13 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
     va_end(args);
     internal_free(format_values);
     free_serialization_info(&s_info);
+
+    // Trim trailing blanks from X/T positioning in the final record
+    while (result_len > content_end && result[result_len - 1] == ' ') {
+        result_len--;
+    }
+    result[result_len] = '\0';
+
     // Use tracked length (handles embedded nulls correctly)
     (*result_size) = result_len;
     return result;
