@@ -2047,17 +2047,7 @@ public:
                 }));
             throw SemanticAbort();
         }
-        if (_type == AST::stmtType::Write && a_fmt == nullptr
-                && compiler_options.print_leading_space && formatted) {
-            ASR::asr_t* file_write_asr_t = construct_leading_space(loc);
-            ASR::FileWrite_t* file_write = ASR::down_cast<ASR::FileWrite_t>(ASRUtils::STMT(file_write_asr_t));
-            file_write->m_id = a_id;
-            file_write->m_iomsg = a_iomsg;
-            file_write->m_iostat = a_iostat;
-            file_write->m_unit = a_unit;
-            file_write->m_label = m_label;
-            tmp_vec.push_back(file_write_asr_t);
-        } else if (_type == AST::stmtType::Write) {
+        if (_type == AST::stmtType::Write) {
             a_fmt_constant = a_fmt;
         }
         for( std::uint32_t i = 0; i < n_values; i++ ) {
@@ -7993,30 +7983,6 @@ public:
         throw LCompilersException("Argument not found");
     }
 
-    ASR::asr_t* construct_leading_space(const Location &loc) {
-        ASR::ttype_t *str_type_len_0 = ASRUtils::TYPE(ASR::make_String_t(
-            al, loc, 1,
-            ASRUtils::EXPR(ASR::make_IntegerConstant_t(al, loc, 0,
-                ASRUtils::TYPE(ASR::make_Integer_t(al, loc, 4)))),
-            ASR::string_length_kindType::ExpressionLength,
-            ASR::string_physical_typeType::DescriptorString));
-        ASR::expr_t *empty_string = ASRUtils::EXPR(ASR::make_StringConstant_t(
-            al, loc, s2c(al, ""), str_type_len_0));
-        ASR::ttype_t *str_type_len_1 = ASRUtils::TYPE(ASR::make_String_t(
-            al, loc, 1,
-            ASRUtils::EXPR(ASR::make_IntegerConstant_t(al, loc, 1,
-                ASRUtils::TYPE(ASR::make_Integer_t(al, loc, 4)))),
-            ASR::string_length_kindType::ExpressionLength,
-            ASR::string_physical_typeType::DescriptorString));
-        ASR::expr_t *space = ASRUtils::EXPR(ASR::make_StringConstant_t(
-            al, loc, s2c(al, " "), str_type_len_1));
-        Vec<ASR::expr_t*> args;
-        args.reserve(al, 1);
-        args.push_back(al, space);
-        return ASR::make_FileWrite_t(al, loc, 0, nullptr, nullptr,
-            nullptr, nullptr, args.p, args.size(), nullptr, empty_string, nullptr, true, nullptr, nullptr, nullptr);
-    }
-
     void visit_Print(const AST::Print_t &x) {
         mark_IO_side_effect();
         Vec<ASR::expr_t*> body;
@@ -8042,10 +8008,6 @@ public:
                 ASR::StringConstant_t *fmt_const = ASR::down_cast<ASR::StringConstant_t>(fmt);
                 std::string fmt_str = std::string(fmt_const->m_s);
                 validate_format_string(fmt_str, fmt->base.loc, diag);
-            }
-        } else {
-            if (compiler_options.print_leading_space) {
-                current_body->push_back(al, ASRUtils::STMT(construct_leading_space(x.base.base.loc)));
             }
         }
 
