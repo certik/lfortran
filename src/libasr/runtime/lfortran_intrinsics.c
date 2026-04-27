@@ -1901,6 +1901,13 @@ static inline bool is_logical_type(Primitive_Types t) {
            t == LOGICAL_32_TYPE || t == LOGICAL_64_TYPE;
 }
 
+static inline bool is_integer_type(Primitive_Types t) {
+    return t == INTEGER_8_TYPE || t == INTEGER_16_TYPE ||
+           t == INTEGER_32_TYPE || t == INTEGER_64_TYPE ||
+           t == UNSIGNED_INTEGER_8_TYPE || t == UNSIGNED_INTEGER_16_TYPE ||
+           t == UNSIGNED_INTEGER_32_TYPE || t == UNSIGNED_INTEGER_64_TYPE;
+}
+
 static inline bool logical_value_from_ptr(void *arg, Primitive_Types t) {
     switch (t) {
         case LOGICAL_8_TYPE:  return *(int8_t*)arg != 0;
@@ -2750,6 +2757,7 @@ void default_formatting(lfortran_allocator_t* al, char** result, int64_t *result
     *result = ALLOCATOR_REALLOC(al, *result, result_capacity + 1 /*Null Character*/ );
     bool prev_is_char = false;
     bool prev_is_logical = false;
+    bool prev_is_integer = false;
 
     // Leading blank for list-directed output (Fortran standard carriage control)
     (*result)[0] = ' ';
@@ -2759,6 +2767,7 @@ void default_formatting(lfortran_allocator_t* al, char** result, int64_t *result
         bool curr_is_char = (s_info->current_element_type == CHAR_PTR_TYPE ||
                              s_info->current_element_type == STRING_DESCRIPTOR_TYPE);
         bool curr_is_logical = is_logical_type(s_info->current_element_type);
+        bool curr_is_integer = is_integer_type(s_info->current_element_type);
         int size_to_allocate;
         if(curr_is_char &&
             *(char**)s_info->current_arg_info.current_arg != NULL){
@@ -2780,6 +2789,9 @@ void default_formatting(lfortran_allocator_t* al, char** result, int64_t *result
             if (prev_is_logical || curr_is_logical) {
                 (*result)[result_size] = ' ';
                 result_size += 1;
+            } else if (prev_is_integer && curr_is_integer) {
+                (*result)[result_size] = ' ';
+                result_size += 1;
             } else {
                 strcpy((*result)+result_size, default_spacing);
                 result_size += default_spacing_len;
@@ -2789,6 +2801,7 @@ void default_formatting(lfortran_allocator_t* al, char** result, int64_t *result
         result_size += printed_arg_size;
         prev_is_char = curr_is_char;
         prev_is_logical = curr_is_logical;
+        prev_is_integer = curr_is_integer;
     }
 
     (*result_size_ptr) = result_size;
