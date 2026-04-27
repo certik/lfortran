@@ -671,9 +671,17 @@
                     main
                     []
                     [(Print
-                        (StringConstant
-                            "running derived_types_14 main program"
-                            (String 1 (IntegerConstant 37 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "running derived_types_14 main program"
+                                (String 1 (IntegerConstant 37 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )]
                 )

@@ -768,19 +768,27 @@
                                     []
                                     [(Var 9 string)]
                                     [(Print
-                                        (FunctionCall
-                                            9 char@char_string
-                                            6 char
-                                            [((Var 9 string))]
-                                            (String 1 (FunctionCall
-                                                9 len_string
-                                                6 len
-                                                [((Var 9 string))]
-                                                (Integer 4)
-                                                ()
-                                                ()
-                                            ) ExpressionLength DescriptorString)
+                                        (StringFormat
                                             ()
+                                            [(FunctionCall
+                                                9 char@char_string
+                                                6 char
+                                                [((Var 9 string))]
+                                                (String 1 (FunctionCall
+                                                    9 len_string
+                                                    6 len
+                                                    [((Var 9 string))]
+                                                    (Integer 4)
+                                                    ()
+                                                    ()
+                                                ) ExpressionLength DescriptorString)
+                                                ()
+                                                ()
+                                            )]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
                                             ()
                                         )
                                     )]

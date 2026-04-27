@@ -51,7 +51,15 @@
                         .false.
                     )
                     (Print
-                        (Var 2 str)
+                        (StringFormat
+                            ()
+                            [(Var 2 str)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )]
                 )
         })

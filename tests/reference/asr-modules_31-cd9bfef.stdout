@@ -1339,9 +1339,17 @@
                     [fpm_cmd_update_modules_31
                     fpm_dependency_modules_31]
                     [(Print
-                        (StringConstant
-                            "running modules_31 program"
-                            (String 1 (IntegerConstant 26 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "running modules_31 program"
+                                (String 1 (IntegerConstant 26 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )]
                 )

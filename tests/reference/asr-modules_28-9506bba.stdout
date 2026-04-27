@@ -1105,9 +1105,17 @@
                     [fpm_manifest_dependency
                     fpm_git]
                     [(Print
-                        (StringConstant
-                            "running modules_28 program"
-                            (String 1 (IntegerConstant 26 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "running modules_28 program"
+                                (String 1 (IntegerConstant 26 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )]
                 )

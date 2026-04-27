@@ -2186,9 +2186,17 @@
                     test_template_commutative_p
                     [template_commutative_m]
                     [(Print
-                        (StringConstant
-                            "test commutative"
-                            (String 1 (IntegerConstant 16 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "test commutative"
+                                (String 1 (IntegerConstant 16 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (Print

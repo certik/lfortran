@@ -330,28 +330,92 @@
                     string_12
                     []
                     [(Print
-                        (Var 2 fullhex_digits)
+                        (StringFormat
+                            ()
+                            [(Var 2 fullhex_digits)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (Print
-                        (Var 2 hex_digits)
+                        (StringFormat
+                            ()
+                            [(Var 2 hex_digits)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (Print
-                        (Var 2 lowerhex_digits)
+                        (StringFormat
+                            ()
+                            [(Var 2 lowerhex_digits)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (Print
-                        (Var 2 digits)
+                        (StringFormat
+                            ()
+                            [(Var 2 digits)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (Print
-                        (Var 2 octal_digits)
+                        (StringFormat
+                            ()
+                            [(Var 2 octal_digits)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (Print
-                        (Var 2 letters)
+                        (StringFormat
+                            ()
+                            [(Var 2 letters)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (Print
-                        (Var 2 uppercase)
+                        (StringFormat
+                            ()
+                            [(Var 2 uppercase)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (Print
-                        (Var 2 lowercase)
+                        (StringFormat
+                            ()
+                            [(Var 2 lowercase)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (Print
                         (StringFormat

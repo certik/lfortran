@@ -108,9 +108,17 @@
                                     []
                                     [(Var 4 a)]
                                     [(Print
-                                        (StringConstant
-                                            "abs"
-                                            (String 1 (IntegerConstant 3 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                        (StringFormat
+                                            ()
+                                            [(StringConstant
+                                                "abs"
+                                                (String 1 (IntegerConstant 3 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                            )]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
+                                            ()
                                         )
                                     )
                                     (If
@@ -286,9 +294,17 @@
                                     []
                                     [(Var 3 a)]
                                     [(Print
-                                        (StringConstant
-                                            "sum"
-                                            (String 1 (IntegerConstant 3 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                        (StringFormat
+                                            ()
+                                            [(StringConstant
+                                                "sum"
+                                                (String 1 (IntegerConstant 3 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                            )]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
+                                            ()
                                         )
                                     )
                                     (Assignment

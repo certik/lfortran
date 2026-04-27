@@ -284,7 +284,15 @@
                     intrinsics_36
                     []
                     [(Print
-                        (Var 2 empty)
+                        (StringFormat
+                            ()
+                            [(Var 2 empty)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (If
                         ()
@@ -304,7 +312,15 @@
                         []
                     )
                     (Print
-                        (Var 2 all_spaces)
+                        (StringFormat
+                            ()
+                            [(Var 2 all_spaces)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (If
                         ()
@@ -324,7 +340,15 @@
                         []
                     )
                     (Print
-                        (Var 2 simple)
+                        (StringFormat
+                            ()
+                            [(Var 2 simple)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (If
                         ()
@@ -344,7 +368,15 @@
                         []
                     )
                     (Print
-                        (Var 2 space_at_start)
+                        (StringFormat
+                            ()
+                            [(Var 2 space_at_start)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (If
                         ()
@@ -364,7 +396,15 @@
                         []
                     )
                     (Print
-                        (Var 2 space_at_end)
+                        (StringFormat
+                            ()
+                            [(Var 2 space_at_end)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (If
                         ()
@@ -384,7 +424,15 @@
                         []
                     )
                     (Print
-                        (Var 2 space_in_between)
+                        (StringFormat
+                            ()
+                            [(Var 2 space_in_between)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (If
                         ()
@@ -404,7 +452,15 @@
                         []
                     )
                     (Print
-                        (Var 2 spaces_with_symbols)
+                        (StringFormat
+                            ()
+                            [(Var 2 spaces_with_symbols)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )
                     (If
                         ()

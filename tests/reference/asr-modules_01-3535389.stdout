@@ -58,9 +58,17 @@
                                     []
                                     []
                                     [(Print
-                                        (StringConstant
-                                            "b()"
-                                            (String 1 (IntegerConstant 3 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                        (StringFormat
+                                            ()
+                                            [(StringConstant
+                                                "b()"
+                                                (String 1 (IntegerConstant 3 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                            )]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
+                                            ()
                                         )
                                     )]
                                     ()

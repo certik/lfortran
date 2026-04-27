@@ -221,9 +221,17 @@
                                     []
                                     [(Var 9 tab)]
                                     [(Print
-                                        (StringConstant
-                                            "inside check_table"
-                                            (String 1 (IntegerConstant 18 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                        (StringFormat
+                                            ()
+                                            [(StringConstant
+                                                "inside check_table"
+                                                (String 1 (IntegerConstant 18 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                            )]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
+                                            ()
                                         )
                                     )]
                                     ()

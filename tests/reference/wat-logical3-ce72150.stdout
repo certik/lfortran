@@ -21,7 +21,7 @@
         local.set 1
         local.get 0
         local.get 1
-        i32.and
+        i32.or
         if
             i32.const 1
             i32.const 208
@@ -35,18 +35,9 @@
             i32.const 0
             call 1
             drop
-            i32.const 1
-            i32.const 244
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            call 0
-            unreachable
         else
             i32.const 1
-            i32.const 264
+            i32.const 244
             i32.const 1
             i32.const 0
             call 1
@@ -57,10 +48,19 @@
             i32.const 0
             call 1
             drop
+            i32.const 1
+            i32.const 280
+            i32.const 1
+            i32.const 0
+            call 1
+            drop
+            i32.const 1
+            call 0
+            unreachable
         end
         local.get 0
         local.get 1
-        i32.or
+        i32.xor
         if
             i32.const 1
             i32.const 300
@@ -88,46 +88,7 @@
             call 1
             drop
             i32.const 1
-            i32.const 244
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            call 0
-            unreachable
-        end
-        local.get 0
-        local.get 1
-        i32.xor
-        if
-            i32.const 1
-            i32.const 372
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 16
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-        else
-            i32.const 1
-            i32.const 408
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 16
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 244
+            i32.const 280
             i32.const 1
             i32.const 0
             call 1
@@ -144,6 +105,45 @@
         local.get 1
         i32.and
         i32.eqz
+        if
+            i32.const 1
+            i32.const 376
+            i32.const 1
+            i32.const 0
+            call 1
+            drop
+            i32.const 1
+            i32.const 16
+            i32.const 1
+            i32.const 0
+            call 1
+            drop
+        else
+            i32.const 1
+            i32.const 412
+            i32.const 1
+            i32.const 0
+            call 1
+            drop
+            i32.const 1
+            i32.const 16
+            i32.const 1
+            i32.const 0
+            call 1
+            drop
+            i32.const 1
+            i32.const 280
+            i32.const 1
+            i32.const 0
+            call 1
+            drop
+            i32.const 1
+            call 0
+            unreachable
+        end
+        local.get 1
+        local.get 0
+        i32.xor
         if
             i32.const 1
             i32.const 448
@@ -171,7 +171,7 @@
             call 1
             drop
             i32.const 1
-            i32.const 244
+            i32.const 280
             i32.const 1
             i32.const 0
             call 1
@@ -180,9 +180,13 @@
             call 0
             unreachable
         end
-        local.get 1
+        i32.const 1
+        local.set 0
+        i32.const 1
+        local.set 1
         local.get 0
-        i32.xor
+        local.get 1
+        i32.and
         if
             i32.const 1
             i32.const 520
@@ -210,89 +214,7 @@
             call 1
             drop
             i32.const 1
-            i32.const 244
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            call 0
-            unreachable
-        end
-        local.get 1
-        local.get 0
-        i32.eq
-        if
-            i32.const 1
-            i32.const 592
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 16
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 244
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            call 0
-            unreachable
-        else
-            i32.const 1
-            i32.const 628
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 16
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-        end
-        i32.const 1
-        local.set 0
-        i32.const 1
-        local.set 1
-        local.get 0
-        local.get 1
-        i32.and
-        if
-            i32.const 1
-            i32.const 664
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 16
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-        else
-            i32.const 1
-            i32.const 700
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 16
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 244
+            i32.const 280
             i32.const 1
             i32.const 0
             call 1
@@ -306,7 +228,7 @@
         i32.or
         if
             i32.const 1
-            i32.const 736
+            i32.const 592
             i32.const 1
             i32.const 0
             call 1
@@ -319,7 +241,7 @@
             drop
         else
             i32.const 1
-            i32.const 772
+            i32.const 628
             i32.const 1
             i32.const 0
             call 1
@@ -331,7 +253,7 @@
             call 1
             drop
             i32.const 1
-            i32.const 244
+            i32.const 280
             i32.const 1
             i32.const 0
             call 1
@@ -339,45 +261,6 @@
             i32.const 1
             call 0
             unreachable
-        end
-        local.get 0
-        local.get 1
-        i32.xor
-        if
-            i32.const 1
-            i32.const 808
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 16
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 244
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            call 0
-            unreachable
-        else
-            i32.const 1
-            i32.const 848
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 16
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
         end
         i32.const 0
         call 0
@@ -421,41 +304,29 @@
     (data (;32;) (i32.const 196) "\cc\00\00\00\01\00\00\00")
     (data (;33;) (i32.const 204) "9   ")
     (data (;34;) (i32.const 208) "\d8\00\00\00\1a\00\00\00")
-    (data (;35;) (i32.const 216) "Line 1 - Condition is true  ")
-    (data (;36;) (i32.const 244) "\fc\00\00\00\0b\00\00\00")
-    (data (;37;) (i32.const 252) "ERROR STOP\n ")
-    (data (;38;) (i32.const 264) "\10\01\00\00\1b\00\00\00")
-    (data (;39;) (i32.const 272) "Line 1 - Condition is false ")
-    (data (;40;) (i32.const 300) "\34\01\00\00\1a\00\00\00")
-    (data (;41;) (i32.const 308) "Line 2 - Condition is true  ")
-    (data (;42;) (i32.const 336) "\58\01\00\00\1b\00\00\00")
-    (data (;43;) (i32.const 344) "Line 2 - Condition is false ")
-    (data (;44;) (i32.const 372) "\7c\01\00\00\1c\00\00\00")
-    (data (;45;) (i32.const 380) "Line xor - Condition is true")
-    (data (;46;) (i32.const 408) "\a0\01\00\00\1d\00\00\00")
-    (data (;47;) (i32.const 416) "Line xor - Condition is false   ")
+    (data (;35;) (i32.const 216) "Line 2 - Condition is true  ")
+    (data (;36;) (i32.const 244) "\fc\00\00\00\1b\00\00\00")
+    (data (;37;) (i32.const 252) "Line 2 - Condition is false ")
+    (data (;38;) (i32.const 280) "\20\01\00\00\0b\00\00\00")
+    (data (;39;) (i32.const 288) "ERROR STOP\n ")
+    (data (;40;) (i32.const 300) "\34\01\00\00\1c\00\00\00")
+    (data (;41;) (i32.const 308) "Line xor - Condition is true")
+    (data (;42;) (i32.const 336) "\58\01\00\00\1d\00\00\00")
+    (data (;43;) (i32.const 344) "Line xor - Condition is false   ")
+    (data (;44;) (i32.const 376) "\80\01\00\00\1a\00\00\00")
+    (data (;45;) (i32.const 384) "Line 3 - Condition is true  ")
+    (data (;46;) (i32.const 412) "\a4\01\00\00\1b\00\00\00")
+    (data (;47;) (i32.const 420) "Line 3 - Condition is false ")
     (data (;48;) (i32.const 448) "\c8\01\00\00\1a\00\00\00")
-    (data (;49;) (i32.const 456) "Line 3 - Condition is true  ")
+    (data (;49;) (i32.const 456) "Line 4 - Condition is true  ")
     (data (;50;) (i32.const 484) "\ec\01\00\00\1b\00\00\00")
-    (data (;51;) (i32.const 492) "Line 3 - Condition is false ")
+    (data (;51;) (i32.const 492) "Line 4 - Condition is false ")
     (data (;52;) (i32.const 520) "\10\02\00\00\1a\00\00\00")
-    (data (;53;) (i32.const 528) "Line 4 - Condition is true  ")
+    (data (;53;) (i32.const 528) "Line 6 - Condition is true  ")
     (data (;54;) (i32.const 556) "\34\02\00\00\1b\00\00\00")
-    (data (;55;) (i32.const 564) "Line 4 - Condition is false ")
+    (data (;55;) (i32.const 564) "Line 6 - Condition is false ")
     (data (;56;) (i32.const 592) "\58\02\00\00\1a\00\00\00")
-    (data (;57;) (i32.const 600) "Line 5 - Condition is true  ")
+    (data (;57;) (i32.const 600) "Line 7 - Condition is true  ")
     (data (;58;) (i32.const 628) "\7c\02\00\00\1b\00\00\00")
-    (data (;59;) (i32.const 636) "Line 5 - Condition is false ")
-    (data (;60;) (i32.const 664) "\a0\02\00\00\1a\00\00\00")
-    (data (;61;) (i32.const 672) "Line 6 - Condition is true  ")
-    (data (;62;) (i32.const 700) "\c4\02\00\00\1b\00\00\00")
-    (data (;63;) (i32.const 708) "Line 6 - Condition is false ")
-    (data (;64;) (i32.const 736) "\e8\02\00\00\1a\00\00\00")
-    (data (;65;) (i32.const 744) "Line 7 - Condition is true  ")
-    (data (;66;) (i32.const 772) "\0c\03\00\00\1b\00\00\00")
-    (data (;67;) (i32.const 780) "Line 7 - Condition is false ")
-    (data (;68;) (i32.const 808) "\30\03\00\00\1e\00\00\00")
-    (data (;69;) (i32.const 816) "Line 8 xor - Condition is true  ")
-    (data (;70;) (i32.const 848) "\58\03\00\00\1f\00\00\00")
-    (data (;71;) (i32.const 856) "Line 8 xor - Condition is false ")
+    (data (;59;) (i32.const 636) "Line 7 - Condition is false ")
 )

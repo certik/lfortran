@@ -61,9 +61,17 @@
                         .false.
                     )
                     (Print
-                        (StringConstant
-                            "Else condition"
-                            (String 1 (IntegerConstant 14 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Else condition"
+                                (String 1 (IntegerConstant 14 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (Assignment

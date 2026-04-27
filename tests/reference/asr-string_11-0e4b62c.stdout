@@ -100,9 +100,17 @@
                             ()
                         )
                         [(Print
-                            (StringConstant
-                                "test is not found"
-                                (String 1 (IntegerConstant 17 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            (StringFormat
+                                ()
+                                [(StringConstant
+                                    "test is not found"
+                                    (String 1 (IntegerConstant 17 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                )]
+                                FormatFortran
+                                (Allocatable
+                                    (String 1 () DeferredLength DescriptorString)
+                                )
+                                ()
                             )
                         )]
                         [(Print

@@ -12,9 +12,17 @@
                     functions_16
                     []
                     [(Print
-                        (StringConstant
-                            "running functions_16 program"
-                            (String 1 (IntegerConstant 28 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "running functions_16 program"
+                                (String 1 (IntegerConstant 28 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )]
                 ),

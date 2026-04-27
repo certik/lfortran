@@ -102,9 +102,17 @@
                             )
                             ()
                             [(Print
-                                (StringConstant
-                                    "Pass!"
-                                    (String 1 (IntegerConstant 5 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Pass!"
+                                        (String 1 (IntegerConstant 5 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -118,16 +126,32 @@
                                 (IntegerConstant 38 (Integer 4) Decimal)
                             )
                             [(Print
-                                (StringConstant
-                                    "Failed!"
-                                    (String 1 (IntegerConstant 7 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Failed!"
+                                        (String 1 (IntegerConstant 7 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )]
                         [(Print
-                            (StringConstant
-                                "Invalid marks"
-                                (String 1 (IntegerConstant 13 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            (StringFormat
+                                ()
+                                [(StringConstant
+                                    "Invalid marks"
+                                    (String 1 (IntegerConstant 13 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                )]
+                                FormatFortran
+                                (Allocatable
+                                    (String 1 () DeferredLength DescriptorString)
+                                )
+                                ()
                             )
                         )]
                         .false.
@@ -171,9 +195,17 @@
                             )
                             ()
                             [(Print
-                                (StringConstant
-                                    "Pass!"
-                                    (String 1 (IntegerConstant 5 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Pass!"
+                                        (String 1 (IntegerConstant 5 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -187,16 +219,32 @@
                                 (IntegerConstant 38 (Integer 4) Decimal)
                             )
                             [(Print
-                                (StringConstant
-                                    "Failed!"
-                                    (String 1 (IntegerConstant 7 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Failed!"
+                                        (String 1 (IntegerConstant 7 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )]
                         [(Print
-                            (StringConstant
-                                "Invalid marks"
-                                (String 1 (IntegerConstant 13 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            (StringFormat
+                                ()
+                                [(StringConstant
+                                    "Invalid marks"
+                                    (String 1 (IntegerConstant 13 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                )]
+                                FormatFortran
+                                (Allocatable
+                                    (String 1 () DeferredLength DescriptorString)
+                                )
+                                ()
                             )
                         )]
                         .false.

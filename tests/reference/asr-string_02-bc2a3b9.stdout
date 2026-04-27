@@ -164,7 +164,15 @@
                         )
                     )
                     (Print
-                        (Var 2 greetings)
+                        (StringFormat
+                            ()
+                            [(Var 2 greetings)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )]
                 )
         })

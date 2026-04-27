@@ -88,9 +88,17 @@
                             )
                         )
                         [(Print
-                            (StringConstant
-                                "first branch"
-                                (String 1 (IntegerConstant 12 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            (StringFormat
+                                ()
+                                [(StringConstant
+                                    "first branch"
+                                    (String 1 (IntegerConstant 12 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                )]
+                                FormatFortran
+                                (Allocatable
+                                    (String 1 () DeferredLength DescriptorString)
+                                )
+                                ()
                             )
                         )
                         (GoToTarget
@@ -98,9 +106,17 @@
                             10
                         )]
                         [(Print
-                            (StringConstant
-                                "second branch"
-                                (String 1 (IntegerConstant 13 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            (StringFormat
+                                ()
+                                [(StringConstant
+                                    "second branch"
+                                    (String 1 (IntegerConstant 13 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                )]
+                                FormatFortran
+                                (Allocatable
+                                    (String 1 () DeferredLength DescriptorString)
+                                )
+                                ()
                             )
                         )]
                     )

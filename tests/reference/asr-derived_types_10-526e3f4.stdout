@@ -484,7 +484,15 @@
                                     [(Var 6 self)
                                     (Var 6 str)]
                                     [(Print
-                                        (Var 6 str)
+                                        (StringFormat
+                                            ()
+                                            [(Var 6 str)]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
+                                            ()
+                                        )
                                     )]
                                     ()
                                     Public
@@ -588,7 +596,15 @@
                                     [(Var 7 self)
                                     (Var 7 msg)]
                                     [(Print
-                                        (Var 7 msg)
+                                        (StringFormat
+                                            ()
+                                            [(Var 7 msg)]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
+                                            ()
+                                        )
                                     )]
                                     ()
                                     Public

@@ -638,9 +638,17 @@
                         0
                     )
                     (Print
-                        (StringConstant
-                            "Fortran intrinsic matmul:"
-                            (String 1 (IntegerConstant 25 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Fortran intrinsic matmul:"
+                                (String 1 (IntegerConstant 25 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (IntrinsicImpureSubroutine
@@ -818,9 +826,17 @@
                         )
                     )
                     (Print
-                        (StringConstant
-                            "Clock cycles per element:"
-                            (String 1 (IntegerConstant 25 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Clock cycles per element:"
+                                (String 1 (IntegerConstant 25 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (Print
@@ -892,9 +908,17 @@
                         )
                     )
                     (Print
-                        (StringConstant
-                            "matmul2:"
-                            (String 1 (IntegerConstant 8 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "matmul2:"
+                                (String 1 (IntegerConstant 8 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (IntrinsicImpureSubroutine
@@ -1114,9 +1138,17 @@
                         )
                     )
                     (Print
-                        (StringConstant
-                            "Clock cycles per element:"
-                            (String 1 (IntegerConstant 25 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Clock cycles per element:"
+                                (String 1 (IntegerConstant 25 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (Print
@@ -1205,9 +1237,17 @@
                         )
                     )
                     (Print
-                        (StringConstant
-                            "matmul1:"
-                            (String 1 (IntegerConstant 8 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "matmul1:"
+                                (String 1 (IntegerConstant 8 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (IntrinsicImpureSubroutine
@@ -1427,9 +1467,17 @@
                         )
                     )
                     (Print
-                        (StringConstant
-                            "Clock cycles per element:"
-                            (String 1 (IntegerConstant 25 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Clock cycles per element:"
+                                (String 1 (IntegerConstant 25 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (Print

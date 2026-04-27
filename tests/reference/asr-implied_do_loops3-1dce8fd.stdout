@@ -303,9 +303,17 @@
                     implied_do_loop3
                     []
                     [(Print
-                        (StringConstant
-                            "Loop 1"
-                            (String 1 (IntegerConstant 6 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Loop 1"
+                                (String 1 (IntegerConstant 6 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (Print
@@ -343,9 +351,17 @@
                         )
                     )
                     (Print
-                        (StringConstant
-                            "Loop 2"
-                            (String 1 (IntegerConstant 6 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Loop 2"
+                                (String 1 (IntegerConstant 6 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (Print
@@ -398,9 +414,17 @@
                         )
                     )
                     (Print
-                        (StringConstant
-                            "Loop 3"
-                            (String 1 (IntegerConstant 6 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Loop 3"
+                                (String 1 (IntegerConstant 6 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (Print
@@ -453,9 +477,17 @@
                         )
                     )
                     (Print
-                        (StringConstant
-                            "Loop4"
-                            (String 1 (IntegerConstant 5 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Loop4"
+                                (String 1 (IntegerConstant 5 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (Print
@@ -514,9 +546,17 @@
                         )
                     )
                     (Print
-                        (StringConstant
-                            "Loop5"
-                            (String 1 (IntegerConstant 5 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Loop5"
+                                (String 1 (IntegerConstant 5 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (Print

@@ -3582,17 +3582,33 @@
                             Section
                             []
                             [(Print
-                                (StringConstant
-                                    "All tasks submitted. Waiting for completion."
-                                    (String 1 (IntegerConstant 44 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "All tasks submitted. Waiting for completion."
+                                        (String 1 (IntegerConstant 44 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )]
                     )
                     (Print
-                        (StringConstant
-                            "Updated array:"
-                            (String 1 (IntegerConstant 14 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Updated array:"
+                                (String 1 (IntegerConstant 14 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (DoLoop

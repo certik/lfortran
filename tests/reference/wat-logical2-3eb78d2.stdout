@@ -19,36 +19,6 @@
         local.set 0
         i32.const 0
         local.set 1
-        local.get 0
-        local.get 1
-        i32.and
-        if
-            i32.const 1
-            i32.const 208
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 16
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-        else
-            i32.const 1
-            i32.const 244
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-            i32.const 1
-            i32.const 16
-            i32.const 1
-            i32.const 0
-            call 1
-            drop
-        end
         i32.const 0
         call 0
         return
@@ -90,8 +60,4 @@
     (data (;31;) (i32.const 192) "8   ")
     (data (;32;) (i32.const 196) "\cc\00\00\00\01\00\00\00")
     (data (;33;) (i32.const 204) "9   ")
-    (data (;34;) (i32.const 208) "\d8\00\00\00\1a\00\00\00")
-    (data (;35;) (i32.const 216) "Line 1 - Condition is true  ")
-    (data (;36;) (i32.const 244) "\fc\00\00\00\1b\00\00\00")
-    (data (;37;) (i32.const 252) "Line 1 - Condition is false ")
 )

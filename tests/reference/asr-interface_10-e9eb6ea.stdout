@@ -107,7 +107,15 @@
                         .false.
                     )
                     (Print
-                        (Var 4 x)
+                        (StringFormat
+                            ()
+                            [(Var 4 x)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )]
                 ),
             interface_10_m:

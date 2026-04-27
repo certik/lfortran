@@ -79,9 +79,17 @@
                                 .false.
                             )
                             (Print
-                                (StringConstant
-                                    "Excellent!"
-                                    (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Excellent!"
+                                        (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -96,9 +104,17 @@
                                 .false.
                             )
                             (Print
-                                (StringConstant
-                                    "Very good!"
-                                    (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Very good!"
+                                        (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -113,9 +129,17 @@
                                 .false.
                             )
                             (Print
-                                (StringConstant
-                                    "Well done!"
-                                    (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Well done!"
+                                        (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -130,9 +154,17 @@
                                 .false.
                             )
                             (Print
-                                (StringConstant
-                                    "Not bad!"
-                                    (String 1 (IntegerConstant 8 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Not bad!"
+                                        (String 1 (IntegerConstant 8 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -147,9 +179,17 @@
                                 .false.
                             )
                             (Print
-                                (StringConstant
-                                    "You passed!"
-                                    (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "You passed!"
+                                        (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -164,9 +204,17 @@
                                 .false.
                             )
                             (Print
-                                (StringConstant
-                                    "Better try again!"
-                                    (String 1 (IntegerConstant 17 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Better try again!"
+                                        (String 1 (IntegerConstant 17 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )]
@@ -178,9 +226,17 @@
                             .false.
                         )
                         (Print
-                            (StringConstant
-                                "Invalid marks"
-                                (String 1 (IntegerConstant 13 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            (StringFormat
+                                ()
+                                [(StringConstant
+                                    "Invalid marks"
+                                    (String 1 (IntegerConstant 13 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                )]
+                                FormatFortran
+                                (Allocatable
+                                    (String 1 () DeferredLength DescriptorString)
+                                )
+                                ()
                             )
                         )]
                         .false.
@@ -221,9 +277,17 @@
                             (IntegerConstant 91 (Integer 4) Decimal)
                             (IntegerConstant 100 (Integer 4) Decimal)
                             [(Print
-                                (StringConstant
-                                    "Excellent!"
-                                    (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Excellent!"
+                                        (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -231,9 +295,17 @@
                             (IntegerConstant 81 (Integer 4) Decimal)
                             (IntegerConstant 90 (Integer 4) Decimal)
                             [(Print
-                                (StringConstant
-                                    "Very good!"
-                                    (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Very good!"
+                                        (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -241,9 +313,17 @@
                             (IntegerConstant 71 (Integer 4) Decimal)
                             (IntegerConstant 80 (Integer 4) Decimal)
                             [(Print
-                                (StringConstant
-                                    "Well done!"
-                                    (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Well done!"
+                                        (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -251,9 +331,17 @@
                             (IntegerConstant 61 (Integer 4) Decimal)
                             (IntegerConstant 70 (Integer 4) Decimal)
                             [(Print
-                                (StringConstant
-                                    "Not bad!"
-                                    (String 1 (IntegerConstant 8 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Not bad!"
+                                        (String 1 (IntegerConstant 8 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -261,9 +349,17 @@
                             (IntegerConstant 41 (Integer 4) Decimal)
                             (IntegerConstant 60 (Integer 4) Decimal)
                             [(Print
-                                (StringConstant
-                                    "You passed!"
-                                    (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "You passed!"
+                                        (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -271,16 +367,32 @@
                             ()
                             (IntegerConstant 40 (Integer 4) Decimal)
                             [(Print
-                                (StringConstant
-                                    "Better try again!"
-                                    (String 1 (IntegerConstant 17 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Better try again!"
+                                        (String 1 (IntegerConstant 17 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )]
                         [(Print
-                            (StringConstant
-                                "Invalid marks"
-                                (String 1 (IntegerConstant 13 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            (StringFormat
+                                ()
+                                [(StringConstant
+                                    "Invalid marks"
+                                    (String 1 (IntegerConstant 13 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                )]
+                                FormatFortran
+                                (Allocatable
+                                    (String 1 () DeferredLength DescriptorString)
+                                )
+                                ()
                             )
                         )]
                         .false.
@@ -307,9 +419,17 @@
                             (IntegerConstant 91 (Integer 4) Decimal)
                             (IntegerConstant 100 (Integer 4) Decimal)
                             [(Print
-                                (StringConstant
-                                    "Excellent!"
-                                    (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Excellent!"
+                                        (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -317,9 +437,17 @@
                             (IntegerConstant 81 (Integer 4) Decimal)
                             (IntegerConstant 90 (Integer 4) Decimal)
                             [(Print
-                                (StringConstant
-                                    "Very good!"
-                                    (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Very good!"
+                                        (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -327,9 +455,17 @@
                             (IntegerConstant 71 (Integer 4) Decimal)
                             (IntegerConstant 80 (Integer 4) Decimal)
                             [(Print
-                                (StringConstant
-                                    "Well done!"
-                                    (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Well done!"
+                                        (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -337,9 +473,17 @@
                             (IntegerConstant 61 (Integer 4) Decimal)
                             (IntegerConstant 70 (Integer 4) Decimal)
                             [(Print
-                                (StringConstant
-                                    "Not bad!"
-                                    (String 1 (IntegerConstant 8 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Not bad!"
+                                        (String 1 (IntegerConstant 8 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -347,9 +491,17 @@
                             (IntegerConstant 41 (Integer 4) Decimal)
                             (IntegerConstant 60 (Integer 4) Decimal)
                             [(Print
-                                (StringConstant
-                                    "You passed!"
-                                    (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "You passed!"
+                                        (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )
@@ -357,16 +509,32 @@
                             ()
                             (IntegerConstant 40 (Integer 4) Decimal)
                             [(Print
-                                (StringConstant
-                                    "Better try again!"
-                                    (String 1 (IntegerConstant 17 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                (StringFormat
+                                    ()
+                                    [(StringConstant
+                                        "Better try again!"
+                                        (String 1 (IntegerConstant 17 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                    )]
+                                    FormatFortran
+                                    (Allocatable
+                                        (String 1 () DeferredLength DescriptorString)
+                                    )
+                                    ()
                                 )
                             )]
                         )]
                         [(Print
-                            (StringConstant
-                                "Invalid marks"
-                                (String 1 (IntegerConstant 13 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            (StringFormat
+                                ()
+                                [(StringConstant
+                                    "Invalid marks"
+                                    (String 1 (IntegerConstant 13 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                )]
+                                FormatFortran
+                                (Allocatable
+                                    (String 1 () DeferredLength DescriptorString)
+                                )
+                                ()
                             )
                         )]
                         .false.

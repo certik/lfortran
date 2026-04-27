@@ -18,10 +18,12 @@ target datalayout = "..."
 @string_const.8 = private global %string_descriptor <{ i8* getelementptr inbounds ([8 x i8], [8 x i8]* @string_const_data.7, i32 0, i32 0), i64 8 }>
 @1 = private unnamed_addr constant [5 x i8] c"%s%s\00", align 1
 @2 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+@serialization_info.9 = private unnamed_addr constant [10 x i8] c"S-DESC-25\00", align 1
 @3 = private unnamed_addr constant [5 x i8] c"%s%s\00", align 1
 
 define i32 @main(i32 %0, i8** %1) {
 .entry:
+  %stringFormat_desc1 = alloca %string_descriptor, align 8
   %stringFormat_desc = alloca %string_descriptor, align 8
   %2 = call i8* @_lfortran_get_default_allocator()
   %title = alloca %string_descriptor, align 8
@@ -103,39 +105,60 @@ free_nonnull:                                     ; preds = %.entry
   br label %free_done
 
 free_done:                                        ; preds = %free_nonnull, %.entry
-  %48 = getelementptr %string_descriptor, %string_descriptor* %greetings, i32 0, i32 0
-  %49 = load i8*, i8** %48, align 8
-  call void @_lfortran_printf(i8* getelementptr inbounds ([5 x i8], [5 x i8]* @3, i32 0, i32 0), i8* %49, i32 25, i8* getelementptr inbounds ([2 x i8], [2 x i8]* @2, i32 0, i32 0), i32 1)
+  %48 = alloca i64, align 8
+  %49 = load %string_descriptor, %string_descriptor* %greetings, align 1
+  %50 = alloca %string_descriptor, align 8
+  store %string_descriptor %49, %string_descriptor* %50, align 1
+  %51 = call i8* (i8*, i8*, i64, i8*, i64*, i32, i32, i32, i32, i32, ...) @_lcompilers_string_format_fortran(i8* %2, i8* null, i64 0, i8* getelementptr inbounds ([10 x i8], [10 x i8]* @serialization_info.9, i32 0, i32 0), i64* %48, i32 0, i32 0, i32 0, i32 0, i32 0, %string_descriptor* %50)
+  %52 = load i64, i64* %48, align 8
+  %53 = getelementptr %string_descriptor, %string_descriptor* %stringFormat_desc1, i32 0, i32 0
+  store i8* %51, i8** %53, align 8
+  %54 = getelementptr %string_descriptor, %string_descriptor* %stringFormat_desc1, i32 0, i32 1
+  store i64 %52, i64* %54, align 8
+  %55 = getelementptr %string_descriptor, %string_descriptor* %stringFormat_desc1, i32 0, i32 0
+  %56 = load i8*, i8** %55, align 8
+  %57 = getelementptr %string_descriptor, %string_descriptor* %stringFormat_desc1, i32 0, i32 1
+  %58 = load i64, i64* %57, align 8
+  %59 = trunc i64 %58 to i32
+  call void @_lfortran_printf(i8* getelementptr inbounds ([5 x i8], [5 x i8]* @3, i32 0, i32 0), i8* %56, i32 %59, i8* getelementptr inbounds ([2 x i8], [2 x i8]* @2, i32 0, i32 0), i32 1)
+  %60 = icmp eq i8* %51, null
+  br i1 %60, label %free_done3, label %free_nonnull2
+
+free_nonnull2:                                    ; preds = %free_done
+  call void @_lfortran_free_alloc(i8* %2, i8* %51)
+  br label %free_done3
+
+free_done3:                                       ; preds = %free_nonnull2, %free_done
   br label %return
 
-return:                                           ; preds = %free_done
+return:                                           ; preds = %free_done3
   br label %FINALIZE_SYMTABLE_string_02
 
 FINALIZE_SYMTABLE_string_02:                      ; preds = %return
   br label %Finalize_Variable_firstname
 
 Finalize_Variable_firstname:                      ; preds = %FINALIZE_SYMTABLE_string_02
-  %50 = getelementptr %string_descriptor, %string_descriptor* %firstname, i32 0, i32 0
-  %51 = load i8*, i8** %50, align 8
-  call void @_lfortran_free_alloc(i8* %2, i8* %51)
+  %61 = getelementptr %string_descriptor, %string_descriptor* %firstname, i32 0, i32 0
+  %62 = load i8*, i8** %61, align 8
+  call void @_lfortran_free_alloc(i8* %2, i8* %62)
   br label %Finalize_Variable_greetings
 
 Finalize_Variable_greetings:                      ; preds = %Finalize_Variable_firstname
-  %52 = getelementptr %string_descriptor, %string_descriptor* %greetings, i32 0, i32 0
-  %53 = load i8*, i8** %52, align 8
-  call void @_lfortran_free_alloc(i8* %2, i8* %53)
+  %63 = getelementptr %string_descriptor, %string_descriptor* %greetings, i32 0, i32 0
+  %64 = load i8*, i8** %63, align 8
+  call void @_lfortran_free_alloc(i8* %2, i8* %64)
   br label %Finalize_Variable_surname
 
 Finalize_Variable_surname:                        ; preds = %Finalize_Variable_greetings
-  %54 = getelementptr %string_descriptor, %string_descriptor* %surname, i32 0, i32 0
-  %55 = load i8*, i8** %54, align 8
-  call void @_lfortran_free_alloc(i8* %2, i8* %55)
+  %65 = getelementptr %string_descriptor, %string_descriptor* %surname, i32 0, i32 0
+  %66 = load i8*, i8** %65, align 8
+  call void @_lfortran_free_alloc(i8* %2, i8* %66)
   br label %Finalize_Variable_title
 
 Finalize_Variable_title:                          ; preds = %Finalize_Variable_surname
-  %56 = getelementptr %string_descriptor, %string_descriptor* %title, i32 0, i32 0
-  %57 = load i8*, i8** %56, align 8
-  call void @_lfortran_free_alloc(i8* %2, i8* %57)
+  %67 = getelementptr %string_descriptor, %string_descriptor* %title, i32 0, i32 0
+  %68 = load i8*, i8** %67, align 8
+  call void @_lfortran_free_alloc(i8* %2, i8* %68)
   call void @_lfortran_internal_alloc_finalize()
   ret i32 0
 }

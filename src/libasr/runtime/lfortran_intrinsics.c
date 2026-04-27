@@ -11046,10 +11046,18 @@ LFORTRAN_API void _lfortran_file_write(int32_t unit_num, int32_t* iostat, const 
             internal_free(combined);
         } else {
             // Sequential / stream access: write as before
+            // When delimiters are set, the leading blank (carriage control
+            // from default_formatting) must appear before the delimiter,
+            // not inside the quoted string.
+            int blank_skip = 0;
+            if (open_delim != '\0' && str_len > 0 && str[0] == ' ') {
+                fputc(' ', filep);
+                blank_skip = 1;
+            }
             if (end != NULL) {
                 if(open_delim != '\0') {
                     fprintf(filep, "%c%.*s%c%.*s",
-                        open_delim, (int)str_len, str, close_delim,
+                        open_delim, (int)(str_len - blank_skip), str + blank_skip, close_delim,
                         (int)end_len, end
                     );
                 } else {
@@ -11061,7 +11069,7 @@ LFORTRAN_API void _lfortran_file_write(int32_t unit_num, int32_t* iostat, const 
             } else {
                 if(open_delim != '\0') {
                     fprintf(filep, "%c%.*s%c",
-                        open_delim, (int)str_len, str, close_delim
+                        open_delim, (int)(str_len - blank_skip), str + blank_skip, close_delim
                     );
                 } else {
                     fprintf(filep, "%.*s", (int)str_len, str);

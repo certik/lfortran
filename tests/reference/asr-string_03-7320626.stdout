@@ -226,7 +226,15 @@
                         .false.
                     )
                     (Print
-                        (Var 3 combined)
+                        (StringFormat
+                            ()
+                            [(Var 3 combined)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
                     )]
                 ),
             string_03_mod:

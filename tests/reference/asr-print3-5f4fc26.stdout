@@ -132,9 +132,17 @@
                         ()
                     )
                     (Print
-                        (StringConstant
-                            "ok"
-                            (String 1 (IntegerConstant 2 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "ok"
+                                (String 1 (IntegerConstant 2 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (FileWrite
@@ -143,9 +151,17 @@
                         (Var 2 lfortran_iomsg1)
                         ()
                         ()
-                        [(StringConstant
-                            "ok"
-                            (String 1 (IntegerConstant 2 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        [(StringFormat
+                            ()
+                            [(StringConstant
+                                "ok"
+                                (String 1 (IntegerConstant 2 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )]
                         ()
                         ()

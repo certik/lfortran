@@ -130,9 +130,17 @@
                                     []
                                     [(Var 4 x)]
                                     [(Print
-                                        (StringConstant
-                                            "Hello World"
-                                            (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                        (StringFormat
+                                            ()
+                                            [(StringConstant
+                                                "Hello World"
+                                                (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                            )]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
+                                            ()
                                         )
                                     )]
                                     ()

@@ -571,9 +571,17 @@
                         .false.
                     )
                     (Print
-                        (StringConstant
-                            "End Stream Triad"
-                            (String 1 (IntegerConstant 16 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "End Stream Triad"
+                                (String 1 (IntegerConstant 16 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )]
                 )

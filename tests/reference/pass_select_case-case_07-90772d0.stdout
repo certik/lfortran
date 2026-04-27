@@ -116,9 +116,17 @@
                                             .false.
                                         )
                                         (Print
-                                            (StringConstant
-                                                "one of the first ten letters"
-                                                (String 1 (IntegerConstant 28 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                            (StringFormat
+                                                ()
+                                                [(StringConstant
+                                                    "one of the first ten letters"
+                                                    (String 1 (IntegerConstant 28 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                                )]
+                                                FormatFortran
+                                                (Allocatable
+                                                    (String 1 () DeferredLength DescriptorString)
+                                                )
+                                                ()
                                             )
                                         )]
                                         [(If
@@ -159,9 +167,17 @@
                                                 .false.
                                             )
                                             (Print
-                                                (StringConstant
-                                                    "one of l, m, n, o, p"
-                                                    (String 1 (IntegerConstant 20 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                                (StringFormat
+                                                    ()
+                                                    [(StringConstant
+                                                        "one of l, m, n, o, p"
+                                                        (String 1 (IntegerConstant 20 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                                    )]
+                                                    FormatFortran
+                                                    (Allocatable
+                                                        (String 1 () DeferredLength DescriptorString)
+                                                    )
+                                                    ()
                                                 )
                                             )]
                                             [(If
@@ -187,9 +203,17 @@
                                                     .false.
                                                 )
                                                 (Print
-                                                    (StringConstant
-                                                        "one of z"
-                                                        (String 1 (IntegerConstant 8 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                                    (StringFormat
+                                                        ()
+                                                        [(StringConstant
+                                                            "one of z"
+                                                            (String 1 (IntegerConstant 8 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                                        )]
+                                                        FormatFortran
+                                                        (Allocatable
+                                                            (String 1 () DeferredLength DescriptorString)
+                                                        )
+                                                        ()
                                                     )
                                                 )]
                                                 [(Assignment
@@ -203,9 +227,17 @@
                                                     .false.
                                                 )
                                                 (Print
-                                                    (StringConstant
-                                                        "other characters, which may not be letters"
-                                                        (String 1 (IntegerConstant 42 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                                    (StringFormat
+                                                        ()
+                                                        [(StringConstant
+                                                            "other characters, which may not be letters"
+                                                            (String 1 (IntegerConstant 42 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                                        )]
+                                                        FormatFortran
+                                                        (Allocatable
+                                                            (String 1 () DeferredLength DescriptorString)
+                                                        )
+                                                        ()
                                                     )
                                                 )]
                                             )]

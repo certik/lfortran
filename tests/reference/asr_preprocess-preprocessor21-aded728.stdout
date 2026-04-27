@@ -12,21 +12,45 @@
                     preprocessor21
                     []
                     [(Print
-                        (StringConstant
-                            "Atleast one of VAR1 and VAR2 isn't defined"
-                            (String 1 (IntegerConstant 42 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Atleast one of VAR1 and VAR2 isn't defined"
+                                (String 1 (IntegerConstant 42 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (Print
-                        (StringConstant
-                            "Neither of VAR3 or VAR4 is defined"
-                            (String 1 (IntegerConstant 34 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Neither of VAR3 or VAR4 is defined"
+                                (String 1 (IntegerConstant 34 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (Print
-                        (StringConstant
-                            "Both VAR5 and VAR6 are defined or neither is defined."
-                            (String 1 (IntegerConstant 53 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "Both VAR5 and VAR6 are defined or neither is defined."
+                                (String 1 (IntegerConstant 53 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )]
                 )

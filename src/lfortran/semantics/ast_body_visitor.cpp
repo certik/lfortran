@@ -2334,15 +2334,7 @@ public:
             a_fmt_constant = ASRUtils::EXPR(ASR::make_StringConstant_t(
                 al, a_fmt->base.loc, s2c(al, format_statements[label]), a_fmt_type));
         }
-        // Don't use stringFormat with single character argument
-        if (!a_fmt
-            && _type == AST::stmtType::Write
-            && a_values_vec.size() == 1
-            && ASR::is_a<ASR::String_t>(*ASRUtils::expr_type(a_values_vec[0]))){
-            tmp = ASR::make_FileWrite_t(al, loc, m_label, a_unit,
-            a_iomsg, a_iostat, a_id, a_values_vec.p,
-            a_values_vec.size(), a_separator, a_end, overloaded_stmt, formatted, a_nml, nullptr, a_pos);
-        } else if ( _type == AST::stmtType::Write ) { // If not the previous case, Wrap everything in stringFormat.
+        if ( _type == AST::stmtType::Write ) { // Wrap everything in stringFormat.
             if (formatted) {
                 ASR::ttype_t *type = ASRUtils::TYPE(ASR::make_Allocatable_t(al, loc,
                     ASRUtils::TYPE(ASR::make_String_t(
@@ -8084,11 +8076,6 @@ public:
 
 
             tmp = ASR::make_Print_t(al, x.base.base.loc, string_format);
-        } else if (!fmt && body.size() == 1
-                        && ASR::is_a<ASR::String_t>(*ASRUtils::expr_type(body[0]))
-                        && !ASR::is_a<ASR::ImpliedDoLoop_t>(*body[0])
-                        ) {
-            tmp = ASR::make_Print_t(al, x.base.base.loc, body[0]);
         } else {
             ASR::ttype_t *type = ASRUtils::TYPE(ASR::make_Allocatable_t(al, x.base.base.loc,
                 ASRUtils::TYPE(ASR::make_String_t(

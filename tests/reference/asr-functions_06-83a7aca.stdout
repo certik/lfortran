@@ -71,16 +71,24 @@
                     functions_06
                     [functions_06_m]
                     [(Print
-                        (FunctionCall
-                            6 trim_wrapper
+                        (StringFormat
                             ()
-                            [((Var 6 string))]
-                            (String 1 (StringLen
-                                (Var 6 string)
-                                (Integer 4)
+                            [(FunctionCall
+                                6 trim_wrapper
                                 ()
-                            ) ExpressionLength DescriptorString)
-                            ()
+                                [((Var 6 string))]
+                                (String 1 (StringLen
+                                    (Var 6 string)
+                                    (Integer 4)
+                                    ()
+                                ) ExpressionLength DescriptorString)
+                                ()
+                                ()
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
                             ()
                         )
                     )

@@ -2037,9 +2037,17 @@
                     modules_33
                     []
                     [(Print
-                        (StringConstant
-                            "running modules_33 program"
-                            (String 1 (IntegerConstant 26 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "running modules_33 program"
+                                (String 1 (IntegerConstant 26 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )]
                 )

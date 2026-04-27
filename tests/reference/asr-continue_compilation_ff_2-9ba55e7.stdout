@@ -12,9 +12,17 @@
                     continue_compilation_ff_2
                     []
                     [(Print
-                        (StringConstant
-                            "This is a test program"
-                            (String 1 (IntegerConstant 22 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "This is a test program"
+                                (String 1 (IntegerConstant 22 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )]
                 )

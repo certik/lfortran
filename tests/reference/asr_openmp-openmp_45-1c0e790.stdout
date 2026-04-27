@@ -3507,9 +3507,17 @@
                                     []
                                     []
                                     [(Print
-                                        (StringConstant
-                                            "Computing A"
-                                            (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                        (StringFormat
+                                            ()
+                                            [(StringConstant
+                                                "Computing A"
+                                                (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                            )]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
+                                            ()
                                         )
                                     )]
                                     ()
@@ -3543,9 +3551,17 @@
                                     []
                                     []
                                     [(Print
-                                        (StringConstant
-                                            "Computing B"
-                                            (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                        (StringFormat
+                                            ()
+                                            [(StringConstant
+                                                "Computing B"
+                                                (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                            )]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
+                                            ()
                                         )
                                     )]
                                     ()
@@ -3579,9 +3595,17 @@
                                     []
                                     []
                                     [(Print
-                                        (StringConstant
-                                            "Computing C"
-                                            (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                        (StringFormat
+                                            ()
+                                            [(StringConstant
+                                                "Computing C"
+                                                (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                            )]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
+                                            ()
                                         )
                                     )]
                                     ()

@@ -302,9 +302,17 @@
                         10
                     )
                     (Print
-                        (StringConstant
-                            "err rewind"
-                            (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "err rewind"
+                                (String 1 (IntegerConstant 10 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )
                     (GoToTarget
@@ -312,9 +320,17 @@
                         20
                     )
                     (Print
-                        (StringConstant
-                            "err inquire"
-                            (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                        (StringFormat
+                            ()
+                            [(StringConstant
+                                "err inquire"
+                                (String 1 (IntegerConstant 11 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
                         )
                     )]
                 )

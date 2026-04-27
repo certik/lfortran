@@ -567,9 +567,17 @@
                                         .false.
                                     )
                                     (Print
-                                        (StringConstant
-                                            "in sub1"
-                                            (String 1 (IntegerConstant 7 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                        (StringFormat
+                                            ()
+                                            [(StringConstant
+                                                "in sub1"
+                                                (String 1 (IntegerConstant 7 (Integer 4) Decimal) ExpressionLength DescriptorString)
+                                            )]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
+                                            ()
                                         )
                                     )
                                     (If

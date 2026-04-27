@@ -36,6 +36,7 @@ target datalayout = "..."
 @28 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
 @29 = private unnamed_addr constant [5 x i8] c"%s%s\00", align 1
 @30 = private unnamed_addr constant [2 x i8] c"\0A\00", align 1
+@serialization_info = private unnamed_addr constant [9 x i8] c"S-DESC-2\00", align 1
 @string_const_data = private constant [2 x i8] c"OK"
 @string_const = private global %string_descriptor <{ i8* getelementptr inbounds ([2 x i8], [2 x i8]* @string_const_data, i32 0, i32 0), i64 2 }>
 @31 = private unnamed_addr constant [5 x i8] c"%s%s\00", align 1
@@ -58,6 +59,7 @@ FINALIZE_SYMTABLE__lcompilers_real_i32:           ; preds = %return
 
 define i32 @main(i32 %0, i8** %1) {
 .entry:
+  %stringFormat_desc = alloca %string_descriptor, align 8
   %array_bound38 = alloca i32, align 4
   %array_bound34 = alloca i32, align 4
   %array_bound11 = alloca i32, align 4
@@ -532,22 +534,41 @@ else51:                                           ; preds = %loop.end49
   br label %ifcont52
 
 ifcont52:                                         ; preds = %else51, %then50
-  %189 = load i8*, i8** getelementptr inbounds (%string_descriptor, %string_descriptor* @string_const, i32 0, i32 0), align 8
-  call void @_lfortran_printf(i8* getelementptr inbounds ([5 x i8], [5 x i8]* @31, i32 0, i32 0), i8* %189, i32 2, i8* getelementptr inbounds ([2 x i8], [2 x i8]* @30, i32 0, i32 0), i32 1)
+  %189 = alloca i64, align 8
+  %190 = call i8* (i8*, i8*, i64, i8*, i64*, i32, i32, i32, i32, i32, ...) @_lcompilers_string_format_fortran(i8* %2, i8* null, i64 0, i8* getelementptr inbounds ([9 x i8], [9 x i8]* @serialization_info, i32 0, i32 0), i64* %189, i32 0, i32 0, i32 0, i32 0, i32 0, %string_descriptor* @string_const)
+  %191 = load i64, i64* %189, align 8
+  %192 = getelementptr %string_descriptor, %string_descriptor* %stringFormat_desc, i32 0, i32 0
+  store i8* %190, i8** %192, align 8
+  %193 = getelementptr %string_descriptor, %string_descriptor* %stringFormat_desc, i32 0, i32 1
+  store i64 %191, i64* %193, align 8
+  %194 = getelementptr %string_descriptor, %string_descriptor* %stringFormat_desc, i32 0, i32 0
+  %195 = load i8*, i8** %194, align 8
+  %196 = getelementptr %string_descriptor, %string_descriptor* %stringFormat_desc, i32 0, i32 1
+  %197 = load i64, i64* %196, align 8
+  %198 = trunc i64 %197 to i32
+  call void @_lfortran_printf(i8* getelementptr inbounds ([5 x i8], [5 x i8]* @31, i32 0, i32 0), i8* %195, i32 %198, i8* getelementptr inbounds ([2 x i8], [2 x i8]* @30, i32 0, i32 0), i32 1)
+  %199 = icmp eq i8* %190, null
+  br i1 %199, label %free_done54, label %free_nonnull53
+
+free_nonnull53:                                   ; preds = %ifcont52
+  call void @_lfortran_free_alloc(i8* %2, i8* %190)
+  br label %free_done54
+
+free_done54:                                      ; preds = %free_nonnull53, %ifcont52
   br label %return
 
-return:                                           ; preds = %ifcont52
+return:                                           ; preds = %free_done54
   br label %FINALIZE_SYMTABLE_static_large_array
 
 FINALIZE_SYMTABLE_static_large_array:             ; preds = %return
-  %190 = icmp eq i8* %4, null
-  br i1 %190, label %free_done54, label %free_nonnull53
+  %200 = icmp eq i8* %4, null
+  br i1 %200, label %free_done56, label %free_nonnull55
 
-free_nonnull53:                                   ; preds = %FINALIZE_SYMTABLE_static_large_array
+free_nonnull55:                                   ; preds = %FINALIZE_SYMTABLE_static_large_array
   call void @_lfortran_free_alloc(i8* %2, i8* %4)
-  br label %free_done54
+  br label %free_done56
 
-free_done54:                                      ; preds = %free_nonnull53, %FINALIZE_SYMTABLE_static_large_array
+free_done56:                                      ; preds = %free_nonnull55, %FINALIZE_SYMTABLE_static_large_array
   call void @_lfortran_internal_alloc_finalize()
   ret i32 0
 }
@@ -578,6 +599,8 @@ declare void @llvm.stackrestore(i8*) #0
 
 ; Function Attrs: nounwind readnone speculatable willreturn
 declare float @llvm.fabs.f32(float) #1
+
+declare i8* @_lcompilers_string_format_fortran(i8*, i8*, i64, i8*, i64*, i32, i32, i32, i32, i32, ...)
 
 declare void @_lfortran_printf(i8*, i8*, i32, i8*, i32)
 
