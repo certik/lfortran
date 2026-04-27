@@ -9155,7 +9155,12 @@ static bool read_field(InputSource *inputSource, int read_width, bool advance_no
     }
 
     if (read_line(*buffer, read_width + 1, inputSource) == NULL) {
-        if (iostat) *iostat = -1;
+        if (iostat) {
+            *iostat = -1;
+        } else {
+            fprintf(stderr, "Runtime Error: End of file\n");
+            exit(1);
+        }
         if (chunk) *chunk = 0;
         internal_free(*buffer);
         *buffer = NULL;
@@ -10042,7 +10047,12 @@ static void common_formatted_read(InputSource *inputSource,
                     c = read_character(inputSource);
                 } while (c != '\n' && c != EOF);
                 if (c == EOF) {
-                    if (iostat) *iostat = -1;
+                    if (iostat) {
+                        *iostat = -1;
+                    } else {
+                        fprintf(stderr, "Runtime Error: End of file\n");
+                        exit(1);
+                    }
                     break;
                 }
             }
