@@ -6,7 +6,7 @@
     "outfile": null,
     "outfile_hash": null,
     "stdout": "run-integer_overflow-3cf26f8.stdout",
-    "stdout_hash": "3d4b912f421baf137f72b97d41d0e2311e6676777ae3bceddc19d5d6",
+    "stdout_hash": "377de37d85750ffe46ba2f20f4238ffe6bd3de4083cd15239af07b41",
     "stderr": "run-integer_overflow-3cf26f8.stderr",
     "stderr_hash": "a4c99417a6e12ac2dd2b0053e6fd4fb8b98d15e5cb5d5fc27eb4ae7f",
     "returncode": 1
