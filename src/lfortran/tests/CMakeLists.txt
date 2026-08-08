@@ -127,6 +127,22 @@ if (WITH_LLVM AND (NOT EMSCRIPTEN OR LFORTRAN_BUILD_TO_WASM))
             --input ${CMAKE_SOURCE_DIR}/tests/asr/edn_strings_01.f90
             --input ${CMAKE_SOURCE_DIR}/examples/expr2.f90
     )
+    # The fuzzer must reach a linked executable, so it is registered only
+    # where the corpus can compile too. The seed comes from examples/, which
+    # the source tarball ships; integration_tests/ is not in the tarball.
+    if (NOT WIN32)
+        add_test(
+            NAME test_asr_fuzzer_smoke
+            COMMAND ${LFORTRAN_TEST_PYTHON}
+                ${CMAKE_SOURCE_DIR}/tests/asr/fuzz.py
+                --lfortran $<TARGET_FILE:lfortran>
+                --source ${CMAKE_SOURCE_DIR}/examples/expr2.f90
+                --seed 1
+                --cases 4
+                --strategy valid
+                --artifacts ${PROJECT_BINARY_DIR}/asr-fuzz-artifacts
+        )
+    endif()
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux"
         OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD"
         OR CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
