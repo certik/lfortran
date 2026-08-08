@@ -200,3 +200,7 @@ requirements. Consequently:
 - structurally decoded but invalid ASR produces an ASR verifier diagnostic;
 - verifier-valid standalone ASR proceeds through the normal pass and LLVM
   pipeline.
+
+The reusable APIs in `src/lfortran/pipeline.h` own Fortran-or-ASR loading and
+the phase-aware ASR-to-default-passes-to-LLVM-to-object path. The CLI and
+direct-ASR tools therefore share the same implementation.
