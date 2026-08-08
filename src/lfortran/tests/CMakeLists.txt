@@ -97,26 +97,13 @@ add_test(test_lfortran ${PROJECT_BINARY_DIR}/test_lfortran)
 # before src/bin, so `if (TARGET lfortran)` is not usable yet; mirror the
 # condition under which src/bin creates the target instead.
 if (WITH_LLVM AND (NOT EMSCRIPTEN OR LFORTRAN_BUILD_TO_WASM))
-    # Emitting an executable needs a working end-to-end link, which the
-    # Windows CI job does not provide: it builds and unit tests the compiler
-    # but never runs the integration suite. Object emission is still covered
-    # there by the test below.
-    if (NOT WIN32)
-        add_test(
-            NAME test_asr_text_compile
-            COMMAND $<TARGET_FILE:lfortran>
-                ${CMAKE_SOURCE_DIR}/tests/asr/asr_text_compile_01.asr
-                --no-color
-                -o ${PROJECT_BINARY_DIR}/asr_text_compile_01
-        )
-    endif()
+    find_program(LFORTRAN_TEST_PYTHON NAMES python python3 REQUIRED)
     add_test(
-        NAME test_asr_text_object
-        COMMAND $<TARGET_FILE:lfortran>
-            ${CMAKE_SOURCE_DIR}/tests/asr/asr_text_compile_01.asr
-            --no-color
-            -c
-            -o ${PROJECT_BINARY_DIR}/asr_text_compile_01.o
+        NAME test_asr_corpus
+        COMMAND ${LFORTRAN_TEST_PYTHON}
+            ${CMAKE_SOURCE_DIR}/tests/asr/run_tests.py
+            --lfortran $<TARGET_FILE:lfortran>
+            --manifest ${CMAKE_SOURCE_DIR}/tests/asr/tests.toml
     )
     # The format claims to be an EDN data subset; enforce that with a reader
     # that knows nothing about LFortran.
