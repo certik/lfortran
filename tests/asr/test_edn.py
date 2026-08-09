@@ -13,10 +13,9 @@ import reduce
 class EDNTests(unittest.TestCase):
     def test_round_trip(self):
         text = (
-            '(ASRText :version 1 :value '
             '(TranslationUnit :symtab '
             '(SymbolTable :id 0 :symbols {"p" (Program :body [])}) '
-            ':items []))'
+            ':items [])'
         )
         self.assertEqual(edn.render(edn.parse(text)), text)
 

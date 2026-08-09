@@ -67,7 +67,7 @@ PASS_EVENT = re.compile(r"ASR Pass starts: '([^']+)'")
 VERIFY_CODE = re.compile(
     r"ASR verify pass error \[([^\]]+)\]"
 )
-TEXT_ONLY_FORMS = {"ASRText", "SymbolTable", "SymbolRef"}
+TEXT_ONLY_FORMS = {"SymbolTable", "SymbolRef"}
 
 
 def sha256(text):

@@ -114,13 +114,12 @@ def generate_valid(seed):
         )
 
     text = (
-        "(ASRText :version 1 :value "
         "(TranslationUnit :symtab "
         "(SymbolTable :id 0 :symbols {"
         f"\"generated\" (Program :symtab "
         f"(SymbolTable :id 1 :symbols {{{' '.join(symbols)}}}) "
         f":name \"generated\" :dependencies [] :body [{' '.join(body)}])"
-        "}) :items []))\n"
+        "}) :items [])\n"
     )
     return text, "schema-valid integer program"
 
@@ -134,14 +133,13 @@ def generate_invalid(seed):
         return text, "schema-invalid nonallocatable realloc_lhs"
 
     text = (
-        "(ASRText :version 1 :value "
         "(TranslationUnit :symtab "
         "(SymbolTable :id 0 :symbols {"
         "\"generated\" (Program :symtab "
         "(SymbolTable :id 1 :symbols {"
         f"\"x\" {real_variable(1, 'x', 1)}"
         "}) :name \"generated\" :dependencies [] :body [])"
-        "}) :items []))\n"
+        "}) :items [])\n"
     )
     return text, "schema-invalid unsupported real kind"
 
