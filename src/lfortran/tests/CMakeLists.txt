@@ -98,12 +98,22 @@ add_test(test_lfortran ${PROJECT_BINARY_DIR}/test_lfortran)
 # condition under which src/bin creates the target instead.
 if (WITH_LLVM AND (NOT EMSCRIPTEN OR LFORTRAN_BUILD_TO_WASM))
     find_program(LFORTRAN_TEST_PYTHON NAMES python python3 REQUIRED)
+    # Producing an executable needs a working end-to-end link, which the
+    # Windows CI job does not provide: it builds and unit tests the compiler
+    # but never runs the integration suite. Parsing and verification are still
+    # covered there; only the phases past object emission are skipped.
+    if (WIN32)
+        set(LFORTRAN_ASR_CORPUS_ARGS --skip-compile)
+    else()
+        set(LFORTRAN_ASR_CORPUS_ARGS "")
+    endif()
     add_test(
         NAME test_asr_corpus
         COMMAND ${LFORTRAN_TEST_PYTHON}
             ${CMAKE_SOURCE_DIR}/tests/asr/run_tests.py
             --lfortran $<TARGET_FILE:lfortran>
             --manifest ${CMAKE_SOURCE_DIR}/tests/asr/tests.toml
+            ${LFORTRAN_ASR_CORPUS_ARGS}
     )
     # The format claims to be an EDN data subset; enforce that with a reader
     # that knows nothing about LFortran.
@@ -113,7 +123,7 @@ if (WITH_LLVM AND (NOT EMSCRIPTEN OR LFORTRAN_BUILD_TO_WASM))
         COMMAND ${LFORTRAN_TEST_PYTHON}
             ${CMAKE_SOURCE_DIR}/tests/asr/check_edn.py
             --lfortran $<TARGET_FILE:lfortran>
-            --input ${CMAKE_SOURCE_DIR}/tests/asr/asr_text_compile_01.asr
+            --input ${CMAKE_SOURCE_DIR}/tests/asr/compile/asr_text_compile_01.asr
             --input ${CMAKE_SOURCE_DIR}/tests/asr/edn_strings_01.f90
             --input ${CMAKE_SOURCE_DIR}/examples/expr2.f90
     )
