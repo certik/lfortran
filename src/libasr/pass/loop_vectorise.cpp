@@ -6,12 +6,10 @@
 #include <libasr/pass/loop_vectorise.h>
 #include <libasr/pass/pass_utils.h>
 
-#include <vector>
-#include <utility>
 #include <cmath>
 
 
-namespace LFortran {
+namespace LCompilers {
 
 using ASR::down_cast;
 using ASR::is_a;
@@ -35,7 +33,7 @@ to:
         vector_copy(8, a[i*8:(i+1)*8], b[i*8:(i+1)*8])
 
 */
-class LoopVectoriseVisitor : public PassUtils::SkipOptimizationSubroutineVisitor<LoopVectoriseVisitor>
+class LoopVectoriseVisitor : public PassUtils::SkipOptimizationFunctionVisitor<LoopVectoriseVisitor>
 {
 private:
     ASR::TranslationUnit_t &unit;
@@ -50,7 +48,7 @@ private:
 
 public:
     LoopVectoriseVisitor(Allocator &al_, ASR::TranslationUnit_t &unit_,
-                         const std::string& rl_path_) : SkipOptimizationSubroutineVisitor(al_),
+                         const std::string& rl_path_) : SkipOptimizationFunctionVisitor(al_),
     unit(unit_), rl_path(rl_path_), from_loop_vectorise(false)
     {
         pass_result.reserve(al, 1);
@@ -99,7 +97,7 @@ public:
     void get_vector_intrinsic(ASR::stmt_t* loop_stmt, ASR::expr_t* index,
                               ASR::expr_t*& vector_length,
                               Vec<ASR::stmt_t*>& vectorised_loop_body) {
-        LFORTRAN_ASSERT(vectorised_loop_body.reserve_called);
+        LCOMPILERS_ASSERT(vectorised_loop_body.reserve_called);
         Vec<ASR::expr_t*> arrays;
         arrays.reserve(al, 2);
         if( is_vector_copy(loop_stmt, arrays) ) {
@@ -129,6 +127,13 @@ public:
         ASR::expr_t* loop_start = x.m_head.m_start;
         ASR::expr_t* loop_end = x.m_head.m_end;
         ASR::expr_t* loop_inc = x.m_head.m_increment;
+        LCOMPILERS_ASSERT(loop_start);
+        LCOMPILERS_ASSERT(loop_end);
+        if (!loop_inc) {
+            int a_kind = ASRUtils::extract_kind_from_ttype_t(ASRUtils::expr_type(x.m_head.m_v));
+            ASR::ttype_t *type = ASRUtils::TYPE(ASR::make_Integer_t(al, x.base.base.loc, a_kind));
+            loop_inc = ASRUtils::EXPR(ASR::make_IntegerConstant_t(al, x.base.base.loc, 1, type));
+        }
         ASR::expr_t* loop_start_value = ASRUtils::expr_value(loop_start);
         ASR::expr_t* loop_end_value = ASRUtils::expr_value(loop_end);
         ASR::expr_t* loop_inc_value = ASRUtils::expr_value(loop_inc);
@@ -167,8 +172,8 @@ public:
         vectorised_loop_head.loc = x.m_head.loc;
 
         ASR::stmt_t* vectorised_loop = ASRUtils::STMT(ASR::make_DoLoop_t(al, x.base.base.loc,
-                                            vectorised_loop_head, vectorised_loop_body.p,
-                                            vectorised_loop_body.size()));
+                                            x.m_name, vectorised_loop_head, vectorised_loop_body.p,
+                                            vectorised_loop_body.size(), nullptr, 0));
         pass_result.push_back(al, vectorised_loop);
     }
 
@@ -189,11 +194,13 @@ public:
 };
 
 void pass_loop_vectorise(Allocator &al, ASR::TranslationUnit_t &unit,
-                         const std::string& rl_path) {
+                         const LCompilers::PassOptions& pass_options) {
+    std::string rl_path = pass_options.runtime_library_dir;
     LoopVectoriseVisitor v(al, unit, rl_path);
     v.visit_TranslationUnit(unit);
-    LFORTRAN_ASSERT(asr_verify(unit));
+    PassUtils::UpdateDependenciesVisitor u(al);
+    u.visit_TranslationUnit(unit);
 }
 
 
-} // namespace LFortran
+} // namespace LCompilers

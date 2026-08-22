@@ -1,0 +1,13 @@
+{
+    "basename": "asr-nested_external_dedup_01-90fba38",
+    "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
+    "infile": "tests/../integration_tests/nested_external_dedup_01.f90",
+    "infile_hash": "2aab29c92da224e4546714887b85dfa6883b7ba509705159b438bf9a",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "asr-nested_external_dedup_01-90fba38.stdout",
+    "stdout_hash": "f22497bbe736254fa169a92e56fd0b10786858cf5d4d20e80a8877d4",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

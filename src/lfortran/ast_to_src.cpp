@@ -3,16 +3,16 @@
 #include <libasr/string_utils.h>
 #include <libasr/bigint.h>
 
-using LFortran::AST::expr_t;
-using LFortran::AST::Name_t;
-using LFortran::AST::Num_t;
-using LFortran::AST::BinOp_t;
-using LFortran::AST::operatorType;
-using LFortran::AST::BaseVisitor;
-using LFortran::AST::StrOp_t;
+using LCompilers::LFortran::AST::expr_t;
+using LCompilers::LFortran::AST::Name_t;
+using LCompilers::LFortran::AST::Num_t;
+using LCompilers::LFortran::AST::BinOp_t;
+using LCompilers::LFortran::AST::operatorType;
+using LCompilers::LFortran::AST::BaseVisitor;
+using LCompilers::LFortran::AST::StrOp_t;
 
 
-namespace LFortran {
+namespace LCompilers::LFortran {
 
 namespace {
 
@@ -25,7 +25,7 @@ namespace {
             case (operatorType::Div) : return "/";
             case (operatorType::Pow) : return "**";
         }
-        throw LFortranException("Unknown type");
+        throw LCompilersException("Unknown type");
     }
 
     std::string boolop2str(const AST::boolopType type)
@@ -37,7 +37,7 @@ namespace {
             case (AST::boolopType::Eqv) : return " .eqv. ";
             case (AST::boolopType::NEqv) : return " .neqv. ";
         }
-        throw LFortranException("Unknown type");
+        throw LCompilersException("Unknown type");
     }
 
     std::string cmpop2str(const AST::cmpopType type)
@@ -50,7 +50,7 @@ namespace {
             case (AST::cmpopType::LtE) : return " <= ";
             case (AST::cmpopType::NotEq) : return " /= ";
         }
-        throw LFortranException("Unknown type");
+        throw LCompilersException("Unknown type");
     }
 
     std::string strop2str(const AST::stroperatorType type)
@@ -58,7 +58,7 @@ namespace {
         switch (type) {
             case (AST::stroperatorType::Concat) : return " // ";
         }
-        throw LFortranException("Unknown type");
+        throw LCompilersException("Unknown type");
     }
 
     std::string intrinsicop2str(const AST::intrinsicopType type)
@@ -83,7 +83,7 @@ namespace {
             case (AST::intrinsicopType::NOTEQ) : return "/=";
             case (AST::intrinsicopType::CONCAT) : return "//";
         }
-        throw LFortranException("Unknown type");
+        throw LCompilersException("Unknown type");
     }
 
     std::string symbol2str(const AST::symbolType type)
@@ -95,8 +95,9 @@ namespace {
             case (AST::symbolType::Asterisk) : return "*";
             case (AST::symbolType::DoubleAsterisk) : return "*(*)";
             case (AST::symbolType::Slash) : return "/";
+            case (AST::symbolType::SlashInit) : return "/";
         }
-        throw LFortranException("Unknown type");
+        throw LCompilersException("Unknown type");
     }
 }
 
@@ -205,7 +206,7 @@ public:
                 } ;
 
                 default : {
-                    throw LFortranException("Syntax Group not implemented");
+                    throw LCompilersException("Syntax Group not implemented");
                 }
             }
         }
@@ -364,18 +365,8 @@ public:
             r.append("\n");
         }
         if (indent_unit) inc_indent();
-        if(x.n_use > 0) {
-            for (size_t i=0; i<x.n_use; i++) {
-                this->visit_unit_decl1(*x.m_use[i]);
-                r.append(s);
-            }
-            r.append("\n");
-        }
-        if(x.n_decl > 0) {
-            for (size_t i=0; i<x.n_decl; i++) {
-                this->visit_unit_decl2(*x.m_decl[i]);
-                r.append(s);
-            }
+        if (x.n_items > 0) {
+            r += format_items(x);
             r.append("\n");
         }
         if (x.n_contains > 0) {
@@ -421,15 +412,7 @@ public:
             r.append("\n");
         }
         inc_indent();
-        for (size_t i=0; i<x.n_use; i++) {
-            this->visit_unit_decl1(*x.m_use[i]);
-            r.append(s);
-        }
-        r += format_implicit(x);
-        for (size_t i=0; i<x.n_decl; i++) {
-            this->visit_unit_decl2(*x.m_decl[i]);
-            r.append(s);
-        }
+        r += format_items(x);
         dec_indent();
         r += indent;
         r += syn(gr::UnitHeader);
@@ -585,7 +568,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_items; i++) {
-            visit_unit_decl2(*x.m_items[i]);
+            visit_decl_stmt(*x.m_items[i]);
             r.append(s);
         }
         dec_indent();
@@ -839,7 +822,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_items; i++) {
-            this->visit_unit_decl2(*x.m_items[i]);
+            this->visit_decl_stmt(*x.m_items[i]);
             r.append(s);
         }
         dec_indent();
@@ -962,45 +945,13 @@ public:
     }
 
     template <typename T>
-    std::string format_import(const T &x) {
+    std::string format_items(const T &x) {
         std::string r;
-        for (size_t i=0; i<x.n_import; i++) {
-            this->visit_import_statement(*x.m_import[i]);
+        for (size_t i=0; i<x.n_items; i++) {
+            this->visit_decl_stmt(*x.m_items[i]);
             r.append(s);
         }
         return r;
-    }
-
-    std::string format_import(const Program_t &/*x*/) {
-        return "";
-    }
-
-    std::string format_import(const Module_t &/*x*/) {
-        return "";
-    }
-
-    template <typename T>
-    std::string format_implicit(const T &x) {
-        std::string r;
-        for (size_t i=0; i<x.n_implicit; i++) {
-            this->visit_implicit_statement(*x.m_implicit[i]);
-            r.append(s);
-        }
-        return r;
-    }
-
-    template <typename T>
-    std::string format_body(const T &x) {
-        std::string r;
-        for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
-            r.append(s);
-        }
-        return r;
-    }
-
-    std::string format_body(const Module_t &/*x*/) {
-        return "";
     }
 
 
@@ -1008,17 +959,7 @@ public:
     std::string format_unit_body(const T &x, bool indent_contains=false) {
         std::string r;
         if (indent_unit) inc_indent();
-        for (size_t i=0; i<x.n_use; i++) {
-            this->visit_unit_decl1(*x.m_use[i]);
-            r.append(s);
-        }
-        r += format_import(x);
-        r += format_implicit(x);
-        for (size_t i=0; i<x.n_decl; i++) {
-            this->visit_unit_decl2(*x.m_decl[i]);
-            r.append(s);
-        }
-        r += format_body(x);
+        r += format_items(x);
         if (x.n_contains > 0) {
             r += "\n";
             r += syn(gr::UnitHeader);
@@ -1204,16 +1145,25 @@ public:
         r += "implicit";
         r += syn();
         r += " ";
+        if (x.n_specs > 0) {
+            for (size_t i=0; i<x.n_specs; i++) {
+                visit_implicit_spec(*x.m_specs[i]);
+                r += s;
+                if (i < x.n_specs-1) r.append(",");
+            }
+        }
+        if(x.m_trivia){
+            r += print_trivia_after(*x.m_trivia);
+        } else {
+            r.append("\n");
+        }
+        s = r;
+    }
+
+     void visit_ImplicitSpec(const ImplicitSpec_t &x) {
+        std::string r;
         visit_decl_attribute(*x.m_type);
         r += s;
-        if (x.n_kind > 0) {
-            r += " (";
-            for (size_t i=0; i<x.n_kind; i++) {
-                visit_letter_spec(*x.m_kind[i]);
-                r += s;
-            }
-            r += ")";
-        }
         if (x.n_specs > 0) {
             r += " (";
             for (size_t i=0; i<x.n_specs; i++) {
@@ -1223,12 +1173,7 @@ public:
             }
             r += ")";
         }
-        if(x.m_trivia){
-            r += print_trivia_after(*x.m_trivia);
-        } else {
-            r.append("\n");
-        }
-        s = r;
+	s = r;
     }
 
     void visit_LetterSpec(const LetterSpec_t &x) {
@@ -1268,20 +1213,19 @@ public:
             r += syn(gr::Type);
             r.append("namelist");
             r += syn();
-            r.append(" /");
-            r += down_cast<AttrNamelist_t>(x.m_attributes[0])->m_name;
-            r.append("/ ");
-            for (size_t i=0; i<x.n_syms; i++) {
-                visit_var_sym(x.m_syms[i]);
-                r += s;
-                if (i < x.n_syms-1) r.append(", ");
+            AttrNamelist_t *namelist = down_cast<AttrNamelist_t>(x.m_attributes[0]);
+            for (size_t j = 0; j < namelist->n_groups; j++) {
+                namelist_group_t &group = namelist->m_groups[j];
+                if (j > 0) r.append(" ");
+                r.append(" /");
+                r += group.m_name;
+                r.append("/ ");
+                for (size_t i = 0; i < group.n_objects; i++) {
+                    visit_var_sym(group.m_objects[i]);
+                    r += s;
+                    if (i < group.n_objects - 1) r.append(", ");
+                }
             }
-        } else if (x.m_vartype == nullptr && x.n_attributes == 1 &&
-                is_a<SimpleAttribute_t>(*x.m_attributes[0]) &&
-                down_cast<SimpleAttribute_t>(x.m_attributes[0])->m_attr
-                == simple_attributeType::AttrCommon) {
-            visit_Common(x);
-            r.append(s);
         } else {
             if (x.m_vartype) {
                 visit_decl_attribute(*x.m_vartype);
@@ -1289,12 +1233,6 @@ public:
                 if (x.n_attributes > 0) r.append(", ");
             }
             for (size_t i=0; i<x.n_attributes; i++) {
-                if(x.m_attributes[i]->type == decl_attributeType::AttrData
-                        && i == 0 ){
-                    r += syn(gr::Type);
-                    r += "data ";
-                    r += syn();
-                }
                 visit_decl_attribute(*x.m_attributes[i]);
                 r += s;
                 if (i < x.n_attributes-1) r.append(", ");
@@ -1346,9 +1284,29 @@ public:
             }
             r.append("]");
         }
-        if (x.m_initializer) {
-            visit_expr(*x.m_initializer);
+        if (x.m_length) {
+            visit_expr(*x.m_length);
             r += symbol2str(x.m_sym) + s;
+        }
+        if (x.m_initializer) {
+            if (x.m_sym == SlashInit) {
+                r += "/";
+                if (is_a<ArrayInitializer_t>(*x.m_initializer)) {
+                    ArrayInitializer_t *arr = down_cast<ArrayInitializer_t>(x.m_initializer);
+                    for (size_t i = 0; i < arr->n_args; i++) {
+                        visit_expr(*arr->m_args[i]);
+                        r += s;
+                        if (i < arr->n_args - 1) r += ",";
+                    }
+                } else {
+                    visit_expr(*x.m_initializer);
+                    r += s;
+                }
+                r += "/";
+            } else {
+                visit_expr(*x.m_initializer);
+                r += symbol2str(x.m_sym) + s;
+            }
         }
         if (x.m_spec) {
             this->visit_decl_attribute(*x.m_spec);
@@ -1357,40 +1315,32 @@ public:
         s = r;
     }
 
-    void visit_Common(const Declaration_t &x) {
-        std::string r;
+    void visit_DataStmt(const DataStmt_t &x) {
+        std::string r = indent;
         r += syn(gr::Type);
-        r += "common ";
+        r += "data ";
         r += syn();
-        for (size_t i=0; i<x.n_syms; i++) {
-            if(x.m_syms[i].m_name){
-                r += "/";
-                r.append(x.m_syms[i].m_name);
-                r += "/ ";
+        for (size_t n=0; n<x.n_items; n++) {
+            DataStmtSet_t *y = down_cast<DataStmtSet_t>(x.m_items[n]);
+            for (size_t i=0; i<y->n_object; i++) {
+                this->visit_expr(*y->m_object[i]);
+                r.append(s);
+                if (i < y->n_object-1) r.append(", ");
             }
-            if (x.m_syms[i].m_initializer) {
-                visit_expr(*x.m_syms[i].m_initializer);
-                r += s;
+            r += "/";
+            for (size_t i=0; i<y->n_value; i++) {
+                this->visit_expr(*y->m_value[i]);
+                r.append(s);
+                if (i < y->n_value-1) r.append(", ");
             }
-            if (i < x.n_syms-1) r.append(", ");
+            r += "/";
+            if (n < x.n_items-1) r += ", ";
         }
-        s = r;
-    }
-
-    void visit_AttrData(const AttrData_t &x) {
-        std::string r;
-        for (size_t i=0; i<x.n_object; i++) {
-            this->visit_expr(*x.m_object[i]);
-            r.append(s);
-            if (i < x.n_object-1) r.append(", ");
+        if(x.m_trivia){
+            r += print_trivia_after(*x.m_trivia);
+        } else {
+            r.append("\n");
         }
-        r += "/";
-        for (size_t i=0; i<x.n_value; i++) {
-            this->visit_expr(*x.m_value[i]);
-            r.append(s);
-            if (i < x.n_value-1) r.append(", ");
-        }
-        r += "/";
         s = r;
     }
 
@@ -1423,6 +1373,43 @@ public:
         r += ")";
         s = r;
         last_expr_precedence = 13;
+    }
+
+
+    void visit_AttrCommon(AttrCommon_t const &x) {
+        std::string r;
+        r += syn(gr::Type);
+        r += "common ";
+        r += syn();
+	for (size_t i = 0; i < x.n_blks; ++i) {
+	    common_block_t const &cb = x.m_blks[i];
+	    if (i > 0 || cb.m_name) {
+		r += "/";
+		if (cb.m_name) {
+		    r.append(cb.m_name);
+		}
+		r += "/ ";
+	    }
+	    for (size_t j = 0; j < cb.n_objects; ++j) {
+		// We can't use this when we have both dimensions and initializers
+		// visit_var_sym(cb.m_objects[j]);
+		// r += s;
+		var_sym_t const &vs = cb.m_objects[j];
+		r.append(vs.m_name);
+		if (vs.n_dim > 0) {
+		    r.append("(");
+		    for (size_t j=0; j<vs.n_dim; j++) {
+			visit_dimension(vs.m_dim[j]);
+			r += s;
+			if (j < vs.n_dim-1) r.append(",");
+		    }
+		    r.append(")");
+		}
+		if (j < cb.n_objects - 1) r.append(", ");
+	    }
+	    if (i < x.n_blks - 1) r.append(", ");
+	}
+	s = r;
     }
 
     void visit_AttrEquivalence(const AttrEquivalence_t &x) {
@@ -1488,7 +1475,7 @@ public:
             ATTRTYPE(Value)
             ATTRTYPE(Volatile)
             default :
-                throw LFortranException("Attribute type not implemented");
+                throw LCompilersException("Attribute type not implemented");
         }
         r += syn();
         s = r;
@@ -1507,13 +1494,14 @@ public:
             ATTRTYPE2(Character, "character")
             ATTRTYPE2(Complex, "complex")
             ATTRTYPE2(DoublePrecision, "double precision")
+            ATTRTYPE2(DoubleComplex, "double complex")
             ATTRTYPE2(Integer, "integer")
             ATTRTYPE2(Logical, "logical")
             ATTRTYPE2(Procedure, "procedure")
             ATTRTYPE2(Real, "real")
             ATTRTYPE2(Type, "type")
             default :
-                throw LFortranException("Attribute type not implemented");
+                throw LCompilersException("Attribute type not implemented");
         }
         r += syn();
         if (x.n_kind > 0) {
@@ -1521,8 +1509,8 @@ public:
 
             // Determine proper canonical printing of kinds
             // TODO: Move this part into a separate AST pass
-            kind_item_t k[2];
-            LFORTRAN_ASSERT(x.n_kind <= 2);
+            kind_item_t k[2] = {};
+            LCOMPILERS_ASSERT(x.n_kind <= 2);
             for (size_t i=0; i<x.n_kind; i++) {
                 k[i] = x.m_kind[i];
             }
@@ -1558,6 +1546,12 @@ public:
                 r += s;
                 if (i < x.n_kind-1) r.append(", ");
             }
+            r.append(")");
+        }
+        if (x.m_attr) {
+            r.append("(");
+            this->visit_decl_attribute(*x.m_attr);
+            r.append(s);
             r.append(")");
         }
         if (x.m_name) {
@@ -1748,6 +1742,22 @@ public:
         s = r;
     }
 
+    void visit_InferAssignment(const InferAssignment_t &x) {
+        std::string r = indent;
+        r += print_label(x);
+        this->visit_expr(*x.m_target);
+        r.append(s);
+        r.append(" := ");
+        this->visit_expr(*x.m_value);
+        r.append(s);
+        if (x.m_trivia) {
+            r += print_trivia_after(*x.m_trivia);
+        } else {
+            r += "\n";
+        }
+        s = r;
+    }
+
     void visit_GoTo(const GoTo_t &x) {
         std::string r = indent;
         r += print_label(x);
@@ -1832,7 +1842,7 @@ public:
                     this->visit_expr(*end);
                     r.append(s);
                 } else {
-                    throw LFortranException("Incorrect array elements");
+                    throw LCompilersException("Incorrect array elements");
                 }
                 r += ")";
             }
@@ -1844,6 +1854,9 @@ public:
             if (x.m_args[i].m_end) {
                 this->visit_expr(*x.m_args[i].m_end);
                 r.append(s);
+            } else if (x.m_args[i].m_label > 0) {
+                r += "*";
+                r.append(std::to_string(x.m_args[i].m_label));
             } else {
                 r += ":";
             }
@@ -1965,7 +1978,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r += s;
         }
         dec_indent();
@@ -1981,7 +1994,7 @@ public:
             }
             inc_indent();
             for (size_t i=0; i<x.n_orelse; i++) {
-                this->visit_stmt(*x.m_orelse[i]);
+                this->visit_decl_stmt(*x.m_orelse[i]);
                 r += s;
             }
             dec_indent();
@@ -2038,7 +2051,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r += s;
         }
         dec_indent();
@@ -2054,7 +2067,7 @@ public:
             }
             inc_indent();
             for (size_t i=0; i<x.n_orelse; i++) {
-                this->visit_stmt(*x.m_orelse[i]);
+                this->visit_decl_stmt(*x.m_orelse[i]);
                 r += s;
             }
             dec_indent();
@@ -2336,12 +2349,16 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r.append(s);
         }
         dec_indent();
         r += indent;
         r += syn(gr::Repeat);
+        if (x.m_do_label != 0) {
+            r += std::to_string(x.m_do_label);
+            r += " ";
+        }
         r.append("end do");
         r += syn();
         r += end_stmt_name(x);
@@ -2418,7 +2435,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r.append(s);
         }
         dec_indent();
@@ -2447,19 +2464,7 @@ public:
             r.append("\n");
         }
         inc_indent();
-        for (size_t i=0; i<x.n_use; i++) {
-            this->visit_unit_decl1(*x.m_use[i]);
-            r.append(s);
-        }
-        r += format_import(x);
-        for (size_t i=0; i<x.n_decl; i++) {
-            this->visit_unit_decl2(*x.m_decl[i]);
-            r.append(s);
-        }
-        for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
-            r.append(s);
-        }
+        r += format_items(x);
         dec_indent();
         r += indent;
         r += syn(gr::UnitHeader);
@@ -2504,7 +2509,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r.append(s);
         }
         dec_indent();
@@ -2562,7 +2567,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r.append(s);
         }
         dec_indent();
@@ -2581,7 +2586,7 @@ public:
 
     void visit_DoConcurrentLoop(const DoConcurrentLoop_t &x) {
         if (x.n_control != 1) {
-            throw LFortranException("Do concurrent: exactly one control statement is implemented for now");
+            throw LCompilersException("Do concurrent: exactly one control statement is implemented for now");
         }
         std::string r = indent;
         r += print_label(x);
@@ -2626,7 +2631,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r.append(s);
         }
         dec_indent();
@@ -2672,7 +2677,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r.append(s);
         }
         dec_indent();
@@ -2710,7 +2715,7 @@ public:
         r.append(")");
         r.append("\n");
         inc_indent();
-        this->visit_stmt(*x.m_assign);
+        this->visit_decl_stmt(*x.m_assign);
         r.append(s);
         dec_indent();
         r += indent;
@@ -2894,7 +2899,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r += s;
         }
         dec_indent();
@@ -3271,6 +3276,24 @@ public:
         s = r;
     }
 
+    void visit_Include(const Include_t& x)
+    {
+        std::string r = indent;
+        r += print_label(x);
+        r += syn(gr::Keyword);
+        r += "include";
+        r += syn();
+        r += " \"";
+        r += x.m_filename;
+        r += "\"";
+        if (x.m_trivia) {
+            r += print_trivia_after(*x.m_trivia);
+        } else {
+            r.append("\n");
+        }
+        s = r;
+    }
+
     template <typename Node>
     std::string print_label(const Node &x) {
         if (x.m_label == 0) {
@@ -3423,7 +3446,7 @@ public:
         s +=  op2str(x.m_op);
         if (right_precedence == 9) {
             s += "(" + right + ")";
-        } else if (x.m_op == operatorType::Sub) {
+        } else if (x.m_op == operatorType::Sub || x.m_op == operatorType::Div) {
             if (right_precedence > last_expr_precedence) {
                 s += right;
             } else {
@@ -3517,7 +3540,7 @@ public:
                 s = ".not.(" + s + ")";
             }
         } else {
-            throw LFortranException("Unary op type not implemented");
+            throw LCompilersException("Unary op type not implemented");
         }
     }
 
@@ -3554,9 +3577,9 @@ public:
                         expr_t *end = x.m_member[i].m_args[j].m_end;
                         expr_t *step = x.m_member[i].m_args[j].m_step;
                         // TODO: Also show start, and step correctly
-                        LFORTRAN_ASSERT(start == nullptr);
-                        LFORTRAN_ASSERT(end != nullptr);
-                        LFORTRAN_ASSERT(step == nullptr);
+                        LCOMPILERS_ASSERT(start == nullptr);
+                        LCOMPILERS_ASSERT(end != nullptr);
+                        LCOMPILERS_ASSERT(step == nullptr);
                         if (end) {
                             this->visit_expr(*end);
                             r.append(s);
@@ -3626,7 +3649,7 @@ public:
                             this->visit_expr(*end);
                             r.append(s);
                         } else {
-                            throw LFortranException("Incorrect coarray elements");
+                            throw LCompilersException("Incorrect coarray elements");
                         }
                         if (i < x.m_member[i].n_args-1) r.append(",");
                     }
@@ -3808,7 +3831,7 @@ public:
                             this->visit_expr(*end);
                             r.append(s);
                         } else {
-                            throw LFortranException("Incorrect array elements");
+                            throw LCompilersException("Incorrect array elements");
                         }
                         if (i < x.m_member[i].n_args-1) r.append(",");
                     }
@@ -3838,7 +3861,7 @@ public:
     {
         switch (type) {
             case (AST::kind_item_typeType::Value) :
-                LFORTRAN_ASSERT(value != nullptr);
+                LCOMPILERS_ASSERT(value != nullptr);
                 this->visit_expr(*value);
                 return s;
             case (AST::kind_item_typeType::Colon) :
@@ -3846,7 +3869,7 @@ public:
             case (AST::kind_item_typeType::Star) :
                 return "*";
             default :
-                throw LFortranException("Unknown type");
+                throw LCompilersException("Unknown type");
         }
     }
 
@@ -3879,7 +3902,7 @@ public:
                 s = "*";
             }
         } else {
-            LFORTRAN_ASSERT(x.m_end_star == dimension_typeType::AssumedRank);
+            LCOMPILERS_ASSERT(x.m_end_star == dimension_typeType::AssumedRank);
             s = "..";
         }
     }
@@ -3906,7 +3929,7 @@ public:
                 s = left + ":" + right;
             }
         } else {
-            LFORTRAN_ASSERT(x.m_end_star == codimension_typeType::CodimensionStar);
+            LCOMPILERS_ASSERT(x.m_end_star == codimension_typeType::CodimensionStar);
             if (x.m_start) {
                 this->visit_expr(*x.m_start);
                 s += ":*";
@@ -3917,7 +3940,11 @@ public:
     }
 
     void visit_arg(const arg_t &x) {
-        s = std::string(x.m_arg);
+        if (x.m_arg) {
+            s = std::string(x.m_arg);
+        } else {
+            s = "*";
+        }
     }
 
     void visit_keyword(const keyword_t &x) {
@@ -3951,8 +3978,8 @@ public:
             }
         } else {
             // Array element
-            LFORTRAN_ASSERT(x.m_end);
-            LFORTRAN_ASSERT(!x.m_start);
+            LCOMPILERS_ASSERT(x.m_end);
+            LCOMPILERS_ASSERT(!x.m_start);
             this->visit_expr(*x.m_end);
             r = s;
         }
@@ -3961,34 +3988,30 @@ public:
 
     void visit_coarrayarg(const coarrayarg_t &x) {
         std::string r;
-        if (x.m_step) {
-            // Array section
+        if (x.m_star == codimension_typeType::CodimensionStar) {
             if (x.m_start) {
                 this->visit_expr(*x.m_start);
-                r += s;
-            }
-            if(x.m_star == codimension_typeType::CodimensionStar) {
+                r += s + ":*";
+            } else {
                 r += "*";
-            } else {
-                r += ":";
             }
-            if (x.m_end) {
-                this->visit_expr(*x.m_end);
-                r += s;
-            }
-            if (is_a<Num_t>(*x.m_step) && down_cast<Num_t>(x.m_step)->m_n == 1) {
-                // Nothing, a:b:1 is printed as a:b
-            } else {
-                r += ":";
-                this->visit_expr(*x.m_step);
-                r += s;
-            }
-        } else {
-            // Array element
-            LFORTRAN_ASSERT(x.m_end);
-            LFORTRAN_ASSERT(!x.m_start);
+        } else if (x.m_start && x.m_end) {
+            // a:b
+            this->visit_expr(*x.m_start);
+            r += s + ":";
             this->visit_expr(*x.m_end);
-            r = s;
+            r += s;
+        } else if (x.m_start) {
+            // a:
+            this->visit_expr(*x.m_start);
+            r += s + ":";
+        } else if (x.m_end) {
+            // a
+            this->visit_expr(*x.m_end);
+            r += s;
+        } else {
+            // :
+            r += ":";
         }
         s = r;
     }
@@ -4136,7 +4159,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r += s;
         }
         dec_indent();
@@ -4173,7 +4196,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r += s;
         }
         dec_indent();
@@ -4234,7 +4257,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r += s;
         }
         dec_indent();
@@ -4254,7 +4277,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r += s;
         }
         dec_indent();
@@ -4273,7 +4296,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r += s;
         }
         dec_indent();
@@ -4334,7 +4357,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r += s;
         }
         dec_indent();
@@ -4358,7 +4381,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r += s;
         }
         dec_indent();
@@ -4381,7 +4404,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r += s;
         }
         dec_indent();
@@ -4399,7 +4422,7 @@ public:
         }
         inc_indent();
         for (size_t i=0; i<x.n_body; i++) {
-            this->visit_stmt(*x.m_body[i]);
+            this->visit_decl_stmt(*x.m_body[i]);
             r += s;
         }
         dec_indent();
@@ -4416,4 +4439,4 @@ std::string ast_to_src(AST::TranslationUnit_t &ast, bool color, int indent,
     return v.s;
 }
 
-}
+} // namespace LCompilers::LFortran

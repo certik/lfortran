@@ -3,14 +3,12 @@
 #include <libasr/exception.h>
 #include <libasr/asr_utils.h>
 #include <libasr/asr_verify.h>
-#include <libasr/pass/flip_sign.h>
+#include <libasr/pass/replace_flip_sign.h>
 #include <libasr/pass/pass_utils.h>
-
-#include <vector>
-#include <utility>
+#include <libasr/pass/intrinsic_function_registry.h>
 
 
-namespace LFortran {
+namespace LCompilers {
 
 using ASR::down_cast;
 using ASR::is_a;
@@ -55,12 +53,12 @@ The algorithm contains two components,
 
 
 */
-class FlipSignVisitor : public PassUtils::SkipOptimizationSubroutineVisitor<FlipSignVisitor>
+class FlipSignVisitor : public PassUtils::SkipOptimizationFunctionVisitor<FlipSignVisitor>
 {
 private:
     ASR::TranslationUnit_t &unit;
 
-    std::string rl_path;
+    LCompilers::PassOptions pass_options;
 
     ASR::expr_t *flip_sign_signal_variable, *flip_sign_variable;
 
@@ -73,8 +71,8 @@ private:
 
 public:
     FlipSignVisitor(Allocator &al_, ASR::TranslationUnit_t &unit_,
-                    const std::string& rl_path_) : SkipOptimizationSubroutineVisitor(al_),
-    unit(unit_), rl_path(rl_path_)
+                    const LCompilers::PassOptions& pass_options_) : SkipOptimizationFunctionVisitor(al_),
+    unit(unit_), pass_options(pass_options_)
     {
         pass_result.reserve(al, 1);
     }
@@ -97,12 +95,12 @@ public:
         set_flip_sign();
         if( is_flip_sign_present ) {
             // xi = xor(shiftl(int(Nd),63), xi)
-            LFORTRAN_ASSERT(flip_sign_signal_variable);
-            LFORTRAN_ASSERT(flip_sign_variable);
-            ASR::stmt_t* flip_sign_call = PassUtils::get_flipsign(flip_sign_signal_variable,
-                                            flip_sign_variable, al, unit, rl_path, current_scope,
-                                            [&](const std::string &msg, const Location &) { throw LFortranException(msg); });
-            pass_result.push_back(al, flip_sign_call);
+            LCOMPILERS_ASSERT(flip_sign_signal_variable);
+            LCOMPILERS_ASSERT(flip_sign_variable);
+            ASR::expr_t* flip_sign_result = PassUtils::get_flipsign(flip_sign_signal_variable,
+                                            flip_sign_variable, al, unit, x.base.base.loc, pass_options);
+            pass_result.push_back(al, ASRUtils::STMT(ASRUtils::make_Assignment_t_util(al, x.base.base.loc,
+                    flip_sign_variable, flip_sign_result, nullptr, false, false)));
         }
     }
 
@@ -186,8 +184,7 @@ public:
         }
         if( func_name && func_name->type == ASR::symbolType::ExternalSymbol ) {
             ASR::ExternalSymbol_t* ext_sym = ASR::down_cast<ASR::ExternalSymbol_t>(func_name);
-            if( std::string(ext_sym->m_original_name) == "modulo" &&
-                std::string(ext_sym->m_module_name) == "lfortran_intrinsic_math2" ) {
+            if( std::string(ext_sym->m_original_name) == "modulo" ) {
                 is_function_modulo = true;
             }
         }
@@ -209,11 +206,12 @@ public:
 };
 
 void pass_replace_flip_sign(Allocator &al, ASR::TranslationUnit_t &unit,
-                            const std::string& rl_path) {
-    FlipSignVisitor v(al, unit, rl_path);
+                            const LCompilers::PassOptions& pass_options) {
+    FlipSignVisitor v(al, unit, pass_options);
     v.visit_TranslationUnit(unit);
-    LFORTRAN_ASSERT(asr_verify(unit));
+    PassUtils::UpdateDependenciesVisitor u(al);
+    u.visit_TranslationUnit(unit);
 }
 
 
-} // namespace LFortran
+} // namespace LCompilers

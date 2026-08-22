@@ -2,13 +2,13 @@
 #define LIBASR_PASS_INLINE_FUNCTION_CALLS_H
 
 #include <libasr/asr.h>
+#include <libasr/utils.h>
 
-namespace LFortran {
+namespace LCompilers {
 
     void pass_inline_function_calls(Allocator &al, ASR::TranslationUnit_t &unit,
-                                    const std::string& rl_path,
-                                    bool inline_external_symbol_calls=true);
+                                const PassOptions &pass_options);
 
-} // namespace LFortran
+} // namespace LCompilers
 
-#endif // LIBASR_PASS_FMA_H
+#endif // LIBASR_PASS_INLINE_FUNCTION_CALLS_H

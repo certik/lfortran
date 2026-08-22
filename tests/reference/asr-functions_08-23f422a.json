@@ -2,11 +2,11 @@
     "basename": "asr-functions_08-23f422a",
     "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
     "infile": "tests/../integration_tests/functions_08.f90",
-    "infile_hash": "6f22c108fdac79d99083d736cc3c4a1f3091aa84dde7732f33c833f7",
+    "infile_hash": "625582953de25dfa6d54c1e44d22b6e19394212ca99c252ca13236e2",
     "outfile": null,
     "outfile_hash": null,
     "stdout": "asr-functions_08-23f422a.stdout",
-    "stdout_hash": "64b72f50b61b12f0eae379edd0447e7877cc4d1a0c3aa9c2944799b2",
+    "stdout_hash": "67e58a4c00c3109d6995cda9943ec4c1cd5426861456b2a3d7104192",
     "stderr": null,
     "stderr_hash": null,
     "returncode": 0

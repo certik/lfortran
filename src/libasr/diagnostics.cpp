@@ -5,11 +5,12 @@
 #include <libasr/assert.h>
 #include <libasr/exception.h>
 #include <libasr/utils.h>
+#include <libasr/string_utils.h>
 
-namespace LFortran::diag {
+namespace LCompilers::diag {
 
-const static std::string redon  = "\033[0;31m";
-const static std::string redoff = "\033[0;00m";
+const static std::string redon  = ColorsANSI::RED;
+const static std::string redoff = ColorsANSI::RESET;
 
 std::string highlight_line(const std::string &line,
         const size_t first_column,
@@ -18,11 +19,11 @@ std::string highlight_line(const std::string &line,
 {
     if (first_column == 0 || last_column == 0) return "";
     if (last_column > line.size()+1) {
-        throw LFortranException("The `last_column` in highlight_line is longer than the source line");
+        throw LCompilersException("The `last_column` in highlight_line is longer than the source line");
     }
-    LFORTRAN_ASSERT(first_column >= 1)
-    LFORTRAN_ASSERT(first_column <= last_column)
-    LFORTRAN_ASSERT(last_column <= line.size()+1)
+    LCOMPILERS_ASSERT(first_column >= 1)
+    LCOMPILERS_ASSERT(first_column <= last_column)
+    LCOMPILERS_ASSERT(last_column <= line.size()+1)
     std::stringstream out;
     if (line.size() > 0) {
         out << line.substr(0, first_column-1);
@@ -61,31 +62,63 @@ bool Diagnostics::has_error() const {
     return false;
 }
 
-std::string Diagnostics::render(const std::string &input,
-        const LocationManager &lm, const CompilerOptions &compiler_options) {
+bool Diagnostics::has_warning() const {
+    for (auto &d : this->diagnostics) {
+        if (d.level == Level::Warning) return true;
+    }
+    return false;
+}
+
+bool Diagnostics::has_style() const {
+    for (auto &d : this->diagnostics) {
+        if (d.level == Level::Style) return true;
+    }
+    return false;
+}
+
+std::string Diagnostics::render(LocationManager &lm,
+        const CompilerOptions &compiler_options) {
     std::string out;
     for (auto &d : this->diagnostics) {
-        if (compiler_options.no_warnings && d.level != Level::Error) {
-            continue;
-        }
-        out += render_diagnostic(d, input, lm,
-            compiler_options.use_colors,
-            compiler_options.show_stacktrace);
-        if (&d != &this->diagnostics.back()) out += "\n";
-    }
-    if (this->diagnostics.size() > 0 && !compiler_options.no_error_banner) {
-        if (!compiler_options.no_warnings || has_error()) {
-            std::string bold  = "\033[0;1m";
-            std::string reset = "\033[0;00m";
-            if (!compiler_options.use_colors) {
-                bold = "";
-                reset = "";
+        if (compiler_options.error_format == "human") {
+            if ((!compiler_options.show_style_suggestions && d.level == Level::Style) || (!compiler_options.show_warnings && d.level == Level::Warning)) {
+                out += "";
+            } else {
+                out += render_diagnostic_human(d, lm, compiler_options.use_colors,
+                    compiler_options.show_stacktrace);
+                if (&d != &this->diagnostics.back()) out += "\n";
             }
-            out += "\n\n";
-            out += bold + "Note" + reset
-                + ": if any of the above error or warning messages are not clear or are lacking\n";
-            out += "context please report it to us (we consider that a bug that needs to be fixed).\n";
+        } else if (compiler_options.error_format == "short") {
+            out += render_diagnostic_short(d, lm);
+        } else {
+            throw LCompilersException("Error format not supported.");
         }
+    }
+    if (compiler_options.error_format == "human") {
+        if (this->diagnostics.size() > 0 && compiler_options.show_error_banner) {
+            if ((compiler_options.show_style_suggestions && has_style()) || (compiler_options.show_warnings && has_warning()) || has_error()) {
+                std::string bold  = ColorsANSI::BOLD;
+                std::string reset = ColorsANSI::RESET;
+                if (!compiler_options.use_colors) {
+                    bold = "";
+                    reset = "";
+                }
+                out += "\n\n";
+                out += bold + "Note" + reset
+                    + ": Please report unclear, confusing or incorrect messages as bugs at\nhttps://github.com/lfortran/lfortran/issues.\n";
+            }
+        }
+    }
+    return out;
+}
+
+std::string render_diagnostic_short_nospan(const Diagnostic &d);
+
+std::string Diagnostics::render2() {
+    std::string out;
+    for (auto &d : this->diagnostics) {
+        out += render_diagnostic_short_nospan(d);
+        if (&d != &this->diagnostics.back()) out += "\n";
     }
     return out;
 }
@@ -101,49 +134,86 @@ std::string get_line(std::string str, int n)
 }
 
 void populate_span(diag::Span &s, const LocationManager &lm,
-        const std::string &input) {
-    lm.pos_to_linecol(lm.output_to_input_pos(s.loc.first, false),
-        s.first_line, s.first_column);
-    lm.pos_to_linecol(lm.output_to_input_pos(s.loc.last, true),
-        s.last_line, s.last_column);
-    s.filename = lm.in_filename;
-    for (uint32_t i = s.first_line; i <= s.last_line; i++) {
-        s.source_code.push_back(get_line(input, i));
+        bool skip_output_to_input = false) {
+    std::string first_filename, last_filename;
+    uint32_t first_pos = skip_output_to_input
+        ? s.loc.first : lm.output_to_input_pos(s.loc.first, false);
+    uint32_t last_pos = skip_output_to_input
+        ? s.loc.last : lm.output_to_input_pos(s.loc.last, true);
+    lm.pos_to_linecol(first_pos,
+        s.first_line, s.first_column, first_filename);
+    lm.pos_to_linecol(last_pos,
+        s.last_line, s.last_column, last_filename);
+    s.filename = first_filename;
+    if (first_filename != last_filename
+            || s.last_line < s.first_line
+            || (s.last_line == s.first_line
+                && s.last_column < s.first_column)) {
+        s.last_line = s.first_line;
+        s.last_column = s.first_column;
     }
-    LFORTRAN_ASSERT(s.source_code.size() > 0)
+    std::string input;
+    // An interactive cell is only ever in memory, so the text comes with the
+    // location rather than from a file of that name.
+    const std::string *in_memory = lm.source_at(first_pos);
+    if (in_memory != nullptr) {
+        for (uint32_t i = s.first_line; i <= s.last_line; i++) {
+            s.source_code.push_back(get_line(*in_memory, i));
+        }
+    } else if (read_file(s.filename, input)) {
+        for (uint32_t i = s.first_line; i <= s.last_line; i++) {
+            s.source_code.push_back(get_line(input, i));
+        }
+    } else {
+        s.source_code.push_back("File not found.\n");
+    }
+    LCOMPILERS_ASSERT(s.source_code.size() > 0)
 }
 
 // Loop over all labels and their spans, populate all of them
-void populate_spans(diag::Diagnostic &d, const LocationManager &lm,
-        const std::string &input) {
+void populate_spans(diag::Diagnostic &d, const LocationManager &lm) {
+    // Diagnostics emitted by the C preprocessor itself carry input-buffer
+    // offsets (not output-buffer offsets), so we must bypass the
+    // output->input remapping that LocationManager normally applies.
+    bool skip_output_to_input = (d.stage == diag::Stage::CPreprocessor);
     for (auto &l : d.labels) {
         for (auto &s : l.spans) {
-            populate_span(s, lm, input);
+            populate_span(s, lm, skip_output_to_input);
         }
     }
 }
 
 // Fills Diagnostic with span details and renders it
-std::string render_diagnostic(Diagnostic &d, const std::string &input,
-        const LocationManager &lm, bool use_colors, bool show_stacktrace) {
+std::string render_diagnostic_human(Diagnostic &d, const LocationManager &lm,
+        bool use_colors, bool show_stacktrace) {
     std::string out;
     if (show_stacktrace) {
         out += error_stacktrace(d.stacktrace);
     }
     // Convert to line numbers and get source code strings
-    populate_spans(d, lm, input);
+    populate_spans(d, lm);
     // Render the message
-    out += render_diagnostic(d, use_colors);
+    out += render_diagnostic_human(d, use_colors);
     return out;
 }
 
-std::string render_diagnostic(const Diagnostic &d, bool use_colors) {
-    std::string bold  = "\033[0;1m";
-    std::string red_bold  = "\033[0;31;1m";
-    std::string yellow_bold  = "\033[0;33;1m";
-    std::string green_bold  = "\033[0;32;1m";
-    std::string blue_bold  = "\033[0;34;1m";
-    std::string reset = "\033[0;00m";
+// Fills Diagnostic with span details and renders it
+std::string render_diagnostic_short(Diagnostic &d, const LocationManager &lm) {
+    std::string out;
+    // Convert to line numbers and get source code strings
+    populate_spans(d, lm);
+    // Render the message
+    out += render_diagnostic_short(d);
+    return out;
+}
+
+std::string render_diagnostic_human(const Diagnostic &d, bool use_colors) {
+    std::string bold  = ColorsANSI::BOLD;
+    std::string red_bold  = ColorsANSI::BOLDCYAN;
+    std::string yellow_bold  = ColorsANSI::BOLDYELLOW;
+    std::string green_bold  = ColorsANSI::BOLDGREEN;
+    std::string blue_bold  = ColorsANSI::BOLDBLUE;
+    std::string reset = ColorsANSI::RESET;
     if (!use_colors) {
         bold = "";
         red_bold = "";
@@ -154,62 +224,12 @@ std::string render_diagnostic(const Diagnostic &d, bool use_colors) {
     }
     std::stringstream out;
 
-    std::string message_type = "";
-    std::string primary_color = "";
-    std::string type_color = "";
-    switch (d.level) {
-        case (Level::Error):
-            primary_color = red_bold;    
-            type_color = primary_color;
-            switch (d.stage) {
-                case (Stage::CPreprocessor):
-                    message_type = "C preprocessor error";
-                    break;
-                case (Stage::Prescanner):
-                    message_type = "prescanner error";
-                    break;
-                case (Stage::Tokenizer):
-                    message_type = "tokenizer error";
-                    break;
-                case (Stage::Parser):
-                    message_type = "syntax error";
-                    break;
-                case (Stage::Semantic):
-                    message_type = "semantic error";
-                    break;
-                case (Stage::ASRPass):
-                    message_type = "ASR pass error";
-                    break;
-                case (Stage::CodeGen):
-                    message_type = "code generation error";
-                    break;
-            }
-            break;
-        case (Level::Warning):
-            primary_color = yellow_bold;    
-            type_color = primary_color;
-            message_type = "warning";
-            break;
-        case (Level::Note):
-            primary_color = bold;    
-            type_color = primary_color;
-            message_type = "note";
-            break;
-        case (Level::Help):
-            primary_color = bold;    
-            type_color = primary_color;
-            message_type = "help";
-            break;
-        case (Level::Style):
-            primary_color = green_bold;
-            type_color = yellow_bold;
-            message_type = "style suggestion";
-            break;
-    }
+    auto [message_type, primary_color, type_color] = diag_level_to_str(d, use_colors);
+    out << type_color << message_type;
+    if (!d.code.empty()) out << " [" << d.code << "]";
+    out << reset << bold << ": " << d.message << reset << std::endl;
 
-    out << type_color << message_type << reset << bold << ": " << d.message << reset << std::endl;
-
-    if (d.labels.size() > 0) {
+    if (d.labels.size() > 0 && d.labels[0].spans.size() > 0) {
         Label l = d.labels[0];
         Span s = l.spans[0];
         int line_num_width = 1;
@@ -230,7 +250,7 @@ std::string render_diagnostic(const Diagnostic &d, bool use_colors) {
         out << std::endl;
         for (auto &l : d.labels) {
             if (l.spans.size() == 0) {
-                throw LFortranException("ICE: Label does not have a span");
+                throw LCompilersException("ICE: Label does not have a span");
             }
             std::string color;
             char symbol;
@@ -267,11 +287,24 @@ std::string render_diagnostic(const Diagnostic &d, bool use_colors) {
                 }
                 // and start a new one:
                 s0 = s2;
+                if (s0.filename != s.filename) {
+                    out << std::endl;
+                    // TODO: print the primary line+column here, not the first label:
+                    out << std::string(line_num_width, ' ') << blue_bold;
+                    out << "-->" << reset << " " << s0.filename << ":";
+                    out << s0.first_line << ":" << s0.first_column;
+                    if (s0.first_line != s0.last_line) {
+                        out << " - " << s0.last_line << ":" << s0.last_column;
+                    }
+                    out << std::endl;
+                }
+
                 if (s0.first_line == s0.last_line) {
                     out << std::string(line_num_width+1, ' ') << blue_bold << "|"
                         << reset << std::endl;
                     std::string line = s0.source_code[0];
                     std::replace(std::begin(line), std::end(line), '\t', ' ');
+                    line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
                     out << blue_bold << std::setw(line_num_width)
                         << std::to_string(s0.first_line) << " |" << reset << " "
                         << line << std::endl;
@@ -285,13 +318,17 @@ std::string render_diagnostic(const Diagnostic &d, bool use_colors) {
                             << reset << std::endl;
                         std::string line = s0.source_code[0];
                         std::replace(std::begin(line), std::end(line), '\t', ' ');
+                        line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
                         out << blue_bold << std::setw(line_num_width)
                             << std::to_string(s0.first_line) << " |" << reset << " "
                             << "   " + line << std::endl;
                         out << std::string(line_num_width+1, ' ') << blue_bold << "|"
                             << reset << " ";
                         out << "   " + std::string(s0.first_column-1, ' ');
-                        out << color << std::string(line.size()-s0.first_column+1, symbol);
+                        int64_t repeat = (int64_t)line.size()-(int64_t)s0.first_column+1;
+                        if (repeat > 0) {
+                            out << color << std::string(repeat, symbol);
+                        }
                         out << "..." << reset << std::endl;
 
                         out << "..." << std::endl;
@@ -300,6 +337,7 @@ std::string render_diagnostic(const Diagnostic &d, bool use_colors) {
                             << reset << std::endl;
                         line = s0.source_code[s0.source_code.size()-1];
                         std::replace(std::begin(line), std::end(line), '\t', ' ');
+                        line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
                         out << blue_bold << std::setw(line_num_width)
                             << std::to_string(s0.last_line) << " |" << reset << " "
                             << "   " + line << std::endl;
@@ -308,7 +346,7 @@ std::string render_diagnostic(const Diagnostic &d, bool use_colors) {
                         out << color << "..." + std::string(s0.last_column-1+1, symbol);
                         out << " " << l.message << reset << std::endl;
                     } else {
-                        throw LFortranException("location last_line < first_line");
+                        throw LCompilersException("location last_line < first_line");
                     }
                 }
             }
@@ -320,4 +358,96 @@ std::string render_diagnostic(const Diagnostic &d, bool use_colors) {
     return out.str();
 }
 
-} // namespace LFortran::diag
+std::string render_diagnostic_short(const Diagnostic &d) {
+    std::stringstream out;
+
+    // Message anatomy:
+    // <filename>:<line start>-<end>:<column start>-<end>: <severity>: <message>
+    if (d.labels.size() > 0 && d.labels[0].spans.size() > 0) {
+        Label l = d.labels[0];
+        Span s = l.spans[0];
+        // TODO: print the primary line+column here, not the first label:
+        out << s.filename << ":" << s.first_line << "-" << s.last_line << ":";
+        out << s.first_column << "-" << s.last_column << ": ";
+    }
+    auto [message_type, primary, type] = diag_level_to_str(d, false);
+    out << message_type;
+    if (!d.code.empty()) out << " [" << d.code << "]";
+    out << ": " << d.message << std::endl;
+
+    return out.str();
+}
+
+std::string render_diagnostic_short_nospan(const Diagnostic &d) {
+    std::stringstream out;
+    auto [message_type, primary, type] = diag_level_to_str(d, false);
+    out << message_type;
+    if (!d.code.empty()) out << " [" << d.code << "]";
+    out << ": " << d.message << std::endl;
+    return out.str();
+}
+
+std::tuple<std::string, std::string, std::string> diag_level_to_str(
+    const Diagnostic &d, const bool use_color) {
+    std::string message_type = "";
+    std::string primary_color = "";
+    std::string type_color = "";
+    switch (d.level) {
+        case (Level::Error):
+            primary_color = use_color ? ColorsANSI::BOLDRED : "";
+            type_color = primary_color;
+            switch (d.stage) {
+                case (Stage::CPreprocessor):
+                    message_type = "C preprocessor error";
+                    break;
+                case (Stage::Prescanner):
+                    message_type = "prescanner error";
+                    break;
+                case (Stage::Tokenizer):
+                    message_type = "tokenizer error";
+                    break;
+                case (Stage::Parser):
+                    message_type = "syntax error";
+                    break;
+                case (Stage::Semantic):
+                    message_type = "semantic error";
+                    break;
+                case (Stage::ASRPass):
+                    message_type = "ASR pass error";
+                    break;
+                case (Stage::ASRVerify):
+                    message_type = "ASR verify pass error";
+                    break;
+                case (Stage::CodeGen):
+                    message_type = "code generation error";
+                    break;
+                case (Stage::ASRParser):
+                    message_type = "ASR syntax error";
+                    break;
+            }
+            break;
+        case (Level::Warning):
+            primary_color = use_color ? ColorsANSI::BOLDYELLOW : "";
+            type_color = primary_color;
+            message_type = "warning";
+            break;
+        case (Level::Note):
+            primary_color = use_color ? ColorsANSI::BOLD : "";
+            type_color = primary_color;
+            message_type = "note";
+            break;
+        case (Level::Help):
+            primary_color = use_color ? ColorsANSI::BOLD : "";
+            type_color = primary_color;
+            message_type = "help";
+            break;
+        case (Level::Style):
+            primary_color = use_color ? ColorsANSI::BOLDGREEN : "";
+            type_color = use_color ? ColorsANSI::BOLDYELLOW : "";
+            message_type = "style suggestion";
+            break;
+    }
+    return std::make_tuple(message_type, primary_color, type_color);
+}
+
+} // namespace LCompilers::diag

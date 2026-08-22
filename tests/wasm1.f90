@@ -1,8 +1,15 @@
 program wasm1
     implicit none
+
+    print *, sqr(5)
+    print *, add(5, 4)
+    print *, add64(4_8, 5_8)
+    print *, computeCircleArea(5)
+    print *, my_add(5, 4)
+
     contains
 
-    function a_sqr(x) result(r)
+    function sqr(x) result(r)
         implicit none
         integer, intent(in):: x
         integer :: r
@@ -28,7 +35,7 @@ program wasm1
         integer, intent(in):: radius
         integer :: PI, area
         PI = 3
-        area = PI * a_sqr(radius)
+        area = PI * sqr(radius)
     end function
 
     integer function my_add(a, b) result(c)

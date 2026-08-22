@@ -8,7 +8,7 @@
 #include <cstring>
 
 
-namespace LFortran {
+namespace LCompilers {
 
 // Platform dependent fast unique hash:
 uint64_t static get_hash(ASR::asr_t *node)
@@ -23,19 +23,43 @@ public:
     std::map<uint64_t, std::string> fn_declarations;
     std::map<uint64_t, std::string> fn_used;
 
-    // TODO: Do subroutines just like Functions:
-
     void visit_Function(const ASR::Function_t &x) {
         uint64_t h = get_hash((ASR::asr_t*)&x);
-        if (x.m_abi != ASR::abiType::BindC) {
+        if (ASRUtils::get_FunctionType(x)->m_abi != ASR::abiType::BindC
+         && ASRUtils::get_FunctionType(x)->m_abi != ASR::abiType::BindPython) {
             fn_declarations[h] = x.m_name;
         }
+
+        for( size_t i = 0; i < x.n_args; i++ ) {
+            ASR::Var_t* arg_var = ASR::down_cast<ASR::Var_t>(x.m_args[i]);
+            // Consider a function as argument as used
+            if( ASR::is_a<ASR::Function_t>(*arg_var->m_v) ) {
+                uint64_t h = get_hash((ASR::asr_t*)arg_var->m_v);
+                fn_used[h] = ASR::down_cast<ASR::Function_t>(arg_var->m_v)->m_name;
+            } else if( ASR::is_a<ASR::Variable_t>(*arg_var->m_v) ){
+                ASR::Variable_t* v = ASR::down_cast<ASR::Variable_t>(arg_var->m_v);
+                if(v->m_type_declaration){
+                    ASR::symbol_t* func = v->m_type_declaration;
+                    if(ASR::is_a<ASR::ExternalSymbol_t>(*func)){
+                        uint64_t h = get_hash((ASR::asr_t*)func);
+                        fn_used[h] = ASR::down_cast<ASR::ExternalSymbol_t>(func)->m_name;
+                        func = ASR::down_cast<ASR::ExternalSymbol_t>(func)->m_external;
+                    }
+                    if(ASR::is_a<ASR::Function_t>(*func)){
+                        uint64_t h = get_hash((ASR::asr_t*)func);
+                        fn_used[h] = ASR::down_cast<ASR::Function_t>(func)->m_name;
+                    }
+                }
+            }
+        }
+
         for (auto &a : x.m_symtab->get_scope()) {
             this->visit_symbol(*a.second);
         }
         for (size_t i=0; i<x.n_body; i++) {
             visit_stmt(*x.m_body[i]);
         }
+        visit_ttype(*x.m_function_signature);
     }
 
     void visit_GenericProcedure(const ASR::GenericProcedure_t &x) {
@@ -59,7 +83,8 @@ public:
     }
 
 
-    void visit_FunctionCall(const ASR::FunctionCall_t &x) {
+    template <typename T>
+    void visit_FuncSubCall(const T& x) {
         {
             const ASR::symbol_t *s = ASRUtils::symbol_get_past_external(x.m_name);
             if (ASR::is_a<ASR::Function_t>(*s)) {
@@ -102,10 +127,28 @@ public:
             if( x.m_args[i].m_value ) {
                 visit_expr(*(x.m_args[i].m_value));
             }
+            if (x.m_args[i].m_value && ASR::is_a<ASR::Var_t>(*x.m_args[i].m_value)) {
+                ASR::Var_t* var = ASR::down_cast<ASR::Var_t>(x.m_args[i].m_value);
+                if (ASR::is_a<ASR::ExternalSymbol_t>(*var->m_v)) {
+                    ASR::ExternalSymbol_t* extsym = ASR::down_cast<ASR::ExternalSymbol_t>(var->m_v);
+                    uint64_t h = get_hash((ASR::asr_t*)extsym);
+                    fn_used[h] = extsym->m_name;
+                }
+            }
         }
+    }
+
+    void visit_FunctionCall(const ASR::FunctionCall_t &x) {
+        visit_FuncSubCall(x);
         visit_ttype(*x.m_type);
         if (x.m_value)
             visit_expr(*x.m_value);
+        if (x.m_dt)
+            visit_expr(*x.m_dt);
+    }
+
+    void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
+        visit_FuncSubCall(x);
         if (x.m_dt)
             visit_expr(*x.m_dt);
     }
@@ -117,16 +160,60 @@ public:
             std::string name = f->m_name;
             uint64_t h = get_hash((ASR::asr_t*)f);
             fn_used[h] = name;
+            h = get_hash((ASR::asr_t*)x.m_v);
+            fn_used[h] = name;
         }
         if (ASR::is_a<ASR::GenericProcedure_t>(*s)) {
             ASR::GenericProcedure_t *g = ASR::down_cast<ASR::GenericProcedure_t>(s);
             std::string name = g->m_name;
             uint64_t h = get_hash((ASR::asr_t*)g);
             fn_used[h] = name;
+            h = get_hash((ASR::asr_t*)x.m_v);
+            fn_used[h] = name;
         }
     }
 
-    void visit_ClassProcedure(const ASR::ClassProcedure_t &x) {
+    // A procedure declaration such as `procedure(iface) :: p` names its
+    // interface through the variable's type declaration, and nothing calls
+    // that interface. Removing it would leave the variable pointing at a
+    // symbol that is no longer in its scope. The dummy arguments of a
+    // function are covered above; this covers every other variable, such as
+    // the ones the nested-variable pass moves into a synthetic module.
+    void visit_Variable(const ASR::Variable_t &x) {
+        ASR::BaseWalkVisitor<CollectUnusedFunctionsVisitor>::visit_Variable(x);
+        if (x.m_type_declaration == nullptr) return;
+        ASR::symbol_t *decl = x.m_type_declaration;
+        if (ASR::is_a<ASR::ExternalSymbol_t>(*decl)) {
+            fn_used[get_hash((ASR::asr_t*)decl)] =
+                ASR::down_cast<ASR::ExternalSymbol_t>(decl)->m_name;
+            decl = ASR::down_cast<ASR::ExternalSymbol_t>(decl)->m_external;
+        }
+        if (decl != nullptr && ASR::is_a<ASR::Function_t>(*decl)) {
+            fn_used[get_hash((ASR::asr_t*)decl)] =
+                ASR::down_cast<ASR::Function_t>(decl)->m_name;
+        }
+    }
+
+    void visit_Struct(const ASR::Struct_t &x) {
+        // Mark final procedures (stored in member_functions) as used
+        for (size_t i = 0; i < x.n_member_functions; i++) {
+            ASR::symbol_t* sym = x.m_symtab->parent->get_symbol(x.m_member_functions[i]);
+            if (sym) {
+                ASR::symbol_t* resolved = ASRUtils::symbol_get_past_external(sym);
+                if (ASR::is_a<ASR::Function_t>(*resolved)) {
+                    uint64_t h = get_hash((ASR::asr_t*)resolved);
+                    fn_used[h] = x.m_member_functions[i];
+                    h = get_hash((ASR::asr_t*)sym);
+                    fn_used[h] = x.m_member_functions[i];
+                }
+            }
+        }
+        for (auto &a : x.m_symtab->get_scope()) {
+            this->visit_symbol(*a.second);
+        }
+    }
+
+    void visit_StructMethodDeclaration(const ASR::StructMethodDeclaration_t &x) {
         const ASR::symbol_t *s = ASRUtils::symbol_get_past_external(x.m_proc);
         if (ASR::is_a<ASR::Function_t>(*s)) {
             ASR::Function_t *f = ASR::down_cast<ASR::Function_t>(s);
@@ -169,6 +256,15 @@ class ProgramVisitor :
 public:
     bool program_present=false;
 
+    void visit_TranslationUnit(const ASR::TranslationUnit_t &x) {
+        for (auto &a : x.m_symtab->get_scope()) {
+            if (ASR::is_a<ASR::Program_t>(*a.second)) {
+                this->visit_symbol(*a.second);
+                break;
+            }
+        }
+    }
+
     void visit_Program(const ASR::Program_t &/*x*/) {
         program_present = true;
     }
@@ -194,7 +290,8 @@ public:
         std::vector<std::string> to_be_erased;
         for (auto it = symtab->get_scope().begin(); it != symtab->get_scope().end(); ++it) {
             uint64_t h = get_hash((ASR::asr_t*)it->second);
-            if (fn_unused.find(h) != fn_unused.end()) {
+            if ((symtab->parent || (!symtab->parent && startswith(it->first, "_lcompilers_")))
+                    && fn_unused.find(h) != fn_unused.end()) {
                 to_be_erased.push_back(it->first);
             } else {
                 this->visit_symbol(*it->second);
@@ -207,16 +304,15 @@ public:
     }
 
     void visit_TranslationUnit(const ASR::TranslationUnit_t &x) {
-        remove_unused_fn(x.m_global_scope);
+        remove_unused_fn(x.m_symtab);
     }
     void visit_Program(const ASR::Program_t &x) {
         remove_unused_fn(x.m_symtab);
     }
     void visit_Module(const ASR::Module_t &x) {
-        remove_unused_fn(x.m_symtab);
-    }
-    void visit_Subroutine(const ASR::Subroutine_t &x) {
-        remove_unused_fn(x.m_symtab);
+        if (!x.m_parent_module) {
+            remove_unused_fn(x.m_symtab);
+        }
     }
     void visit_Function(const ASR::Function_t &x) {
         remove_unused_fn(x.m_symtab);
@@ -245,7 +341,8 @@ public:
 };
 
 void pass_unused_functions(Allocator &al, ASR::TranslationUnit_t &unit,
-        bool always_run) {
+                           const LCompilers::PassOptions& pass_options) {
+    bool always_run = pass_options.always_run;
     if (is_program_present(unit) || always_run) {
         for (int i=0; i < 4; i++)
         {
@@ -261,10 +358,9 @@ void pass_unused_functions(Allocator &al, ASR::TranslationUnit_t &unit,
             UnusedFunctionsVisitor v(al);
             v.fn_unused = fn_unused;
             v.visit_TranslationUnit(unit);
-            LFORTRAN_ASSERT(asr_verify(unit));
         }
     }
 }
 
 
-} // namespace LFortran
+} // namespace LCompilers

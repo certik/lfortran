@@ -1,4 +1,4 @@
-# len_trim(string)
+# len_trim(string): Length Ignoring Trailing Blanks
 
 Length of a character string ignoring trailing blank character(s).
 
@@ -45,7 +45,6 @@ end function
 
 ```fortran
 program intrinsics_len_trim
-    use lfortran_intrinsic_string, only: len_trim
     implicit none
     character(*), parameter :: s1 = " A B "
     integer:: retval

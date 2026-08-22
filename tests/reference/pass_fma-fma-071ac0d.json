@@ -2,11 +2,11 @@
     "basename": "pass_fma-fma-071ac0d",
     "cmd": "lfortran --pass=fma --show-asr --no-color {infile} -o {outfile}",
     "infile": "tests/../integration_tests/fma.f90",
-    "infile_hash": "59fa49468c6dcd7b7bfbb4bfab840e6ec357824e0618eed22308d5f1",
+    "infile_hash": "e251a7a68d3ac5b04630dacfdd015452826bc4e6954b51124d815868",
     "outfile": null,
     "outfile_hash": null,
     "stdout": "pass_fma-fma-071ac0d.stdout",
-    "stdout_hash": "d542fc3d457e4e2240be833cc22391918a225e01a62a83bbe8884b49",
+    "stdout_hash": "0252cdcf2e524defbccbdeec79b5afb51c0d79f53769482d7e8b04ac",
     "stderr": null,
     "stderr_hash": null,
     "returncode": 0

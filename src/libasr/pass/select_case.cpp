@@ -4,10 +4,10 @@
 #include <libasr/asr_utils.h>
 #include <libasr/asr_verify.h>
 #include <libasr/pass/pass_utils.h>
-#include <libasr/pass/select_case.h>
+#include <libasr/pass/replace_select_case.h>
 
 
-namespace LFortran {
+namespace LCompilers {
 
 using ASR::down_cast;
 using ASR::is_a;
@@ -55,14 +55,17 @@ inline ASR::expr_t* gen_test_expr_CaseStmt(Allocator& al, const Location& loc, A
     } else if( Case_Stmt->n_test == 2 ) {
         ASR::expr_t* left = PassUtils::create_compare_helper(al, loc, a_test, Case_Stmt->m_test[0], ASR::cmpopType::Eq);
         ASR::expr_t* right = PassUtils::create_compare_helper(al, loc, a_test, Case_Stmt->m_test[1], ASR::cmpopType::Eq);
-        test_expr = PassUtils::create_binop_helper(al, loc, left, right, ASR::binopType::Add);
+        test_expr = ASRUtils::EXPR(ASR::make_LogicalBinOp_t(al, loc, left,
+            ASR::logicalbinopType::Or, right, ASRUtils::expr_type(left), nullptr));
     } else {
         ASR::expr_t* left = PassUtils::create_compare_helper(al, loc, a_test, Case_Stmt->m_test[0], ASR::cmpopType::Eq);
         ASR::expr_t* right = PassUtils::create_compare_helper(al, loc, a_test, Case_Stmt->m_test[1], ASR::cmpopType::Eq);
-        test_expr = PassUtils::create_binop_helper(al, loc, left, right, ASR::binopType::Add);
+        test_expr = ASRUtils::EXPR(ASR::make_LogicalBinOp_t(al, loc, left,
+            ASR::logicalbinopType::Or, right, ASRUtils::expr_type(left), nullptr));
         for( std::uint32_t j = 2; j < Case_Stmt->n_test; j++ ) {
             ASR::expr_t* newExpr = PassUtils::create_compare_helper(al, loc, a_test, Case_Stmt->m_test[j], ASR::cmpopType::Eq);
-            test_expr = PassUtils::create_binop_helper(al, loc, test_expr, newExpr, ASR::binopType::Add);
+            test_expr = ASRUtils::EXPR(ASR::make_LogicalBinOp_t(al, loc, test_expr,
+                ASR::logicalbinopType::Or, newExpr, ASRUtils::expr_type(test_expr), nullptr));
         }
     }
     return test_expr;
@@ -77,12 +80,20 @@ inline ASR::expr_t* gen_test_expr_CaseStmt_Range(Allocator& al, const Location& 
     } else if( Case_Stmt->m_start != nullptr && Case_Stmt->m_end != nullptr ) {
         ASR::expr_t* left = PassUtils::create_compare_helper(al, loc, Case_Stmt->m_start, a_test, ASR::cmpopType::LtE);
         ASR::expr_t* right = PassUtils::create_compare_helper(al, loc, a_test, Case_Stmt->m_end, ASR::cmpopType::LtE);
-        test_expr = PassUtils::create_binop_helper(al, loc, left, right, ASR::binopType::Mul);
+        test_expr = ASRUtils::EXPR(ASR::make_LogicalBinOp_t(al, loc, left,
+            ASR::logicalbinopType::And, right, ASRUtils::expr_type(left), nullptr));
     }
     return test_expr;
 }
 
 void case_to_if(Allocator& al, const ASR::Select_t& x, ASR::expr_t* a_test, Vec<ASR::stmt_t*>& body) {
+    if( x.n_body == 0 ) {
+        body.reserve(al, x.n_default);
+        for( size_t i = 0; i < x.n_default; i++ ) {
+            body.push_back(al, x.m_default[i]);
+        }
+        return;
+    }
     int idx = (int) x.n_body - 1;
     ASR::case_stmt_t* case_body = x.m_body[idx];
     ASR::stmt_t* last_if_else = nullptr;
@@ -90,13 +101,13 @@ void case_to_if(Allocator& al, const ASR::Select_t& x, ASR::expr_t* a_test, Vec<
         case ASR::case_stmtType::CaseStmt: {
             ASR::CaseStmt_t* Case_Stmt = (ASR::CaseStmt_t*)(&(case_body->base));
             ASR::expr_t* test_expr = gen_test_expr_CaseStmt(al, x.base.base.loc, Case_Stmt, a_test);
-            last_if_else = ASRUtils::STMT(ASR::make_If_t(al, x.base.base.loc, test_expr, Case_Stmt->m_body, Case_Stmt->n_body, x.m_default, x.n_default));
+            last_if_else = ASRUtils::STMT(ASR::make_If_t(al, x.base.base.loc, x.m_name, test_expr, Case_Stmt->m_body, Case_Stmt->n_body, x.m_default, x.n_default));
             break;
         }
         case ASR::case_stmtType::CaseStmt_Range: {
             ASR::CaseStmt_Range_t* Case_Stmt = (ASR::CaseStmt_Range_t*)(&(case_body->base));
             ASR::expr_t* test_expr = gen_test_expr_CaseStmt_Range(al, x.base.base.loc, Case_Stmt, a_test);
-            last_if_else = ASRUtils::STMT(ASR::make_If_t(al, x.base.base.loc, test_expr, Case_Stmt->m_body, Case_Stmt->n_body, x.m_default, x.n_default));
+            last_if_else = ASRUtils::STMT(ASR::make_If_t(al, x.base.base.loc, x.m_name, test_expr, Case_Stmt->m_body, Case_Stmt->n_body, x.m_default, x.n_default));
             break;
         }
     }
@@ -125,24 +136,148 @@ void case_to_if(Allocator& al, const ASR::Select_t& x, ASR::expr_t* a_test, Vec<
         Vec<ASR::stmt_t*> if_body_vec;
         if_body_vec.reserve(al, 1);
         if_body_vec.push_back(al, last_if_else);
-        last_if_else = ASRUtils::STMT(ASR::make_If_t(al, x.base.base.loc, test_expr, m_body, n_body, if_body_vec.p, if_body_vec.size()));
+        last_if_else = ASRUtils::STMT(ASR::make_If_t(al, x.base.base.loc, x.m_name, test_expr, m_body, n_body, if_body_vec.p, if_body_vec.size()));
     }
     body.reserve(al, 1);
     body.push_back(al, last_if_else);
 }
 
-Vec<ASR::stmt_t*> replace_selectcase(Allocator &al, const ASR::Select_t &select_case) {
+Vec<ASR::stmt_t*> replace_selectcase(Allocator &al, const ASR::Select_t &select_case,
+                                     SymbolTable* scope) {
     ASR::expr_t *a = select_case.m_test;
+    ASR::expr_t *a_test = a;
+    ASR::stmt_t *pre_stmt = nullptr;
+
+    if (!ASR::is_a<ASR::Var_t>(*a)) {
+        const Location& loc = select_case.base.base.loc;
+        ASR::ttype_t* a_type = ASRUtils::expr_type(a);
+        if (ASRUtils::is_character(*a_type)) {
+            a_type = ASRUtils::TYPE(ASR::make_Allocatable_t(al, loc,
+                ASRUtils::TYPE(ASR::make_String_t(al, loc, 1, nullptr,
+                    ASR::string_length_kindType::DeferredLength,
+                    ASR::string_physical_typeType::DescriptorString))));
+        }
+        std::string tmp_name = scope->get_unique_name("select_case_tmp");
+        ASR::symbol_t* tmp_sym = ASR::down_cast<ASR::symbol_t>(ASRUtils::make_Variable_t_util(
+            al, loc, scope, s2c(al, tmp_name), nullptr, 0,
+            ASR::intentType::Local, nullptr, nullptr, ASR::storage_typeType::Default,
+            a_type, nullptr, ASR::abiType::Source,
+            ASR::accessType::Public, ASR::presenceType::Required, false));
+        scope->add_symbol(tmp_name, tmp_sym);
+        a_test = ASRUtils::EXPR(ASR::make_Var_t(al, loc, tmp_sym));
+        pre_stmt = ASRUtils::STMT(ASRUtils::make_Assignment_t_util(
+            al, loc, a_test, a, nullptr, false, false));
+    }
+
     Vec<ASR::stmt_t*> body;
-    case_to_if(al, select_case, a, body);
-    /*
-    std::cout << "Input:" << std::endl;
-    std::cout << pickle((ASR::asr_t&)loop);
-    std::cout << "Output:" << std::endl;
-    std::cout << pickle((ASR::asr_t&)*stmt1);
-    std::cout << pickle((ASR::asr_t&)*stmt2);
-    std::cout << "--------------" << std::endl;
-    */
+    case_to_if(al, select_case, a_test, body);
+
+    if (pre_stmt != nullptr) {
+        Vec<ASR::stmt_t*> result;
+        result.reserve(al, body.size() + 1);
+        result.push_back(al, pre_stmt);
+        for (size_t i = 0; i < body.size(); i++) {
+            result.push_back(al, body[i]);
+        }
+        return result;
+    }
+    return body;
+}
+
+void case_to_if_with_fall_through(Allocator& al, const ASR::Select_t& x,
+    ASR::expr_t* a_test, Vec<ASR::stmt_t*>& body, SymbolTable* scope) {
+    body.reserve(al, x.n_body + 1);
+    const Location& loc = x.base.base.loc;
+    ASR::symbol_t* case_found_sym = ASR::down_cast<ASR::symbol_t>(ASRUtils::make_Variable_t_util(
+        al, loc, scope, s2c(al, scope->get_unique_name("case_found")), nullptr, 0,
+        ASR::intentType::Local, nullptr, nullptr, ASR::storage_typeType::Default,
+        ASRUtils::TYPE(ASR::make_Logical_t(al, loc, 4)), nullptr, ASR::abiType::Source,
+        ASR::accessType::Public, ASR::presenceType::Required, false));
+    scope->add_symbol(scope->get_unique_name("case_found"), case_found_sym);
+    ASR::expr_t* true_asr = ASRUtils::EXPR(ASR::make_LogicalConstant_t(al, loc, true,
+        ASRUtils::TYPE(ASR::make_Logical_t(al, loc, 4))));
+    ASR::expr_t* false_asr = ASRUtils::EXPR(ASR::make_LogicalConstant_t(al, loc, false,
+        ASRUtils::TYPE(ASR::make_Logical_t(al, loc, 4))));
+    ASR::expr_t* case_found = ASRUtils::EXPR(ASR::make_Var_t(al, loc, case_found_sym));
+    body.push_back(al, ASRUtils::STMT(ASRUtils::make_Assignment_t_util(al, loc, case_found, false_asr, nullptr, false, false)));
+    int label_id = ASRUtils::LabelGenerator::get_instance()->get_unique_label();
+    for( size_t idx = 0; idx < x.n_body; idx++ ) {
+        ASR::case_stmt_t* case_body = x.m_body[idx];
+        switch(case_body->type) {
+            case ASR::case_stmtType::CaseStmt: {
+                ASR::CaseStmt_t* Case_Stmt = ASR::down_cast<ASR::CaseStmt_t>(case_body);
+                ASR::expr_t* test_expr = gen_test_expr_CaseStmt(al, loc, Case_Stmt, a_test);
+                test_expr = ASRUtils::EXPR(ASR::make_LogicalBinOp_t(al, loc, test_expr,
+                    ASR::logicalbinopType::Or, case_found, ASRUtils::expr_type(case_found), nullptr));
+                Vec<ASR::stmt_t*> case_body; case_body.reserve(al, Case_Stmt->n_body);
+                case_body.from_pointer_n(Case_Stmt->m_body, Case_Stmt->n_body);
+                case_body.push_back(al, ASRUtils::STMT(ASRUtils::make_Assignment_t_util(
+                        al, loc, case_found, true_asr, nullptr, false, false)));
+                if( !Case_Stmt->m_fall_through ) {
+                    case_body.push_back(al, ASRUtils::STMT(ASR::make_GoTo_t(al, loc,
+                        label_id, s2c(al, scope->get_unique_name("switch_case_label")))));
+                }
+                body.push_back(al, ASRUtils::STMT(ASR::make_If_t(al, loc, x.m_name,
+                    test_expr, case_body.p, case_body.size(), nullptr, 0)));
+                break;
+            }
+            case ASR::case_stmtType::CaseStmt_Range: {
+                LCOMPILERS_ASSERT(false);
+                break;
+            }
+        }
+    }
+    for( size_t id = 0; id < x.n_default; id++ ) {
+        body.push_back(al, x.m_default[id]);
+    }
+    SymbolTable* block_symbol_table = al.make_new<SymbolTable>(scope);
+    ASR::symbol_t* empty_block = ASR::down_cast<ASR::symbol_t>(ASR::make_Block_t(
+        al, loc, block_symbol_table, s2c(al, scope->get_unique_name("switch_case_label")),
+        nullptr, 0));
+    scope->add_symbol(scope->get_unique_name("switch_case_label"), empty_block);
+    body.push_back(al, ASRUtils::STMT(ASR::make_BlockCall_t(al, loc, label_id, empty_block)));
+}
+
+Vec<ASR::stmt_t*> replace_selectcase_with_fall_through(
+    Allocator &al, const ASR::Select_t &select_case,
+    SymbolTable* scope) {
+    ASR::expr_t *a = select_case.m_test;
+    ASR::expr_t *a_test = a;
+    ASR::stmt_t *pre_stmt = nullptr;
+
+    if (!ASR::is_a<ASR::Var_t>(*a)) {
+        const Location& loc = select_case.base.base.loc;
+        ASR::ttype_t* a_type = ASRUtils::expr_type(a);
+        if (ASRUtils::is_character(*a_type)) {
+            a_type = ASRUtils::TYPE(ASR::make_Allocatable_t(al, loc,
+                ASRUtils::TYPE(ASR::make_String_t(al, loc, 1, nullptr,
+                    ASR::string_length_kindType::DeferredLength,
+                    ASR::string_physical_typeType::DescriptorString))));
+        }
+        std::string tmp_name = scope->get_unique_name("select_case_tmp");
+        ASR::symbol_t* tmp_sym = ASR::down_cast<ASR::symbol_t>(ASRUtils::make_Variable_t_util(
+            al, loc, scope, s2c(al, tmp_name), nullptr, 0,
+            ASR::intentType::Local, nullptr, nullptr, ASR::storage_typeType::Default,
+            a_type, nullptr, ASR::abiType::Source,
+            ASR::accessType::Public, ASR::presenceType::Required, false));
+        scope->add_symbol(tmp_name, tmp_sym);
+        a_test = ASRUtils::EXPR(ASR::make_Var_t(al, loc, tmp_sym));
+        pre_stmt = ASRUtils::STMT(ASRUtils::make_Assignment_t_util(
+            al, loc, a_test, a, nullptr, false, false));
+    }
+
+    Vec<ASR::stmt_t*> body;
+    case_to_if_with_fall_through(al, select_case, a_test, body, scope);
+
+    if (pre_stmt != nullptr) {
+        Vec<ASR::stmt_t*> result;
+        result.reserve(al, body.size() + 1);
+        result.push_back(al, pre_stmt);
+        for (size_t i = 0; i < body.size(); i++) {
+            result.push_back(al, body[i]);
+        }
+        return result;
+    }
     return body;
 }
 
@@ -161,18 +296,25 @@ public:
     }
 
     void visit_Select(const ASR::Select_t &x) {
-        pass_result = replace_selectcase(al, x);
+        if( x.m_enable_fall_through ) {
+            pass_result = replace_selectcase_with_fall_through(al, x, current_scope);
+        } else {
+            pass_result = replace_selectcase(al, x, current_scope);
+        }
+        if( pass_result.size() == 0 ) {
+            remove_original_stmt = true;
+        }
     }
 };
 
-void pass_replace_select_case(Allocator &al, ASR::TranslationUnit_t &unit) {
+void pass_replace_select_case(Allocator &al, ASR::TranslationUnit_t &unit,
+                              const LCompilers::PassOptions& /*pass_options*/) {
     SelectCaseVisitor v(al);
     // Each call transforms only one layer of nested loops, so we call it twice
     // to transform doubly nested loops:
     v.visit_TranslationUnit(unit);
     v.visit_TranslationUnit(unit);
-    LFORTRAN_ASSERT(asr_verify(unit));
 }
 
 
-} // namespace LFortran
+} // namespace LCompilers

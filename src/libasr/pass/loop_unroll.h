@@ -2,12 +2,13 @@
 #define LIBASR_PASS_LOOP_UNROLL_H
 
 #include <libasr/asr.h>
+#include <libasr/utils.h>
 
-namespace LFortran {
+namespace LCompilers {
 
     void pass_loop_unroll(Allocator &al, ASR::TranslationUnit_t &unit,
-                          const std::string& rl_path, int64_t unroll_factor=32);
+                                const PassOptions &pass_options);
 
-} // namespace LFortran
+} // namespace LCompilers
 
 #endif // LIBASR_PASS_LOOP_UNROLL_H

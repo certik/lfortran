@@ -5,8 +5,7 @@
 #include <lfortran/utils.h>
 #include <lfortran/parser/parser.h>
 
-namespace LFortran
-{
+namespace LCompilers::LFortran {
 
 struct CPPMacro {
     /*
@@ -29,12 +28,8 @@ public:
     cpp_symtab macro_definitions;
     CPreprocessor(CompilerOptions &compiler_options);
     std::string token(unsigned char *tok, unsigned char* cur) const;
-    std::string run(const std::string &input, LocationManager &lm,
-        cpp_symtab &macro_definitions) const;
-    std::string function_like_macro_expansion(
-                std::vector<std::string> &def_args,
-                std::string &expansion,
-                std::vector<std::string> &call_args) const;
+    Result<std::string> run(const std::string &input, LocationManager &lm,
+        cpp_symtab &macro_definitions, diag::Diagnostics &diagnostics) const;
 
     // Return the current token's location
     void token_loc(Location &loc, unsigned char *tok, unsigned char* cur,
@@ -45,6 +40,12 @@ public:
     }
 };
 
-} // namespace LFortran
+std::string function_like_macro_expansion(
+            std::vector<std::string> &def_args,
+            std::string &expansion,
+            std::vector<std::string> &call_args,
+            std::vector<std::string> &expanded_args);
+
+} // namespace LCompilers::LFortran
 
 #endif // LFORTRAN_SRC_PARSER_PREPROCESSOR_H

@@ -1,0 +1,274 @@
+# Variable
+
+Variable is a **symbol** node representing a variable declaration.
+
+## Declaration
+
+### Syntax
+
+```
+Variable(symbol_table parent_symtab, identifier name, identifier* dependencies,
+    intent intent, expr? symbolic_value, expr? value, storage_type storage,
+    ttype type, symbol? type_declaration,
+    abi abi, access access, presence presence, bool value_attr,
+    bool target_attr, bool contiguous_attr, string? bindc_name,
+    bool is_volatile, bool is_protected,
+    pass_attr pass_attr, identifier? self_argument,
+    codimension* codims)
+```
+
+### Arguments
+
+`parent_symtab` integer id of the parent symbol table that contains the variable
+
+`name` the name of the variable
+
+`dependencies` other symbols that this variable depends on; must all be defined
+in the `parent_symtab`
+
+`intent` specifies intent (Local, `intent(in)`, `intent(inout)`, etc.)
+
+`symbolic_value` the optional symbolic expression to initialize the variable
+(e.g. `2+3+4+x`), this value must be compile time, but it is not necessarily a
+constant (e.g., can contain binary operations, other variables, etc.)
+
+`value` the optional constant expression holding the compile time value
+(e.g. `5`, or `5.5`), it is a compile time constant.
+
+`storage` whether `Save`, `Parameter`, `Allocatable`
+
+`type` the ttype of the variable
+
+`type_declaration` null for primitive types; for composite types that are
+declared elsewhere in the program (struct, function, enum) it points to the
+symbol that declares the type
+
+`abi` abi such as: `Source`, `Interface`, `BindC`
+
+`access` visibility: `Public`, `Private`
+
+`presence` for parameters: `Required` or `Optional`
+
+`value_attr` if true, this parameter has a `value` attribute set
+
+`target_attr` if true, this variable has the `target` attribute
+
+`contiguous_attr` if true, this variable has the `contiguous` attribute
+
+`bindc_name` optional C binding name from `bind(c, name="...")`
+
+`is_volatile` if true, this variable has the `volatile` attribute
+
+`is_protected` if true, this variable has the `protected` attribute
+
+`pass_attr` determines whether this variable is a procedure pointer component
+with pass/nopass semantics. A three-valued enum:
+- `NotMethod` — this is not a type-bound procedure pointer (default for all
+  regular variables, standalone procedure pointers, and non-procedure variables)
+- `Pass` — this is a procedure pointer component inside a derived type with
+  pass semantics: the object through which it is called is implicitly passed
+  as an argument at the position identified by `self_argument`
+- `NoPass` — this is a procedure pointer component inside a derived type with
+  nopass semantics: no object is passed implicitly
+
+`self_argument` only meaningful when `pass_attr` is `Pass`. Identifies which
+dummy argument of the procedure interface receives the passed object:
+- `nullptr` — the passed object goes to the first dummy argument (default)
+- a name (e.g. `"pt"`) — the passed object goes to the dummy argument with
+  that name, which may be at any position in the argument list
+
+`codims` optional codimension bounds for coarray variables. Each entry follows
+the same structure as a `dimension` (start and length). When omitted, the
+variable is not a coarray. The number of codimension entries (`n_codims`) serves
+as the corank of the variable, and `n_codims > 0` indicates the variable is a
+coarray.
+
+### Return values
+
+None.
+
+## Description
+
+A `Variable` node represents a declaration of any variable in the
+program. It contains information about the type, visibility, compile-time value,
+etc.
+
+The type of the variable can be any of the primitive types like integer,
+real, complex, pointers, arrays. In such cases, the `type_declaration` member of
+the `Variable` is null.
+
+`Variable` might also have a non-primitive type like `StructType`, or types for
+classes, enums, and function pointers. Such types are not declared inline to the
+`Variable` node itself. In such cases, the `type_declaration` member of
+`Variable` points to the symbol containing the declaration of the type.
+
+### Procedure Pointer Components
+
+When a derived type declares a procedure pointer component, that component is
+represented as a `Variable` whose `type` is a `FunctionType` (possibly wrapped
+in a `Pointer`). The `pass_attr` and `self_argument` fields distinguish three
+cases:
+
+```fortran
+type :: mytype
+    ! NotMethod, self_argument=null: plain procedure pointer, no pass/nopass attribute
+    procedure(iface), pointer :: op => null()
+    ! NoPass, self_argument=null: explicitly no implicit self
+    procedure(iface), nopass, pointer :: action => null()
+    ! Pass, self_argument=null: self is passed as the first argument (default position)
+    procedure(iface), pass, pointer :: scale => null()
+    ! Pass, self_argument="self": self is passed at the position of dummy arg "self"
+    procedure(iface), pass(self), pointer :: combine => null()
+end type
+```
+
+For type-bound procedures declared with `contains` (not procedure pointer
+components), see [StructMethodDeclaration](StructMethodDeclaration.md).
+
+### Coarray Variables
+
+In Fortran, coarrays enable data access and communication across multiple images
+(processes/threads) in a parallel program. A coarray variable has codimensions
+declared with the `[...]` notation:
+
+```fortran
+integer :: scalar_coarray[*]      ! rank 0, corank 1
+integer :: array_coarray(10)[*]   ! rank 1, corank 1
+integer :: matrix[*,*]            ! rank 0, corank 2
+integer :: scalar_not_coarray         ! rank 0, corank 0
+integer :: array_not_coarray(10)      ! rank 1, corank 0
+```
+
+The corank of a `Variable` is derived from its `codims` array — it is the
+number of codimension entries (`n_codims`). For non-coarray variables, `codims`
+is empty and the corank is 0. When accessing coarray elements in expressions,
+the number of coindices in a `CoarrayRef` node must match the variable's corank.
+
+`Variable` represents declarations of variables. `Var` nodes represent instances
+of variables in code. To represent the use of a variable in an expression,
+employ the ASR `expr Var` node. To reference a coarray with explicit image
+selectors, use the `CoarrayRef` node.
+
+## Examples
+
+```fortran
+program expr2
+integer :: x
+x = (2+3)*5
+print *, x
+end program
+```
+
+ASR:
+
+```fortran
+(TranslationUnit
+    (SymbolTable
+        1
+        {
+            expr2:
+                (Program
+                    (SymbolTable
+                        2
+                        {
+                            x:
+                                (Variable
+                                    2
+                                    x
+                                    Local
+                                    ()
+                                    ()
+                                    Default
+                                    (Integer 4 [])
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    ()
+                                )
+
+                        })
+                    expr2
+                    []
+                    [(=
+                        (Var 2 x)
+                        (IntegerBinOp
+                            (IntegerBinOp
+                                (IntegerConstant 2 (Integer 4 []))
+                                Add
+                                (IntegerConstant 3 (Integer 4 []))
+                                (Integer 4 [])
+                                (IntegerConstant 5 (Integer 4 []))
+                            )
+                            Mul
+                            (IntegerConstant 5 (Integer 4 []))
+                            (Integer 4 [])
+                            (IntegerConstant 25 (Integer 4 []))
+                        )
+                        ()
+                    )
+                    (Print
+                        ()
+                        [(Var 2 x)]
+                        ()
+                        ()
+                    )]
+                )
+
+        })
+    []
+)
+
+```
+
+## Coarray Example
+
+```fortran
+program coarray_test
+    implicit none
+    integer :: x[*]
+    x = 42
+    if (this_image() == 1) then
+        print *, x[2]  ! Access x on image 2
+    end if
+end program coarray_test
+```
+
+ASR (simplified):
+
+```fortran
+(Variable
+    2
+    x
+    Local
+    ()
+    ()
+    Default
+    (Integer 4 [])
+    Source
+    Public
+    Required
+    .false.
+    [(data_or_star ...)]  ! codims with n_codims=1 (one codimension entry)
+)
+```
+
+In the assignment `x[2] = ...`, the coarray reference is represented as:
+
+```fortran
+(CoarrayRef
+    (Var 2 x)
+    [(array_index (left (IntegerConstant 2)) (right ()) (step ()))]
+    (Integer 4 [])
+    ()
+)
+```
+
+The single codimension entry in the Variable's `codims` (i.e. `n_codims=1`)
+matches the single coindex `[2]` in the `CoarrayRef` expression.
+
+## See Also
+
+[Var](../expression_nodes/Var.md),
+[CoarrayRef](../expression_nodes/CoarrayRef.md),
+[StructMethodDeclaration](StructMethodDeclaration.md)

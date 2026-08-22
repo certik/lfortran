@@ -1,0 +1,13 @@
+{
+    "basename": "asr-preprocessor17-f2d76bb",
+    "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
+    "infile": "tests/preprocessor17.F90",
+    "infile_hash": "a07132d08deb1a0de21dd365371df337fe07652c9d42aa4c0a7e19ab",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "asr-preprocessor17-f2d76bb.stdout",
+    "stdout_hash": "e0a39896746c47691ea5a299b6f6b902e2944bf7d3f89aaf725543a4",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

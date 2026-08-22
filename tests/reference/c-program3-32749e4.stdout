@@ -2,36 +2,22 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 #include <lfortran_intrinsics.h>
 
-#define ASSERT(cond)                                                           \
-    {                                                                          \
-        if (!(cond)) {                                                         \
-            printf("%s%s", "ASSERT failed: ", __FILE__);                       \
-            printf("%s%s", "\nfunction ", __func__);                           \
-            printf("%s%d%s", "(), line number ", __LINE__, " at \n");          \
-            printf("%s%s", #cond, "\n");                                       \
-            exit(1);                                                           \
-        }                                                                      \
-    }
-#define ASSERT_MSG(cond, msg)                                                  \
-    {                                                                          \
-        if (!(cond)) {                                                         \
-            printf("%s%s", "ASSERT failed: ", __FILE__);                       \
-            printf("%s%s", "\nfunction ", __func__);                           \
-            printf("%s%d%s", "(), line number ", __LINE__, " at \n");          \
-            printf("%s%s", #cond, "\n");                                       \
-            printf("%s", "ERROR MESSAGE:\n");                                  \
-            printf("%s%s", msg, "\n");                                         \
-            exit(1);                                                           \
-        }                                                                      \
-    }
-
-// Forward declarations
-float func1(float a, float b);
 float func2(float a, float b);
+float func1(float a, float b);
+
+
 
 // Implementations
+float func2(float a, float b)
+{
+    float c;
+    c = a*b;
+    return c;
+}
+
 float func1(float a, float b)
 {
     float c;
@@ -40,15 +26,9 @@ float func1(float a, float b)
     return c;
 }
 
-float func2(float a, float b)
-{
-    float c;
-    c = a*b;
-    return c;
-}
-
 int main(int argc, char* argv[])
 {
+    _lpython_set_argv(argc, argv);
     float x;
     float y;
     float z;

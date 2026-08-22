@@ -1,0 +1,986 @@
+! If you need a function, put it into the module below and remove the same
+! number of lines below the module to keep the rest of the lines in this file
+! intact.
+module continue_compilation_1_mod
+    use, intrinsic :: ieee_arithmetic, only: ieee_class, ieee_quiet_nan, ieee_class_type
+    type :: MyClass
+        integer :: value
+    contains
+        procedure :: display
+    end type MyClass
+
+    type :: logger_type
+    contains
+        private
+        procedure, public, pass(self) :: add_log_file
+    end type logger_type
+
+    type(MyClass), PROTECTED :: protected_module_my_class_obj
+
+    ! Test for Missing Declaration:
+    type :: ctx_missing_t
+        procedure(f_missing), pointer, nopass :: fn => null()
+    end type
+
+    procedure(missing_global_interface), pointer :: p => null()
+
+    interface assignment(=)
+        module procedure assign_func_bad
+        module procedure assign_wrong_nargs
+        module procedure assign_bad_lhs
+        module procedure assign_bad_rhs
+    end interface
+    
+    interface operator(.op.)
+        function op_clash_f(x) result(y)
+            integer, intent(in) :: x
+            integer :: y
+        end function
+    end interface
+    type :: Base
+        integer :: x
+    end type Base
+
+    interface frexp
+    function frexp(x,n) result(r)
+        real r
+        real, intent(in), value :: x
+        integer, intent(out) :: n
+    end function frexp
+    end interface frexp
+
+    interface frexp_duplicate
+    subroutine frexp(x,n)
+        real r
+        real, intent(in), value :: x
+        integer, intent(out) :: n
+    end subroutine frexp
+    end interface
+    
+    type, extends(Base) :: Derived
+        real :: r
+    end type Derived
+
+    type :: type_t
+    end type type_t
+
+
+    type, extends(MyClass) :: derived_binding; contains; procedure :: display => display_override; end type  ! {Error} Type bound procedure 'display' of 'derived_binding' overriding the binding of the same name in 'myclass' must take 2 arguments, not 3
+contains
+
+    integer function statement_function_name_conflict()
+        statement_function_name_conflict(argument) = 0
+    contains
+        integer function argument()
+        end function
+    end function
+    subroutine my_undefined_type_test()
+        implicit none
+        type(another_undefined_type) :: s3_in_subroutine
+    end subroutine my_undefined_type_test
+
+    subroutine my_func(x, y)
+        integer, intent(in) :: x, y
+        print *, "hi"
+    end subroutine
+
+    subroutine display(self, extra_arg)
+        class(MyClass), intent(in) :: self
+        integer, intent(in) :: extra_arg
+        print *, "Value in object:", self%value
+    end subroutine display
+
+    subroutine add_log_file(self, filename, unit)
+        class(logger_type), intent(inout) :: self
+        character(*), optional :: filename
+        integer :: unit
+        filename = "lfortran"
+        unit = 10
+    end subroutine add_log_file
+
+    subroutine s(c) bind(c)
+        use iso_c_binding
+        character(len=2, kind=c_char), intent(in) :: c
+    end subroutine s
+
+    subroutine ubound_assumed_size(a, b, c)
+        real :: a(*)       
+        real :: b(*)   
+        real :: c(10, *)
+        
+        print *, ubound(a, 1)
+        print *, ubound(b)
+        print *, ubound(c, 2)
+    end subroutine
+
+    subroutine assumed_size_star_pos_1(a)
+        real, intent(in) :: a(*, 10)
+    end subroutine
+
+    subroutine assumed_size_star_pos_2(a)
+        real :: a(*, 10)
+    end subroutine
+
+    subroutine proc_param(p)
+        procedure(ubound_assumed_size) :: p
+    end subroutine proc_param
+
+    subroutine modify_and_deallocate(s)
+        character(5), allocatable :: s
+        deallocate(s)
+    end subroutine modify_and_deallocate
+
+    subroutine intrinsic_polymorphic(generic)
+        class(*), intent(in) :: generic
+        print *, trim(generic)
+        print *, adjustl(generic)
+        print *, adjustr(generic)
+        print *, len_trim(generic)
+    end subroutine intrinsic_polymorphic
+
+    integer function assign_func_bad(lhs, rhs)
+        integer, intent(out) :: lhs
+        integer, intent(in)  :: rhs
+        assign_func_bad = rhs
+    end function assign_func_bad
+
+    subroutine assign_wrong_nargs(lhs)
+        integer, intent(out) :: lhs
+    end subroutine assign_wrong_nargs
+
+    subroutine assign_bad_lhs(lhs, rhs)
+        integer, intent(in)  :: lhs
+        integer, intent(in)  :: rhs
+    end subroutine assign_bad_lhs
+
+    subroutine assign_bad_rhs(lhs, rhs)
+        integer, intent(out) :: lhs
+        integer, intent(out) :: rhs
+    end subroutine assign_bad_rhs
+    subroutine slash_init_warning_paths()
+        enum, bind(c)
+            enumerator :: red/1/
+        end enum
+        type(MyClass), save :: slash_x/MyClass(1)/
+        integer, save :: slash_y/2/
+    end subroutine slash_init_warning_paths
+
+    function dummy_func() result(r)
+        integer :: r
+        r = 42
+    end function dummy_func
+
+    subroutine dummy_sub()
+       print *, "dummy subroutine"
+    end subroutine dummy_sub
+
+    subroutine proc_ptr_error_tests()
+        implicit none
+        procedure(), pointer :: pf1
+        pf1 => dummy_sub
+
+        procedure(sub_test), pointer :: pf2
+        pf2 => dummy_func
+    end subroutine proc_ptr_error_tests
+    subroutine display_override(self, a, b); class(derived_binding), intent(in) :: self; integer, intent(in) :: a, b; end subroutine
+    function op_clash_f(x) result(y)
+        integer, intent(in) :: x
+        integer :: y
+        y = x
+    end function op_clash_f
+
+
+
+
+
+
+
+
+
+
+
+
+
+end module
+
+
+! Only put declarations and statements here, no subroutines (those go above).
+program continue_compilation_1
+    use continue_compilation_1_mod
+    implicit integer(a-f), real(e-z)
+
+    ! Put declarations below without empty lines
+    integer :: a(3), b(3), b1(3, 3), a3(3, 3, 3), b4(3, 3, 3, 3), a5, c5, i, arr1(3), arr2(2, 3), arr3(2, 1, 3)
+    character :: a1(3, 3)
+    logical :: a2(3, 3), mask1(3), mask2(2, 3), mask3(2, 1, 3), mask4(3, 2), mask5(2, 3, 1), y
+    integer(kind=8) :: b5
+    real(8) :: y1
+    real :: z1
+    integer, parameter :: i1 = 2
+    character(len=5) :: string = "hello"
+    character(len=1) :: set(2) = ["l", "h"]
+    integer :: q1
+    real :: r1
+    character :: c1
+    complex :: c = (1.0, 2.0)
+    real a_real(0)
+    integer, allocatable ::  shape_(:), arr4(:), arr5(:)
+    integer, dimension(2, 3) :: matrix
+    integer, dimension(4) :: source = [1, 2, 3, 4]
+    allocate(shape_(2))
+    real :: v
+    character(10) :: str
+    character(3), parameter :: ar1 = repeat(["abc", "#^1", "123"], [1, 2, 3])
+    integer, parameter :: zero = 0
+    integer :: x = 1
+    real :: adwf = .true.
+    integer, volatile :: volatile_var
+    dimension array(3)
+    double precision array
+    integer , dimension(3) :: array
+    type(logger_type) :: logger
+    integer :: unit
+    character(len=100) :: filename
+    type(MyClass), parameter :: myclass_array(2) = [1, MyClass(10)]
+    type(MyClass), parameter :: myclass_array2(2) = [MyClass(1), MyClass(q1)]
+    character(width=10) :: str_c_1
+    character(len=10, len=20) :: str_c_2
+    character(len=10, 1) :: str_c_3
+    character(1, len=20) :: str_c_4
+    character(:), allocatable :: z_01(2)
+    integer, dimension(:,:), allocatable :: arr_size
+    logical :: mask_size(size(arr_size))
+    integer, protected :: protected_attr_var
+    integer, parameter, protected :: protected_parameter_var
+    type(MyClass) :: v1, v2, v3
+    type(MyClass) :: arr(3)
+    integer :: n = 2
+    type :: matrix
+      integer :: elements(n)
+    end type
+    type(bspline_3d) :: s3_in_program
+    integer :: j2, i2, k2(2), x2(2), y2(3)    
+    integer::tt = b'01' * 3
+    integer :: fmt_i1, fmt_i2, fmt_i3 ! for issue #8925
+    integer, allocatable :: allocate_int = 1
+    character(:), allocatable :: allocate_char = "H"
+    intrinsic :: not_real
+    call sub(not_real)
+    integer :: param_arr(3) = [5, 10, 15]
+    integer, parameter :: param_minloc = minloc(param_arr, 1, [.false., .false., .false.])
+    integer :: cc_a3(2) = [2, 3]
+    integer :: cc_temp3(2)
+    integer :: cc_i0 = 1
+    integer :: cc_a4(2)
+    integer :: cc_temp4(5)
+    integer :: cc_i1 = 1
+    character(10) :: strx
+    type(MyClass), parameter :: uninitialized_param_local
+    type(MyClass) :: err_obj1 = non_existent_symbol
+    type(MyClass) :: err_obj2 = my_func
+    integer :: non_parameter_var = 5
+    type(MyClass) :: err_obj3 = non_parameter_var
+    type(MyClass) :: err_obj4 = myclass_array
+    type(MyClass) :: err_obj5 = uninitialized_param_local
+
+    ! Unary defined operator with missing procedure
+    interface operator(.bad.)
+        module procedure bad_op
+    end interface
+
+    integer :: bad_x
+    type(ieee_class_type) :: ieee_cls
+    type(Base) :: base_var
+    type(Derived) :: derived_var
+    class(type_t) :: inst_tt
+    real(8), parameter :: erfc_param = erfc(40.12_8)
+    integer :: arr_idl(4)
+    contiguous :: contig_not_declared
+    contiguous :: MyClass
+    class(Derived), allocatable :: derived_cls
+    integer, parameter :: z(1) = 2
+    integer, parameter :: qval(2) = reshape([7, 8], -[z])
+    integer :: u
+    type matrix(n)
+        integer, len :: n
+        real :: data(n)
+    end type
+    type(MyClass) :: eoshift_derived_array(1), eoshift_derived_result(1)
+
+
+
+
+
+
+
+
+
+
+
+
+    ! Use the space above to insert new declarations, and remove the line, so
+    ! that the lines below do not shift, to keep the diff minimal.
+    !
+    ! Only put statements below. If you need to call a function, put it into a
+    ! module above.
+    print 1+2
+    a = 1
+    print *, a(10)
+    a5 = 8
+    b5 = 12_8
+    c5 = 2
+
+    !loop_test
+    do i=1,3
+       i = i + 1
+       print*,i
+    end do
+    !maskl_incorrect_bit_size
+    print*, maskl(63)
+    !maskr_incorrect_bit_size
+    print*, maskr(63)
+    !maskl_negative
+    print*, maskl(-24)
+    !maskr_negative
+    print*, maskr(-24)
+    !matrix_matmul_01
+    print *, matmul(a1, b1)
+    !matrix_matmul_02
+    print *, matmul(b1, a1)
+    !matrix_matmul_03
+    print *, matmul(a2, b1)
+    !matrix_matmul_04
+    print *, matmul(a3, b1)
+    !matrix_matmul_05
+    print *, matmul(b1, b4)
+    !matrix_matmul_06
+    print *, matmul(a, b)
+    !matrix_transpose_01
+    print *, transpose(a)
+    !merge_bits_comp
+    print *, merge_bits(8, 12_8, 2)
+    !merge_bits_run
+    print *, merge_bits(a5, b5, c5)
+
+    !Does not work correctly : Issue: #5469 -------------
+    ! !max_01
+    ! y1 = 5.2d0
+    ! z1 = 9.0
+    ! print *, max(y1, z1)
+    ! !max_02
+    ! print *, max(b5, a5)
+    ! !min_01
+    ! print *, min(y1, z1)
+    ! !min_02
+    ! print *, min(b5, a5)
+    !------------------------------
+
+    !modulo_01
+    print *, modulo(1, 0)
+    !more_kwargs_than_acceptable_to_subroutine
+    call my_func(y=1, x=2, z=1)
+
+    !nint_overflow
+    print*, nint(1e12_8)
+    print*, nint(1000000000000.0000000000000000d0)
+    ! open_invalid_kwarg1
+    OPEN(file="numbers", hello="world")
+    !parameter_01
+    i1 = 3
+    print*,i1
+    call FLUSH(1, 2)
+
+    print*, verify(string, set, kind= [4, 4] )
+    print *, and([1, 2, 3], [1, 2, 3])
+
+    print *, dshiftl(1, 2, 34)
+    print *, dshiftl(1, 2, -2)
+
+    print *, dshiftr(1, 2, 34)
+    print *, dshiftr(1, 2, -2)
+
+    print *, selected_int_kind([1,2,3])
+    print *, selected_real_kind([1,2,3])
+    print *, selected_char_kind(['c', 'a', 'b'])
+
+    arr1 = reshape([1, 2, 3], [3])
+    arr2 = reshape([1, 2, 3, 4, 5, 6], [2, 3])
+    arr3 = reshape([1, 2, 3, 4, 5, 6], [2, 1, 3])
+    mask1 = reshape([.true., .false., .true.], [3])
+    mask2 = reshape([.true., .false., .true., .true., .false., .true.], [2, 3])
+    mask3 = reshape([.true., .false., .true., .true., .false., .true.], [2, 1, 3])
+
+    print *, sum(arr1, dim = 2)
+    print *, sum(arr1, dim = -1)
+    print *, sum(arr1, mask = mask1, dim = 2)
+    print *, sum(arr1, mask = mask1, dim = -1)
+
+    print *, product(arr2, dim = 3)
+    print *, product(arr2, dim = -1)
+    print *, product(arr2, mask = mask2, dim = 3)
+    print *, product(arr2, mask = mask2, dim = -1)
+
+    print *, iparity(arr3, dim = 4)
+    print *, iparity(arr3, dim = -1)
+    print *, iparity(arr3, mask = mask3, dim = 4)
+    print *, iparity(arr3, mask = mask3, dim = -1)
+
+    if (q1) q1 = 1
+    if (r1) r1 = 1.0
+    if (c1) c1 = 'a'
+
+    mask4 = reshape([.true., .false., .true., .true., .false., .true.], [3, 2])
+    mask5 = reshape([.true., .false., .true., .true., .false., .true.], [2, 3, 1])
+
+    print *, sum(arr1, mask2)
+    print *, sum(arr2, mask3, 2)
+    print *, iparity(arr2, mask4)
+    print *, iparity(arr3, mask5, 3)
+
+    ! argument_not_a_variable
+    print *, present(a + 1)
+
+    ! argument_not_optional
+    print *, present(a)
+
+    print *, pack([1, 2, 3], [.true., .true., .true., .true.])
+
+    print *, reshape("hello", [2, 3])
+    print *, reshape(.true., [2, 3])
+    print *, reshape([1, 2, 3, 4], "hello")
+    print *, reshape([1, 2, 3, 4], .false.)
+
+    print *, reshape([1, 2, 3, 4], [2, 3])
+
+    ! Division by zero
+    print *, 1/0
+    print *, x/zero
+    print *, v**str
+    print *, str**v
+
+    print *, shiftl(2, 34)
+    print *, shiftl(2, -3)
+    print *, shiftr(2, 34)
+    print *, shiftr(2, -3)
+    print *, rshift(2, 34)
+    print *, rshift(2, -3)
+
+    print *, sum([c1])
+    print *, product([c1])
+    print *, minval([c])
+    print *, maxval([c])
+
+    print *, sum(q1)
+    print *, product(r1)
+    print *, minval(q1)
+    print *, maxval(r1)
+    
+    print *, sum([1, 2, 3], mask = [1, 2, 3])
+    z1 = y 
+
+    print *, reshape([1, 2, 3, 4, 5, 6], [2, 3], 0)
+    print *, reshape([1, 2, 3, 4, 5, 6], [2, 3], [0], 0)
+    print *, reshape([1, 2, 3, 4, 5, 6], [2, 3], [1.2])
+    print *, reshape([1, 2, 3, 4, 5, 6], [2, 3], [0_8])
+
+    print *, reshape([1, 2, 3, 4, 5, 6], [2, 3], order = [1.0, 2.0])
+    print *, reshape([1, 2, 3, 4, 5, 6], [2, 3], order = [2, 3])
+    print *, a(b'01':2)
+    print *, count(1)
+    print *, count([2])
+    print *, a(1:2:b'10')
+    a_real = [logical::]
+    print *,size(a_real)
+    print *, dummy_sub()
+    print *, iparity(["a", "b"])
+    print *, parity(["a", "b"])
+    print *, string(1:6)
+    shape_ = [2, 3]
+    matrix = reshape(source, shape_, pad=[0])
+
+    deallocate(shape_)
+
+    ! c is Complex
+    print *, c%mymember
+    ! c1 is Character
+    print *, c1%mymember
+    print *, string(1:Z'100000003')
+    print *, present(x,x)
+    print *, present()
+    print *, ieor(x)
+    print *, ieor()
+    print *, min(c, c)
+    exit
+    cycle
+    ! calling function with less arguments
+    call my_func(10)
+    call my_func()
+    ! checking for self argument too 
+    type(MyClass) :: obj
+    obj%value = 42
+    call obj%display()
+    ! checking source in allocate
+    allocate(arr4(5), source=[1, 2, 3])
+    allocate(arr4(5), source=v)
+    allocate(arr4(3), source=reshape([1, 2, 3, 4, 5, 6], [2, 3]))
+    allocate(arr4, source=7)
+
+    call logger % add_log_file(filename=filename)
+    call logger % add_log_file()
+
+    allocate(arr5, status=q1)
+    allocate(arr5, mold = arr4)
+
+    print *, ["aa", "aaa"]
+    cc_a3 = cc_temp3(cc_i0:cc_i0)
+    print *, pack(arr2, mask1)
+    print *, size(cc_a3)
+    ! assigning to a *PROTECTED* struct instance member, not allowed
+    protected_module_my_class_obj%value = 42
+    cc_a4 = cc_temp4(cc_i1+1:cc_i1+1)
+    arr = [type(MyClass) :: v1, v2, v3]
+    print *, size(cc_a4)
+    arr = [NonExistingType :: v1, v2, v3]
+
+    !Data Statements with different number of arguments on LHS and RHS
+    data j2, x2, (y2(i2), i2=1,3), k2 / 1,2,3,4,5,6,7,3*8 /
+
+    q1: do q1 = 1, 3
+        print *, q1
+    end do q1
+
+    ! Test assigned format WRITE 
+    ASSIGN 0012 TO fmt_i1
+    0012 FORMAT (" **** ASSIGN FORMAT NUMBER TO INTEGER VARIABLE ****" )
+    WRITE (6, fmt_i1)
+
+    ! Test assigned format PRINT 
+    assign 100 to fmt_i2
+    100 format (A)
+    print fmt_i2, "test"
+
+    ! Test assigned format READ 
+    assign 13 to fmt_i3
+    13 format ()
+    read (5, fmt_i3)
+
+    !passing non procedure to procedure parameter
+    call proc_param(42)
+
+    x = 9010
+    read (*, end=x) x
+    read (*, end=9011.0) x
+    x = 9012
+    read (*, err=x) x
+    read (*, err=9013.0) x
+    write (*, end=9014) x
+9014 continue
+    write (*, err=9015) x
+9015 continue
+
+    read(*, *, end=999) x   
+    read(*, *, err=500) x
+    
+    OPEN(unit=10, recl=10, recl=20)
+    OPEN(unit=10, recl=10.5)
+
+    i = 1
+    print *, string(i,i)
+    
+    allocate(strx)
+    strx = "hello12345"
+    call modify_and_deallocate(strx)
+    print *, allocated(strx)
+
+    call intrinsic_polymorphic("  Hello World  ")
+
+    OPEN(unit=10, encoding="UTF-8", encoding="UTF-8")
+    OPEN(unit=10, encoding=10)
+
+    character(len=10) :: str_var
+    read(str_var, rec=1) x
+    write(str_var, rec=1) x
+    read(unit=10, rec=1, rec=2) y
+    write(unit=10, rec=1, rec=2) y
+    read(10, rec=1.5) y
+    write(10, rec=2.5) y
+
+    ! unary defined operator with no matching function
+    bad_x = .bad. 10
+    bad_x = 5 .op. 3
+    ieee_cls = ieee_class(0.0)
+    b = (ieee_cls == ieee_quiet_nan)
+
+    integer, intent(out) :: out_intent
+    integer, intent(in) :: in_intent
+    
+    base_var = derived_var
+
+    type :: container(rk, ik)
+        integer, kind :: rk
+        integer, kind :: ik
+        integer(kind=ik)  :: i_val(20)
+        real(kind=rk)     :: r_val(20)
+    end type container
+
+    type(container(4)) :: obj1
+    type(container) :: obj2
+    call set_caller(1)
+    arr_idl = (i, i = 1, 4)
+    integer :: minloc_shape_mismatch = minloc([2, 1, 3], 1, [.true., .false.])
+    integer :: maxloc_shape_mismatch = maxloc([2, 1, 3], 1, [.true., .false.])
+    write (*, "(a)", advance="hello") "Dothraki culture"
+    print *, sum(arr1, dim = mask1)
+    print*, ieee_is_nan(1.0)
+    open(unit=7, decimal=1, decimal="comma")
+    open(unit=7, decimal="POINT", decimal="comma")
+    integer :: char_len_var = 10
+    character(len = char_len_var) :: char_nonconst
+    interface undeclared_iface
+        module procedure undeclared_proc  ! {Error} Symbol 'undeclared_proc' not declared
+    end interface
+    eoshift_derived_result = eoshift(eoshift_derived_array, 1)
+    integer, parameter :: n2 = "abc"
+    type(MyClass) :: ptr_src_no_target
+    type(MyClass), pointer :: ptr_requires_target => ptr_src_no_target
+    type(Base), target :: ptr_tgt_base
+    type(MyClass), pointer :: ptr_type_mismatch => ptr_tgt_base
+    a(1) = .true.
+    derived_cls = base_var
+    call print_len_non_char("  Hello World  ")
+    print  *, 9.99e+99
+    a5 = missing_required_arg_func()
+    integer :: m = 7
+    dimension :: m(3)
+    open(newunit=u, file="test.dat", status="replace", asynchronous=1)
+    open(newunit=u, file="test.dat", status="replace", asynchronous="yes", asynchronous="no")
+    integer :: eoshift_bad_shift(2, 2)
+    eoshift_bad_shift = 1
+    b1 = eoshift(b1, eoshift_bad_shift)
+    contains
+    subroutine test_uminus_struct()
+        use continue_compilation_1_mod, only: MyClass
+        implicit none
+        type(MyClass) :: tt
+        print *, -tt
+    end subroutine
+
+
+
+
+    subroutine sub(f)
+        interface
+            function f(x)
+                integer :: x, f
+            end function
+        end interface
+    end subroutine
+    subroutine sub_do_undeclared()
+        implicit none
+        integer :: n(3)
+        do k = 1, 3
+            n(k) = 42
+        end do
+    end subroutine
+    subroutine sub_real_logical_init()
+        implicit none
+        real :: adwf = .true.
+    end subroutine
+    subroutine sub_abs_array_index()
+        implicit none
+        integer(4) :: arr1(3) = [2471095, 820012001, 39024800]
+        if (abs(arr1)(1) /= 2471095) error stop
+    end subroutine
+
+    subroutine print_len_non_char(generic)
+        implicit none
+        class(*), intent(in) :: generic
+        integer :: a
+        a = 5
+        print *, len(generic)
+        print *, len(a)
+    end subroutine print_len_non_char
+
+    subroutine sub_write_unit_bad_type()
+        implicit none
+        real :: r
+        write(unit=r, fmt=*) "hello"  ! {Error} `unit` must be of type Integer or Character
+    end subroutine sub_write_unit_bad_type
+
+    subroutine sub_array_constant_character_to_integer()
+        implicit none
+        integer :: x(3)
+        x = [character(len=3) :: "aa", "bb", "aa"]
+    end subroutine sub_array_constant_character_to_integer
+
+    subroutine Z_01_sub()
+        integer,allocatable  :: x(3)
+        integer,pointer  :: y(3)
+    end subroutine
+
+    integer function missing_required_arg_func(stat)
+        integer, intent(out) :: stat
+        missing_required_arg_func = 0
+        stat = 0
+    end function
+    subroutine sub_common_block_nonconstant_lower_bound(n)
+        implicit none
+        integer, intent(in) :: n
+        integer :: arr(n:10)
+        common /common_nonconstant_lower_bound/ arr
+    end subroutine sub_common_block_nonconstant_lower_bound
+
+    subroutine sub_common_block_nonconstant_upper_bound(n)
+        implicit none
+        integer, intent(in) :: n
+        integer :: arr(1:n)
+        common /common_nonconstant_upper_bound/ arr
+    end subroutine sub_common_block_nonconstant_upper_bound
+    
+    subroutine select_case_array_bound()
+        implicit none
+        integer :: n
+        n = 1
+        select case (n)
+        case (:[2])
+        end select
+    end subroutine
+    subroutine bindc_optional_value(a) bind(c)
+        implicit none
+        integer, optional, value :: a
+    end subroutine
+    subroutine sub_alternate_return_intrinsic()
+        call cpu_time(*1)
+1       continue
+    end subroutine 
+    subroutine sync_all_stat_wrong_type()
+        implicit none
+        character(len=10) :: cstat
+        sync all (stat=cstat)  ! {Error} `stat` argument of `sync all` must be of type integer
+    end subroutine
+    subroutine sync_all_errmsg_wrong_type()
+        implicit none
+        integer :: imsg
+        sync all (errmsg=imsg)  ! {Error} `errmsg` argument of `sync all` must be of type character
+    end subroutine
+    subroutine sync_all_stat_array()
+        implicit none
+        integer :: astat(3)
+        sync all (stat=astat)  ! {Error} `stat` argument of `sync all` must be scalar
+    end subroutine
+    subroutine sync_all_stat_undeclared()
+        implicit none
+        sync all (stat=nosuch)  ! {Error} Variable 'nosuch' is not declared
+    end subroutine
+    subroutine assumed_size_to_pointer_dummy(x)
+        integer :: x(*)
+        call ptr_sink(x)  ! {Error} actual argument for 'x' cannot be an assumed-size array
+    end subroutine
+    subroutine ptr_sink(x)
+        integer, pointer :: x(..)
+    end subroutine
+    subroutine select_case_complex()
+        implicit none
+        complex :: nn
+        select case (nn)
+        case default
+        end select
+    end subroutine
+    subroutine select_case_real()
+        implicit none
+        real :: x
+        select case (x)
+        case default
+        end select
+    end subroutine
+
+    subroutine lexical_intrinsic_nondefault_character()
+        implicit none
+        character(kind=4) :: glyph
+        print *, lge("a", glyph)  
+        print *, lgt("a", glyph)  
+        print *, lle(glyph, "z")  
+        print *, llt(glyph, "z")  
+    end subroutine
+
+    subroutine c_loc_default_component_initializer()
+        use iso_c_binding, only: c_loc, c_ptr
+        integer, target :: target_value
+        type :: holder
+            type(c_ptr) :: ptr = c_loc(target_value)
+        end type
+    end subroutine
+
+    subroutine spread_dim_out_of_range()
+        implicit none
+        integer :: a(3)
+        a = [1,2,3]
+        print *, spread(a, 5, 2)
+    end subroutine
+
+    subroutine merge_kind_mismatch()
+        implicit none
+        integer(kind=8) :: a
+        integer(kind=4) :: b
+        a = 1
+        b = 2
+        print *, merge(a, b, .true.)
+    end subroutine
+
+    subroutine co_max_complex_arg()
+        implicit none
+        complex :: z
+        call co_max(z)
+    end subroutine
+
+    subroutine cosum_invalid_argument_type()
+        implicit none
+        logical :: mask
+        call co_sum(mask)
+    end subroutine
+
+    subroutine duplicate_statement_label()
+1000    continue
+1000    continue
+    end subroutine
+
+    subroutine select_type_nonpolymorphic()
+        implicit none
+        integer :: a
+        select type (a)
+        type is (integer)
+            print *, a
+        end select
+    end subroutine
+    subroutine character_kind_mismatch()
+        implicit none
+        character(kind=1) :: c1
+        character(kind=4) :: c4
+        print *, min(c1, c4)
+    end subroutine
+
+    subroutine sub_undefined_goto_label()
+        implicit none
+        goto 20  ! {Error} Label 20 is not defined
+    end subroutine
+
+    subroutine length_specifier_non_character()
+        implicit none
+        integer :: i*2
+    end subroutine
+
+    subroutine assumed_size_to_assumed_shape_forward(items)
+        implicit none
+        integer :: items(*)
+        call consume_assumed_shape(items)  ! {Error} actual argument for 'items' cannot be an assumed-size array
+    end subroutine
+    subroutine consume_assumed_shape(items)
+        implicit none
+        integer :: items(:)
+    end subroutine
+    subroutine assumed_size_to_assumed_shape_function_forward(items)
+        implicit none
+        integer :: items(*)
+        print *, consume_assumed_shape_function(items)  ! {Error} actual argument for 'items' cannot be an assumed-size array
+    end subroutine
+    integer function consume_assumed_shape_function(items)
+        implicit none
+        integer :: items(:)
+        consume_assumed_shape_function = size(items)
+    end function
+    subroutine associate_boz_target()
+        associate (y => z'1') 
+        end associate
+    end subroutine
+
+    subroutine data_type_mismatch()
+        implicit none
+        integer :: x
+        data x / "abc" /
+    end subroutine
+    subroutine norm2_error()
+        real :: x
+        x = norm2(1.0)
+        x = norm2([1, 2])
+        x = norm2([1.0, 2.0], dim=2)
+    end subroutine
+
+    subroutine type_used_before_declared_local()
+        implicit none
+        type(t_pair_local) :: x
+        type :: t_pair_local
+            integer :: i
+            real :: x
+        end type
+    end subroutine type_used_before_declared_local
+
+    subroutine real_unsupported_kind_01()
+        print *, real(1., 666)
+    end subroutine
+
+    ! The AST keeps the source order, so with `--continue-compilation` the
+    ! AST -> ASR visitors see the `use` and `implicit` statements below in
+    ! their (invalid) position rather than hoisted to the front. The parser
+    ! reports the ordering errors, the visitors must cope with the raw order.
+    subroutine decl_order_after_decl()
+        integer :: decl_order_first
+        use iso_fortran_env, only: int32
+        implicit none
+        integer(int32) :: decl_order_second
+        decl_order_second = decl_order_first
+    end subroutine
+    subroutine equivalence_nonconstant_subscript()
+        implicit none
+        integer :: a(3), b(3), i
+        equivalence (a(i), b(1))  ! {Error} equivalence array bounds and subscripts must be constant
+    end subroutine equivalence_nonconstant_subscript
+
+    subroutine equivalence_common_scalar_array_element()
+        implicit none
+        integer :: cs, arr(3)
+        common /equivalence_common_scalar/ cs
+        equivalence (cs, arr(2))  ! {Error} equivalence between a common block variable and this array element is not implemented
+    end subroutine equivalence_common_scalar_array_element
+
+    subroutine equivalence_common_array_overrun()
+        implicit none
+        real :: first, second, alias(4)
+        common /equivalence_common_overrun/ first, second
+        equivalence (first, alias(1))  ! {Error} equivalence between a common block variable and this array element is not implemented
+    end subroutine equivalence_common_array_overrun
+    subroutine set_caller(this)
+        class(MyClass) :: this
+    end subroutine
+
+    subroutine findloc_character_kind_mismatch()
+        implicit none
+        character(kind=4, len=1) :: names(1)
+        character(kind=1, len=1) :: key
+        print *, findloc(names, key)
+    end subroutine
+
+    subroutine implied_do_loop_variable_not_integer()
+        implicit none
+        real :: r_idx
+        real :: values(3)
+        values = [(real(r_idx), r_idx = 1, 3)]  ! {Error} The implied do loop variable 'r_idx' must be a scalar integer, not real(4)
+        print *, values(1)
+    end subroutine
+end program
+
+! A syntax error inside a module makes the parser skip the erroneous
+! declaration and keep the rest of the module. The symbol table visitor then
+! skips the program units that depend on the discarded declaration, so the body
+! visitor must not assume their symbols exist.
+module module_error_recovery_1
+    type :: t_recovery
+    contains
+      foo    end type t_recovery
+contains
+    pure function foo(self, x) result(res)
+      class(t_recovery), intent(in) :: self
+      real, intent(in) :: x(:)
+      real :: res(size(x))
+    end function foo
+end module
+

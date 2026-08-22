@@ -4,8 +4,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace LFortran
-{
+namespace LCompilers {
 
 struct Location
 {
@@ -19,7 +18,8 @@ static inline uint32_t bisection(const std::vector<uint32_t> &vec, uint32_t i) {
     if (i >= vec[vec.size()-1]) return vec.size();
     uint32_t i1 = 0, i2 = vec.size()-1;
     while (i1 < i2-1) {
-        uint32_t imid = (i1+i2)/2;
+        // Use i1 + (i2-i1)/2 to avoid overflow for large uint32_t values
+        uint32_t imid = i1 + (i2 - i1) / 2;
         if (i < vec[imid]) {
             i2 = imid;
         } else {
@@ -94,68 +94,170 @@ struct LocationManager {
     //
     //
     //
-    std::vector<uint32_t> out_start; // consecutive intervals in the output code
-    std::vector<uint32_t> in_start; // start + size in the original code
-    std::vector<uint32_t> in_newlines; // position of all \n in the original code
+    struct FileLocations {
+        std::vector<uint32_t> out_start; // consecutive intervals in the output code
+        std::vector<uint32_t> in_start; // start + size in the original code
+        std::vector<uint32_t> in_newlines; // position of all \n in the original code
 
-    // For preprocessor (if preprocessor==true).
-    // TODO: design a common structure, that also works with #include, that
-    // has these mappings for each file
-    bool preprocessor = false;
-    std::string in_filename;
-    uint32_t current_line=0;
-    std::vector<uint32_t> out_start0; // consecutive intervals in the output code
-    std::vector<uint32_t> in_start0; // start + size in the original code
-    std::vector<uint32_t> in_size0; // Size of the `in` interval
-    std::vector<uint32_t> interval_type0; // 0 .... 1:1; 1 ... many to many;
-    std::vector<uint32_t> in_newlines0; // position of all \n in the original code
-//    std::vector<uint32_t> filename_id; // file name for each interval, ID
-//    std::vector<std::string> filenames; // filenames lookup for an ID
+        // For preprocessor (if preprocessor==true).
+        // TODO: design a common structure, that also works with #include, that
+        // has these mappings for each file
+        bool preprocessor = false;
+        std::string in_filename;
+        // The file's text, when it is not on disk to be read back: an
+        // interactive cell is only ever in memory. Empty means read
+        // `in_filename`.
+        std::string source;
+        uint32_t current_line=0;
+        std::vector<uint32_t> out_start0; // consecutive intervals in the output code
+        std::vector<uint32_t> in_start0; // start + size in the original code
+        std::vector<uint32_t> in_size0; // Size of the `in` interval
+        std::vector<uint32_t> interval_type0; // 0 .... 1:1; 1 ... many to many;
+        std::vector<uint32_t> in_newlines0; // position of all \n in the original code
+    };
+    std::vector<FileLocations> files;
+    // Location is continued for the imported files, i.e.,if the new file is
+    // imported then the location starts from the size of the previous file.
+    // For example: file_ends = [120, 200, 350]
+    std::vector<uint32_t> file_ends; // position of all ends of files
+    // TODO: store file_ends of input files
+    // For a given Location, we use the `file_ends` and `bisection` to determine
+    // the file (files' index), which the location is from. Then we use this index into
+    // the `files` vector and use `in_newlines` and other information to
+    // determine the line and column inside this file, and the `in_filename`
+    // field to determine the filename. This happens when the diagnostic is
+    // printed.
 
     // Converts a position in the output code to a position in the original code
     // Every character in the output code has a corresponding location in the
     // original code, so this function always succeeds
     uint32_t output_to_input_pos(uint32_t out_pos, bool show_last) const {
-        if (out_start.size() == 0) return 0;
-        uint32_t interval = bisection(out_start, out_pos)-1;
-        uint32_t rel_pos = out_pos - out_start[interval];
-        uint32_t in_pos = in_start[interval] + rel_pos;
-        if (preprocessor) {
+        // Check if out_pos is beyond all known file ranges
+        // This can happen when locations from loaded modfiles don't map to the
+        // current LocationManager state (e.g., symbols imported from modules
+        // that were compiled in a different context with different offsets)
+        if (!file_ends.empty() && out_pos > file_ends.back()) {
+            return 0;
+        }
+        // Determine where the error is from using position, i.e., loc
+        uint32_t index = bisection(file_ends, out_pos);
+        if (index != 0 && index == file_ends.size()) index -= 1;
+        if (files[index].out_start.size() == 0) return 0;
+        uint32_t interval = bisection(files[index].out_start, out_pos)-1;
+        uint32_t rel_pos = out_pos - files[index].out_start[interval];
+        uint32_t in_pos = files[index].in_start[interval] + rel_pos;
+        // For positions from imported modules (index > 0), we need to add a
+        // global offset so that pos_to_linecol can correctly identify the file
+        // using bisection on file_ends. We use file_ends[index-1] as the offset
+        // since that represents where this file's range starts in the global space.
+        uint32_t global_offset = (index > 0) ? file_ends[index - 1] : 0;
+
+        if (files[index].preprocessor) {
             // If preprocessor was used, do one more remapping
-            uint32_t interval0 = bisection(out_start0, in_pos)-1;
-            if (interval_type0[interval0] == 0) {
+            uint32_t interval0 = bisection(files[index].out_start0, in_pos)-1;
+            // Check for out-of-bounds access which can happen with invalid
+            // locations from imported symbols
+            if (interval0 >= files[index].interval_type0.size()) {
+                return 0;
+            }
+            if (files[index].interval_type0[interval0] == 0) {
                 // 1:1 interval
-                uint32_t rel_pos0 = in_pos - out_start0[interval0];
-                uint32_t in_pos0 = in_start0[interval0] + rel_pos0;
-                return in_pos0;
+                uint32_t rel_pos0 = in_pos - files[index].out_start0[interval0];
+                uint32_t in_pos0 = files[index].in_start0[interval0] + rel_pos0;
+                return global_offset + in_pos0;
             } else {
                 // many to many interval
                 uint32_t in_pos0;
-                if (in_pos == out_start0[interval0+1]-1 || show_last) {
+                if (in_pos == files[index].out_start0[interval0+1]-1 || show_last) {
                     // The end of the interval in "out" code
                     // Return the end of the interval in "in" code
-                    in_pos0 = in_start0[interval0]+in_size0[interval0]-1;
+                    in_pos0 = files[index].in_start0[interval0]+files[index].in_size0[interval0]-1;
                 } else {
                     // Otherwise return the beginning of the interval in "in"
-                    in_pos0 = in_start0[interval0];
+                    in_pos0 = files[index].in_start0[interval0];
                 }
-                return in_pos0;
+                return global_offset + in_pos0;
             }
         } else {
-            return in_pos;
+            return global_offset + in_pos;
         }
+    }
+
+    // Note: This function is currently only used for positions from the main
+    // file (obtained via linecol_to_pos which uses files[0]). It does NOT
+    // handle global offsets for imported modules because linecol_to_pos cannot
+    // produce modfile positions. If this function is ever extended to handle
+    // modfile positions, it would need symmetric global_offset handling like
+    // output_to_input_pos has.
+    uint32_t input_to_output_pos(uint32_t in_pos, bool show_last) const {
+        // Determine which file this position belongs to
+        uint32_t index = bisection(file_ends, in_pos);
+        if (index != 0 && index == file_ends.size()) index -= 1;
+        if (files[index].in_start.size() == 0) return 0;
+        uint32_t interval = bisection(files[index].in_start, in_pos)-1;
+        uint32_t rel_pos = in_pos - files[index].in_start[interval];
+        uint32_t out_pos = files[index].out_start[interval] + rel_pos;
+        if (files[index].preprocessor) {
+            // If preprocessor was used, do one more remapping
+            uint32_t interval0 = bisection(files[index].in_start0, in_pos)-1;
+            if (files[index].interval_type0[interval0] == 0) {
+                // 1:1 interval
+                uint32_t rel_pos0 = in_pos - files[index].in_start0[interval0];
+                uint32_t out_pos0 = files[index].out_start0[interval0] + rel_pos0;
+                return out_pos0;
+            } else {
+                // many to many interval
+                uint32_t out_pos0;
+                if (in_pos == files[index].in_start0[interval0+1]-1 || show_last) {
+                    // The end of the interval in "out" code
+                    // Return the end of the interval in "in" code
+                    out_pos0 = files[index].out_start0[interval0]+files[index].out_start0[interval0]-1;
+                } else {
+                    // Otherwise return the beginning of the interval in "in"
+                    out_pos0 = files[index].out_start0[interval0];
+                }
+                return out_pos0;
+            }
+        } else {
+            return out_pos;
+        }
+    }
+
+    // Converts given line and column to the position in the original code
+    // `line` and `col` starts from 1
+    // uses precomputed `in_newlines` to compute the position
+    uint64_t linecol_to_pos(uint16_t line, uint16_t col) {
+        // use in_newlines and compute pos
+        uint64_t pos = 0;
+        uint64_t l = 1;
+        while(true) {
+            if (l == line) break;
+            if (l >= files[0].in_newlines.size()) return 0;
+            l++;
+        }
+        if ( l == 1 ) pos = 0;
+        else pos = files[0].in_newlines[l-2];
+        pos = pos + col;
+        return pos;
     }
 
     // Converts a linear position `position` to a (line, col) tuple
     // `position` starts from 0
     // `line` and `col` starts from 1
     // `in_newlines` starts from 0
-    void pos_to_linecol(uint32_t position, uint32_t &line, uint32_t &col) const {
+    void pos_to_linecol(uint32_t position, uint32_t &line, uint32_t &col,
+            std::string &filename) const {
+        // Determine where the error is from using position, i.e., loc
+        uint32_t index = bisection(file_ends, position);
+        if (index != 0 && index == file_ends.size()) index -= 1;
+        filename = files[index].in_filename;
+        // Get the actual location by subtracting the previous file size.
+        if (index > 0) position -= file_ends[index - 1];
         const std::vector<uint32_t> *newlines;
-        if (preprocessor) {
-            newlines = &in_newlines0;
+        if (files[index].preprocessor) {
+            newlines = &files[index].in_newlines0;
         } else {
-            newlines = &in_newlines;
+            newlines = &files[index].in_newlines;
         }
         int32_t interval = bisection(*newlines, position);
         if (interval >= 1 && position == (*newlines)[interval-1]) {
@@ -177,17 +279,27 @@ struct LocationManager {
         }
     }
 
+    // The text of the file the given position is in, or nullptr when that file
+    // has to be read from disk.
+    const std::string *source_at(uint32_t position) const {
+        if (file_ends.empty()) return nullptr;
+        uint32_t index = bisection(file_ends, position);
+        if (index != 0 && index == file_ends.size()) index -= 1;
+        if (files[index].source.empty()) return nullptr;
+        return &files[index].source;
+    }
+
     void init_simple(const std::string &input) {
         uint32_t n = input.size();
-        out_start = {0, n};
-        in_start = {0, n};
-        get_newlines(input, in_newlines);
+        files.back().out_start = {0, n};
+        files.back().in_start = {0, n};
+        get_newlines(input, files.back().in_newlines);
     }
 
 };
 
 
-} // namespace LFortran
+} // namespace LCompilers
 
 
 #endif

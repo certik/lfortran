@@ -1,5 +1,6 @@
 module modules_15b
-use iso_c_binding, only: c_int, c_long_long, c_float, c_double, c_char, c_null_char
+use iso_c_binding, only: c_int, c_long_long, c_float, c_double, c_char, &
+    c_null_char, c_float_complex, c_double_complex, c_int32_t, c_int64_t
 implicit none
 
 interface
@@ -29,6 +30,21 @@ interface
     import :: c_int, c_double
     integer(c_int), intent(in) :: a
     complex(c_double), intent(in) :: b
+    end function
+
+    integer(c_int) function f_int_float_complex2(a, b) result(r) &
+            bind(c, name="f_int_float_complex")
+    import :: c_int, c_float_complex
+    integer(c_int), intent(in) :: a
+    complex(c_float_complex), intent(in) :: b
+    end function
+
+    ! int f_int_double_complex(int *a, double_complex_t *b)
+    integer(c_int) function f_int_double_complex2(a, b) result(r) &
+            bind(c, name="f_int_double_complex")
+    import :: c_int, c_double_complex
+    integer(c_int), intent(in) :: a
+    complex(c_double_complex), intent(in) :: b
     end function
 
     ! int f_int_float_complex_value(int a, float_complex_t b)
@@ -90,6 +106,29 @@ interface
     import :: c_int, c_double
     integer(c_int), value, intent(in) :: n
     real(c_double), intent(in) :: b(n)
+    end function
+
+    ! int f_int_intarray(int n, int *b)
+    integer(c_int) function f_int_intarray_star(n, b) result(r) &
+            bind(c, name="f_int_intarray")
+    import :: c_int
+    integer(c_int), value, intent(in) :: n
+    integer(c_int), intent(in) :: b(*)
+    end function
+
+    ! float f_int_floatarray_star(int n, float *b)
+    real(c_float) function f_int_floatarray_star(n, b) result(r) bind(c)
+    import :: c_int, c_float
+    integer(c_int), value, intent(in) :: n
+    real(c_float), intent(in) :: b(*)
+    end function
+
+    ! double f_int_doublearray(int n, double *b)
+    real(c_double) function f_int_doublearray_star(n, b) result(r) &
+            bind(c, name="f_int_doublearray")
+    import :: c_int, c_double
+    integer(c_int), value, intent(in) :: n
+    real(c_double), intent(in) :: b(*)
     end function
 
     ! int f_int_double_value(int a, double b)
@@ -202,7 +241,7 @@ interface
     ! int f_string(char *s)
     integer(c_int) function f_string0(s) result(r) bind(c, name="f_string")
     import :: c_int, c_char
-    character(len=1, kind=c_char), intent(in) :: s(*)
+    character(len=1, kind=c_char), intent(in) :: s
     end function
 
     integer(c_int) function call_fortran_i32(i) result(r) bind(c)
@@ -215,6 +254,12 @@ interface
     integer(c_int), value, intent(in) :: i
     end function
 
+    integer(c_int32_t) function call_fortran_i32_value2(i) result(r) &
+            bind(c, name="call_fortran_i32_value")
+    import :: c_int32_t
+    integer(c_int32_t), value, intent(in) :: i
+    end function
+
     integer(c_long_long) function call_fortran_i64(i) result(r) bind(c)
     import :: c_long_long
     integer(c_long_long), value, intent(in) :: i
@@ -223,6 +268,12 @@ interface
     integer(c_long_long) function call_fortran_i64_value(i) result(r) bind(c)
     import :: c_long_long
     integer(c_long_long), value, intent(in) :: i
+    end function
+
+    integer(c_int64_t) function call_fortran_i64_value2(i) result(r) &
+            bind(c, name="call_fortran_i64_value")
+    import :: c_int64_t
+    integer(c_int64_t), value, intent(in) :: i
     end function
 
     real(c_float) function call_fortran_f32(i) result(r) bind(c)

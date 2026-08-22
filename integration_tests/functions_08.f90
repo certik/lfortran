@@ -1,8 +1,9 @@
-module a
+module function_08_a
 implicit none
 
 end module
-program functions_01
+
+program functions_08
 implicit none
 
     real :: x = 5, y
@@ -18,7 +19,8 @@ contains
 
     real function f(a) result(b)
     real, intent(in) :: a
-    real :: x = 2
+    real :: x
+    x = 2
     b = a + f_real(0.0)
     end function
 

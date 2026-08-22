@@ -1,0 +1,13 @@
+{
+    "basename": "asr-infer_first_assignment_01-ff9433c",
+    "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
+    "infile": "tests/infer_first_assignment_01.f90",
+    "infile_hash": "327046201e4c2ef72b36fe2d078d25aba03769d996fe5538d48af78d",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "asr-infer_first_assignment_01-ff9433c.stdout",
+    "stdout_hash": "8a3c3c4430e2ac71c1528beb386f6e113e9182f6fdcfc86bf46be5fb",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

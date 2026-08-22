@@ -18,15 +18,36 @@ namespace llvm {
     class LLVMContext;
     class Module;
     class Function;
+    class GlobalVariable;
     class TargetMachine;
-#if LLVM_VERSION_MAJOR <= 11
+    class DataLayout;
     namespace orc {
         class KaleidoscopeJIT;
     }
-#endif
 }
 
-namespace LFortran {
+namespace mlir {
+    class MLIRContext;
+    class ModuleOp;
+}
+
+namespace LCompilers {
+
+struct LLVMTargetConfig {
+    std::string triple;
+    std::string cpu = "generic";
+    std::string tune_cpu;
+    std::string features;
+    std::string data_layout;
+    bool emit_cpu_attribute = false;
+    bool host_target = false;
+    bool fast = false;
+
+    void apply_target_attributes(llvm::Module &module) const;
+};
+
+LLVMTargetConfig resolve_llvm_target_config(
+    const CompilerOptions &compiler_options);
 
 class LLVMModule
 {
@@ -37,33 +58,43 @@ public:
     std::string str();
     // Return a function return type as a string (real / integer)
     std::string get_return_type(const std::string &fn_name);
+    llvm::Function *get_function(const std::string &fn_name);
+    llvm::GlobalVariable *get_global(const std::string &global_name);
+};
+
+class MLIRModule {
+public:
+    std::unique_ptr<mlir::ModuleOp> mlir_m;
+    std::unique_ptr<mlir::MLIRContext> mlir_ctx;
+    std::unique_ptr<llvm::Module> llvm_m;
+    std::unique_ptr<llvm::LLVMContext> llvm_ctx;
+    MLIRModule(std::unique_ptr<mlir::ModuleOp> m,
+        std::unique_ptr<mlir::MLIRContext> ctx);
+    ~MLIRModule();
+    std::string mlir_str();
+    std::string llvm_str();
+    void mlir_to_llvm(llvm::LLVMContext &ctx);
 };
 
 class LLVMEvaluator
 {
 private:
-#if LLVM_VERSION_MAJOR <= 11
     std::unique_ptr<llvm::orc::KaleidoscopeJIT> jit;
-#endif
     std::unique_ptr<llvm::LLVMContext> context;
-    std::string target_triple;
-    llvm::TargetMachine *TM;
+    LLVMTargetConfig target_config;
+    std::unique_ptr<llvm::TargetMachine> TM;
+    LLVMEvaluator(LLVMTargetConfig target_config);
+    void configure_module(llvm::Module &module) const;
 public:
     LLVMEvaluator(const std::string &t = "");
+    LLVMEvaluator(const CompilerOptions &compiler_options);
     ~LLVMEvaluator();
-    std::unique_ptr<llvm::Module> parse_module(const std::string &source);
+    std::unique_ptr<llvm::Module> parse_module(const std::string &source, const std::string &filename);
+    std::unique_ptr<LLVMModule> parse_module2(const std::string &source, const std::string &filename);
     void add_module(const std::string &source);
     void add_module(std::unique_ptr<llvm::Module> mod);
     void add_module(std::unique_ptr<LLVMModule> m);
     intptr_t get_symbol_address(const std::string &name);
-    int32_t int32fn(const std::string &name);
-    int64_t int64fn(const std::string &name);
-    bool boolfn(const std::string &name);
-    float floatfn(const std::string &name);
-    double doublefn(const std::string &name);
-    std::complex<float> complex4fn(const std::string &name);
-    std::complex<double> complex8fn(const std::string &name);
-    void voidfn(const std::string &name);
     std::string get_asm(llvm::Module &m);
     void save_asm_file(llvm::Module &m, const std::string &filename);
     void save_object_file(llvm::Module &m, const std::string &filename);
@@ -71,12 +102,59 @@ public:
     void opt(llvm::Module &m);
     static std::string module_to_string(llvm::Module &m);
     static void print_version_message();
+    static std::string llvm_version();
     llvm::LLVMContext &get_context();
+    const llvm::DataLayout &get_jit_data_layout();
+    const LLVMTargetConfig &get_target_config() const {
+        return target_config;
+    }
     static void print_targets();
     static std::string get_default_target_triple();
+
+    template<class T, class... Args>
+    T execfn(const std::string &name, Args... args) {
+        intptr_t addr = get_symbol_address(name);
+        T (*f)(Args...) = (T (*)(Args...))addr;
+        return f(args...);
+    }
 };
 
 
-} // namespace LFortran
+#ifdef __EMSCRIPTEN__
+
+// WASM executor: replaces ORC JIT for incremental Fortran evaluation in the
+// browser. Each cell is compiled to a wasm32 .o, linked into a side module via
+// wasm-ld (lld), then loaded with dlopen so its symbols become globally visible.
+class WasmLFortranExecutor
+{
+public:
+    WasmLFortranExecutor();
+    ~WasmLFortranExecutor();
+
+    void add_module(std::unique_ptr<LLVMModule> m, int eval_count);
+    std::unique_ptr<LLVMModule> parse_module2(const std::string &source, const std::string &filename);
+    intptr_t get_symbol_address(const std::string &name);
+    llvm::LLVMContext &get_context();
+
+    template<class T, class... Args>
+    T execfn(const std::string &name, Args... args) {
+        intptr_t addr = get_symbol_address(name);
+        T (*f)(Args...) = (T (*)(Args...))addr;
+        return f(args...);
+    }
+
+private:
+    std::unique_ptr<llvm::LLVMContext> context;
+    std::string TempDir;
+    // Each executor instance gets a unique ID so that __lfortran_evaluate_N
+    // function names are globally unique across all loaded side modules.
+    // This allows dlsym(RTLD_DEFAULT) to always find the right symbol without
+    // needing to track per-module dlopen handles.
+    int m_id;
+};
+
+#endif // __EMSCRIPTEN__
+
+} // namespace LCompilers
 
 #endif // LFORTRAN_EVALUATOR_H

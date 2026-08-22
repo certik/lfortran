@@ -25,11 +25,11 @@ namespace {
 namespace {
 
 void main2() {
-    int a;
-    int b;
-    int c;
+    int32_t a;
+    int32_t b;
+    int32_t c;
     bool l;
-    int x;
+    int32_t x;
     a = 3;
     b = 4;
     c = 5;
@@ -60,26 +60,32 @@ void main2() {
     x = (3 - 2*a*b)*5;
     x = ((-2)*a*b + 3)*5;
     x = ((-2)*a*b + 3*b*a)*5;
-    x = ((-2)*a/b + std::pow(a + (-b), 2))*5;
+    x = ((-2)*(a/b) + std::pow(a + (-b), 2))*5;
     x = (2*a*b + 3)*5;
     x = std::pow(a, 2) + 2*a*b + std::pow(b, 2);
     x = (a + b)*(a - b);
     x = std::pow(a + b, 2);
     x = (a + b)*(std::pow(a, 2) - a*b + std::pow(b, 2));
     x = (a - b)*(a + b)*(std::pow(a, 2) + std::pow(b, 2));
+    x = 1/(a*b);
+    x = 1/a*b;
+    x = 1/a*b;
+    x = 1/(a*b + 1);
+    x = 1/a*b + 1;
+    x = 1/a*b + 1;
     x = 2 - (-2);
     x = a - ((-b) - c);
     x = a - (-2)*b;
     x = c - (-2)/b;
     x = a - (2 + 3 + 4);
-    x = a + 2 + 3 + 4;
+    x = a + (2 + 3 + 4);
     x = 2*a + a*b - (a*b + 2*a);
     x = 2*a + a*b - (a*b - 2*a);
     x = a - (b - (c - 1));
     x = a - b;
     x = a - (b - c);
     x = a - b - c;
-    x = -(a - ((-b) + (-b) - (-b)*b));
+    x = -(a - ((-b) + ((-b) - (-b)*b)));
     x = -(3 + 5);
     x = -(a + 5);
     l = (std::pow(x, 3)*4 + a <= 4 || x < 5 && x < 6) == (true || !false && true);

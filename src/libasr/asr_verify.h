@@ -3,7 +3,14 @@
 
 #include <libasr/asr.h>
 
-namespace LFortran {
+namespace LCompilers {
+
+    struct ASRVerifyOptions {
+        // Whether ExternalSymbol targets may be followed. Off while a
+        // modfile is being deserialized, where they are not yet resolved.
+        bool check_external = true;
+        bool require_main_program = false;
+    };
 
     // Verifies that ASR is correctly constructed and contains valid Fortran
     // code and passes all our requirements on ASR, such as:
@@ -20,8 +27,8 @@ namespace LFortran {
     //     * ...
     //
     // This should not replace correct semantic checking in ast2asr. This is
-    // only meant as a tool for LFortran developers to check there are no bugs
-    // in LFortran code that constructs ASR and that some requirement was not
+    // only meant as a tool for LCompilers developers to check there are no bugs
+    // in LCompilers code that constructs ASR and that some requirement was not
     // accidentally broken.
     //   This should not be called in Release mode for performance reasons, but
     // it should be called in our tests to ensure ast2asr, deserialization, all
@@ -33,11 +40,15 @@ namespace LFortran {
     // The function will raise an exception if there is an error. Otherwise
     // it will return true. It can be used in Debug mode only as:
     //
-    //   LFORTRAN_ASSERT(asr_verify(*asr));
+    //   LCOMPILERS_ASSERT(asr_verify(*asr));
     //
-    bool asr_verify(const ASR::TranslationUnit_t &unit, bool
-            check_external=true);
+    bool asr_verify(const ASR::TranslationUnit_t &unit,
+        const ASRVerifyOptions &options,
+        diag::Diagnostics &diagnostics);
 
-} // namespace LFortran
+    bool asr_verify(const ASR::TranslationUnit_t &unit,
+        bool check_external, diag::Diagnostics &diagnostics);
+
+} // namespace LCompilers
 
 #endif // LFORTRAN_ASR_VERIFY_H

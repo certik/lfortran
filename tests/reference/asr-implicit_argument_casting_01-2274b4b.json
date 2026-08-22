@@ -1,0 +1,13 @@
+{
+    "basename": "asr-implicit_argument_casting_01-2274b4b",
+    "cmd": "lfortran --show-asr --implicit-argument-casting --no-color {infile} -o {outfile}",
+    "infile": "tests/../integration_tests/implicit_argument_casting_01.f90",
+    "infile_hash": "3ed389916666e17233ec1aa288c9e7cfee00c97aacc83db1aeec5c7b",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "asr-implicit_argument_casting_01-2274b4b.stdout",
+    "stdout_hash": "a5a2b41b3c43412d4621ba267b5e48b4709dd0be4e49f7cd0a31908f",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

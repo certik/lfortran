@@ -3,21 +3,18 @@
 #include <libasr/exception.h>
 #include <libasr/asr_utils.h>
 #include <libasr/asr_verify.h>
-#include <libasr/pass/div_to_mul.h>
+#include <libasr/pass/replace_div_to_mul.h>
 #include <libasr/pass/pass_utils.h>
 
-#include <vector>
-#include <utility>
 
-
-namespace LFortran {
+namespace LCompilers {
 
 using ASR::down_cast;
 using ASR::is_a;
 
 /*
 
-This ASR pass replaces divison operation with multiplication
+This ASR pass replaces division operation with multiplication
 if the divisor can be evaluated to a constant at compile time.
 
 Converts:
@@ -78,11 +75,11 @@ public:
 };
 
 void pass_replace_div_to_mul(Allocator &al, ASR::TranslationUnit_t &unit,
-                            const std::string& rl_path) {
+                             const LCompilers::PassOptions& pass_options) {
+    std::string rl_path = pass_options.runtime_library_dir;
     DivToMulVisitor v(al, rl_path);
     v.visit_TranslationUnit(unit);
-    LFORTRAN_ASSERT(asr_verify(unit));
 }
 
 
-} // namespace LFortran
+} // namespace LCompilers

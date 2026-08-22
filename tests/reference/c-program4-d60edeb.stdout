@@ -2,40 +2,19 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 #include <lfortran_intrinsics.h>
 
-#define ASSERT(cond)                                                           \
-    {                                                                          \
-        if (!(cond)) {                                                         \
-            printf("%s%s", "ASSERT failed: ", __FILE__);                       \
-            printf("%s%s", "\nfunction ", __func__);                           \
-            printf("%s%d%s", "(), line number ", __LINE__, " at \n");          \
-            printf("%s%s", #cond, "\n");                                       \
-            exit(1);                                                           \
-        }                                                                      \
-    }
-#define ASSERT_MSG(cond, msg)                                                  \
-    {                                                                          \
-        if (!(cond)) {                                                         \
-            printf("%s%s", "ASSERT failed: ", __FILE__);                       \
-            printf("%s%s", "\nfunction ", __func__);                           \
-            printf("%s%d%s", "(), line number ", __LINE__, " at \n");          \
-            printf("%s%s", #cond, "\n");                                       \
-            printf("%s", "ERROR MESSAGE:\n");                                  \
-            printf("%s%s", msg, "\n");                                         \
-            exit(1);                                                           \
-        }                                                                      \
-    }
-
-// Forward declarations
 float func1(float a, float b);
 float func2(float a, float b);
+
+
 
 // Implementations
 float func1(float a, float b)
 {
     float c;
-    static float saved=  2.00000000000000000e+00;
+    static float saved =   2.00000000000000000e+00;
     saved = saved +   1.00000000000000000e+00;
     c = c + a + b + saved;
     return c;
@@ -45,7 +24,7 @@ float func2(float a, float b)
 {
     float c;
     float d;
-    static float saved1=  2.00000000000000000e+00;
+    static float saved1 =   2.00000000000000000e+00;
     static float saved2;
     saved1 = saved1 +   1.00000000000000000e+00;
     c = d + c + a + b + saved1 + saved2;
@@ -56,6 +35,7 @@ float func2(float a, float b)
 
 int main(int argc, char* argv[])
 {
+    _lpython_set_argv(argc, argv);
     float x;
     float y;
     float z;

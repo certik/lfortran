@@ -1,10 +1,11 @@
 #ifndef LFORTRAN_STACKTRACE_H
 #define LFORTRAN_STACKTRACE_H
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
-namespace LFortran {
+namespace LCompilers {
 
 /* Returns the current stacktrace as a string.
  *
@@ -50,9 +51,11 @@ void get_local_addresses(std::vector<StacktraceItem> &d);
 // `source_filename` and `line_number` if available
 void get_local_info(std::vector<StacktraceItem> &d);
 
+void get_llvm_info(std::vector<StacktraceItem> &d);
+
 // Converts the information stored in `d` into a string
-std::string stacktrace2str(const std::vector<LFortran::StacktraceItem> &d,
-    int skip);
+std::string stacktrace2str(const std::vector<StacktraceItem> &d,
+    int skip, bool colorize = true);
 
 // Returns line number information from address
 void address_to_line_number(const std::vector<std::string> &filenames,
@@ -63,6 +66,6 @@ void address_to_line_number(const std::vector<std::string> &filenames,
 
 std::string error_stacktrace(const std::vector<StacktraceItem> &stacktrace);
 
-} // namespace LFortran
+} // namespace LCompilers
 
 #endif // LFORTRAN_STACKTRACE_H

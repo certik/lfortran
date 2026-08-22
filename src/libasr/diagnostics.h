@@ -1,10 +1,11 @@
 #ifndef LFORTRAN_DIAGNOSTICS_H
 #define LFORTRAN_DIAGNOSTICS_H
 
+#include <tuple>
 #include <libasr/location.h>
 #include <libasr/stacktrace.h>
 
-namespace LFortran {
+namespace LCompilers {
 
 struct LocationManager;
 struct CompilerOptions;
@@ -50,7 +51,7 @@ struct Label {
     Label(const std::string &message, const std::vector<Location> &locations,
             bool primary=true) : primary{primary}, message{message} {
         for (auto &loc : locations) {
-            spans.push_back(Span(loc));
+            spans.emplace_back(loc);
         }
     }
 };
@@ -68,7 +69,8 @@ enum Level {
  * Which stage of the compiler the error is coming from
  */
 enum Stage {
-    CPreprocessor, Prescanner, Tokenizer, Parser, Semantic, ASRPass, CodeGen
+    CPreprocessor, Prescanner, Tokenizer, Parser, Semantic, ASRPass,
+    ASRVerify, CodeGen, ASRParser
 };
 
 /*
@@ -96,28 +98,35 @@ enum Stage {
 struct Diagnostic {
     Level level;
     Stage stage;
+    std::string code;
     std::string message;
     std::vector<Label> labels;
     std::vector<Diagnostic> children;
     std::vector<StacktraceItem> stacktrace = get_stacktrace_addresses();
 
     Diagnostic(const std::string &message, const Level &level,
-        const Stage &stage) : level{level}, stage{stage}, message{message} {}
+        const Stage &stage)
+        : level{level}, stage{stage}, message{message} {}
 
     Diagnostic(const std::string &message, const Level &level,
         const Stage &stage,
-        const std::vector<Label> &labels
-        ) : level{level}, stage{stage}, message{message}, labels{labels} {}
+        const std::vector<Label> &labels, const std::string &code=""
+        ) : level{level}, stage{stage}, code{code}, message{message},
+            labels{labels} {}
 };
 
 struct Diagnostics {
     std::vector<Diagnostic> diagnostics;
 
-    std::string render(const std::string &input,
-            const LocationManager &lm, const CompilerOptions &compiler_options);
+    std::string render(LocationManager &lm, const CompilerOptions &compiler_options);
+
+    // Renders the error message using only the information in Diagnostics
+    std::string render2();
 
     // Returns true iff diagnostics contains at least one error message
     bool has_error() const;
+    bool has_warning() const;
+    bool has_style() const;
 
     void add(const Diagnostic &d) {
         diagnostics.push_back(d);
@@ -127,10 +136,12 @@ struct Diagnostics {
             const std::vector<Location> &locations,
             const std::string &error_label,
             const Level &level,
-            const Stage &stage
+            const Stage &stage,
+            const std::string &code=""
             ) {
         diagnostics.push_back(
-            Diagnostic(message, level, stage, {Label(error_label, locations)})
+            Diagnostic(message, level, stage,
+                {Label(error_label, locations)}, code)
         );
     }
 
@@ -164,6 +175,12 @@ struct Diagnostics {
             Level::Warning, Stage::CodeGen);
     }
 
+    void asr_parser_error_label(const std::string &message,
+            const std::vector<Location> &locations, const std::string &error_label) {
+        message_label(message, locations, error_label,
+            Level::Error, Stage::ASRParser);
+    }
+
     void codegen_error_label(const std::string &message,
             const std::vector<Location> &locations, const std::string &error_label) {
         message_label(message, locations, error_label,
@@ -181,15 +198,85 @@ struct Diagnostics {
         message_label(message, locations, error_label,
             Level::Style, Stage::Parser);
     }
+
+    void semantic_style_label(const std::string &message,
+            const std::vector<Location> &locations, const std::string &error_label) {
+        message_label(message, locations, error_label,
+            Level::Style, Stage::Semantic);
+    }
+
+    void clear() {
+        diagnostics.clear();
+    }
 };
 
-std::string render_diagnostic(const Diagnostic &d, bool use_colors);
+struct ColorsANSI {
+    inline static const std::string RESET       = "\033[0;0m";
+    inline static const std::string BLACK       = "\033[0;30m";    /* Black */
+    inline static const std::string RED         = "\033[0;31m";    /* Red */
+    inline static const std::string GREEN       = "\033[0;32m";    /* Green */
+    inline static const std::string YELLOW      = "\033[0;33m";    /* Yellow */
+    inline static const std::string BLUE        = "\033[0;34m";    /* Blue */
+    inline static const std::string MAGENTA     = "\033[0;35m";    /* Magenta */
+    inline static const std::string CYAN        = "\033[0;36m";    /* Cyan */
+    inline static const std::string WHITE       = "\033[0;37m";    /* White */
+    inline static const std::string BOLD        = "\033[0;1m";     /* Bold */
+    inline static const std::string BOLDBLACK   = "\033[0;30;1m";  /* Bold Black */
+    inline static const std::string BOLDRED     = "\033[0;31;1m";  /* Bold Red */
+    inline static const std::string BOLDGREEN   = "\033[0;32;1m";  /* Bold Green */
+    inline static const std::string BOLDYELLOW  = "\033[0;33;1m";  /* Bold Yellow */
+    inline static const std::string BOLDBLUE    = "\033[0;34;1m";  /* Bold Blue */
+    inline static const std::string BOLDMAGENTA = "\033[0;35;1m";  /* Bold Magenta */
+    inline static const std::string BOLDCYAN    = "\033[0;36;1m";  /* Bold Cyan */
+    inline static const std::string BOLDWHITE   = "\033[0;37;1m";  /* Bold White */
+};
+
+std::string render_diagnostic_human(const Diagnostic &d, bool use_colors);
+std::string render_diagnostic_short(const Diagnostic &d);
 
 // Fills Diagnostic with span details and renders it
-std::string render_diagnostic(Diagnostic &d, const std::string &input,
-        const LocationManager &lm, bool use_colors, bool show_stacktrace); 
+std::string render_diagnostic_human(Diagnostic &d, const LocationManager &lm,
+    bool use_colors, bool show_stacktrace);
+std::string render_diagnostic_short(Diagnostic &d, const LocationManager &lm);
+/**
+ * @brief Convert diagnostic `Level` i.e. severity to string and color accordingly.
+ *
+ * This method defines the Severity part of the REGEX linters must implement.
+ * Any changes to this method must be reflected in the linters.
+ *
+ * @param d Diagnostic object.
+ * @param use_colors Include ANSI color codes in the return tuple.
+ * @return std::tuple<std::string, std::string, std::string>
+ * message_type, primary color & type color
+ *
+ * Possible `messages_types` and their severities are:
+ * - Severity: Error
+ *    + C preprocessor error
+ *    + prescanner error
+ *    + tokenizer error
+ *    + syntax error
+ *    + semantic error
+ *    + ASR pass error
+ *    + ASR verify pass error
+ *    + code generation error
+ *
+ * - Severity: Warning
+ *    + warning
+ *
+ * - Severity: Note
+ *    + note
+ *
+ * - Severity: Help
+ *    + help
+ *
+ * - Severity: Style
+ *    + style suggestion
+ */
+std::tuple<std::string, std::string, std::string> diag_level_to_str(const Diagnostic &d,
+        const bool use_colors = true);
 
 } // namespace diag
-} // namespace LFortran
+
+} // namespace LCompilers
 
 #endif // LFORTRAN_DIAGNOSTICS_H

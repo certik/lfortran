@@ -4,11 +4,14 @@
 #include <map>
 
 #include <libasr/alloc.h>
+#include <libasr/containers.h>
+extern std::string lcompilers_commandline_options;
 
-namespace LFortran  {
+namespace LCompilers  {
 
 namespace ASR {
     struct asr_t;
+    struct stmt_t;
     struct symbol_t;
 }
 
@@ -19,9 +22,9 @@ struct SymbolTable {
     public:
     SymbolTable *parent;
     // The ASR node (either symbol_t or TranslationUnit_t) that contains this
-    // SymbolTable as m_symtab / m_global_scope member. One of:
+    // SymbolTable as m_symtab member. One of:
     // * symbol_symtab(down_cast<symbol_t>(this->asr_owner)) == this
-    // * down_cast2<TranslationUnit_t>(this->asr_owner)->m_global_scope == this
+    // * down_cast2<TranslationUnit_t>(this->asr_owner)->m_symtab == this
     ASR::asr_t *asr_owner = nullptr;
     unsigned int counter;
 
@@ -47,6 +50,12 @@ struct SymbolTable {
         return scope[name];
     }
 
+    // The symbol table of the TranslationUnit this scope belongs to. In
+    // interactive mode there is one TranslationUnit per cell, chained through
+    // `parent`, so this stops at the innermost one: new symbols belong to the
+    // cell being compiled, not to the first cell of the session.
+    SymbolTable* get_tu_scope();
+
     const std::map<std::string, ASR::symbol_t*>& get_scope() const {
         return scope;
     }
@@ -65,10 +74,25 @@ struct SymbolTable {
 
     void erase_symbol(const std::string &name) {
         //auto it = scope.find(to_lower(name));
+        LCOMPILERS_ASSERT(scope.find(name) != scope.end())
         scope.erase(name);
     }
 
+    // Add a new symbol that did not exist before
     void add_symbol(const std::string &name, ASR::symbol_t* symbol) {
+        LCOMPILERS_ASSERT(scope.find(name) == scope.end())
+        scope[name] = symbol;
+    }
+
+    // Overwrite an existing symbol
+    void overwrite_symbol(const std::string &name, ASR::symbol_t* symbol) {
+        LCOMPILERS_ASSERT(scope.find(name) != scope.end())
+        scope[name] = symbol;
+    }
+
+    // Use as the last resort, prefer to always either add a new symbol
+    // or overwrite an existing one, not both
+    void add_or_overwrite_symbol(const std::string &name, ASR::symbol_t* symbol) {
         scope[name] = symbol;
     }
 
@@ -78,9 +102,9 @@ struct SymbolTable {
     ASR::symbol_t *find_scoped_symbol(const std::string &name,
         size_t n_scope_names, char **m_scope_names);
 
-    std::string get_unique_name(const std::string &name);
+    std::string get_unique_name(const std::string &name, bool use_unique_id=true);
 };
 
-} // namespace LFortran
+} // namespace LCompilers
 
 #endif // LFORTRAN_SEMANTICS_ASR_SCOPES_H

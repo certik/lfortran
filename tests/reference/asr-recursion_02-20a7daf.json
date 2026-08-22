@@ -2,11 +2,11 @@
     "basename": "asr-recursion_02-20a7daf",
     "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
     "infile": "tests/../integration_tests/recursion_02.f90",
-    "infile_hash": "ff5b57697ae915f5f54134d8a976f0f1fa76965cb7937298a10a6d2f",
+    "infile_hash": "2935948fa13844b5a3b169f1d6df99e22cd1329310ef7c6d0f152583",
     "outfile": null,
     "outfile_hash": null,
     "stdout": "asr-recursion_02-20a7daf.stdout",
-    "stdout_hash": "8768f68b9aa06622671c657cc7f5b75d1e5401713bd17d0d0d8058e4",
+    "stdout_hash": "fc6e5b6677fc835490cb3a2239d5150ce4454183f5fdc37c606c25c5",
     "stderr": null,
     "stderr_hash": null,
     "returncode": 0

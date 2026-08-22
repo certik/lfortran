@@ -5,7 +5,10 @@
 #include <windows.h>
 #endif
 
-#include <fstream>
+#include <config.h>
+
+#include <iostream>
+#include <filesystem>
 
 #include <bin/tpl/whereami/whereami.h>
 
@@ -13,7 +16,10 @@
 #include <lfortran/utils.h>
 #include <libasr/string_utils.h>
 
-namespace LFortran {
+namespace LCompilers::LFortran {
+
+ExecutionMode execution_mode;
+std::string lfortran_exec_path_dir;
 
 void get_executable_path(std::string &executable_path, int &dirname_length)
 {
@@ -29,7 +35,7 @@ void get_executable_path(std::string &executable_path, int &dirname_length)
             executable_path = executable_path.substr(0,executable_path.size()-1);
         }
     } else {
-        throw LFortranException("Cannot determine executable path.");
+        throw LCompilersException("Cannot determine executable path.");
     }
 #else
     executable_path = "src/bin/lfortran.js";
@@ -37,27 +43,47 @@ void get_executable_path(std::string &executable_path, int &dirname_length)
 #endif
 }
 
+void set_exec_path_and_mode(std::string &executable_path, int &dirname_length) {
+    lfortran_exec_path_dir = executable_path.substr(0, dirname_length);
+
+    if (   endswith(lfortran_exec_path_dir, "src/bin")
+        || endswith(lfortran_exec_path_dir, "src\\bin")
+        || endswith(lfortran_exec_path_dir, "SRC\\BIN")) {
+        // Development version
+        execution_mode = ExecutionMode::LFortranDevelopment;
+    } else if (endswith(lfortran_exec_path_dir, "src/lfortran/tests") ||
+               endswith(to_lower(lfortran_exec_path_dir), "src\\lfortran\\tests")) {
+        // CTest Tests
+        execution_mode = ExecutionMode::LFortranCtest;
+    } else {
+        // Installed version
+        execution_mode = ExecutionMode::LFortranInstalled;
+    }
+}
+
 std::string get_runtime_library_dir()
 {
+#ifdef HAVE_BUILD_TO_WASM
+    return "asset_dir";
+#endif
+#ifdef __EMSCRIPTEN__
+    // JupyterLite (xlfortran): empack mounts $PREFIX at / in the VFS,
+    // so runtime .mod files installed to $PREFIX/lib end up at /lib.
+    return "/lib";
+#endif
     char *env_p = std::getenv("LFORTRAN_RUNTIME_LIBRARY_DIR");
     if (env_p) return env_p;
 
-    std::string path;
-    int dirname_length;
-    get_executable_path(path, dirname_length);
-    std::string dirname = path.substr(0,dirname_length);
-    if (   endswith(dirname, "src/bin")
-        || endswith(dirname, "src\\bin")
-        || endswith(dirname, "SRC\\BIN")) {
-        // Development version
-        return dirname + "/../runtime";
-    } else if (endswith(dirname, "src/lfortran/tests") ||
-               endswith(to_lower(dirname), "src\\lfortran\\tests")) {
-        // CTest Tests
-        return dirname + "/../../runtime";
-    } else {
-        // Installed version
-        return dirname + "/../share/lfortran/lib";
+    switch (execution_mode)
+    {
+        case ExecutionMode::LFortranDevelopment:
+            return lfortran_exec_path_dir + "/../runtime";
+        case ExecutionMode::LFortranCtest:
+            return lfortran_exec_path_dir + "/../../runtime";
+        case ExecutionMode::LFortranInstalled:
+            return lfortran_exec_path_dir + "/" + CMAKE_INSTALL_LIBDIR_RELATIVE;
+        default:
+            return "";
     }
 }
 
@@ -66,8 +92,111 @@ std::string get_runtime_library_header_dir()
     char *env_p = std::getenv("LFORTRAN_RUNTIME_LIBRARY_HEADER_DIR");
     if (env_p) return env_p;
 
-    return get_runtime_library_dir() + "/impure";
+    return lfortran_exec_path_dir + "/" + CMAKE_INSTALL_INCLUDEDIR_RELATIVE + "/lfortran/impure";
 }
 
+std::string get_runtime_library_c_header_dir()
+{
+    char *env_p = std::getenv("LFORTRAN_RUNTIME_LIBRARY_HEADER_DIR");
+    if (env_p) return env_p;
 
+    switch (execution_mode)
+    {
+        case ExecutionMode::LFortranDevelopment:
+            return lfortran_exec_path_dir + "/../libasr/runtime";
+        case ExecutionMode::LFortranCtest:
+            return lfortran_exec_path_dir + "/../../libasr/runtime";
+        case ExecutionMode::LFortranInstalled:
+            return lfortran_exec_path_dir + "/" + CMAKE_INSTALL_INCLUDEDIR_RELATIVE + "/lfortran/impure";
+        default:
+            return "";
+    }
 }
+
+std::string get_c_include_dir()
+{
+    switch (execution_mode)
+    {
+        case ExecutionMode::LFortranDevelopment:
+            return lfortran_exec_path_dir + "/../libasr/runtime";
+        case ExecutionMode::LFortranCtest:
+            return lfortran_exec_path_dir + "/../../libasr/runtime";
+        case ExecutionMode::LFortranInstalled:
+            return lfortran_exec_path_dir + "/" + CMAKE_INSTALL_INCLUDEDIR_RELATIVE + "/lfortran";
+        default:
+            return "";
+    }
+}
+
+std::string get_dwarf_scripts_dir()
+{
+    char *env_p = std::getenv("LFORTRAN_DWARF_SCRIPTS_DIR");
+    if (env_p) return std::string(env_p);
+
+    switch (execution_mode)
+    {
+        case ExecutionMode::LFortranDevelopment: {
+            std::string scripts_dir = lfortran_exec_path_dir + "/../libasr";
+            if (std::filesystem::exists(scripts_dir + "/dwarf_convert.py")) {
+                return scripts_dir;
+            }
+            scripts_dir = lfortran_exec_path_dir + "/../../../src/libasr";
+            if (std::filesystem::exists(scripts_dir + "/dwarf_convert.py")) {
+                return scripts_dir;
+            }
+            return lfortran_exec_path_dir + "/../libasr";
+        }
+        case ExecutionMode::LFortranCtest: {
+            std::string scripts_dir = lfortran_exec_path_dir + "/../../libasr";
+            if (std::filesystem::exists(scripts_dir + "/dwarf_convert.py")) {
+                return scripts_dir;
+            }
+            scripts_dir = lfortran_exec_path_dir + "/../../../../src/libasr";
+            if (std::filesystem::exists(scripts_dir + "/dwarf_convert.py")) {
+                return scripts_dir;
+            }
+            return lfortran_exec_path_dir + "/../../libasr";
+        }
+        case ExecutionMode::LFortranInstalled:
+            return lfortran_exec_path_dir + "/../share/lfortran";
+        default:
+            return "";
+    }
+}
+
+// Decodes the exit status code of the process (in Unix)
+// See `WEXITSTATUS` for more information.
+// https://stackoverflow.com/a/27117435/15913193
+// https://linux.die.net/man/3/system
+int32_t get_exit_status(int32_t err) {
+    return (((err) >> 8) & 0x000000ff);
+}
+
+std::string get_kokkos_includedir()
+{
+    std::string include("/include");
+    char *env_p = std::getenv("LFORTRAN_KOKKOS_DIR");
+    if (env_p) return env_p + include;
+#ifdef KOKKOS_INCLUDEDIR
+    return KOKKOS_INCLUDEDIR;
+#else
+    std::cerr << "The code C++ generated by the C++ LFortran backend uses the Kokkos library" << std::endl;
+    std::cerr << "(https://github.com/kokkos/kokkos). Please define the LFORTRAN_KOKKOS_DIR" << std::endl;
+    std::cerr << "environment variable to point to the Kokkos installation." << std::endl;
+    throw LCompilersException("LFORTRAN_KOKKOS_DIR is not defined");
+#endif
+}
+
+std::string get_kokkos_libdir()
+{
+    std::string lib("/lib");
+    char *env_p = std::getenv("LFORTRAN_KOKKOS_DIR");
+    if (env_p) return env_p + lib;
+#ifdef KOKKOS_LIBDIR
+    return KOKKOS_LIBDIR;
+#else
+    throw LCompilersException("LFORTRAN_KOKKOS_DIR is not defined");
+#endif
+}
+
+} // namespace LCompilers::LFortran

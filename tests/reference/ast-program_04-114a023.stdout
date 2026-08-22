@@ -1,1 +1,17 @@
-(TranslationUnit [(ImplicitNone [] ()) (Print 0 () [(String "hello world")] ()) end])
+(TranslationUnit
+    [(Program
+        __xx_main
+        ()
+        [(ImplicitNone
+            []
+            ()
+        )
+        (Print
+            0
+            ()
+            [(String "hello world" ())]
+            ()
+        )]
+        []
+    )]
+)

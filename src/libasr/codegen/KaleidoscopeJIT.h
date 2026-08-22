@@ -13,125 +13,192 @@
 #ifndef LLVM_EXECUTIONENGINE_ORC_KALEIDOSCOPEJIT_H
 #define LLVM_EXECUTIONENGINE_ORC_KALEIDOSCOPEJIT_H
 
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/iterator_range.h"
-#include "llvm/ExecutionEngine/ExecutionEngine.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/ExecutionEngine/JITSymbol.h"
 #include "llvm/ExecutionEngine/Orc/CompileUtils.h"
+#include "llvm/ExecutionEngine/Orc/Core.h"
+#include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
 #include "llvm/ExecutionEngine/Orc/IRCompileLayer.h"
-#include "llvm/ExecutionEngine/Orc/LambdaResolver.h"
+#if LLVM_VERSION_MAJOR >= 8
+#include "llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h"
+#endif
 #include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
-#include "llvm/ExecutionEngine/RTDyldMemoryManager.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/IR/DataLayout.h"
-#include "llvm/IR/Mangler.h"
+#include "llvm/IR/LLVMContext.h"
+#if LLVM_VERSION_MAJOR < 8
+#include "llvm/ExecutionEngine/ExecutionEngine.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/DynamicLibrary.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetMachine.h"
-#include <algorithm>
-#include <map>
+#include "llvm/IR/Mangler.h"
+#endif
 #include <memory>
-#include <string>
-#include <vector>
+
+#if LLVM_VERSION_MAJOR >= 13
+#include "llvm/ExecutionEngine/Orc/ExecutorProcessControl.h"
+#endif
+
+#if LLVM_VERSION_MAJOR >= 21
+#include "llvm/ExecutionEngine/Orc/SelfExecutorProcessControl.h"
+#endif
+
+#if LLVM_VERSION_MAJOR >= 16
+#    define RM_OPTIONAL_TYPE std::optional
+#else
+#    define RM_OPTIONAL_TYPE llvm::Optional
+#endif
 
 namespace llvm {
 namespace orc {
 
 class KaleidoscopeJIT {
-public:
-  using ObjLayerT = LegacyRTDyldObjectLinkingLayer;
-  using CompileLayerT = LegacyIRCompileLayer<ObjLayerT, SimpleCompiler>;
-
-  KaleidoscopeJIT(TargetMachine *TM)
-      : Resolver(createLegacyLookupResolver(
-            ES,
-            [this](llvm::StringRef Name) {
-              return findMangledSymbol(std::string(Name));
-            },
-            [](Error Err) { cantFail(std::move(Err), "lookupFlags failed"); })),
-        TM(TM), DL(TM->createDataLayout()),
-        ObjectLayer(ES,
-                    [this](VModuleKey) {
-                      return ObjLayerT::Resources{
-                          std::make_shared<SectionMemoryManager>(), Resolver};
-                    }),
-        CompileLayer(ObjectLayer, SimpleCompiler(*TM)) {
-    llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
-  }
-
-  TargetMachine &getTargetMachine() { return *TM; }
-
-  VModuleKey addModule(std::unique_ptr<Module> M) {
-    auto K = ES.allocateVModule();
-    cantFail(CompileLayer.addModule(K, std::move(M)));
-    ModuleKeys.push_back(K);
-    return K;
-  }
-
-  void removeModule(VModuleKey K) {
-    ModuleKeys.erase(find(ModuleKeys, K));
-    cantFail(CompileLayer.removeModule(K));
-  }
-
-  JITSymbol findSymbol(const std::string Name) {
-    return findMangledSymbol(mangle(Name));
-  }
-
 private:
-  std::string mangle(const std::string &Name) {
-    std::string MangledName;
-    {
-      raw_string_ostream MangledNameStream(MangledName);
-      Mangler::getNameWithPrefix(MangledNameStream, Name, DL);
-    }
-    return MangledName;
-  }
+#if LLVM_VERSION_MAJOR >= 8
+  std::unique_ptr<ExecutionSession> ES;
+  RTDyldObjectLinkingLayer ObjectLayer;
+  IRCompileLayer CompileLayer;
 
-  JITSymbol findMangledSymbol(const std::string &Name) {
-#ifdef _WIN32
-    // The symbol lookup of ObjectLinkingLayer uses the SymbolRef::SF_Exported
-    // flag to decide whether a symbol will be visible or not, when we call
-    // IRCompileLayer::findSymbolIn with ExportedSymbolsOnly set to true.
-    //
-    // But for Windows COFF objects, this flag is currently never set.
-    // For a potential solution see: https://reviews.llvm.org/rL258665
-    // For now, we allow non-exported symbols on Windows as a workaround.
-    const bool ExportedSymbolsOnly = false;
+  DataLayout DL;
+  MangleAndInterner Mangle;
+  JITDylib &JITDL;
 #else
-    const bool ExportedSymbolsOnly = true;
-#endif
-
-    // Search modules in reverse order: from last added to first added.
-    // This is the opposite of the usual search order for dlsym, but makes more
-    // sense in a REPL where we want to bind to the newest available definition.
-    for (auto H : make_range(ModuleKeys.rbegin(), ModuleKeys.rend()))
-      if (auto Sym = CompileLayer.findSymbolIn(H, Name, ExportedSymbolsOnly))
-        return Sym;
-
-    // If we can't find the symbol in the JIT, try looking in the host process.
-    if (auto SymAddr = RTDyldMemoryManager::getSymbolAddressInProcess(Name))
-      return JITSymbol(SymAddr, JITSymbolFlags::Exported);
-
-#ifdef _WIN32
-    // For Windows retry without "_" at beginning, as RTDyldMemoryManager uses
-    // GetProcAddress and standard libraries like msvcrt.dll use names
-    // with and without "_" (for example "_itoa" but "sin").
-    if (Name.length() > 2 && Name[0] == '_')
-      if (auto SymAddr =
-              RTDyldMemoryManager::getSymbolAddressInProcess(Name.substr(1)))
-        return JITSymbol(SymAddr, JITSymbolFlags::Exported);
-#endif
-
-    return nullptr;
-  }
-
+  // LLVM 7: Different JIT infrastructure
   ExecutionSession ES;
   std::shared_ptr<SymbolResolver> Resolver;
   std::unique_ptr<TargetMachine> TM;
   const DataLayout DL;
-  ObjLayerT ObjectLayer;
-  CompileLayerT CompileLayer;
-  std::vector<VModuleKey> ModuleKeys;
+  RTDyldObjectLinkingLayer ObjectLayer;
+  IRCompileLayer<decltype(ObjectLayer), SimpleCompiler> CompileLayer;
+#endif
+
+public:
+#if LLVM_VERSION_MAJOR >= 8
+  KaleidoscopeJIT(std::unique_ptr<ExecutionSession> ES, JITTargetMachineBuilder JTMB, DataLayout DL)
+      :
+        ES(std::move(ES)),
+#if LLVM_VERSION_MAJOR >= 21
+        ObjectLayer(*this->ES,
+                    [](const llvm::MemoryBuffer &) { return std::make_unique<SectionMemoryManager>(); }),
+#else
+        ObjectLayer(*this->ES,
+                    []() { return std::make_unique<SectionMemoryManager>(); }),
+#endif
+#if LLVM_VERSION_MAJOR >= 10
+        CompileLayer(*this->ES, ObjectLayer, std::make_unique<ConcurrentIRCompiler>(std::move(JTMB))),
+#else
+        CompileLayer(*this->ES, ObjectLayer, SimpleCompiler(**JTMB.createTargetMachine())),
+#endif
+        DL(std::move(DL)), Mangle(*this->ES, this->DL),
+        JITDL(
+#if LLVM_VERSION_MAJOR >= 11
+            cantFail
+#endif
+          (this->ES->createJITDylib("Main"))) {
+#if LLVM_VERSION_MAJOR >= 10
+    JITDL.addGenerator(
+        cantFail(DynamicLibrarySearchGenerator::GetForCurrentProcess(
+            DL.getGlobalPrefix())));
+#elif LLVM_VERSION_MAJOR >= 9
+    JITDL.setGenerator(
+        cantFail(DynamicLibrarySearchGenerator::GetForCurrentProcess(
+            DL.getGlobalPrefix())));
+#else
+    // LLVM 8: GetForCurrentProcess takes DataLayout reference, not global prefix
+    JITDL.setGenerator(
+        cantFail(DynamicLibrarySearchGenerator::GetForCurrentProcess(
+            this->DL)));
+#endif
+    if (JTMB.getTargetTriple().isOSBinFormatCOFF()) {
+      ObjectLayer.setOverrideObjectFlagsWithResponsibilityFlags(true);
+      ObjectLayer.setAutoClaimResponsibilityForObjectSymbols(true);
+    }
+  }
+#else
+  // LLVM 7: Constructor takes TargetMachine directly, different API structure
+  KaleidoscopeJIT(std::unique_ptr<TargetMachine> TM_)
+      : TM(std::move(TM_)), DL(TM->createDataLayout()),
+        ObjectLayer(ES, [](VModuleKey) {
+          return RTDyldObjectLinkingLayer::Resources{
+              std::make_shared<SectionMemoryManager>(), nullptr};
+        }),
+        CompileLayer(ObjectLayer, SimpleCompiler(*TM)) {
+    llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
+  }
+#endif
+
+  static Expected<std::unique_ptr<KaleidoscopeJIT>> Create() {
+#if LLVM_VERSION_MAJOR >= 13
+    auto EPC = SelfExecutorProcessControl::Create();
+    if (!EPC)
+      return EPC.takeError();
+
+    auto ES = std::make_unique<ExecutionSession>(std::move(*EPC));
+
+    JITTargetMachineBuilder JTMB(
+        ES->getExecutorProcessControl().getTargetTriple());
+#elif LLVM_VERSION_MAJOR >= 8
+    auto ES = std::make_unique<ExecutionSession>();
+
+    auto JTMB_P = JITTargetMachineBuilder::detectHost();
+    if (!JTMB_P)
+      return JTMB_P.takeError();
+
+    auto JTMB = *JTMB_P;
+#else
+    // LLVM 7: Create TargetMachine directly using EngineBuilder
+    auto JTMB = EngineBuilder().selectTarget();
+    if (!JTMB)
+      return make_error<StringError>("Could not create target machine",
+                                     inconvertibleErrorCode());
+    
+    return std::make_unique<KaleidoscopeJIT>(std::unique_ptr<TargetMachine>(JTMB));
+#endif
+
+#if LLVM_VERSION_MAJOR >= 8
+    auto DL = JTMB.getDefaultDataLayoutForTarget();
+    if (!DL)
+      return DL.takeError();
+
+    return std::make_unique<KaleidoscopeJIT>(std::move(ES), std::move(JTMB),
+                                             std::move(*DL));
+#endif
+  }
+
+  const DataLayout &getDataLayout() const { return DL; }
+
+#if LLVM_VERSION_MAJOR >= 8
+  Error addModule(std::unique_ptr<Module> M, std::unique_ptr<LLVMContext> &Ctx) {
+    auto res =  CompileLayer.add(JITDL,
+                            ThreadSafeModule(std::move(M), std::move(Ctx)));
+    Ctx = std::make_unique<LLVMContext>();
+    return res;
+  }
+#else
+  // LLVM 7: Different addModule API
+  Error addModule(std::unique_ptr<Module> M, std::unique_ptr<LLVMContext> & /* Ctx */) {
+    auto K = ES.allocateVModule();
+    return CompileLayer.addModule(K, std::move(M));
+  }
+#endif
+
+#if LLVM_VERSION_MAJOR >= 8
+#if LLVM_VERSION_MAJOR < 17
+  Expected<JITEvaluatedSymbol> lookup(StringRef Name) {
+#else
+  Expected<ExecutorSymbolDef> lookup(StringRef Name) {
+#endif
+    return ES->lookup({&JITDL}, Mangle(Name.str()));
+  }
+#else
+  // LLVM 7: Different lookup API
+  JITSymbol findSymbol(const std::string Name) {
+    std::string MangledName;
+    raw_string_ostream MangledNameStream(MangledName);
+    Mangler::getNameWithPrefix(MangledNameStream, Name, DL);
+    return CompileLayer.findSymbol(MangledNameStream.str(), false);
+  }
+#endif
+
 };
 
 } // end namespace orc

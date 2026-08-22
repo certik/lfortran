@@ -3,9 +3,11 @@
 set -e
 set -x
 
-if [[ $CI_COMMIT_REF_NAME != "master" ]]; then
+git_ref=${GITHUB_REF}
+
+if [[ $git_ref != "refs/heads/main" ]]; then
     # Development version
-    dest_branch=${CI_COMMIT_REF_NAME}
+    dest_branch=${git_ref}
     deploy_repo="git@gitlab.com:lfortran/web/docs.lfortran.org-testing.git"
 else
     # Release version
@@ -51,13 +53,14 @@ cd docs-deploy
 rm -rf docs
 mkdir docs
 echo "docs.lfortran.org" > docs/CNAME
+touch docs/.nojekyll
 cp -r $D/site/* docs/
 
 git config user.name "Deploy"
 git config user.email "noreply@deploy"
 COMMIT_MESSAGE="Deploying on $(date "+%Y-%m-%d %H:%M:%S")"
 
-git add .
+git add docs
 git commit -m "${COMMIT_MESSAGE}"
 
 git push origin +master:$dest_branch

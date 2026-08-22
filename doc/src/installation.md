@@ -21,6 +21,20 @@ Now the `lf` environment has the `lfortran` compiler available, you can start th
 interactive prompt by executing `lfortran`, or see the command line options using
 `lfortran -h`.
 
+### Note about Conda Installation
+
+When installing LFortran using Conda, multiple copies of the `lfortran`
+executable may be present in different locations (for example, in the package
+cache). Only the executable inside the active Conda environment should be used.
+
+After activating a conda environment, the correct executable is typically located at:
+`$CONDA_PREFIX/bin/lfortran`
+
+To verify which executable is being used, activate a conda environment and run:
+`which lfortran`
+
+Other copies located in package directories may not run correctly and can be ignored.
+
 The Jupyter kernel is automatically installed by the above command, so after installing Jupyter itself:
 ```bash
 conda install jupyter -c conda-forge
@@ -36,26 +50,41 @@ and selecting `New->Fortran`.
 
 This method is the recommended method if you just want to install LFortran, either yourself or in a package manager (Spack, Conda, Debian, etc.). The source tarball has all the generated files included and has minimal dependencies.
 
+The source tarball of LFortran depends on:
+
+* Python
+* cmake
+* LLVM 10-19
+* zstd-static
+* zlib
+
 First we have to install dependencies, for example using Conda:
 ```bash
-conda create -n lf python cmake llvmdev
+conda create -n lf python cmake llvmdev zstd-static zlib
 conda activate lf
 ```
-Then download a tarball from 
-[https://lfortran.org/download/](https://lfortran.org/download/), 
+
+On a Linux system, we additionally need to install `libunwind`:
+```bash
+conda install libunwind
+```
+
+Then download a tarball from
+[https://lfortran.org/download/](https://lfortran.org/download/),
 e.g.:
 ```bash
-wget https://lfortran.github.io/tarballs/dev/lfortran-0.9.0.tar.gz
-tar xzf lfortran-0.9.0.tar.gz
-cd lfortran-0.9.0
+wget https://github.com/lfortran/lfortran/releases/download/v0.42.0/lfortran-0.42.0.tar.gz
+tar xzf lfortran-0.42.0.tar.gz
+cd lfortran-0.42.0
 ```
 And build:
-```
+```bash
 cmake -DWITH_LLVM=yes -DCMAKE_INSTALL_PREFIX=`pwd`/inst .
 make -j8
 make install
 ```
-This will install the `lfortran` into the `inst/bin`.
+This will install `lfortran` into `inst/bin`.  It assumes that c++ and cc are available, which on Linux
+are typically the GNU C++/C compilers.
 
 ## Build From Git
 
@@ -69,64 +98,165 @@ wget --no-check-certificate https://repo.continuum.io/miniconda/Miniconda3-lates
 bash miniconda.sh -b -p $HOME/conda_root
 export PATH="$HOME/conda_root/bin:$PATH"
 ```
-Then prepare the environment:
-```bash
-conda create -n lf -c conda-forge llvmdev=11.0.1 bison=3.4 re2c python cmake make toml
-conda activate lf
-```
 Clone the LFortran git repository:
 ```
-git clone https://gitlab.com/lfortran/lfortran.git
+git clone https://github.com/lfortran/lfortran.git
 cd lfortran
+```
+Then prepare the environment:
+```bash
+conda env create -f environment_linux.yml
+conda activate lf
 ```
 Generate files that are needed for the build (this step depends on `re2c`, `bison` and `python`):
 ```bash
 ./build0.sh
 ```
-Now the process is the same as installing from the source tarball. For example to build in Debug mode:
-```
-cmake -DCMAKE_BUILD_TYPE=Debug -DWITH_LLVM=yes -DCMAKE_INSTALL_PREFIX=`pwd`/inst .
-make -j8
+Now you can use our script `./build1.sh` to build in Debug mode:
+```bash
+./build1.sh
 ```
 
-Run tests:
+and can use `ninja` to rebuild.
+
+To do a clean rebuild, you can use:
 ```bash
-ctest
-./run_tests.py
+# NOTE: the below git command deletes all untracked files
+git clean -dfx  # reset repository to a clean state by removing artifacts generated during the build process
+./build0.sh
+./build1.sh
 ```
+
 Run an interactive prompt:
 ```bash
 ./src/bin/lfortran
 ```
 
-## Build on Windows with Visual Studio
+See [how to run tests](#Tests) to make sure all tests pass
 
-Install Conda for example by installing the Miniconda installation by following instructions there for your platform. If not already done, activate the Conda-Installation (cf. Conda installation instructions).
+## Build from Git on Windows with Visual Studio
 
-First, clone the repo to a local folder.
+Install Visual Studio (MSVC), for example the version 2022, you can download the
+Community version for free from: https://visualstudio.microsoft.com/downloads/.
 
-Launch a Conda command interpreter and run the following commands:
-```bash
-conda update -q conda
-conda install -c conda-forge python=3.7 re2c m2-bison xonsh llvmdev=11.1.0 jupyter xeus=1.0.1 xtl nlohmann_json cppzmq jupyter_kernel_test pytest
+Install miniforge using the Windows installer from https://github.com/conda-forge/miniforge.
+
+Launch the Miniforge Prompt from the Desktop.
+
+In the shell, initialize the MSVC compiler using:
+
 ```
-Next, `cd` to the root of the repository and run
-```bash
-.\build0.bat
+call "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd" -arch=x64
 ```
 
-Now, you can launch Visual Studio and open the LFortran folder.
-Before the first build you have to set up the `ZLib`-pathes: Go to the CMake-Settings (Project -> CMake Setttings for lfortran) and check `Show advanced variables`. Scroll to the `ZLIB_...` variables and set:
-- `ZLIB_INCLUDE_DIR` = \<Conda-Installation-Path\>\Library\include
-- `ZLIB_LIBRARY_[DEBUG|RELEASE]` = \<Conda-Installation-Path\>\Library\lib\zlibstatic.lib
+You can optionally test that MSVC works by:
+```
+cl /?
+link /?
+```
+Both commands must print help (several pages).
 
-Then you can generate the CMake-Cache and build the project.
+Now you can download and build LFortran:
+```
+git clone https://github.com/lfortran/lfortran.git
+cd lfortran
+conda env create -f environment_win.yml
+conda activate lf
+build0.bat
+build1.bat
+```
+
+If everything compiled, then you can use LFortran as follows:
+```
+inst\bin\lfortran examples/expr2.f90
+expr2.exe
+inst\bin\lfortran
+```
+And so on.
+
+Note: LFortran currently uses the MSVC's linker program (`link`), which is only
+available when the MSVC bat script above is ran. If you forget to activate it,
+LFortran's linking will fail.
+
+Note: the miniforge shell seems to be running some version of `git-bash`
+(although it is `cmd.exe`), which has some unix-like filesystem mounted in
+`/usr` and several commands available such as `ls`, `which`, `git`, `vim`.  For
+this reason the Conda build `environment_win.yml` contains everything needed,
+including `git`.
+
+## Build from Git on Windows with WSL
+* In windows search "turn windows features on or off".
+
+* Tick Windows subsystem for Linux.
+
+* Press OK and restart computer.
+
+* Go to Microsoft store and download Ubuntu (20.04 or 22.04 or 24.04), and launch it.
+
+* Now setup LFortran by running the following commands.
+
+  ```bash
+  wget  https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O miniconda.sh
+  bash miniconda.sh -b -p $HOME/conda_root
+  echo "export PATH=$HOME/conda_root/bin:$PATH" >> ~/.bashrc
+  ```
+
+* After that restart the Ubuntu terminal.
+
+* Now clone the LFortran git repository (you should clone it inside a linux owned directory like `~` or  any of its sub-directories).
+
+  ```bash
+  cd ~
+  git clone https://github.com/lfortran/lfortran.git
+  cd lfortran
+  ```
+
+* Run the following
+
+  ```bash
+  conda env create -f environment_linux.yml
+  conda init bash
+  ```
+
+* Restart Ubuntu terminal again
+
+  ```bash
+  conda activate lf
+  sudo apt update
+  sudo apt-get install build-essential
+  sudo apt-get install zlib1g-dev libzstd-dev
+  sudo apt install clang
+  ```
+
+* Run the following commands
+
+  ```bash
+  conda activate lf
+  ./build0.sh
+  cmake -DCMAKE_BUILD_TYPE=Debug -DWITH_LLVM=yes -DCMAKE_INSTALL_PREFIX=`pwd`/inst .
+  make -j8
+  ```
+
+* If everything compiles, you can use LFortran as follows
+
+  ```bash
+  ./src/bin/lfortran ./examples/expr2.f90
+  ./expr2.out
+  ```
+
+* Run an interactive prompt
+
+  ```bash
+  ./src/bin/lfortran
+  ```
+
+See [how to run tests](#Tests) to make sure all tests pass
 
 ## Enabling the Jupyter Kernel
 
 To install the Jupyter kernel, install the following Conda packages also:
 ```
-conda install xeus xtl nlohmann_json cppzmq
+conda install xeus=6.0.0 xeus-zmq=4.0.0 nlohmann_json
 ```
 and enable the kernel by `-DWITH_XEUS=yes` and install into `$CONDA_PREFIX`. For
 example:
@@ -157,46 +287,40 @@ jupyter console --kernel=fortran
 
 ## Build From Git with Nix
 
-One of the ways to ensure exact environment and dependencies is with `nix`. This will ensure that system dependencies do not interfere with the development environment. If you want, you can report bugs in a `nix-shell` environment to make it easier for others to reproduce.
+There's a provided Nix shell for making a consistent build environment with the exact same dependency versions across users.
 
-### With Root
+### Using the Environment
 
-We start by getting `nix`. The following multi-user installation will work on any machine with a Linux distribution, MacOS or Windows (via WSL):
+Enter the development environment:
 ```bash
-sh <(curl -L https://nixos.org/nix/install) --daemon
-```
-### Without Root
-
-If you would like to not provide `nix` with root access to your machine, on Linux distributions we can use [nix-portable](https://github.com/DavHau/nix-portable).
-```bash
-wget https://github.com/DavHau/nix-portable/releases/download/v003/nix-portable
-```
-Now just prepend all `nix-shell` commands with `NP_RUNTIME=bwrap ./nix-portable `. So:
-```bash
-# Do not
-nix-shell --run "bash"
-# Do
-NP_RUNTIME=bwrap ./nix-portable nix-shell --run "bash"
+nix develop ./ci/nix
 ```
 
-### Development
-
-Now we can enter the development environment:
+To change the compilation environment from `gcc` (default) to `clang`:
 ```bash
-nix-shell --run "bash" --cores 4 -j4 --pure ci/shell.nix
+nix develop ./ci/nix#clangOnly
 ```
-The `--pure` flag ensures no system dependencies are used in the environment.
 
-The build steps are the same as with the `ci`:
+Depending on your system configuration, you might have to run `nix develop` with the following extra nix features explicitly enabled:
+```bash
+nix --extra-experimental-features "flakes nix-command" develop ./ci/nix
+```
+
+### Building the Code
+
+The build steps are the same as when building from git:
 ```bash
 ./build0.sh
 ./build1.sh
 ```
 
-To change the compilation environment from `gcc` (default) to `clang` we can use `--argstr`:
+As of 2025-11-10, the environment passes the CI tests, provided you tell it where to install the Jupyter kernel:
 ```bash
-nix-shell --run "bash" --cores 4 -j4 --pure ci/shell.nix --argstr clangOnly "yes"
+LFORTRAN_CMAKE_GENERATOR=Ninja CONDA_PREFIX=$(pwd) JUPYTER_PATH=$(pwd)/share/jupyter bash ci/build.sh
 ```
+(take note that the Nix shell does not use conda)
+
+Give the same `JUPYTER_PATH` when running `jupyter notebook` / `jupyter lab` to use the same jupyter kernel.
 
 ## Note About Dependencies
 
@@ -229,6 +353,11 @@ stacktrace support is turned off by default, to enable it,
 compile LFortran with the `-DWITH_STACKTRACE=yes` cmake option after installing
 the prerequisites on each platform per the instructions below.
 
+### LLVM
+In all platforms having LLVM, stacktraces can be shown with LLVM, so no
+additional prerequisites are required. If LLVM is not available, you can use
+the following instructions, depending on your platform.
+
 ### Ubuntu
 
 In Ubuntu, `apt install binutils-dev`.
@@ -244,16 +373,46 @@ not work, please report a bug.
 If you do not like the default way, an alternative is to use bintutils. For
 that, first install
 [Spack](https://spack.io/), then:
-```
+```bash
 spack install binutils
 spack find -p binutils
 ```
 The last command will show a full path to the installed `binutils` package. Add
 this path to your shell config file, e.g.:
-```
+```bash
 export CMAKE_PREFIX_PATH_LFORTRAN=/Users/ondrej/repos/spack/opt/spack/darwin-catalina-broadwell/apple-clang-11.0.0/binutils-2.36.1-wy6osfm6bp2323g3jpv2sjuttthwx3gd
 ```
 and compile LFortran with the
 `-DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH_LFORTRAN;$CONDA_PREFIX"` cmake option.
 The `$CONDA_PREFIX` is there if you install some other dependencies (such as
 `llvm`) using Conda, otherwise you can remove it.
+
+
+## Tests
+
+#### Run tests:
+
+```bash
+ctest
+./run_tests.py
+```
+
+#### Update test references:
+
+```bash
+./run_tests.py -u
+```
+
+#### Run integration tests
+
+```bash
+cd integration_tests
+./run_tests.py
+```
+
+#### Speed up integration tests on macOS
+
+Integration tests run slowly because Apple checks the hash of each executable online before running.
+
+You can turn off that feature in the Privacy tab of the Security and Privacy item of System Preferences > Developer Tools > Terminal.app > "allow the apps below to run software locally that does not meet the system's security
+policy."

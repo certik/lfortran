@@ -1,1 +1,376 @@
-(TranslationUnit (SymbolTable 1 {lfortran_intrinsic_builtin: (IntrinsicModule lfortran_intrinsic_builtin), test_any: (Program (SymbolTable 2 {any: (ExternalSymbol 2 any 5 any lfortran_intrinsic_builtin [] any Private), l: (Variable 2 l Local () () Default (Logical 4 []) Source Public Required .false.), section: (Subroutine (SymbolTable 3 {a: (Variable 3 a Local () () Default (Integer 4 [((IntegerConstant 1 (Integer 4 [])) (IntegerConstant 2 (Integer 4 []))) ((IntegerConstant 1 (Integer 4 [])) (IntegerConstant 3 (Integer 4 [])))]) Source Public Required .false.), b: (Variable 3 b Local () () Default (Integer 4 [((IntegerConstant 1 (Integer 4 [])) (IntegerConstant 2 (Integer 4 []))) ((IntegerConstant 1 (Integer 4 [])) (IntegerConstant 3 (Integer 4 [])))]) Source Public Required .false.)}) section [] [(= (Var 3 a) (IntegerConstant 1 (Integer 4 [])) ()) (= (Var 3 b) (IntegerConstant 1 (Integer 4 [])) ()) (= (ArrayItem (Var 3 b) [(() (IntegerConstant 2 (Integer 4 [])) ()) (() (IntegerConstant 2 (Integer 4 [])) ())] (Integer 4 []) ()) (IntegerConstant 2 (Integer 4 [])) ()) (Print () [(FunctionCall 2 any () [((IntegerCompare (Var 3 a) Eq (Var 3 b) (Logical 4 []) ())) ((IntegerConstant 1 (Integer 4 [])))] (Logical 4 []) () ())] () ()) (Print () [(FunctionCall 2 any () [((IntegerCompare (Var 3 a) Eq (Var 3 b) (Logical 4 []) ())) ((IntegerConstant 2 (Integer 4 [])))] (Logical 4 []) () ())] () ())] Source Public Implementation () .false. .false.)}) test_any [] [(= (Var 2 l) (FunctionCall 2 any () [((ArrayConstant [(LogicalConstant .true. (Logical 4 [])) (LogicalConstant .true. (Logical 4 [])) (LogicalConstant .true. (Logical 4 []))] (Logical 4 [((IntegerConstant 1 (Integer 4 [])) (IntegerConstant 3 (Integer 4 [])))])))] (Logical 4 []) () ()) ()) (Print () [(Var 2 l)] () ()) (SubroutineCall 2 section () [] ())])}) [])
+(TranslationUnit
+    (SymbolTable
+        1
+        {
+            intrinsics_35:
+                (Program
+                    (SymbolTable
+                        2
+                        {
+                            l:
+                                (Variable
+                                    2
+                                    l
+                                    []
+                                    Local
+                                    ()
+                                    ()
+                                    Default
+                                    (Logical 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            section:
+                                (Function
+                                    (SymbolTable
+                                        3
+                                        {
+                                            a:
+                                                (Variable
+                                                    3
+                                                    a
+                                                    []
+                                                    Local
+                                                    ()
+                                                    ()
+                                                    Default
+                                                    (Array
+                                                        (Integer 4)
+                                                        [((IntegerConstant 1 (Integer 4) Decimal)
+                                                        (IntegerConstant 2 (Integer 4) Decimal))
+                                                        ((IntegerConstant 1 (Integer 4) Decimal)
+                                                        (IntegerConstant 3 (Integer 4) Decimal))]
+                                                        FixedSizeArray
+                                                    )
+                                                    ()
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
+                                                    .false.
+                                                    NotMethod
+                                                    ()
+                                                    []
+                                                ),
+                                            b:
+                                                (Variable
+                                                    3
+                                                    b
+                                                    []
+                                                    Local
+                                                    ()
+                                                    ()
+                                                    Default
+                                                    (Array
+                                                        (Integer 4)
+                                                        [((IntegerConstant 1 (Integer 4) Decimal)
+                                                        (IntegerConstant 2 (Integer 4) Decimal))
+                                                        ((IntegerConstant 1 (Integer 4) Decimal)
+                                                        (IntegerConstant 3 (Integer 4) Decimal))]
+                                                        FixedSizeArray
+                                                    )
+                                                    ()
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
+                                                    .false.
+                                                    NotMethod
+                                                    ()
+                                                    []
+                                                )
+                                        })
+                                    section
+                                    (FunctionType
+                                        []
+                                        ()
+                                        Source
+                                        Implementation
+                                        ()
+                                        .false.
+                                        .false.
+                                        .false.
+                                        .false.
+                                        .false.
+                                        []
+                                        .false.
+                                    )
+                                    []
+                                    []
+                                    [(Assignment
+                                        (Var 3 a)
+                                        (ArrayBroadcast
+                                            (IntegerConstant 1 (Integer 4) Decimal)
+                                            (ArrayConstant
+                                                8
+                                                [2, 3]
+                                                (Array
+                                                    (Integer 4)
+                                                    [((IntegerConstant 1 (Integer 4) Decimal)
+                                                    (IntegerConstant 2 (Integer 4) Decimal))]
+                                                    FixedSizeArray
+                                                )
+                                                ColMajor
+                                            )
+                                            (Array
+                                                (Integer 4)
+                                                [((IntegerConstant 1 (Integer 4) Decimal)
+                                                (IntegerConstant 6 (Integer 4) Decimal))]
+                                                FixedSizeArray
+                                            )
+                                            (ArrayConstant
+                                                24
+                                                [1, 1, 1, 1, 1, 1]
+                                                (Array
+                                                    (Integer 4)
+                                                    [((IntegerConstant 1 (Integer 4) Decimal)
+                                                    (IntegerConstant 6 (Integer 4) Decimal))]
+                                                    FixedSizeArray
+                                                )
+                                                ColMajor
+                                            )
+                                        )
+                                        ()
+                                        .false.
+                                        .false.
+                                    )
+                                    (Assignment
+                                        (Var 3 b)
+                                        (ArrayBroadcast
+                                            (IntegerConstant 1 (Integer 4) Decimal)
+                                            (ArrayConstant
+                                                8
+                                                [2, 3]
+                                                (Array
+                                                    (Integer 4)
+                                                    [((IntegerConstant 1 (Integer 4) Decimal)
+                                                    (IntegerConstant 2 (Integer 4) Decimal))]
+                                                    FixedSizeArray
+                                                )
+                                                ColMajor
+                                            )
+                                            (Array
+                                                (Integer 4)
+                                                [((IntegerConstant 1 (Integer 4) Decimal)
+                                                (IntegerConstant 6 (Integer 4) Decimal))]
+                                                FixedSizeArray
+                                            )
+                                            (ArrayConstant
+                                                24
+                                                [1, 1, 1, 1, 1, 1]
+                                                (Array
+                                                    (Integer 4)
+                                                    [((IntegerConstant 1 (Integer 4) Decimal)
+                                                    (IntegerConstant 6 (Integer 4) Decimal))]
+                                                    FixedSizeArray
+                                                )
+                                                ColMajor
+                                            )
+                                        )
+                                        ()
+                                        .false.
+                                        .false.
+                                    )
+                                    (Assignment
+                                        (ArrayItem
+                                            (Var 3 b)
+                                            [(()
+                                            (IntegerConstant 2 (Integer 4) Decimal)
+                                            ())
+                                            (()
+                                            (IntegerConstant 2 (Integer 4) Decimal)
+                                            ())]
+                                            (Integer 4)
+                                            ColMajor
+                                            ()
+                                        )
+                                        (IntegerConstant 2 (Integer 4) Decimal)
+                                        ()
+                                        .false.
+                                        .false.
+                                    )
+                                    (Print
+                                        (StringFormat
+                                            ()
+                                            [(IntrinsicArrayFunction
+                                                Any
+                                                [(ArrayPhysicalCast
+                                                    (IntegerCompare
+                                                        (Var 3 a)
+                                                        Eq
+                                                        (Var 3 b)
+                                                        (Array
+                                                            (Logical 4)
+                                                            [((IntegerConstant 1 (Integer 4) Decimal)
+                                                            (IntegerConstant 2 (Integer 4) Decimal))
+                                                            ((IntegerConstant 1 (Integer 4) Decimal)
+                                                            (IntegerConstant 3 (Integer 4) Decimal))]
+                                                            FixedSizeArray
+                                                        )
+                                                        ()
+                                                    )
+                                                    FixedSizeArray
+                                                    DescriptorArray
+                                                    (Array
+                                                        (Logical 4)
+                                                        [((IntegerConstant 1 (Integer 4) Decimal)
+                                                        (IntegerConstant 2 (Integer 4) Decimal))
+                                                        ((IntegerConstant 1 (Integer 4) Decimal)
+                                                        (IntegerConstant 3 (Integer 4) Decimal))]
+                                                        DescriptorArray
+                                                    )
+                                                    ()
+                                                )
+                                                (IntegerConstant 1 (Integer 4) Decimal)]
+                                                1
+                                                (Array
+                                                    (Logical 4)
+                                                    [(()
+                                                    ())]
+                                                    DescriptorArray
+                                                )
+                                                ()
+                                            )]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
+                                            ()
+                                        )
+                                    )
+                                    (Print
+                                        (StringFormat
+                                            ()
+                                            [(IntrinsicArrayFunction
+                                                Any
+                                                [(ArrayPhysicalCast
+                                                    (IntegerCompare
+                                                        (Var 3 a)
+                                                        Eq
+                                                        (Var 3 b)
+                                                        (Array
+                                                            (Logical 4)
+                                                            [((IntegerConstant 1 (Integer 4) Decimal)
+                                                            (IntegerConstant 2 (Integer 4) Decimal))
+                                                            ((IntegerConstant 1 (Integer 4) Decimal)
+                                                            (IntegerConstant 3 (Integer 4) Decimal))]
+                                                            FixedSizeArray
+                                                        )
+                                                        ()
+                                                    )
+                                                    FixedSizeArray
+                                                    DescriptorArray
+                                                    (Array
+                                                        (Logical 4)
+                                                        [((IntegerConstant 1 (Integer 4) Decimal)
+                                                        (IntegerConstant 2 (Integer 4) Decimal))
+                                                        ((IntegerConstant 1 (Integer 4) Decimal)
+                                                        (IntegerConstant 3 (Integer 4) Decimal))]
+                                                        DescriptorArray
+                                                    )
+                                                    ()
+                                                )
+                                                (IntegerConstant 2 (Integer 4) Decimal)]
+                                                1
+                                                (Array
+                                                    (Logical 4)
+                                                    [(()
+                                                    ())]
+                                                    DescriptorArray
+                                                )
+                                                ()
+                                            )]
+                                            FormatFortran
+                                            (Allocatable
+                                                (String 1 () DeferredLength DescriptorString)
+                                            )
+                                            ()
+                                        )
+                                    )]
+                                    ()
+                                    Public
+                                    .false.
+                                    .false.
+                                    ()
+                                )
+                        })
+                    intrinsics_35
+                    []
+                    [(Assignment
+                        (Var 2 l)
+                        (IntrinsicArrayFunction
+                            Any
+                            [(ArrayPhysicalCast
+                                (ArrayConstant
+                                    12
+                                    [.true., .true., .true.]
+                                    (Array
+                                        (Logical 4)
+                                        [((IntegerConstant 1 (Integer 4) Decimal)
+                                        (IntegerConstant 3 (Integer 4) Decimal))]
+                                        FixedSizeArray
+                                    )
+                                    ColMajor
+                                )
+                                FixedSizeArray
+                                DescriptorArray
+                                (Array
+                                    (Logical 4)
+                                    [((IntegerConstant 1 (Integer 4) Decimal)
+                                    (IntegerConstant 3 (Integer 4) Decimal))]
+                                    DescriptorArray
+                                )
+                                ()
+                            )]
+                            0
+                            (Logical 4)
+                            (LogicalConstant
+                                .true.
+                                (Logical 4)
+                            )
+                        )
+                        ()
+                        .false.
+                        .false.
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(Var 2 l)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (SubroutineCall
+                        2 section
+                        ()
+                        []
+                        ()
+                        .false.
+                    )]
+                )
+        })
+    []
+)

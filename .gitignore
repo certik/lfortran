@@ -1,13 +1,14 @@
 # LFortran
 
 src/bin/lfortran
-src/bin/cpptranslate
 src/bin/parse
 src/bin/parse2
+src/bin/parse3
 src/lfortran/parser/parser.output
 tests/output
 src/lfortran/tests/test_asm
 src/lfortran/tests/test_ast
+src/lfortran/tests/test_asr
 src/lfortran/tests/test_llvm
 src/lfortran/tests/test_parse
 src/lfortran/tests/test_pickle
@@ -25,6 +26,19 @@ src/lfortran/tests/print_integer
 src/lfortran/tests/cmp32
 src/lfortran/tests/x
 src/lfortran/tests/ref_pickle.txt.new
+src/server/lsp_language_server.cpp
+src/server/lsp_language_server.h
+src/server/lsp_specification.cpp
+src/server/lsp_specification.h
+src/server/lsp_transformer.cpp
+src/server/lsp_transformer.h
+**/*.log
+
+.#*
+*.sw?
+
+expr2
+lfortran-*-dirty/
 
 # fortran_parser
 
@@ -43,10 +57,16 @@ CPackConfig.cmake
 CPackSourceConfig.cmake
 _CPack_Packages
 /CMakeSettings.json
+.cmake
+
+## Pixi
+.pixi/
 
 ## libraries
 *.a
+*.a.*
 *.so
+*.so.*
 *.s
 *.ll
 *.dylib
@@ -71,10 +91,30 @@ src/lfortran/ast.h
 src/lfortran/asr.h
 src/libasr/asr.h
 src/libasr/ast.h
+src/libasr/asr_base_visitor.h
+src/libasr/asr_deserialization_visitor.h
+src/libasr/asr_expr_base_replacer_visitor.h
+src/libasr/asr_expr_call_replacer_visitor.h
+src/libasr/asr_expr_stmt_duplicator_visitor.h
+src/libasr/asr_expr_type_visitor.h
+src/libasr/asr_expr_value_visitor.h
+src/libasr/asr_json_visitor.h
+src/libasr/asr_lookup_name_visitor.h
+src/libasr/asr_pass_walk_visitor.h
+src/libasr/asr_pickle_visitor.h
+src/libasr/asr_serialization_visitor.h
+src/libasr/asr_symbol_visitor.h
+src/libasr/asr_text_visitor.h
+src/libasr/asr_text_deserialization_visitor.h
+src/libasr/asr_stmt_base_replacer_visitor.h
+src/libasr/asr_tree_visitor.h
+src/libasr/asr_walk_visitor.h
 src/libasr/wasm_visitor.h
+src/libasr/pass/intrinsic_function_registry_util.h
 src/lfortran/config.h
 src/libasr/config.h
 share/jupyter/kernels/fortran/kernel.json
+share/jupyter/kernels/fortran/logo-svg.svg
 src/runtime/*.o.empty.c
 src/runtime/tests/test_abs
 src/runtime/tests/test_bit
@@ -87,10 +127,23 @@ src/runtime/tests/test_sin
 src/runtime/tests/test_sin2
 src/runtime/tests/test_strings
 src/runtime/tests/test_tan
-integration_tests/test-llvm/*
-integration_tests/test-cpp/*
-integration_tests/test-x86/*
-integration_tests/test-wasm/*
+integration_tests/test-*
+src/runtime/*.stamp
+input.txt
+input
+inst/
+src/libasr/libasr.a.*
+*.html
+*.o.tmp.c
+*.o.tmp.cpp
+*.tmp.f90
+*.clj
+pass_*.f90
+pass_json_*.json
+pass_tree_*.txt
+*_lines.txt
+*_ldd.txt
+*_lines.dat.txt
 
 ### https://raw.github.com/github/gitignore/218a941be92679ce67d0484547e3e142b2f5f6f0/Global/macOS.gitignore
 
@@ -135,6 +188,8 @@ __pycache__/
 ## Distribution / packaging
 .Python
 build/
+build-wasm/
+.jupyterlite.doit.db
 develop-eggs/
 dist/
 downloads/
@@ -162,6 +217,7 @@ MANIFEST
 ## Editor Files
 .vscode/
 .vs/
+*~
 
 ## Build Files
 */bin/lfortran
@@ -172,6 +228,7 @@ output
 *.smod
 *.js
 *.wasm
+*.data
 /.ccls-cache/
 .cache/
 ext/
@@ -179,9 +236,48 @@ extsrc/
 tmp/
 tmpdebug/
 gentests/
+*.tlog
+*.filters
+*.obj
+*.exe
+*.exp
+*.lib
+*.vcxproj
+*.recipe
+*.sln
+*.dll
 
 ## Ninja
 build.ninja
 .ninja_deps
 .ninja_log
 /compile_commands.json
+
+## Docs
+doc/man/lfortran.1
+!doc/src/javascripts/*.js
+!pass_array_by_data_*.f90
+
+## repro-issue / create-mre scratch artifacts
+## Reproducers live in the repo root by convention (see .agents/skills/).
+## They are throwaway inputs to fix-mre; the deliverable is the integration
+## test it adds under integration_tests/.
+/run.sh
+/run_re.sh
+/mre_*.f90
+/re_*.f90
+/test_ref
+/test_lfortran
+/asr-fuzz-artifacts/
+# Runtime OPEN(status="scratch") files; they land in cwd.
+_lfortran_generated_file*
+/test_gfortran
+/test_flang
+# x86 backend unit tests write their executables into the working directory.
+/cmp32
+/print32
+/print_integer
+/subroutines32
+/subroutines_args32
+/write32
+/write32.asm

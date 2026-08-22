@@ -1,1 +1,1401 @@
-(TranslationUnit (SymbolTable 1 {intrinsics_30: (Program (SymbolTable 2 {c1: (Variable 2 c1 Local () () Default (Complex 4 []) Source Public Required .false.), c2: (Variable 2 c2 Local () () Default (Complex 8 []) Source Public Required .false.), i1: (Variable 2 i1 Local () () Default (Integer 4 []) Source Public Required .false.), i2: (Variable 2 i2 Local () () Default (Integer 8 []) Source Public Required .false.), i3: (Variable 2 i3 Local () () Default (Integer 1 []) Source Public Required .false.), i4: (Variable 2 i4 Local () () Default (Integer 2 []) Source Public Required .false.), int16: (ExternalSymbol 2 int16 4 int16 lfortran_intrinsic_iso_fortran_env [] int16 Public), int8: (ExternalSymbol 2 int8 4 int8 lfortran_intrinsic_iso_fortran_env [] int8 Public), r1: (Variable 2 r1 Local () () Default (Real 4 []) Source Public Required .false.), r2: (Variable 2 r2 Local () () Default (Real 8 []) Source Public Required .false.), range: (ExternalSymbol 2 range 6 range lfortran_intrinsic_math [] range Private), range@crange: (ExternalSymbol 2 range@crange 6 crange lfortran_intrinsic_math [] crange Private), range@drange: (ExternalSymbol 2 range@drange 6 drange lfortran_intrinsic_math [] drange Private), range@i32range: (ExternalSymbol 2 range@i32range 6 i32range lfortran_intrinsic_math [] i32range Private), range@i64range: (ExternalSymbol 2 range@i64range 6 i64range lfortran_intrinsic_math [] i64range Private), range@int16range: (ExternalSymbol 2 range@int16range 6 int16range lfortran_intrinsic_math [] int16range Private), range@int8range: (ExternalSymbol 2 range@int8range 6 int8range lfortran_intrinsic_math [] int8range Private), range@srange: (ExternalSymbol 2 range@srange 6 srange lfortran_intrinsic_math [] srange Private), range@zrange: (ExternalSymbol 2 range@zrange 6 zrange lfortran_intrinsic_math [] zrange Private), ri3: (Variable 2 ri3 Local (FunctionCall 2 range@int8range 2 range [((Var 2 i3))] (Integer 4 []) (IntegerConstant 2 (Integer 4 [])) ()) (IntegerConstant 2 (Integer 4 [])) Parameter (Integer 4 []) Source Public Required .false.), ri4: (Variable 2 ri4 Local (FunctionCall 2 range@int16range 2 range [((Var 2 i4))] (Integer 4 []) (IntegerConstant 4 (Integer 4 [])) ()) (IntegerConstant 4 (Integer 4 [])) Parameter (Integer 4 []) Source Public Required .false.)}) intrinsics_30 [iso_fortran_env lfortran_intrinsic_math] [(Print () [(FunctionCall 2 range@i32range 2 range [((Var 2 i1))] (Integer 4 []) (IntegerConstant 9 (Integer 4 [])) ()) (FunctionCall 2 range@i64range 2 range [((Var 2 i2))] (Integer 4 []) (IntegerConstant 18 (Integer 4 [])) ()) (Var 2 ri3) (Var 2 ri4)] () ()) (Print () [(FunctionCall 2 range@srange 2 range [((Var 2 r1))] (Integer 4 []) (IntegerConstant 37 (Integer 4 [])) ()) (FunctionCall 2 range@drange 2 range [((Var 2 r2))] (Integer 4 []) (IntegerConstant 307 (Integer 4 [])) ())] () ()) (Print () [(FunctionCall 2 range@crange 2 range [((Var 2 c1))] (Integer 4 []) (IntegerConstant 37 (Integer 4 [])) ()) (FunctionCall 2 range@zrange 2 range [((Var 2 c2))] (Integer 4 []) (IntegerConstant 307 (Integer 4 [])) ())] () ())]), iso_c_binding: (IntrinsicModule lfortran_intrinsic_iso_c_binding), iso_fortran_env: (IntrinsicModule lfortran_intrinsic_iso_fortran_env), lfortran_intrinsic_builtin: (IntrinsicModule lfortran_intrinsic_builtin), lfortran_intrinsic_math: (IntrinsicModule lfortran_intrinsic_math)}) [])
+(TranslationUnit
+    (SymbolTable
+        1
+        {
+            intrinsics_30:
+                (Program
+                    (SymbolTable
+                        2
+                        {
+                            a1:
+                                (Variable
+                                    2
+                                    a1
+                                    []
+                                    Local
+                                    (TypeInquiry
+                                        Range
+                                        (Integer 4)
+                                        (IntegerConstant 11 (Integer 4) Decimal)
+                                        (Integer 4)
+                                        (IntegerConstant 9 (Integer 4) Decimal)
+                                    )
+                                    (IntegerConstant 9 (Integer 4) Decimal)
+                                    Parameter
+                                    (Integer 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            a2:
+                                (Variable
+                                    2
+                                    a2
+                                    []
+                                    Local
+                                    (TypeInquiry
+                                        Range
+                                        (Real 4)
+                                        (RealConstant
+                                            22.900000
+                                            (Real 4)
+                                        )
+                                        (Integer 4)
+                                        (IntegerConstant 37 (Integer 4) Decimal)
+                                    )
+                                    (IntegerConstant 37 (Integer 4) Decimal)
+                                    Parameter
+                                    (Integer 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            a3:
+                                (Variable
+                                    2
+                                    a3
+                                    []
+                                    Local
+                                    (TypeInquiry
+                                        Range
+                                        (Complex 4)
+                                        (ComplexConstructor
+                                            (IntegerConstant 1 (Integer 4) Decimal)
+                                            (IntegerConstant 2 (Integer 4) Decimal)
+                                            (Complex 4)
+                                            (ComplexConstant
+                                                1.000000
+                                                2.000000
+                                                (Complex 4)
+                                            )
+                                        )
+                                        (Integer 4)
+                                        (IntegerConstant 37 (Integer 4) Decimal)
+                                    )
+                                    (IntegerConstant 37 (Integer 4) Decimal)
+                                    Parameter
+                                    (Integer 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            ar1:
+                                (Variable
+                                    2
+                                    ar1
+                                    []
+                                    Local
+                                    (TypeInquiry
+                                        Range
+                                        (Array
+                                            (Integer 4)
+                                            [((IntegerConstant 1 (Integer 4) Decimal)
+                                            (IntegerConstant 3 (Integer 4) Decimal))]
+                                            FixedSizeArray
+                                        )
+                                        (ArrayConstant
+                                            12
+                                            [1, 21, 13]
+                                            (Array
+                                                (Integer 4)
+                                                [((IntegerConstant 1 (Integer 4) Decimal)
+                                                (IntegerConstant 3 (Integer 4) Decimal))]
+                                                FixedSizeArray
+                                            )
+                                            ColMajor
+                                        )
+                                        (Integer 4)
+                                        (IntegerConstant 9 (Integer 4) Decimal)
+                                    )
+                                    (IntegerConstant 9 (Integer 4) Decimal)
+                                    Parameter
+                                    (Integer 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            ar2:
+                                (Variable
+                                    2
+                                    ar2
+                                    []
+                                    Local
+                                    (TypeInquiry
+                                        Range
+                                        (Array
+                                            (Real 4)
+                                            [((IntegerConstant 1 (Integer 4) Decimal)
+                                            (IntegerConstant 3 (Integer 4) Decimal))]
+                                            FixedSizeArray
+                                        )
+                                        (ArrayConstant
+                                            12
+                                            [1.00000000e+00, 2.10000000e+01, 1.30000000e+01]
+                                            (Array
+                                                (Real 4)
+                                                [((IntegerConstant 1 (Integer 4) Decimal)
+                                                (IntegerConstant 3 (Integer 4) Decimal))]
+                                                FixedSizeArray
+                                            )
+                                            ColMajor
+                                        )
+                                        (Integer 4)
+                                        (IntegerConstant 37 (Integer 4) Decimal)
+                                    )
+                                    (IntegerConstant 37 (Integer 4) Decimal)
+                                    Parameter
+                                    (Integer 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            ar3:
+                                (Variable
+                                    2
+                                    ar3
+                                    []
+                                    Local
+                                    (TypeInquiry
+                                        Range
+                                        (Array
+                                            (Complex 4)
+                                            [((IntegerConstant 1 (Integer 4) Decimal)
+                                            (IntegerConstant 3 (Integer 4) Decimal))]
+                                            FixedSizeArray
+                                        )
+                                        (ArrayConstructor
+                                            [(ComplexConstructor
+                                                (IntegerConstant 1 (Integer 4) Decimal)
+                                                (IntegerConstant 2 (Integer 4) Decimal)
+                                                (Complex 4)
+                                                (ComplexConstant
+                                                    1.000000
+                                                    2.000000
+                                                    (Complex 4)
+                                                )
+                                            )
+                                            (ComplexConstructor
+                                                (IntegerConstant 31 (Integer 4) Decimal)
+                                                (IntegerConstant 4 (Integer 4) Decimal)
+                                                (Complex 4)
+                                                (ComplexConstant
+                                                    31.000000
+                                                    4.000000
+                                                    (Complex 4)
+                                                )
+                                            )
+                                            (ComplexConstructor
+                                                (IntegerConstant 51 (Integer 4) Decimal)
+                                                (IntegerConstant 62 (Integer 4) Decimal)
+                                                (Complex 4)
+                                                (ComplexConstant
+                                                    51.000000
+                                                    62.000000
+                                                    (Complex 4)
+                                                )
+                                            )]
+                                            (Array
+                                                (Complex 4)
+                                                [((IntegerConstant 1 (Integer 4) Decimal)
+                                                (IntegerConstant 3 (Integer 4) Decimal))]
+                                                FixedSizeArray
+                                            )
+                                            (ArrayConstant
+                                                12
+                                                [(1.00000000e+00, 2.00000000e+00), (3.10000000e+01, 4.00000000e+00), (5.10000000e+01, 6.20000000e+01)]
+                                                (Array
+                                                    (Complex 4)
+                                                    [((IntegerConstant 1 (Integer 4) Decimal)
+                                                    (IntegerConstant 3 (Integer 4) Decimal))]
+                                                    FixedSizeArray
+                                                )
+                                                ColMajor
+                                            )
+                                            ColMajor
+                                            ()
+                                        )
+                                        (Integer 4)
+                                        (IntegerConstant 37 (Integer 4) Decimal)
+                                    )
+                                    (IntegerConstant 37 (Integer 4) Decimal)
+                                    Parameter
+                                    (Integer 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            arr1:
+                                (Variable
+                                    2
+                                    arr1
+                                    []
+                                    Local
+                                    (ArrayConstant
+                                        12
+                                        [1, 21, 13]
+                                        (Array
+                                            (Integer 4)
+                                            [((IntegerConstant 1 (Integer 4) Decimal)
+                                            (IntegerConstant 3 (Integer 4) Decimal))]
+                                            FixedSizeArray
+                                        )
+                                        ColMajor
+                                    )
+                                    (ArrayConstant
+                                        12
+                                        [1, 21, 13]
+                                        (Array
+                                            (Integer 4)
+                                            [((IntegerConstant 1 (Integer 4) Decimal)
+                                            (IntegerConstant 3 (Integer 4) Decimal))]
+                                            FixedSizeArray
+                                        )
+                                        ColMajor
+                                    )
+                                    Save
+                                    (Array
+                                        (Integer 4)
+                                        [((IntegerConstant 1 (Integer 4) Decimal)
+                                        (IntegerConstant 3 (Integer 4) Decimal))]
+                                        FixedSizeArray
+                                    )
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            arr2:
+                                (Variable
+                                    2
+                                    arr2
+                                    []
+                                    Local
+                                    (Cast
+                                        (ArrayConstant
+                                            12
+                                            [1.00000000e+00, 2.10000000e+01, 1.30000000e+01]
+                                            (Array
+                                                (Real 4)
+                                                [((IntegerConstant 1 (Integer 4) Decimal)
+                                                (IntegerConstant 3 (Integer 4) Decimal))]
+                                                FixedSizeArray
+                                            )
+                                            ColMajor
+                                        )
+                                        RealToReal
+                                        (Array
+                                            (Real 8)
+                                            [((IntegerConstant 1 (Integer 4) Decimal)
+                                            (IntegerConstant 3 (Integer 4) Decimal))]
+                                            FixedSizeArray
+                                        )
+                                        (ArrayConstant
+                                            24
+                                            [1.0000000000000000e+00, 2.1000000000000000e+01, 1.3000000000000000e+01]
+                                            (Array
+                                                (Real 8)
+                                                [((IntegerConstant 1 (Integer 4) Decimal)
+                                                (IntegerConstant 3 (Integer 4) Decimal))]
+                                                FixedSizeArray
+                                            )
+                                            ColMajor
+                                        )
+                                        ()
+                                    )
+                                    (ArrayConstant
+                                        24
+                                        [1.0000000000000000e+00, 2.1000000000000000e+01, 1.3000000000000000e+01]
+                                        (Array
+                                            (Real 8)
+                                            [((IntegerConstant 1 (Integer 4) Decimal)
+                                            (IntegerConstant 3 (Integer 4) Decimal))]
+                                            FixedSizeArray
+                                        )
+                                        ColMajor
+                                    )
+                                    Save
+                                    (Array
+                                        (Real 8)
+                                        [((IntegerConstant 1 (Integer 4) Decimal)
+                                        (IntegerConstant 3 (Integer 4) Decimal))]
+                                        FixedSizeArray
+                                    )
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            arr3:
+                                (Variable
+                                    2
+                                    arr3
+                                    []
+                                    Local
+                                    (ArrayConstructor
+                                        [(ComplexConstructor
+                                            (IntegerConstant 1 (Integer 4) Decimal)
+                                            (IntegerConstant 2 (Integer 4) Decimal)
+                                            (Complex 4)
+                                            (ComplexConstant
+                                                1.000000
+                                                2.000000
+                                                (Complex 4)
+                                            )
+                                        )
+                                        (ComplexConstructor
+                                            (IntegerConstant 31 (Integer 4) Decimal)
+                                            (IntegerConstant 4 (Integer 4) Decimal)
+                                            (Complex 4)
+                                            (ComplexConstant
+                                                31.000000
+                                                4.000000
+                                                (Complex 4)
+                                            )
+                                        )
+                                        (ComplexConstructor
+                                            (IntegerConstant 51 (Integer 4) Decimal)
+                                            (IntegerConstant 62 (Integer 4) Decimal)
+                                            (Complex 4)
+                                            (ComplexConstant
+                                                51.000000
+                                                62.000000
+                                                (Complex 4)
+                                            )
+                                        )]
+                                        (Array
+                                            (Complex 4)
+                                            [((IntegerConstant 1 (Integer 4) Decimal)
+                                            (IntegerConstant 3 (Integer 4) Decimal))]
+                                            FixedSizeArray
+                                        )
+                                        (ArrayConstant
+                                            12
+                                            [(1.00000000e+00, 2.00000000e+00), (3.10000000e+01, 4.00000000e+00), (5.10000000e+01, 6.20000000e+01)]
+                                            (Array
+                                                (Complex 4)
+                                                [((IntegerConstant 1 (Integer 4) Decimal)
+                                                (IntegerConstant 3 (Integer 4) Decimal))]
+                                                FixedSizeArray
+                                            )
+                                            ColMajor
+                                        )
+                                        ColMajor
+                                        ()
+                                    )
+                                    (ArrayConstant
+                                        12
+                                        [(1.00000000e+00, 2.00000000e+00), (3.10000000e+01, 4.00000000e+00), (5.10000000e+01, 6.20000000e+01)]
+                                        (Array
+                                            (Complex 4)
+                                            [((IntegerConstant 1 (Integer 4) Decimal)
+                                            (IntegerConstant 3 (Integer 4) Decimal))]
+                                            FixedSizeArray
+                                        )
+                                        ColMajor
+                                    )
+                                    Save
+                                    (Array
+                                        (Complex 4)
+                                        [((IntegerConstant 1 (Integer 4) Decimal)
+                                        (IntegerConstant 3 (Integer 4) Decimal))]
+                                        FixedSizeArray
+                                    )
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            c1:
+                                (Variable
+                                    2
+                                    c1
+                                    []
+                                    Local
+                                    ()
+                                    ()
+                                    Default
+                                    (Complex 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            c2:
+                                (Variable
+                                    2
+                                    c2
+                                    []
+                                    Local
+                                    ()
+                                    ()
+                                    Default
+                                    (Complex 8)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            i1:
+                                (Variable
+                                    2
+                                    i1
+                                    []
+                                    Local
+                                    ()
+                                    ()
+                                    Default
+                                    (Integer 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            i2:
+                                (Variable
+                                    2
+                                    i2
+                                    []
+                                    Local
+                                    ()
+                                    ()
+                                    Default
+                                    (Integer 8)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            i3:
+                                (Variable
+                                    2
+                                    i3
+                                    []
+                                    Local
+                                    ()
+                                    ()
+                                    Default
+                                    (Integer 1)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            i4:
+                                (Variable
+                                    2
+                                    i4
+                                    []
+                                    Local
+                                    ()
+                                    ()
+                                    Default
+                                    (Integer 2)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            int16:
+                                (ExternalSymbol
+                                    2
+                                    int16
+                                    4 int16
+                                    lfortran_intrinsic_iso_fortran_env
+                                    []
+                                    int16
+                                    Public
+                                ),
+                            int8:
+                                (ExternalSymbol
+                                    2
+                                    int8
+                                    4 int8
+                                    lfortran_intrinsic_iso_fortran_env
+                                    []
+                                    int8
+                                    Public
+                                ),
+                            r1:
+                                (Variable
+                                    2
+                                    r1
+                                    []
+                                    Local
+                                    ()
+                                    ()
+                                    Default
+                                    (Real 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            r2:
+                                (Variable
+                                    2
+                                    r2
+                                    []
+                                    Local
+                                    ()
+                                    ()
+                                    Default
+                                    (Real 8)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            ri3:
+                                (Variable
+                                    2
+                                    ri3
+                                    [i3]
+                                    Local
+                                    (TypeInquiry
+                                        Range
+                                        (Integer 1)
+                                        (Var 2 i3)
+                                        (Integer 4)
+                                        (IntegerConstant 2 (Integer 4) Decimal)
+                                    )
+                                    (IntegerConstant 2 (Integer 4) Decimal)
+                                    Parameter
+                                    (Integer 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                ),
+                            ri4:
+                                (Variable
+                                    2
+                                    ri4
+                                    [i4]
+                                    Local
+                                    (TypeInquiry
+                                        Range
+                                        (Integer 2)
+                                        (Var 2 i4)
+                                        (Integer 4)
+                                        (IntegerConstant 4 (Integer 4) Decimal)
+                                    )
+                                    (IntegerConstant 4 (Integer 4) Decimal)
+                                    Parameter
+                                    (Integer 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                )
+                        })
+                    intrinsics_30
+                    [iso_fortran_env]
+                    [(Print
+                        (StringFormat
+                            ()
+                            [(Var 2 a1)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (Var 2 a1)
+                            NotEq
+                            (IntegerConstant 9 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(Var 2 a2)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (Var 2 a2)
+                            NotEq
+                            (IntegerConstant 37 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(Var 2 a3)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (Var 2 a3)
+                            NotEq
+                            (IntegerConstant 37 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(Var 2 ar1)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (Var 2 ar1)
+                            NotEq
+                            (IntegerConstant 9 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(Var 2 ar2)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (Var 2 ar2)
+                            NotEq
+                            (IntegerConstant 37 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(Var 2 ar3)]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (Var 2 ar3)
+                            NotEq
+                            (IntegerConstant 37 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(TypeInquiry
+                                Range
+                                (Integer 4)
+                                (Var 2 ri3)
+                                (Integer 4)
+                                (IntegerConstant 9 (Integer 4) Decimal)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (Var 2 ri3)
+                            NotEq
+                            (IntegerConstant 2 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(TypeInquiry
+                                Range
+                                (Integer 4)
+                                (Var 2 ri4)
+                                (Integer 4)
+                                (IntegerConstant 9 (Integer 4) Decimal)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (Var 2 ri4)
+                            NotEq
+                            (IntegerConstant 4 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(TypeInquiry
+                                Range
+                                (Integer 4)
+                                (Var 2 i1)
+                                (Integer 4)
+                                (IntegerConstant 9 (Integer 4) Decimal)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (TypeInquiry
+                                Range
+                                (Integer 4)
+                                (Var 2 i1)
+                                (Integer 4)
+                                (IntegerConstant 9 (Integer 4) Decimal)
+                            )
+                            NotEq
+                            (IntegerConstant 9 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(TypeInquiry
+                                Range
+                                (Integer 8)
+                                (Var 2 i2)
+                                (Integer 4)
+                                (IntegerConstant 18 (Integer 4) Decimal)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (TypeInquiry
+                                Range
+                                (Integer 8)
+                                (Var 2 i2)
+                                (Integer 4)
+                                (IntegerConstant 18 (Integer 4) Decimal)
+                            )
+                            NotEq
+                            (IntegerConstant 18 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(TypeInquiry
+                                Range
+                                (Real 4)
+                                (Var 2 r1)
+                                (Integer 4)
+                                (IntegerConstant 37 (Integer 4) Decimal)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (TypeInquiry
+                                Range
+                                (Real 4)
+                                (Var 2 r1)
+                                (Integer 4)
+                                (IntegerConstant 37 (Integer 4) Decimal)
+                            )
+                            NotEq
+                            (IntegerConstant 37 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(TypeInquiry
+                                Range
+                                (Real 8)
+                                (Var 2 r2)
+                                (Integer 4)
+                                (IntegerConstant 307 (Integer 4) Decimal)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (TypeInquiry
+                                Range
+                                (Real 8)
+                                (Var 2 r2)
+                                (Integer 4)
+                                (IntegerConstant 307 (Integer 4) Decimal)
+                            )
+                            NotEq
+                            (IntegerConstant 307 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(TypeInquiry
+                                Range
+                                (Complex 4)
+                                (Var 2 c1)
+                                (Integer 4)
+                                (IntegerConstant 37 (Integer 4) Decimal)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (TypeInquiry
+                                Range
+                                (Complex 4)
+                                (Var 2 c1)
+                                (Integer 4)
+                                (IntegerConstant 37 (Integer 4) Decimal)
+                            )
+                            NotEq
+                            (IntegerConstant 37 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(TypeInquiry
+                                Range
+                                (Complex 8)
+                                (Var 2 c2)
+                                (Integer 4)
+                                (IntegerConstant 307 (Integer 4) Decimal)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (TypeInquiry
+                                Range
+                                (Complex 8)
+                                (Var 2 c2)
+                                (Integer 4)
+                                (IntegerConstant 307 (Integer 4) Decimal)
+                            )
+                            NotEq
+                            (IntegerConstant 307 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(TypeInquiry
+                                Range
+                                (Array
+                                    (Integer 4)
+                                    [((IntegerConstant 1 (Integer 4) Decimal)
+                                    (IntegerConstant 3 (Integer 4) Decimal))]
+                                    FixedSizeArray
+                                )
+                                (Var 2 arr1)
+                                (Integer 4)
+                                (IntegerConstant 9 (Integer 4) Decimal)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (TypeInquiry
+                                Range
+                                (Array
+                                    (Integer 4)
+                                    [((IntegerConstant 1 (Integer 4) Decimal)
+                                    (IntegerConstant 3 (Integer 4) Decimal))]
+                                    FixedSizeArray
+                                )
+                                (Var 2 arr1)
+                                (Integer 4)
+                                (IntegerConstant 9 (Integer 4) Decimal)
+                            )
+                            NotEq
+                            (IntegerConstant 9 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(TypeInquiry
+                                Range
+                                (Array
+                                    (Real 8)
+                                    [((IntegerConstant 1 (Integer 4) Decimal)
+                                    (IntegerConstant 3 (Integer 4) Decimal))]
+                                    FixedSizeArray
+                                )
+                                (Var 2 arr2)
+                                (Integer 4)
+                                (IntegerConstant 307 (Integer 4) Decimal)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (TypeInquiry
+                                Range
+                                (Array
+                                    (Real 8)
+                                    [((IntegerConstant 1 (Integer 4) Decimal)
+                                    (IntegerConstant 3 (Integer 4) Decimal))]
+                                    FixedSizeArray
+                                )
+                                (Var 2 arr2)
+                                (Integer 4)
+                                (IntegerConstant 307 (Integer 4) Decimal)
+                            )
+                            NotEq
+                            (IntegerConstant 307 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )
+                    (Print
+                        (StringFormat
+                            ()
+                            [(TypeInquiry
+                                Range
+                                (Array
+                                    (Complex 4)
+                                    [((IntegerConstant 1 (Integer 4) Decimal)
+                                    (IntegerConstant 3 (Integer 4) Decimal))]
+                                    FixedSizeArray
+                                )
+                                (Var 2 arr3)
+                                (Integer 4)
+                                (IntegerConstant 37 (Integer 4) Decimal)
+                            )]
+                            FormatFortran
+                            (Allocatable
+                                (String 1 () DeferredLength DescriptorString)
+                            )
+                            ()
+                        )
+                    )
+                    (If
+                        ()
+                        (IntegerCompare
+                            (TypeInquiry
+                                Range
+                                (Array
+                                    (Complex 4)
+                                    [((IntegerConstant 1 (Integer 4) Decimal)
+                                    (IntegerConstant 3 (Integer 4) Decimal))]
+                                    FixedSizeArray
+                                )
+                                (Var 2 arr3)
+                                (Integer 4)
+                                (IntegerConstant 37 (Integer 4) Decimal)
+                            )
+                            NotEq
+                            (IntegerConstant 37 (Integer 4) Decimal)
+                            (Logical 4)
+                            (LogicalConstant
+                                .false.
+                                (Logical 4)
+                            )
+                        )
+                        [(ErrorStop
+                            ()
+                        )]
+                        []
+                    )]
+                ),
+            iso_fortran_env:
+                (IntrinsicModule lfortran_intrinsic_iso_fortran_env)
+        })
+    []
+)

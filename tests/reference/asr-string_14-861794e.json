@@ -2,11 +2,11 @@
     "basename": "asr-string_14-861794e",
     "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
     "infile": "tests/../integration_tests/string_14.f90",
-    "infile_hash": "e404118decd49119dd9f21679da4f42a09212e47f16cbdd7ccf744eb",
+    "infile_hash": "5cc44728083840d1d00b687489a0ef17523de1d11209ccb39b49f42f",
     "outfile": null,
     "outfile_hash": null,
     "stdout": "asr-string_14-861794e.stdout",
-    "stdout_hash": "ba47c13293f834948503070cbdd4e821339adf0d6c196b5cc9101732",
+    "stdout_hash": "cf4e205b9c836dad8b233512fefdfcd49e9503517a32afd3f55438fc",
     "stderr": null,
     "stderr_hash": null,
     "returncode": 0
