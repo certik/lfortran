@@ -150,9 +150,11 @@ So the performance architecture is a three-tier funnel, all driven from ASR:
 - **Tier 2 (pattern → library)**: array intrinsics and recognized
   contraction nests inside/around offloaded regions call vendor libraries on
   device operands.
-- **Tier 3 (optional/experimental)**: tile-IR generation (CUDA Tile IR
-  bytecode; possibly Triton via its C API later) for fused compute-bound
-  kernels that libraries can't express. Off by default; research track.
+- **Tier 3 (cooperative/tile mapping)**: for tile-shaped `do concurrent`
+  loops, map one *iteration to a thread block* instead of a thread and lower
+  the body's small-array operations to tile ops (tensor cores). This is how
+  compute-bound kernels that libraries can't express (fused attention)
+  reach peak; see §7–§8.
 
 ## 5. Design at the IR level
 
@@ -339,10 +341,146 @@ usually praised for, obtained without changing the programming model.
 5. **Residency analysis and kernel fusion** at ASR.
 6. **Tier 2**: `matmul`/`transpose`/`sum` on device operands call
    cuBLAS/rocBLAS/MPS instead of being scalar-inlined into kernels.
-7. **Tier 3 (research)**: `asr_to_tileir` (CUDA Tile IR bytecode) for fused
-   contraction kernels; evaluate against Tier 2 before investing further.
+7. **Tier 3, cooperative/tile mapping (§7)**: iteration→block mapping for
+   tile-shaped loops, lowered via `asr_to_tileir` (CUDA Tile IR bytecode;
+   later Triton TTIR for AMD); validate on tiled matmul, then fused
+   attention (§8). Reduced-precision kinds (bf16/fp16) land alongside.
 
-## 7. Summary of answers
+## 7. Compute-bound kernels: the cooperative (tile) mapping
+
+§4 argues SIMT is the right default because typical `do concurrent` bodies
+are bandwidth-bound. That raises the obvious question: matmul-class kernels
+are compute-bound *only when tiled* — `C = A·B` does `2·M·N·K` flops over
+`M·K + K·N + M·N` words, so the intensity is there in principle, but a
+per-element mapping never realizes it. If `do concurrent (i, j)` maps one
+iteration to one thread and each thread runs the `k` loop, every thread
+streams a whole row of `A` and column of `B` from global memory: ~0.5
+flop/byte in bf16, a ceiling below 1% of tensor-core peak on an H100
+(3.35 TB/s vs. ~990 bf16 TFLOP/s; break-even is ~300 flop/byte). Blocking
+into `TM×TN` tiles raises per-element reuse to ~`TM·TN/(TM+TN)` (~64× for
+128×128 tiles), which — with L2 reuse across blocks — is what reaches peak.
+
+The resolution is that the tile paradigm is not a different parallel
+semantics; it is a different *mapping* of the same construct. A Triton
+program **is** a `do concurrent` over tiles. Compare a Triton matmul with
+this standard Fortran:
+
+```fortran
+do concurrent (it = 1:m/TM, jt = 1:n/TN) local(acc)
+  real(4) :: acc(TM, TN)
+  acc = 0
+  do kt = 0, k/TK - 1
+    acc = acc + matmul(a((it-1)*TM+1 : it*TM, kt*TK+1 : kt*TK+TK), &
+                       b(kt*TK+1 : kt*TK+TK, (jt-1)*TN+1 : jt*TN))
+  end do
+  c((it-1)*TM+1:it*TM, (jt-1)*TN+1:jt*TN) = acc
+end do
+```
+
+The concurrent indices are `tl.program_id`, the array sections are
+`tl.load`, the tile `matmul` is `tl.dot`, `acc` is the register-tile
+accumulator. What Triton/cuTile add is the *execution mapping*: one program
+instance runs cooperatively on a whole thread block, tile values live in
+registers/shared memory with swizzled layouts, `dot` uses tensor-core MMA,
+and the compiler software-pipelines the loads (`cp.async`/TMA).
+
+LFortran should therefore support **two mappings of `do concurrent`**,
+chosen per loop:
+
+1. **Thread mapping** (default, §5.3): iteration → thread. Scalar bodies,
+   bandwidth-bound code.
+2. **Cooperative mapping**: iteration → thread block. Eligible when the
+   body is *tile-shaped*: control flow uniform in the concurrent indices,
+   and the work expressed as whole-array operations on small,
+   compile-time-bounded `local` arrays. Those locals become shared-memory /
+   register tiles with compiler-chosen distributed layouts; array
+   operations on them (`matmul`, elementwise ops, `sum`/`maxval` along a
+   dimension, `transpose`, `spread`) lower to block-cooperative tile ops,
+   with `matmul` on tiles going to tensor cores. Scalar statements execute
+   redundantly-uniformly across the block (cheap, standard practice).
+
+Both mappings observe the same independence semantics, so the choice is an
+implementation detail: the program remains standard-conforming Fortran that
+gfortran can run serially. Selection is by heuristic (tile-shaped body with
+constant-size locals) plus a hint for control — either a `!lf$ tile`
+directive-comment or simply honoring the declared `local` array sizes.
+
+Critically, LFortran should not build the layout/swizzling/pipelining
+machinery itself. The cooperative-mapped device ASR lowers to **CUDA Tile
+IR** (an open MLIR dialect with a stable, versioned bytecode — exactly the
+"compilers that target PTX can also target Tile IR" use case NVIDIA
+documents) and later, for portability, to Triton's TTIR (which targets both
+NVIDIA and AMD). This is where a tile IR earns its place in this design:
+as the backend of the cooperative mapping — not as the foundation of
+offloading. An alternative expressible form — nested `do concurrent`
+(outer nest → blocks, inner → threads, mirroring OpenMP's
+`teams distribute` / `parallel do` split) — gives users CUDA-like manual
+control and can share the same lowering, but the tile-locals form should be
+primary because it leaves the compiler free to choose layouts and
+pipelining.
+
+## 8. Case study: an LLM on the GPU with `do concurrent`
+
+An LLM decomposes cleanly across the three tiers, and much of it needs no
+tiles at all:
+
+- **Decode (batch 1) is bandwidth-bound end to end.** Each generated token
+  reads every weight once (GEMV): ~1 flop/byte in bf16. A 70B-parameter
+  bf16 model is 140 GB, so 3.35 TB/s caps decode at ~24 tokens/s
+  regardless of compute. Tier-1 SIMT `do concurrent` (with split-k block
+  reductions for the GEMVs) reaches that roofline.
+- **Prefill, batched serving, and training are GEMM-bound**: QKV/O
+  projections and the MLP matmuls go through Tier 2 (`matmul` on
+  device-resident arrays dispatching to cuBLASLt/hipBLASLt, elementwise
+  epilogues such as bias+SwiGLU fused via library epilogues) — or through
+  the §7 cooperative mapping where fusion beyond epilogues is wanted.
+- **Attention is the flagship cooperative-mapping kernel.** FlashAttention
+  is a fused tiled kernel, expressible in standard array syntax:
+
+```fortran
+do concurrent (h = 1:nheads, qt = 1:nq/TQ) &
+    local(qtile, ktile, vtile, s, p, acc, mrun, mnew, corr, l)
+  real(2) :: qtile(TQ,hd), ktile(TK,hd), vtile(TK,hd)
+  real(4) :: s(TQ,TK), p(TQ,TK), acc(TQ,hd)
+  real(4) :: mrun(TQ), mnew(TQ), corr(TQ), l(TQ)
+  qtile = q((qt-1)*TQ+1:qt*TQ, :, h)
+  acc = 0;  l = 0;  mrun = -huge(0.0)
+  do kt = 1, nk/TK
+    ktile = kcache((kt-1)*TK+1:kt*TK, :, h)
+    vtile = vcache((kt-1)*TK+1:kt*TK, :, h)
+    s = matmul(qtile, transpose(ktile)) * scale   ! tensor cores
+    mnew = max(mrun, maxval(s, dim=2))
+    p = exp(s - spread(mnew, 2, TK))
+    corr = exp(mrun - mnew)
+    l = l*corr + sum(p, dim=2)
+    acc = acc*spread(corr, 2, hd) + matmul(p, vtile)
+    mrun = mnew
+  end do
+  o((qt-1)*TQ+1:qt*TQ, :, h) = acc / spread(l, 2, hd)
+end do
+```
+
+  Every operation here is a tile op the cooperative lowering handles:
+  small-`matmul` → MMA, `maxval`/`sum(dim=)` → block reductions,
+  elementwise/`spread` → distributed elementwise.
+- **Everything else** — RMSNorm (SIMT + block reduction), RoPE, residual
+  adds, embedding gather, sampling — is Tier-1 SIMT, fused into neighbors
+  where possible (§5.8).
+
+Two requirements fall out of this case study:
+
+1. **Device residency becomes mandatory, not an optimization.** Weights and
+   KV-cache must live on the device for the whole run; a single accidental
+   page migration of 140 GB per token destroys performance. This
+   prioritizes §5.7's residency analysis, and eventually CUDA-graph capture
+   of the per-token kernel sequence to amortize launch overhead.
+2. **Reduced-precision kinds.** LFortran needs bf16/fp16 (`real(2)`-class)
+   storage kinds, fp8 later, with mixed-precision semantics for `matmul`
+   (low-precision operands, `real(4)` accumulation) — none of this matters
+   in `real(8)`. This is a language/ASR decision independent of the GPU
+   backend but gating for LLM workloads.
+
+## 9. Summary of answers
 
 - **Best way to offload `do concurrent`**: keep the current architecture —
   an ASR-level extraction pass producing `GpuKernelFunction` +
@@ -352,12 +490,15 @@ usually praised for, obtained without changing the programming model.
 - **Pure functions**: purity is the enabler, not an obstacle — the standard
   guarantees the body's call graph is side-effect-free, so it is cloned into
   the device module and aggressively inlined; this is already 80% wired.
-- **Tile model (Triton/cuTile)**: not needed for the core. `do concurrent`
-  is SIMT-shaped and predominantly bandwidth-bound; SIMT + coalescing +
-  fusion reaches roofline. Tensor-core peak for contraction patterns comes
-  first from vendor libraries; an open question worth a prototype — but
-  never the foundation — is emitting CUDA Tile IR for recognized fused
-  kernels.
+- **Tile model (Triton/cuTile)**: not needed as the foundation — SIMT +
+  coalescing + fusion reaches roofline for the bandwidth-bound majority,
+  and vendor libraries cover plain contractions. For compute-bound *fused*
+  kernels (attention), the tile paradigm is required but needs no new
+  language: a tile program is a `do concurrent` over tiles (§7), so LFortran
+  adds a *cooperative mapping* (iteration → thread block, tile-local arrays
+  → shared memory/registers, small-array ops → tensor-core tile ops) and
+  lowers it to CUDA Tile IR / Triton TTIR rather than building layout and
+  pipelining machinery itself.
 - **IR level**: ASR is the right level for everything semantic (legality,
   extraction, locality, reductions, fusion, residency); LLVM with device
   triples (NVPTX/AMDGPU) is the right level for device code generation,
