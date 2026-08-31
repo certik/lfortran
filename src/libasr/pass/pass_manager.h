@@ -53,6 +53,7 @@
 #include <libasr/pass/unique_symbols.h>
 #include <libasr/pass/intent_out_deallocate.h>
 #include <libasr/pass/array_struct_temporary.h>
+#include <libasr/pass/conditional_expr.h>
 #include <libasr/pass/replace_print_struct_type.h>
 #include <libasr/pass/promote_allocatable_to_nonallocatable.h>
 #include <libasr/pass/replace_function_call_in_declaration.h>
@@ -122,6 +123,7 @@ namespace LCompilers {
             {"unique_symbols", &pass_unique_symbols},
             {"intent_out_deallocate", &pass_intent_out_deallocate},
             {"promote_allocatable_to_nonallocatable", &pass_promote_allocatable_to_nonallocatable},
+            {"conditional_expr", &pass_replace_conditional_expr},
             {"array_struct_temporary", &pass_array_struct_temporary},
             {"coarray", &pass_replace_coarray}
         };
@@ -255,6 +257,7 @@ namespace LCompilers {
                 "openmp",
                 "implied_do_loops",
                 "gpu_offload",
+                "conditional_expr",
                 "array_struct_temporary",
                 "coarray",
                 "transform_optional_argument_functions",
