@@ -294,26 +294,111 @@ contract, but must not be a core dependency.
   staged into shared memory — an optimization, not required for
   correctness.
 
-### 5.7 Memory management: managed memory first, residency analysis second
+### 5.7 Memory management and device residency
 
-Follow nvfortran's proven UX: **default to unified/managed memory.**
+The guiding principle: **residency is not primarily something the user
+expresses — it is something the implementation guarantees whenever the
+program's access pattern permits it, and reports when it doesn't.** A
+program expresses residency simply by not touching an array from host code
+between kernels; the machinery below makes that sufficient, checkable, and
+diagnosable. There are three layers.
 
-- When GPU offloading is enabled, allocatable/heap allocations route through
-  the runtime ABI (`lfortran_gpu_alloc` → `cuMemAllocManaged` /
-  `hipMallocManaged`; plain `malloc` fallback when no device is present).
-  Kernels then take the same pointers; no transfer code is generated. This
-  makes *everything correct on day one*, including pointer-chasing derived
-  types.
-- The classic stdpar performance cliff is page-thrash when host code touches
-  arrays between kernels. Mitigate in two stages: (a) runtime prefetch hints
-  (`cuMemPrefetchAsync`) issued at launch for the kernel's buffer arguments;
-  (b) an ASR-level residency analysis that, within a procedure, detects
-  consecutive offloaded regions with no intervening host use and suppresses
-  sync/prefetch between them — effectively an inferred `!$omp target data`
-  region. The existing `OMPMap`/`TargetData` ASR clauses give users a manual
-  override for the cases analysis can't see.
-- Metal keeps its current explicit-buffer path (its shared-storage-mode
-  buffers already behave like managed memory on Apple silicon).
+#### (a) Runtime: a present-table with a validity state machine
+
+The core mechanism is a runtime-side table (the same proven shape as
+libomptarget's mapping table, but LFortran-owned), keyed by host base
+address and extent. Each entry holds the device allocation and a coherence
+state:
+
+```
+HostOnly → (first kernel use) → Both → host writes → DeviceStale
+                                     ↘ kernel writes → HostStale
+```
+
+Two runtime entry points implement all data movement:
+
+- `lfortran_gpu_require_device(a)` — called for each kernel argument at
+  launch: looks up (or creates) the entry, copies host→device **only if
+  `DeviceStale`**, returns the device pointer.
+- `lfortran_gpu_require_host(a)` — copies device→host only if `HostStale`
+  (and synchronizes the stream first).
+
+Transfers are thereby *memoized*: an array used by 500 consecutive kernels
+is copied at most once. "Residency across `do concurrent` loops" is not a
+new construct — it is the absence of `require_host` calls between them.
+Whole-array granularity initially; the table works for allocatables, module
+arrays, and static arrays alike, and avoids changing the array-descriptor
+ABI.
+
+#### (b) Compiler: classify host uses, insert the calls
+
+An ASR pass classifies every statement as *device* (inside an offloaded
+region) or *host*, and inserts `require_host(a)` only before host
+statements that actually access `a` (I/O statements included; `bind(c)`
+escapes and pointer aliasing are treated conservatively as host use of the
+whole object). Purity makes this analysis tractable: the pure call graph
+reachable from kernels cannot perform I/O or touch globals invisibly, and
+`intent(in)` args of pure functions cannot invalidate the device copy, so
+kernel-side writes are precisely known. Interprocedurally, host
+subprograms are summarized by the arrays they touch; where a summary is
+unavailable (separate compilation), the call conservatively invalidates its
+actual arguments only.
+
+The result for the LLM main loop falls out automatically: weights are
+written once by the host loader (`HostOnly`), copied up at the first
+kernel (`Both`), and never touched by host code again — resident for the
+run. Activations and the KV-cache ping-pong between kernels entirely in
+`HostStale` state and are never copied back; the only per-token
+`require_host` is the sampled token id (a scalar).
+
+With `--verbose`/`-Minfo`-style remarks, the compiler and runtime report
+the transfers that *do* happen ("`a` copied host→device 400 times at
+line 123; host write at line 119 invalidates it"), which turns the classic
+stdpar performance cliff into an actionable diagnostic instead of a
+mystery.
+
+#### (c) Explicit syntax: an assertion, not a mechanism
+
+For cases the analysis cannot see (separate compilation, arrays handed to
+external C code, or users who want guarantees), provide a thin explicit
+layer that maps onto the *same* table and ASR nodes (`TargetData`/`OMPMap`
+already exist):
+
+- **Directive comments (recommended primary spelling)** — invisible to
+  other compilers, so the source stays portable standard Fortran:
+
+  ```fortran
+  !lf$ resident(w_q, w_k, w_v, kv_cache)     ! declaration-site or block
+  !lf$ data enter copyin(w) / data exit copyout(c)   ! region form
+  ```
+
+  `resident` asserts "host code does not touch this between kernels":
+  the array is allocated device-first, `require_host` sites for it become
+  compile-time warnings (or errors with `--gpu-strict`), and no coherence
+  checks are emitted for it.
+- **Accept the standard directive spellings too** — `!$omp target enter
+  data map(to: w)` / `!$acc enter data copyin(w)` lower to the same nodes,
+  so codes written for other compilers keep their performance annotations.
+- Deliberately **no new declaration attribute** (`real, device ::` à la
+  CUDA Fortran): it forks the language and breaks compilation with other
+  compilers; the comment form carries the same information.
+
+#### Managed memory as the substrate and the fallback
+
+Beneath all of this, follow nvfortran's proven default: when offloading is
+enabled, heap allocations route through `lfortran_gpu_alloc`
+(`cuMemAllocManaged`/`hipMallocManaged`, plain `malloc` without a device).
+On coherent-memory systems (Grace-Hopper, MI300A, Apple silicon — Metal's
+shared-storage buffers already behave this way) the require-calls degrade
+to prefetch hints (`cuMemPrefetchAsync`) and the state machine only drives
+those; on discrete-memory systems the same calls perform real memoized
+copies. One mechanism, two cost models — and pointer-chasing derived types
+stay correct everywhere because managed memory backstops anything the
+table's whole-array granularity cannot express.
+
+Kernel launches enqueue asynchronously on a stream; `require_host` is the
+synchronization point. Later: CUDA-graph capture of stable kernel
+sequences (an LLM token step) to amortize launch overhead.
 
 ### 5.8 Kernel fusion (ASR-level, later)
 
@@ -338,7 +423,10 @@ usually praised for, obtained without changing the programming model.
    hard `nvcc` requirement.
 4. **Managed memory + prefetch**; then AMD (`amdgcn` triple + HIP runtime
    backend) — mostly re-plumbing of step 3.
-5. **Residency analysis and kernel fusion** at ASR.
+5. **Residency**: present-table runtime with the validity state machine and
+   memoized `require_device`/`require_host` transfers; host-use
+   classification pass; `!lf$ resident`/`data` assertions; transfer
+   diagnostics. Then **kernel fusion** at ASR.
 6. **Tier 2**: `matmul`/`transpose`/`sum` on device operands call
    cuBLAS/rocBLAS/MPS instead of being scalar-inlined into kernels.
 7. **Tier 3, cooperative/tile mapping (§7)**: iteration→block mapping for
