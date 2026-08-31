@@ -2356,20 +2356,6 @@ public:
         enum_init_val = 0;
     }
 
-    ASR::symbol_t* resolve_symbol(const Location &loc, const std::string &sub_name) {
-        SymbolTable *scope = current_scope;
-        ASR::symbol_t *sub = scope->resolve_symbol(sub_name);
-        if (!sub) {
-            diag.add(Diagnostic(
-                "Symbol '" + sub_name + "' not declared",
-                Level::Error, Stage::Semantic, {
-                    Label("",{loc})
-                }));
-            throw SemanticAbort();
-        }
-        return sub;
-    }
-
     ASR::symbol_t* declare_implicit_variable(const Location &loc,
             const std::string &var_name, ASR::intentType intent, ASR::expr_t* value = nullptr) {
         ASR::ttype_t *type = nullptr;
