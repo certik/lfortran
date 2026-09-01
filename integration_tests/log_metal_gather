@@ -1,0 +1,1435 @@
+-- The C compiler identification is AppleClang 17.0.0.17000603
+-- The Fortran compiler identification is unknown
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /Library/Developer/CommandLineTools/usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+
+
+Configuration results
+---------------------
+Fortran compiler: /Users/ondrej/repos/lfortran-3/src/bin/lfortran
+C compiler      : /Library/Developer/CommandLineTools/usr/bin/cc
+Build type: Debug
+Fortran compiler flags: 
+C compiler flags      : -g
+Installation prefix: /usr/local
+LFORTRAN_BACKEND: metal
+FAST: no
+DETECT_LEAKS: no
+NOFAST_LLVM16: no
+STD_F23: no
+LLVM_GOC: no
+-- Configuring done (5.6s)
+-- Generating done (0.5s)
+-- Build files have been written to: /Users/ondrej/repos/lfortran-3/integration_tests/test-metal
+[  0%] Building Fortran object CMakeFiles/gpu_metal_05.dir/gpu_metal_05.f90.o
+[  0%] Building Fortran object CMakeFiles/gpu_metal_11.dir/gpu_metal_11.f90.o
+[  0%] Building Fortran object CMakeFiles/gpu_metal_03.dir/gpu_metal_03.f90.o
+[  1%] Building Fortran object CMakeFiles/gpu_metal_09.dir/gpu_metal_09.f90.o
+[  1%] Building Fortran object CMakeFiles/gpu_metal_15.dir/gpu_metal_15.f90.o
+[  1%] Building Fortran object CMakeFiles/gpu_metal_06.dir/gpu_metal_06.f90.o
+[  1%] Building Fortran object CMakeFiles/gpu_metal_02.dir/gpu_metal_02.f90.o
+[  1%] Building Fortran object CMakeFiles/gpu_metal_04.dir/gpu_metal_04.f90.o
+[  1%] Building Fortran object CMakeFiles/gpu_metal_12.dir/gpu_metal_12.f90.o
+[  1%] Building Fortran object CMakeFiles/gpu_metal_07.dir/gpu_metal_07.f90.o
+[  1%] Building Fortran object CMakeFiles/gpu_metal_14.dir/gpu_metal_14.f90.o
+[  1%] Building Fortran object CMakeFiles/gpu_metal_01.dir/gpu_metal_01.f90.o
+[  1%] Building Fortran object CMakeFiles/gpu_metal_13.dir/gpu_metal_13.f90.o
+[  1%] Building Fortran object CMakeFiles/gpu_metal_10.dir/gpu_metal_10.f90.o
+[  1%] Building Fortran object CMakeFiles/gpu_metal_16.dir/gpu_metal_16.f90.o
+[  1%] Building Fortran object CMakeFiles/gpu_metal_08.dir/gpu_metal_08.f90.o
+[  1%] Linking Fortran executable gpu_metal_15
+[  1%] Linking Fortran executable gpu_metal_05
+[  1%] Linking Fortran executable gpu_metal_09
+[  1%] Linking Fortran executable gpu_metal_04
+[  1%] Linking Fortran executable gpu_metal_11
+[  2%] Linking Fortran executable gpu_metal_06
+[  2%] Linking Fortran executable gpu_metal_12
+[  2%] Linking Fortran executable gpu_metal_07
+[  3%] Linking Fortran executable gpu_metal_03
+[  3%] Linking Fortran executable gpu_metal_02
+[  3%] Linking Fortran executable gpu_metal_14
+[  3%] Linking Fortran executable gpu_metal_01
+[  4%] Linking Fortran executable gpu_metal_16
+[  4%] Linking Fortran executable gpu_metal_13
+[  4%] Linking Fortran executable gpu_metal_08
+[  4%] Linking Fortran executable gpu_metal_10
+[  4%] Built target gpu_metal_09
+[  4%] Built target gpu_metal_12
+[  5%] Building Fortran object CMakeFiles/gpu_metal_17.dir/gpu_metal_17.f90.o
+[  5%] Built target gpu_metal_03
+[  5%] Built target gpu_metal_06
+[  5%] Built target gpu_metal_04
+[  6%] Building Fortran object CMakeFiles/gpu_metal_18.dir/gpu_metal_18.f90.o
+[  6%] Built target gpu_metal_07
+[  6%] Built target gpu_metal_02
+[  6%] Building Fortran object CMakeFiles/gpu_metal_20.dir/gpu_metal_20.f90.o
+[  7%] Building Fortran object CMakeFiles/gpu_metal_19.dir/gpu_metal_19.f90.o
+[  7%] Building Fortran object CMakeFiles/gpu_metal_21.dir/gpu_metal_21.f90.o
+[  7%] Building Fortran object CMakeFiles/gpu_metal_22.dir/gpu_metal_22.f90.o
+[  7%] Building Fortran object CMakeFiles/gpu_metal_23.dir/gpu_metal_23.f90.o
+[  7%] Built target gpu_metal_05
+[  7%] Building Fortran object CMakeFiles/gpu_metal_24.dir/gpu_metal_24.f90.o
+[  7%] Built target gpu_metal_08
+[  7%] Built target gpu_metal_16
+[  7%] Linking Fortran executable gpu_metal_18
+[  7%] Building Fortran object CMakeFiles/gpu_metal_25.dir/gpu_metal_25.f90.o
+[  7%] Built target gpu_metal_11
+[  7%] Building Fortran object CMakeFiles/gpu_metal_26.dir/gpu_metal_26.f90.o
+[  7%] Building Fortran object CMakeFiles/gpu_metal_27.dir/gpu_metal_27.f90.o
+[  7%] Built target gpu_metal_15
+[  8%] Linking Fortran executable gpu_metal_20
+[  8%] Built target gpu_metal_10
+[  8%] Built target gpu_metal_01
+[  9%] Linking Fortran executable gpu_metal_23
+[  9%] Building Fortran object CMakeFiles/gpu_metal_28.dir/gpu_metal_28.f90.o
+[  9%] Building Fortran object CMakeFiles/gpu_metal_29.dir/gpu_metal_29.f90.o
+[ 10%] Building Fortran object CMakeFiles/gpu_metal_30.dir/gpu_metal_30.f90.o
+[ 10%] Built target gpu_metal_14
+[ 10%] Building Fortran object CMakeFiles/gpu_metal_31.dir/gpu_metal_31.f90.o
+[ 10%] Linking Fortran executable gpu_metal_17
+[ 10%] Linking Fortran executable gpu_metal_24
+[ 10%] Linking Fortran executable gpu_metal_19
+[ 11%] Linking Fortran executable gpu_metal_22
+[ 12%] Linking Fortran executable gpu_metal_21
+[ 12%] Built target gpu_metal_13
+[ 12%] Building Fortran object CMakeFiles/gpu_metal_32.dir/gpu_metal_32.f90.o
+[ 13%] Linking Fortran executable gpu_metal_25
+[ 13%] Linking Fortran executable gpu_metal_28
+[ 13%] Linking Fortran executable gpu_metal_29
+[ 13%] Linking Fortran executable gpu_metal_30
+[ 13%] Linking Fortran executable gpu_metal_27
+[ 14%] Linking Fortran executable gpu_metal_26
+[ 14%] Linking Fortran executable gpu_metal_31
+[ 14%] Linking Fortran executable gpu_metal_32
+[ 14%] Built target gpu_metal_18
+[ 15%] Building Fortran object CMakeFiles/gpu_metal_33.dir/gpu_metal_33.f90.o
+[ 15%] Built target gpu_metal_23
+[ 15%] Building Fortran object CMakeFiles/gpu_metal_34.dir/gpu_metal_34.f90.o
+[ 15%] Built target gpu_metal_20
+[ 15%] Building Fortran object CMakeFiles/gpu_metal_35.dir/gpu_metal_35.f90.o
+[ 15%] Built target gpu_metal_22
+[ 15%] Built target gpu_metal_17
+[ 15%] Built target gpu_metal_19
+[ 16%] Building Fortran object CMakeFiles/gpu_metal_36.dir/gpu_metal_36.f90.o
+[ 16%] Building Fortran object CMakeFiles/gpu_metal_37.dir/gpu_metal_37.f90.o
+[ 16%] Built target gpu_metal_21
+[ 16%] Linking Fortran executable gpu_metal_33
+[ 16%] Building Fortran object CMakeFiles/gpu_metal_38.dir/gpu_metal_38.f90.o
+[ 16%] Building Fortran object CMakeFiles/gpu_metal_39.dir/gpu_metal_39.f90.o
+[ 16%] Built target gpu_metal_24
+[ 16%] Built target gpu_metal_28
+[ 16%] Building Fortran object CMakeFiles/gpu_metal_40.dir/gpu_metal_40.f90.o
+[ 16%] Built target gpu_metal_29
+[ 16%] Built target gpu_metal_25
+[ 16%] Building Fortran object CMakeFiles/gpu_metal_41.dir/gpu_metal_41.f90.o
+[ 16%] Building Fortran object CMakeFiles/gpu_metal_43.dir/gpu_metal_43.f90.o
+[ 16%] Built target gpu_metal_30
+[ 16%] Building Fortran object CMakeFiles/gpu_metal_42.dir/gpu_metal_42.f90.o
+[ 16%] Linking Fortran executable gpu_metal_35
+[ 16%] Built target gpu_metal_31
+[ 17%] Building Fortran object CMakeFiles/gpu_metal_44.dir/gpu_metal_44.f90.o
+[ 17%] Built target gpu_metal_26
+[ 17%] Building Fortran object CMakeFiles/gpu_metal_45.dir/gpu_metal_45.f90.o
+[ 17%] Linking Fortran executable gpu_metal_34
+[ 17%] Building Fortran object CMakeFiles/gpu_metal_46.dir/gpu_metal_46.f90.o
+[ 17%] Linking Fortran executable gpu_metal_37
+[ 17%] Built target gpu_metal_27
+[ 18%] Building Fortran object CMakeFiles/gpu_metal_47.dir/gpu_metal_47.f90.o
+[ 19%] Linking Fortran executable gpu_metal_38
+[ 20%] Linking Fortran executable gpu_metal_41
+[ 20%] Linking Fortran executable gpu_metal_36
+[ 20%] Linking Fortran executable gpu_metal_43
+[ 20%] Linking Fortran executable gpu_metal_39
+[ 20%] Built target gpu_metal_32
+[ 20%] Building Fortran object CMakeFiles/gpu_metal_48.dir/gpu_metal_48.f90.o
+[ 20%] Linking Fortran executable gpu_metal_42
+[ 20%] Linking Fortran executable gpu_metal_40
+[ 20%] Linking Fortran executable gpu_metal_44
+[ 20%] Linking Fortran executable gpu_metal_45
+[ 20%] Linking Fortran executable gpu_metal_46
+[ 20%] Linking Fortran executable gpu_metal_47
+[ 20%] Linking Fortran executable gpu_metal_48
+[ 20%] Built target gpu_metal_33
+[ 20%] Building Fortran object CMakeFiles/gpu_metal_49.dir/gpu_metal_49.f90.o
+[ 20%] Built target gpu_metal_37
+[ 20%] Building Fortran object CMakeFiles/gpu_metal_50.dir/gpu_metal_50.f90.o
+[ 20%] Built target gpu_metal_34
+[ 20%] Built target gpu_metal_35
+[ 20%] Building Fortran object CMakeFiles/gpu_metal_51.dir/gpu_metal_51.f90.o
+[ 20%] Building Fortran object CMakeFiles/gpu_metal_52.dir/gpu_metal_52.f90.o
+[ 20%] Built target gpu_metal_41
+[ 20%] Built target gpu_metal_38
+[ 20%] Building Fortran object CMakeFiles/gpu_metal_53.dir/gpu_metal_53.f90.o
+[ 20%] Built target gpu_metal_36
+[ 20%] Building Fortran object CMakeFiles/gpu_metal_54.dir/gpu_metal_54.f90.o
+[ 20%] Building Fortran object CMakeFiles/gpu_metal_55.dir/gpu_metal_55.f90.o
+[ 20%] Built target gpu_metal_43
+[ 20%] Built target gpu_metal_44
+[ 20%] Built target gpu_metal_39
+[ 20%] Built target gpu_metal_42
+[ 21%] Linking Fortran executable gpu_metal_49
+[ 21%] Built target gpu_metal_40
+[ 21%] Building Fortran object CMakeFiles/gpu_metal_56.dir/gpu_metal_56.f90.o
+[ 21%] Building Fortran object CMakeFiles/gpu_metal_57.dir/gpu_metal_57.f90.o
+[ 22%] Building Fortran object CMakeFiles/gpu_metal_58.dir/gpu_metal_58.f90.o
+[ 22%] Building Fortran object CMakeFiles/gpu_metal_59.dir/gpu_metal_59.f90.o
+[ 22%] Building Fortran object CMakeFiles/gpu_metal_60.dir/gpu_metal_60.f90.o
+[ 22%] Linking Fortran executable gpu_metal_50
+[ 22%] Built target gpu_metal_46
+[ 23%] Building Fortran object CMakeFiles/gpu_metal_61.dir/gpu_metal_61.f90.o
+[ 24%] Linking Fortran executable gpu_metal_52
+[ 24%] Built target gpu_metal_45
+[ 24%] Building Fortran object CMakeFiles/gpu_metal_62.dir/gpu_metal_62.f90.o
+[ 24%] Linking Fortran executable gpu_metal_51
+[ 24%] Built target gpu_metal_47
+[ 24%] Linking Fortran executable gpu_metal_53
+[ 24%] Building Fortran object CMakeFiles/gpu_metal_63.dir/gpu_metal_63.f90.o
+[ 24%] Built target gpu_metal_48
+[ 24%] Linking Fortran executable gpu_metal_54
+[ 24%] Building Fortran object CMakeFiles/gpu_metal_64.dir/gpu_metal_64.f90.o
+[ 25%] Linking Fortran executable gpu_metal_55
+[ 25%] Linking Fortran executable gpu_metal_56
+[ 25%] Linking Fortran executable gpu_metal_59
+[ 25%] Linking Fortran executable gpu_metal_58
+[ 25%] Linking Fortran executable gpu_metal_57
+[ 25%] Linking Fortran executable gpu_metal_60
+[ 25%] Linking Fortran executable gpu_metal_61
+[ 25%] Linking Fortran executable gpu_metal_62
+[ 26%] Linking Fortran executable gpu_metal_63
+[ 26%] Linking Fortran executable gpu_metal_64
+[ 26%] Built target gpu_metal_49
+[ 26%] Building Fortran object CMakeFiles/gpu_metal_65.dir/gpu_metal_65.f90.o
+[ 26%] Built target gpu_metal_50
+[ 26%] Building Fortran object CMakeFiles/gpu_metal_66.dir/gpu_metal_66.f90.o
+[ 26%] Built target gpu_metal_53
+[ 26%] Built target gpu_metal_52
+[ 26%] Built target gpu_metal_51
+[ 26%] Building Fortran object CMakeFiles/gpu_metal_68.dir/gpu_metal_68.f90.o
+[ 26%] Building Fortran object CMakeFiles/gpu_metal_67.dir/gpu_metal_67.f90.o
+[ 27%] Building Fortran object CMakeFiles/gpu_metal_69.dir/gpu_metal_69.f90.o
+[ 27%] Built target gpu_metal_56
+[ 27%] Built target gpu_metal_59
+[ 27%] Built target gpu_metal_54
+[ 27%] Linking Fortran executable gpu_metal_65
+[ 27%] Built target gpu_metal_55
+[ 27%] Building Fortran object CMakeFiles/gpu_metal_71.dir/gpu_metal_71.f90.o
+[ 27%] Building Fortran object CMakeFiles/gpu_metal_70.dir/gpu_metal_70.f90.o
+[ 28%] Building Fortran object CMakeFiles/gpu_metal_72.dir/gpu_metal_72.f90.o
+[ 28%] Building Fortran object CMakeFiles/gpu_metal_73.dir/gpu_metal_73.f90.o
+[ 28%] Built target gpu_metal_60
+[ 28%] Built target gpu_metal_58
+[ 29%] Linking Fortran executable gpu_metal_66
+[ 29%] Built target gpu_metal_61
+[ 29%] Built target gpu_metal_57
+[ 29%] Building Fortran object CMakeFiles/gpu_metal_74.dir/gpu_metal_74.f90.o
+[ 29%] Building Fortran object CMakeFiles/gpu_metal_75.dir/gpu_metal_75.f90.o
+[ 29%] Building Fortran object CMakeFiles/gpu_metal_76.dir/gpu_metal_76.f90.o
+[ 29%] Building Fortran object CMakeFiles/gpu_metal_77.dir/gpu_metal_77.f90.o
+[ 29%] Linking Fortran executable gpu_metal_68
+[ 29%] Linking Fortran executable gpu_metal_67
+[ 29%] Built target gpu_metal_62
+[ 29%] Linking Fortran executable gpu_metal_69
+[ 29%] Built target gpu_metal_63
+[ 29%] Building Fortran object CMakeFiles/gpu_metal_78.dir/gpu_metal_78.f90.o
+[ 29%] Linking Fortran executable gpu_metal_71
+[ 29%] Building Fortran object CMakeFiles/gpu_metal_79.dir/gpu_metal_79.f90.o
+[ 29%] Linking Fortran executable gpu_metal_73
+[ 29%] Linking Fortran executable gpu_metal_72
+[ 29%] Linking Fortran executable gpu_metal_70
+[ 29%] Built target gpu_metal_64
+[ 29%] Linking Fortran executable gpu_metal_75
+[ 29%] Linking Fortran executable gpu_metal_76
+[ 30%] Linking Fortran executable gpu_metal_77
+[ 30%] Building Fortran object CMakeFiles/gpu_metal_80.dir/gpu_metal_80.f90.o
+[ 31%] Linking Fortran executable gpu_metal_74
+[ 31%] Linking Fortran executable gpu_metal_79
+[ 31%] Linking Fortran executable gpu_metal_78
+[ 31%] Built target gpu_metal_65
+[ 31%] Building Fortran object CMakeFiles/gpu_metal_81.dir/gpu_metal_81.f90.o
+[ 31%] Built target gpu_metal_66
+[ 32%] Linking Fortran executable gpu_metal_80
+[ 32%] Building Fortran object CMakeFiles/gpu_metal_82.dir/gpu_metal_82.f90.o
+[ 32%] Built target gpu_metal_67
+[ 32%] Built target gpu_metal_68
+[ 32%] Building Fortran object CMakeFiles/gpu_metal_84.dir/gpu_metal_84.f90.o
+[ 33%] Building Fortran object CMakeFiles/gpu_metal_83.dir/gpu_metal_83.f90.o
+[ 33%] Built target gpu_metal_71
+[ 33%] Built target gpu_metal_69
+[ 33%] Built target gpu_metal_72
+[ 34%] Building Fortran object CMakeFiles/gpu_metal_86.dir/gpu_metal_86.f90.o
+[ 34%] Building Fortran object CMakeFiles/gpu_metal_85.dir/gpu_metal_85.f90.o
+[ 34%] Built target gpu_metal_73
+[ 34%] Building Fortran object CMakeFiles/gpu_metal_87.dir/gpu_metal_87.f90.o
+[ 34%] Built target gpu_metal_70
+[ 34%] Built target gpu_metal_76
+[ 34%] Building Fortran object CMakeFiles/gpu_metal_88.dir/gpu_metal_88.f90.o
+[ 34%] Building Fortran object CMakeFiles/gpu_metal_89.dir/gpu_metal_89.f90.o
+[ 34%] Linking Fortran executable gpu_metal_81
+[ 34%] Building Fortran object CMakeFiles/gpu_metal_90.dir/gpu_metal_90.f90.o
+[ 34%] Linking Fortran executable gpu_metal_82
+[ 34%] Built target gpu_metal_74
+[ 34%] Building Fortran object CMakeFiles/gpu_metal_91.dir/gpu_metal_91.f90.o
+[ 34%] Built target gpu_metal_75
+[ 34%] Built target gpu_metal_77
+[ 34%] Building Fortran object CMakeFiles/gpu_metal_93.dir/gpu_metal_93.f90.o
+[ 34%] Building Fortran object CMakeFiles/gpu_metal_92.dir/gpu_metal_92.f90.o
+[ 34%] Linking Fortran executable gpu_metal_84
+[ 34%] Linking Fortran executable gpu_metal_83
+[ 34%] Linking Fortran executable gpu_metal_86
+[ 34%] Built target gpu_metal_79
+[ 35%] Building Fortran object CMakeFiles/gpu_metal_94.dir/gpu_metal_94.f90.o
+[ 35%] Built target gpu_metal_78
+[ 35%] Linking Fortran executable gpu_metal_85
+[ 36%] Linking Fortran executable gpu_metal_88
+[ 36%] Building Fortran object CMakeFiles/gpu_metal_95.dir/gpu_metal_95.f90.o
+[ 36%] Linking Fortran executable gpu_metal_87
+[ 36%] Linking Fortran executable gpu_metal_90
+[ 36%] Built target gpu_metal_80
+[ 36%] Linking Fortran executable gpu_metal_89
+[ 37%] Linking Fortran executable gpu_metal_91
+[ 37%] Building Fortran object CMakeFiles/gpu_metal_96.dir/gpu_metal_96.f90.o
+[ 37%] Linking Fortran executable gpu_metal_93
+[ 37%] Linking Fortran executable gpu_metal_92
+[ 37%] Linking Fortran executable gpu_metal_94
+[ 37%] Linking Fortran executable gpu_metal_95
+[ 37%] Built target gpu_metal_81
+[ 38%] Building Fortran object CMakeFiles/gpu_metal_97.dir/gpu_metal_97.f90.o
+[ 38%] Linking Fortran executable gpu_metal_96
+[ 38%] Built target gpu_metal_82
+[ 38%] Building Fortran object CMakeFiles/gpu_metal_98.dir/gpu_metal_98.f90.o
+[ 38%] Built target gpu_metal_83
+[ 38%] Built target gpu_metal_84
+[ 38%] Building Fortran object CMakeFiles/gpu_metal_99.dir/gpu_metal_99.f90.o
+[ 38%] Built target gpu_metal_86
+[ 38%] Building Fortran object CMakeFiles/gpu_metal_100.dir/gpu_metal_100.f90.o
+[ 39%] Building Fortran object CMakeFiles/gpu_metal_101.dir/gpu_metal_101.f90.o
+[ 39%] Linking Fortran executable gpu_metal_97
+[ 39%] Built target gpu_metal_85
+[ 39%] Built target gpu_metal_87
+[ 39%] Built target gpu_metal_88
+[ 39%] Building Fortran object CMakeFiles/gpu_metal_102.dir/gpu_metal_102.f90.o
+[ 39%] Building Fortran object CMakeFiles/gpu_metal_103.dir/gpu_metal_103.f90.o
+[ 39%] Building Fortran object CMakeFiles/gpu_metal_104.dir/gpu_metal_104.f90.o
+[ 39%] Built target gpu_metal_93
+[ 39%] Linking Fortran executable gpu_metal_98
+[ 39%] Built target gpu_metal_91
+[ 39%] Building Fortran object CMakeFiles/gpu_metal_105.dir/gpu_metal_105.f90.o
+[ 39%] Built target gpu_metal_89
+[ 39%] Building Fortran object CMakeFiles/gpu_metal_106.dir/gpu_metal_106.f90.o
+[ 39%] Building Fortran object CMakeFiles/gpu_metal_107.dir/gpu_metal_107.f90.o
+[ 39%] Built target gpu_metal_90
+[ 39%] Built target gpu_metal_92
+[ 39%] Building Fortran object CMakeFiles/gpu_metal_108.dir/gpu_metal_108.f90.o
+[ 40%] Building Fortran object CMakeFiles/gpu_metal_109.dir/gpu_metal_109.f90.o
+[ 41%] Linking Fortran executable gpu_metal_99
+[ 41%] Built target gpu_metal_95
+[ 41%] Built target gpu_metal_94
+[ 41%] Building Fortran object CMakeFiles/gpu_metal_110.dir/gpu_metal_110.f90.o
+[ 41%] Linking Fortran executable gpu_metal_101
+[ 42%] Building Fortran object CMakeFiles/gpu_metal_111.dir/gpu_metal_111.f90.o
+[ 42%] Linking Fortran executable gpu_metal_100
+[ 42%] Linking Fortran executable gpu_metal_102
+[ 43%] Linking Fortran executable gpu_metal_103
+[ 43%] Linking Fortran executable gpu_metal_105
+[ 43%] Linking Fortran executable gpu_metal_104
+[ 44%] Linking Fortran executable gpu_metal_106
+[ 44%] Built target gpu_metal_96
+[ 44%] Building Fortran object CMakeFiles/gpu_metal_112.dir/gpu_metal_112.f90.o
+[ 44%] Linking Fortran executable gpu_metal_107
+[ 44%] Linking Fortran executable gpu_metal_108
+[ 44%] Linking Fortran executable gpu_metal_109
+[ 44%] Linking Fortran executable gpu_metal_110
+[ 44%] Linking Fortran executable gpu_metal_111
+[ 44%] Built target gpu_metal_97
+[ 44%] Linking Fortran executable gpu_metal_112
+[ 44%] Building Fortran object CMakeFiles/gpu_metal_113.dir/gpu_metal_113.f90.o
+[ 44%] Built target gpu_metal_98
+[ 45%] Building Fortran object CMakeFiles/gpu_metal_114.dir/gpu_metal_114.f90.o
+[ 45%] Built target gpu_metal_99
+[ 45%] Building Fortran object CMakeFiles/gpu_metal_115.dir/gpu_metal_115.f90.o
+[ 45%] Built target gpu_metal_100
+[ 45%] Built target gpu_metal_101
+[ 45%] Building Fortran object CMakeFiles/gpu_metal_116.dir/gpu_metal_116.f90.o
+[ 45%] Building Fortran object CMakeFiles/gpu_metal_117.dir/gpu_metal_117.f90.o
+[ 45%] Built target gpu_metal_102
+[ 45%] Building Fortran object CMakeFiles/gpu_metal_118.dir/gpu_metal_118.f90.o
+[ 45%] Built target gpu_metal_106
+[ 45%] Built target gpu_metal_103
+[ 45%] Building Fortran object CMakeFiles/gpu_metal_119.dir/gpu_metal_119.f90.o
+[ 45%] Built target gpu_metal_105
+[ 45%] Built target gpu_metal_104
+[ 45%] Linking Fortran executable gpu_metal_113
+[ 45%] Building Fortran object CMakeFiles/gpu_metal_120.dir/gpu_metal_120.f90.o
+[ 46%] Building Fortran object CMakeFiles/gpu_metal_121.dir/gpu_metal_121.f90.o
+[ 46%] Building Fortran object CMakeFiles/gpu_metal_122.dir/gpu_metal_122.f90.o
+[ 46%] Linking Fortran executable gpu_metal_114
+[ 46%] Linking Fortran executable gpu_metal_115
+[ 46%] Built target gpu_metal_107
+[ 46%] Building Fortran object CMakeFiles/gpu_metal_123.dir/gpu_metal_123.f90.o
+[ 46%] Built target gpu_metal_108
+[ 46%] Built target gpu_metal_110
+[ 47%] Linking Fortran executable gpu_metal_116
+[ 48%] Building Fortran object CMakeFiles/gpu_metal_124.dir/gpu_metal_124.f90.o
+[ 48%] Building Fortran object CMakeFiles/gpu_metal_125.dir/gpu_metal_125.f90.o
+[ 48%] Built target gpu_metal_109
+[ 48%] Building Fortran object CMakeFiles/gpu_metal_126.dir/gpu_metal_126.f90.o
+[ 48%] Linking Fortran executable gpu_metal_117
+[ 48%] Built target gpu_metal_111
+[ 48%] Linking Fortran executable gpu_metal_118
+[ 48%] Building Fortran object CMakeFiles/gpu_metal_127.dir/gpu_metal_127.f90.o
+[ 48%] Linking Fortran executable gpu_metal_122
+[ 48%] Built target gpu_metal_112
+[ 48%] Linking Fortran executable gpu_metal_123
+[ 49%] Linking Fortran executable gpu_metal_119
+[ 49%] Linking Fortran executable gpu_metal_121
+[ 49%] Building Fortran object CMakeFiles/gpu_metal_128.dir/gpu_metal_128.f90.o
+[ 49%] Linking Fortran executable gpu_metal_120
+[ 49%] Linking Fortran executable gpu_metal_124
+[ 49%] Linking Fortran executable gpu_metal_125
+[ 50%] Linking Fortran executable gpu_metal_126
+[ 50%] Linking Fortran executable gpu_metal_127
+[ 50%] Built target gpu_metal_113
+[ 50%] Built target gpu_metal_115
+[ 50%] Building Fortran object CMakeFiles/gpu_metal_129.dir/gpu_metal_129.f90.o
+[ 50%] Building Fortran object CMakeFiles/gpu_metal_130.dir/gpu_metal_130.f90.o
+[ 50%] Built target gpu_metal_114
+[ 50%] Linking Fortran executable gpu_metal_128
+[ 51%] Building Fortran object CMakeFiles/gpu_metal_131.dir/gpu_metal_131.f90.o
+[ 51%] Built target gpu_metal_116
+[ 51%] Building Fortran object CMakeFiles/gpu_metal_132.dir/gpu_metal_132.f90.o
+[ 51%] Built target gpu_metal_117
+[ 51%] Building Fortran object CMakeFiles/gpu_metal_133.dir/gpu_metal_133.f90.o
+[ 51%] Built target gpu_metal_118
+[ 52%] Linking Fortran executable gpu_metal_129
+[ 52%] Building Fortran object CMakeFiles/gpu_metal_134.dir/gpu_metal_134_mod.f90.o
+[ 52%] Linking Fortran executable gpu_metal_130
+[ 52%] Built target gpu_metal_122
+[ 52%] Built target gpu_metal_121
+[ 52%] Built target gpu_metal_119
+[ 52%] Built target gpu_metal_123
+[ 52%] Building Fortran object CMakeFiles/gpu_metal_135.dir/gpu_metal_135_mod.f90.o
+[ 52%] Building Fortran object CMakeFiles/gpu_metal_137.dir/gpu_metal_137.f90.o
+[ 52%] Building Fortran object CMakeFiles/gpu_metal_136.dir/gpu_metal_136_mod.f90.o
+[ 52%] Built target gpu_metal_120
+[ 53%] Building Fortran object CMakeFiles/gpu_metal_138.dir/gpu_metal_138.f90.o
+[ 53%] Built target gpu_metal_124
+[ 53%] Building Fortran object CMakeFiles/gpu_metal_139.dir/gpu_metal_139.f90.o
+[ 53%] Linking Fortran executable gpu_metal_131
+[ 53%] Building Fortran object CMakeFiles/gpu_metal_140.dir/gpu_metal_140_mod.f90.o
+[ 53%] Built target gpu_metal_125
+[ 53%] Built target gpu_metal_126
+[ 53%] Building Fortran object CMakeFiles/gpu_metal_141.dir/gpu_metal_141.f90.o
+[ 53%] Building Fortran object CMakeFiles/gpu_metal_142.dir/gpu_metal_142_mod.f90.o
+[ 53%] Linking Fortran executable gpu_metal_133
+[ 53%] Linking Fortran executable gpu_metal_132
+[ 53%] Built target gpu_metal_127
+[ 53%] Building Fortran object CMakeFiles/gpu_metal_143.dir/gpu_metal_143.f90.o
+[ 54%] Building Fortran object CMakeFiles/gpu_metal_134.dir/gpu_metal_134.f90.o
+[ 54%] Building Fortran object CMakeFiles/gpu_metal_135.dir/gpu_metal_135.f90.o
+[ 54%] Linking Fortran executable gpu_metal_138
+[ 55%] Building Fortran object CMakeFiles/gpu_metal_140.dir/gpu_metal_140.f90.o
+[ 56%] Building Fortran object CMakeFiles/gpu_metal_136.dir/gpu_metal_136.f90.o
+[ 56%] Linking Fortran executable gpu_metal_137
+[ 56%] Linking Fortran executable gpu_metal_141
+[ 56%] Built target gpu_metal_128
+[ 56%] Linking Fortran executable gpu_metal_139
+[ 57%] Building Fortran object CMakeFiles/gpu_metal_142.dir/gpu_metal_142.f90.o
+[ 58%] Building Fortran object CMakeFiles/gpu_metal_144.dir/gpu_metal_144_mod.f90.o
+[ 58%] Linking Fortran executable gpu_metal_135
+[ 58%] Linking Fortran executable gpu_metal_134
+[ 58%] Linking Fortran executable gpu_metal_143
+[ 58%] Built target gpu_metal_129
+[ 58%] Linking Fortran executable gpu_metal_136
+[ 58%] Building Fortran object CMakeFiles/gpu_metal_145.dir/gpu_metal_145.f90.o
+[ 58%] Built target gpu_metal_130
+[ 58%] Linking Fortran executable gpu_metal_140
+[ 58%] Building Fortran object CMakeFiles/gpu_metal_146.dir/gpu_metal_146.f90.o
+[ 58%] Built target gpu_metal_131
+[ 58%] Built target gpu_metal_133
+[ 58%] Building Fortran object CMakeFiles/gpu_metal_144.dir/gpu_metal_144.f90.o
+[ 58%] Building Fortran object CMakeFiles/gpu_metal_147.dir/gpu_metal_147_activation.f90.o
+[ 58%] Linking Fortran executable gpu_metal_142
+[ 58%] Building Fortran object CMakeFiles/gpu_metal_148.dir/gpu_metal_148.f90.o
+[ 58%] Built target gpu_metal_132
+[ 58%] Building Fortran object CMakeFiles/gpu_metal_149.dir/gpu_metal_149.f90.o
+[ 58%] Linking Fortran executable gpu_metal_145
+[ 59%] Linking Fortran executable gpu_metal_146
+[ 59%] Built target gpu_metal_138
+[ 59%] Built target gpu_metal_137
+[ 59%] Linking Fortran executable gpu_metal_144
+[ 60%] Building Fortran object CMakeFiles/gpu_metal_150.dir/gpu_metal_150.f90.o
+[ 60%] Built target gpu_metal_141
+[ 60%] Building Fortran object CMakeFiles/gpu_metal_147.dir/gpu_metal_147_neural_network.f90.o
+[ 60%] Building Fortran object CMakeFiles/gpu_metal_151.dir/gpu_metal_151_dep.f90.o
+[ 60%] Built target gpu_metal_139
+[ 61%] Linking Fortran executable gpu_metal_148
+[ 62%] Building Fortran object CMakeFiles/gpu_metal_152.dir/gpu_metal_152.f90.o
+[ 62%] Building Fortran object CMakeFiles/gpu_metal_153.dir/gpu_metal_153.f90.o
+[ 62%] Linking Fortran executable gpu_metal_149
+[ 62%] Built target gpu_metal_135
+[ 62%] Built target gpu_metal_134
+[ 62%] Built target gpu_metal_136
+[ 62%] Building Fortran object CMakeFiles/gpu_metal_154.dir/gpu_metal_154.f90.o
+[ 63%] Building Fortran object CMakeFiles/gpu_metal_155.dir/gpu_metal_155.f90.o
+[ 63%] Building Fortran object CMakeFiles/gpu_metal_156.dir/gpu_metal_156.f90.o
+[ 63%] Built target gpu_metal_143
+[ 63%] Built target gpu_metal_140
+[ 63%] Building Fortran object CMakeFiles/gpu_metal_157.dir/gpu_metal_157.f90.o
+[ 63%] Building Fortran object CMakeFiles/gpu_metal_158.dir/gpu_metal_158.f90.o
+[ 63%] Linking Fortran executable gpu_metal_153
+[ 63%] Building Fortran object CMakeFiles/gpu_metal_147.dir/gpu_metal_147.f90.o
+[ 63%] Building Fortran object CMakeFiles/gpu_metal_151.dir/gpu_metal_151_net.f90.o
+[ 63%] Built target gpu_metal_142
+[ 63%] Linking Fortran executable gpu_metal_150
+[ 63%] Building Fortran object CMakeFiles/gpu_metal_159.dir/gpu_metal_159.f90.o
+[ 63%] Linking Fortran executable gpu_metal_152
+[ 63%] Linking Fortran executable gpu_metal_155
+[ 63%] Linking Fortran executable gpu_metal_154
+[ 63%] Linking Fortran executable gpu_metal_156
+[ 63%] Linking Fortran executable gpu_metal_158
+[ 63%] Linking Fortran executable gpu_metal_147
+[ 63%] Built target gpu_metal_145
+[ 64%] Linking Fortran executable gpu_metal_157
+[ 64%] Building Fortran object CMakeFiles/gpu_metal_160.dir/gpu_metal_160.f90.o
+[ 64%] Built target gpu_metal_144
+[ 64%] Building Fortran object CMakeFiles/gpu_metal_151.dir/gpu_metal_151.f90.o
+[ 64%] Built target gpu_metal_146
+[ 64%] Building Fortran object CMakeFiles/gpu_metal_161.dir/gpu_metal_161_mod.f90.o
+[ 64%] Built target gpu_metal_148
+[ 64%] Building Fortran object CMakeFiles/gpu_metal_162.dir/gpu_metal_162.f90.o
+[ 64%] Building Fortran object CMakeFiles/gpu_metal_163.dir/gpu_metal_163.f90.o
+[ 64%] Linking Fortran executable gpu_metal_159
+[ 64%] Built target gpu_metal_149
+[ 64%] Building Fortran object CMakeFiles/gpu_metal_164.dir/gpu_metal_164.f90.o
+[ 64%] Linking Fortran executable gpu_metal_160
+[ 64%] Building Fortran object CMakeFiles/gpu_metal_161.dir/gpu_metal_161.f90.o
+[ 64%] Linking Fortran executable gpu_metal_151
+[ 64%] Built target gpu_metal_153
+[ 64%] Linking Fortran executable gpu_metal_163
+[ 64%] Building Fortran object CMakeFiles/gpu_metal_165.dir/gpu_metal_165.f90.o
+[ 64%] Linking Fortran executable gpu_metal_162
+[ 64%] Built target gpu_metal_150
+[ 64%] Building Fortran object CMakeFiles/gpu_metal_166.dir/gpu_metal_166.f90.o
+[ 64%] Built target gpu_metal_152
+[ 64%] Built target gpu_metal_154
+[ 64%] Built target gpu_metal_156
+[ 65%] Building Fortran object CMakeFiles/gpu_metal_167.dir/gpu_metal_167.f90.o
+[ 65%] Building Fortran object CMakeFiles/gpu_metal_168.dir/gpu_metal_168.f90.o
+[ 65%] Built target gpu_metal_155
+[ 65%] Building Fortran object CMakeFiles/gpu_metal_169.dir/gpu_metal_169.f90.o
+[ 65%] Building Fortran object CMakeFiles/gpu_metal_170.dir/gpu_metal_170.f90.o
+[ 66%] Linking Fortran executable gpu_metal_164
+[ 66%] Built target gpu_metal_147
+[ 66%] Built target gpu_metal_157
+[ 67%] Linking Fortran executable gpu_metal_161
+[ 67%] Building Fortran object CMakeFiles/gpu_metal_171.dir/gpu_metal_171.f90.o
+[ 68%] Building Fortran object CMakeFiles/gpu_metal_172.dir/gpu_metal_172.f90.o
+[ 68%] Built target gpu_metal_158
+[ 68%] Building Fortran object CMakeFiles/gpu_metal_173.dir/gpu_metal_173.f90.o
+[ 68%] Linking Fortran executable gpu_metal_165
+[ 68%] Linking Fortran executable gpu_metal_166
+[ 68%] Linking Fortran executable gpu_metal_169
+[ 68%] Built target gpu_metal_159
+[ 68%] Linking Fortran executable gpu_metal_168
+[ 68%] Building Fortran object CMakeFiles/gpu_metal_174.dir/gpu_metal_174.f90.o
+[ 68%] Linking Fortran executable gpu_metal_167
+[ 68%] Linking Fortran executable gpu_metal_170
+[ 68%] Built target gpu_metal_160
+[ 68%] Linking Fortran executable gpu_metal_172
+[ 68%] Building Fortran object CMakeFiles/gpu_metal_175.dir/gpu_metal_175.f90.o
+[ 68%] Linking Fortran executable gpu_metal_171
+[ 68%] Linking Fortran executable gpu_metal_173
+[ 68%] Built target gpu_metal_151
+[ 68%] Building Fortran object CMakeFiles/gpu_metal_176.dir/gpu_metal_176.f90.o
+[ 68%] Built target gpu_metal_163
+[ 68%] Built target gpu_metal_162
+[ 68%] Building Fortran object CMakeFiles/gpu_metal_178.dir/gpu_metal_178.f90.o
+[ 68%] Building Fortran object CMakeFiles/gpu_metal_177.dir/gpu_metal_177.f90.o
+[ 69%] Linking Fortran executable gpu_metal_174
+[ 69%] Built target gpu_metal_164
+[ 69%] Building Fortran object CMakeFiles/gpu_metal_179.dir/gpu_metal_179.f90.o
+[ 69%] Built target gpu_metal_161
+[ 69%] Building Fortran object CMakeFiles/gpu_metal_180.dir/gpu_metal_180.f90.o
+[ 69%] Built target gpu_metal_166
+[ 69%] Linking Fortran executable gpu_metal_175
+[ 69%] Building Fortran object CMakeFiles/gpu_metal_181.dir/gpu_metal_181.f90.o
+[ 69%] Built target gpu_metal_165
+[ 69%] Linking Fortran executable gpu_metal_178
+[ 69%] Linking Fortran executable gpu_metal_176
+[ 70%] Building Fortran object CMakeFiles/gpu_metal_182.dir/gpu_metal_182.f90.o
+[ 71%] Linking Fortran executable gpu_metal_177
+[ 71%] Built target gpu_metal_170
+[ 71%] Built target gpu_metal_167
+[ 71%] Built target gpu_metal_168
+[ 71%] Building Fortran object CMakeFiles/gpu_metal_183.dir/gpu_metal_183.f90.o
+[ 71%] Building Fortran object CMakeFiles/gpu_metal_184.dir/gpu_metal_184.f90.o
+[ 71%] Building Fortran object CMakeFiles/gpu_metal_185.dir/gpu_metal_185.f90.o
+[ 71%] Built target gpu_metal_169
+[ 71%] Built target gpu_metal_172
+[ 71%] Building Fortran object CMakeFiles/gpu_metal_186.dir/gpu_metal_186.f90.o
+[ 71%] Linking Fortran executable gpu_metal_179
+[ 71%] Building Fortran object CMakeFiles/gpu_metal_187.dir/gpu_metal_187.f90.o
+[ 71%] Linking Fortran executable gpu_metal_180
+[ 71%] Built target gpu_metal_171
+[ 71%] Built target gpu_metal_173
+[ 71%] Building Fortran object CMakeFiles/gpu_metal_188.dir/gpu_metal_188.f90.o
+[ 71%] Building Fortran object CMakeFiles/gpu_metal_189.dir/gpu_metal_189.f90.o
+[ 71%] Linking Fortran executable gpu_metal_182
+[ 71%] Linking Fortran executable gpu_metal_181
+[ 71%] Linking Fortran executable gpu_metal_183
+[ 71%] Linking Fortran executable gpu_metal_186
+[ 71%] Linking Fortran executable gpu_metal_185
+[ 72%] Linking Fortran executable gpu_metal_187
+[ 73%] Linking Fortran executable gpu_metal_184
+[ 73%] Built target gpu_metal_174
+[ 73%] Building Fortran object CMakeFiles/gpu_metal_190.dir/gpu_metal_190.f90.o
+[ 73%] Linking Fortran executable gpu_metal_189
+[ 73%] Built target gpu_metal_176
+[ 73%] Building Fortran object CMakeFiles/gpu_metal_191.dir/gpu_metal_191.f90.o
+[ 73%] Linking Fortran executable gpu_metal_188
+[ 73%] Built target gpu_metal_177
+[ 73%] Built target gpu_metal_175
+[ 74%] Building Fortran object CMakeFiles/gpu_metal_192.dir/gpu_metal_192.f90.o
+[ 74%] Building Fortran object CMakeFiles/gpu_metal_193.dir/gpu_metal_193.f90.o
+[ 74%] Built target gpu_metal_178
+[ 74%] Building Fortran object CMakeFiles/gpu_metal_194.dir/gpu_metal_194.f90.o
+[ 74%] Built target gpu_metal_180
+[ 74%] Linking Fortran executable gpu_metal_190
+[ 74%] Built target gpu_metal_179
+[ 75%] Building Fortran object CMakeFiles/gpu_metal_195.dir/gpu_metal_195.f90.o
+[ 75%] Building Fortran object CMakeFiles/gpu_metal_196.dir/gpu_metal_196.f90.o
+[ 75%] Linking Fortran executable gpu_metal_191
+[ 75%] Built target gpu_metal_182
+[ 75%] Built target gpu_metal_181
+[ 75%] Building Fortran object CMakeFiles/gpu_metal_197.dir/gpu_metal_197.f90.o
+[ 75%] Building Fortran object CMakeFiles/gpu_metal_198.dir/gpu_metal_198.f90.o
+[ 75%] Linking Fortran executable gpu_metal_192
+[ 75%] Linking Fortran executable gpu_metal_194
+[ 75%] Linking Fortran executable gpu_metal_193
+[ 75%] Built target gpu_metal_187
+[ 75%] Built target gpu_metal_183
+[ 75%] Built target gpu_metal_184
+[ 75%] Built target gpu_metal_185
+[ 75%] Built target gpu_metal_186
+[ 75%] Building Fortran object CMakeFiles/gpu_metal_199.dir/gpu_metal_199.f90.o
+[ 75%] Building Fortran object CMakeFiles/gpu_metal_200.dir/gpu_metal_200.f90.o
+[ 75%] Building Fortran object CMakeFiles/gpu_metal_201.dir/gpu_metal_201.f90.o
+[ 76%] Building Fortran object CMakeFiles/gpu_metal_202.dir/gpu_metal_202.f90.o
+[ 76%] Building Fortran object CMakeFiles/gpu_metal_203.dir/gpu_metal_203.f90.o
+[ 76%] Linking Fortran executable gpu_metal_196
+[ 76%] Linking Fortran executable gpu_metal_195
+[ 76%] Built target gpu_metal_189
+[ 76%] Building Fortran object CMakeFiles/gpu_metal_204.dir/gpu_metal_204.f90.o
+[ 77%] Linking Fortran executable gpu_metal_197
+[ 77%] Built target gpu_metal_188
+[ 78%] Building Fortran object CMakeFiles/gpu_metal_205.dir/gpu_metal_205.f90.o
+[ 78%] Linking Fortran executable gpu_metal_198
+[ 78%] Linking Fortran executable gpu_metal_202
+[ 78%] Linking Fortran executable gpu_metal_201
+[ 78%] Linking Fortran executable gpu_metal_200
+[ 78%] Built target gpu_metal_190
+[ 78%] Linking Fortran executable gpu_metal_203
+[ 78%] Linking Fortran executable gpu_metal_199
+[ 78%] Building Fortran object CMakeFiles/gpu_metal_206.dir/gpu_metal_206.f90.o
+[ 78%] Linking Fortran executable gpu_metal_204
+[ 78%] Built target gpu_metal_192
+[ 78%] Built target gpu_metal_191
+[ 78%] Built target gpu_metal_194
+[ 78%] Building Fortran object CMakeFiles/gpu_metal_207.dir/gpu_metal_207.f90.o
+[ 78%] Building Fortran object CMakeFiles/gpu_metal_208.dir/gpu_metal_208.f90.o
+[ 78%] Building Fortran object CMakeFiles/gpu_metal_209.dir/gpu_metal_209.f90.o
+[ 78%] Built target gpu_metal_193
+[ 78%] Building Fortran object CMakeFiles/gpu_metal_210.dir/gpu_metal_210.f90.o
+[ 78%] Linking Fortran executable gpu_metal_205
+[ 78%] Built target gpu_metal_195
+[ 78%] Built target gpu_metal_196
+[ 78%] Building Fortran object CMakeFiles/gpu_metal_211.dir/gpu_metal_211.f90.o
+[ 79%] Building Fortran object CMakeFiles/gpu_metal_212.dir/gpu_metal_212.f90.o
+[ 79%] Built target gpu_metal_197
+[ 79%] Building Fortran object CMakeFiles/gpu_metal_213.dir/gpu_metal_213.f90.o
+[ 79%] Built target gpu_metal_198
+[ 79%] Built target gpu_metal_202
+[ 79%] Linking Fortran executable gpu_metal_209
+[ 79%] Building Fortran object CMakeFiles/gpu_metal_214.dir/gpu_metal_214.f90.o
+[ 79%] Built target gpu_metal_200
+[ 80%] Linking Fortran executable gpu_metal_207
+[ 81%] Building Fortran object CMakeFiles/gpu_metal_215.dir/gpu_metal_215.f90.o
+[ 81%] Built target gpu_metal_201
+[ 81%] Built target gpu_metal_199
+[ 81%] Building Fortran object CMakeFiles/gpu_metal_216.dir/gpu_metal_216.f90.o
+[ 81%] Linking Fortran executable gpu_metal_208
+[ 81%] Building Fortran object CMakeFiles/gpu_metal_217.dir/gpu_metal_217.f90.o
+[ 81%] Linking Fortran executable gpu_metal_210
+[ 82%] Building Fortran object CMakeFiles/gpu_metal_218.dir/gpu_metal_218.f90.o
+[ 82%] Linking Fortran executable gpu_metal_206
+[ 82%] Built target gpu_metal_203
+[ 82%] Building Fortran object CMakeFiles/gpu_metal_219.dir/gpu_metal_219.f90.o
+[ 82%] Linking Fortran executable gpu_metal_212
+[ 82%] Built target gpu_metal_204
+[ 82%] Linking Fortran executable gpu_metal_211
+[ 82%] Building Fortran object CMakeFiles/gpu_metal_220.dir/gpu_metal_220.f90.o
+[ 82%] Linking Fortran executable gpu_metal_213
+[ 82%] Linking Fortran executable gpu_metal_215
+[ 82%] Linking Fortran executable gpu_metal_218
+[ 82%] Built target gpu_metal_205
+[ 82%] Linking Fortran executable gpu_metal_214
+[ 82%] Linking Fortran executable gpu_metal_217
+[ 82%] Building Fortran object CMakeFiles/gpu_metal_221.dir/gpu_metal_221.f90.o
+[ 82%] Linking Fortran executable gpu_metal_219
+[ 82%] Linking Fortran executable gpu_metal_216
+[ 82%] Linking Fortran executable gpu_metal_220
+[ 82%] Built target gpu_metal_207
+[ 82%] Built target gpu_metal_209
+[ 82%] Built target gpu_metal_208
+[ 82%] Building Fortran object CMakeFiles/gpu_metal_222.dir/gpu_metal_222.f90.o
+[ 82%] Built target gpu_metal_210
+[ 82%] Building Fortran object CMakeFiles/gpu_metal_224.dir/gpu_metal_224.f90.o
+[ 82%] Building Fortran object CMakeFiles/gpu_metal_223.dir/gpu_metal_223.f90.o
+[ 82%] Linking Fortran executable gpu_metal_221
+[ 83%] Building Fortran object CMakeFiles/gpu_metal_225.dir/gpu_metal_225.f90.o
+[ 83%] Built target gpu_metal_206
+[ 83%] Building Fortran object CMakeFiles/gpu_metal_226.dir/gpu_metal_226.f90.o
+[ 83%] Built target gpu_metal_212
+[ 83%] Building Fortran object CMakeFiles/gpu_metal_227.dir/gpu_metal_227.f90.o
+[ 83%] Built target gpu_metal_211
+[ 84%] Building Fortran object CMakeFiles/gpu_metal_228.dir/gpu_metal_228.f90.o
+[ 84%] Built target gpu_metal_215
+[ 84%] Built target gpu_metal_214
+[ 84%] Building Fortran object CMakeFiles/gpu_metal_229.dir/gpu_metal_229.f90.o
+[ 84%] Built target gpu_metal_213
+[ 84%] Building Fortran object CMakeFiles/gpu_metal_230.dir/gpu_metal_230.f90.o
+[ 84%] Built target gpu_metal_217
+[ 84%] Building Fortran object CMakeFiles/gpu_metal_231.dir/gpu_metal_231.f90.o
+[ 84%] Linking Fortran executable gpu_metal_225
+[ 84%] Built target gpu_metal_218
+[ 84%] Linking Fortran executable gpu_metal_224
+[ 84%] Building Fortran object CMakeFiles/gpu_metal_232.dir/gpu_metal_232.f90.o
+[ 84%] Built target gpu_metal_216
+[ 84%] Building Fortran object CMakeFiles/gpu_metal_233.dir/gpu_metal_233.f90.o
+[ 84%] Linking Fortran executable gpu_metal_226
+[ 84%] Building Fortran object CMakeFiles/gpu_metal_234.dir/gpu_metal_234.f90.o
+[ 85%] Linking Fortran executable gpu_metal_222
+[ 85%] Linking Fortran executable gpu_metal_227
+[ 85%] Built target gpu_metal_219
+[ 85%] Linking Fortran executable gpu_metal_223
+[ 85%] Building Fortran object CMakeFiles/gpu_metal_235.dir/gpu_metal_235.f90.o
+[ 85%] Built target gpu_metal_220
+[ 85%] Building Fortran object CMakeFiles/gpu_metal_236.dir/gpu_metal_236.f90.o
+[ 85%] Linking Fortran executable gpu_metal_228
+[ 85%] Linking Fortran executable gpu_metal_229
+[ 85%] Built target gpu_metal_221
+[ 85%] Building Fortran object CMakeFiles/gpu_metal_237.dir/gpu_metal_237.f90.o
+[ 85%] Linking Fortran executable gpu_metal_230
+[ 86%] Linking Fortran executable gpu_metal_232
+[ 86%] Linking Fortran executable gpu_metal_233
+[ 86%] Linking Fortran executable gpu_metal_231
+[ 86%] Linking Fortran executable gpu_metal_234
+[ 87%] Linking Fortran executable gpu_metal_235
+[ 87%] Built target gpu_metal_224
+[ 87%] Built target gpu_metal_226
+[ 87%] Built target gpu_metal_225
+[ 88%] Building Fortran object CMakeFiles/gpu_metal_238.dir/gpu_metal_238.f90.o
+[ 88%] Building Fortran object CMakeFiles/gpu_metal_239.dir/gpu_metal_239.f90.o
+[ 89%] Building Fortran object CMakeFiles/gpu_metal_240.dir/gpu_metal_240.f90.o
+[ 89%] Linking Fortran executable gpu_metal_236
+[ 89%] Built target gpu_metal_222
+[ 89%] Building Fortran object CMakeFiles/gpu_metal_241.dir/gpu_metal_241.f90.o
+[ 89%] Built target gpu_metal_223
+[ 89%] Built target gpu_metal_227
+[ 89%] Building Fortran object CMakeFiles/gpu_metal_242.dir/gpu_metal_242.f90.o
+[ 89%] Building Fortran object CMakeFiles/gpu_metal_243.dir/gpu_metal_243.f90.o
+[ 89%] Linking Fortran executable gpu_metal_237
+[ 89%] Built target gpu_metal_228
+[ 89%] Built target gpu_metal_229
+[ 89%] Building Fortran object CMakeFiles/gpu_metal_244.dir/gpu_metal_244.f90.o
+[ 89%] Building Fortran object CMakeFiles/gpu_metal_245.dir/gpu_metal_245.f90.o
+[ 89%] Built target gpu_metal_230
+[ 89%] Built target gpu_metal_232
+[ 89%] Linking Fortran executable gpu_metal_238
+[ 89%] Building Fortran object CMakeFiles/gpu_metal_246.dir/gpu_metal_246.f90.o
+[ 89%] Linking Fortran executable gpu_metal_239
+[ 89%] Building Fortran object CMakeFiles/gpu_metal_247.dir/gpu_metal_247.f90.o
+[ 89%] Built target gpu_metal_233
+[ 90%] Building Fortran object CMakeFiles/gpu_metal_248.dir/gpu_metal_248.f90.o
+[ 90%] Linking Fortran executable gpu_metal_243
+[ 90%] Linking Fortran executable gpu_metal_241
+[ 90%] Linking Fortran executable gpu_metal_240
+[ 90%] Built target gpu_metal_231
+[ 91%] Linking Fortran executable gpu_metal_242
+[ 91%] Building Fortran object CMakeFiles/gpu_metal_249.dir/gpu_metal_249_mod.f90.o
+[ 91%] Built target gpu_metal_234
+[ 91%] Building Fortran object CMakeFiles/gpu_metal_250.dir/gpu_metal_250.f90.o
+[ 91%] Built target gpu_metal_235
+[ 91%] Building Fortran object CMakeFiles/gpu_metal_251.dir/gpu_metal_251.f90.o
+[ 91%] Built target gpu_metal_236
+[ 92%] Building Fortran object CMakeFiles/gpu_metal_252.dir/gpu_metal_252.f90.o
+[ 93%] Linking Fortran executable gpu_metal_245
+[ 93%] Linking Fortran executable gpu_metal_247
+[ 93%] Linking Fortran executable gpu_metal_244
+[ 93%] Built target gpu_metal_237
+[ 93%] Linking Fortran executable gpu_metal_248
+[ 93%] Building Fortran object CMakeFiles/gpu_metal_253.dir/gpu_metal_253.f90.o
+[ 93%] Linking Fortran executable gpu_metal_246
+[ 93%] Linking Fortran executable gpu_metal_250
+[ 93%] Built target gpu_metal_238
+[ 93%] Building Fortran object CMakeFiles/gpu_metal_254.dir/gpu_metal_254.f90.o
+[ 93%] Built target gpu_metal_243
+[ 94%] Building Fortran object CMakeFiles/gpu_metal_255.dir/gpu_metal_255.f90.o
+[ 94%] Built target gpu_metal_241
+[ 94%] Linking Fortran executable gpu_metal_252
+[ 94%] Building Fortran object CMakeFiles/gpu_metal_256.dir/gpu_metal_256.f90.o
+[ 94%] Built target gpu_metal_239
+[ 94%] Built target gpu_metal_240
+[ 94%] Building Fortran object CMakeFiles/gpu_metal_257.dir/gpu_metal_257.f90.o
+[ 95%] Building Fortran object CMakeFiles/gpu_metal_258.dir/gpu_metal_258.f90.o
+[ 95%] Linking Fortran executable gpu_metal_253
+[ 95%] Linking Fortran executable gpu_metal_251
+[ 95%] Built target gpu_metal_242
+[ 95%] Building Fortran object CMakeFiles/gpu_metal_259.dir/gpu_metal_259.f90.o
+[ 95%] Building Fortran object CMakeFiles/gpu_metal_249.dir/gpu_metal_249.f90.o
+[ 95%] Built target gpu_metal_247
+[ 95%] Built target gpu_metal_245
+[ 95%] Building Fortran object CMakeFiles/gpu_metal_260.dir/gpu_metal_260.f90.o
+[ 95%] Building Fortran object CMakeFiles/gpu_metal_261.dir/gpu_metal_261.f90.o
+[ 95%] Built target gpu_metal_244
+[ 95%] Built target gpu_metal_248
+[ 95%] Linking Fortran executable gpu_metal_254
+[ 95%] Building Fortran object CMakeFiles/gpu_metal_262.dir/gpu_metal_262.f90.o
+[ 95%] Building Fortran object CMakeFiles/gpu_metal_263.dir/gpu_metal_263.f90.o
+[ 95%] Built target gpu_metal_246
+[ 95%] Building Fortran object CMakeFiles/gpu_metal_264.dir/gpu_metal_264.f90.o
+[ 95%] Linking Fortran executable gpu_metal_256
+[ 95%] Linking Fortran executable gpu_metal_258
+[ 95%] Built target gpu_metal_250
+[ 95%] Linking Fortran executable gpu_metal_257
+[ 96%] Building Fortran object CMakeFiles/gpu_metal_265.dir/gpu_metal_265.f90.o
+[ 96%] Linking Fortran executable gpu_metal_249
+[ 96%] Linking Fortran executable gpu_metal_255
+[ 96%] Built target gpu_metal_252
+[ 96%] Building Fortran object CMakeFiles/gpu_metal_266.dir/gpu_metal_266.f90.o
+[ 96%] Linking Fortran executable gpu_metal_259
+[ 96%] Built target gpu_metal_251
+[ 96%] Linking Fortran executable gpu_metal_263
+[ 96%] Built target gpu_metal_253
+[ 96%] Linking Fortran executable gpu_metal_260
+[ 96%] Building Fortran object CMakeFiles/gpu_metal_267.dir/gpu_metal_267_mod.f90.o
+[ 96%] Linking Fortran executable gpu_metal_264
+[ 96%] Linking Fortran executable gpu_metal_261
+[ 96%] Building Fortran object CMakeFiles/gpu_metal_268.dir/gpu_metal_268_mod.f90.o
+[ 96%] Linking Fortran executable gpu_metal_265
+[ 97%] Linking Fortran executable gpu_metal_262
+[ 97%] Linking Fortran executable gpu_metal_266
+[ 97%] Building Fortran object CMakeFiles/gpu_metal_268.dir/gpu_metal_268.f90.o
+[ 97%] Built target gpu_metal_254
+[ 97%] Built target gpu_metal_257
+[ 98%] Building Fortran object CMakeFiles/gpu_metal_267.dir/gpu_metal_267.f90.o
+[ 98%] Building Fortran object CMakeFiles/gpu_metal_269.dir/gpu_metal_269_mod.f90.o
+[ 98%] Built target gpu_metal_256
+[ 98%] Building Fortran object CMakeFiles/gpu_metal_270.dir/gpu_metal_270_mod.f90.o
+[ 98%] Built target gpu_metal_258
+[ 98%] Built target gpu_metal_249
+[ 98%] Built target gpu_metal_255
+[ 98%] Built target gpu_metal_259
+[ 98%] Linking Fortran executable gpu_metal_268
+[ 98%] Built target gpu_metal_263
+[ 98%] Built target gpu_metal_264
+[ 98%] Built target gpu_metal_261
+[ 98%] Building Fortran object CMakeFiles/gpu_metal_270.dir/gpu_metal_270.f90.o
+[ 99%] Linking Fortran executable gpu_metal_267
+[ 99%] Built target gpu_metal_260
+[ 99%] Building Fortran object CMakeFiles/gpu_metal_269.dir/gpu_metal_269.f90.o
+[ 99%] Built target gpu_metal_265
+[ 99%] Built target gpu_metal_262
+[ 99%] Built target gpu_metal_266
+[100%] Linking Fortran executable gpu_metal_270
+[100%] Linking Fortran executable gpu_metal_269
+[100%] Built target gpu_metal_268
+[100%] Built target gpu_metal_267
+[100%] Built target gpu_metal_270
+[100%] Built target gpu_metal_269
+Test project /Users/ondrej/repos/lfortran-3/integration_tests/test-metal
+        Start   1: gpu_metal_01
+        Start   2: gpu_metal_02
+        Start   3: gpu_metal_03
+        Start   4: gpu_metal_04
+        Start   5: gpu_metal_05
+        Start   6: gpu_metal_06
+        Start   7: gpu_metal_07
+        Start   8: gpu_metal_08
+        Start   9: gpu_metal_09
+        Start  10: gpu_metal_10
+        Start  11: gpu_metal_11
+        Start  12: gpu_metal_12
+        Start  13: gpu_metal_13
+        Start  14: gpu_metal_14
+        Start  15: gpu_metal_15
+        Start  16: gpu_metal_16
+  1/270 Test   #4: gpu_metal_04 .....................   Passed    0.04 sec
+  2/270 Test  #13: gpu_metal_13 .....................   Passed    0.01 sec
+        Start  17: gpu_metal_17
+        Start  18: gpu_metal_18
+  3/270 Test   #2: gpu_metal_02 .....................   Passed    0.10 sec
+        Start  19: gpu_metal_19
+  4/270 Test   #1: gpu_metal_01 .....................   Passed    0.11 sec
+        Start  20: gpu_metal_20
+  5/270 Test   #3: gpu_metal_03 .....................   Passed    0.14 sec
+        Start  21: gpu_metal_21
+  6/270 Test  #21: gpu_metal_21 .....................   Passed    0.01 sec
+        Start  22: gpu_metal_22
+  7/270 Test   #5: gpu_metal_05 .....................   Passed    0.19 sec
+  8/270 Test   #6: gpu_metal_06 .....................   Passed    0.19 sec
+  9/270 Test   #7: gpu_metal_07 .....................   Passed    0.19 sec
+        Start  23: gpu_metal_23
+        Start  24: gpu_metal_24
+        Start  25: gpu_metal_25
+ 10/270 Test   #8: gpu_metal_08 .....................   Passed    0.19 sec
+ 11/270 Test   #9: gpu_metal_09 .....................   Passed    0.19 sec
+ 12/270 Test  #11: gpu_metal_11 .....................   Passed    0.18 sec
+ 13/270 Test  #12: gpu_metal_12 .....................   Passed    0.18 sec
+ 14/270 Test  #17: gpu_metal_17 .....................   Passed    0.16 sec
+        Start  26: gpu_metal_26
+        Start  27: gpu_metal_27
+        Start  28: gpu_metal_28
+        Start  29: gpu_metal_29
+        Start  30: gpu_metal_30
+ 15/270 Test  #10: gpu_metal_10 .....................   Passed    0.19 sec
+ 16/270 Test  #14: gpu_metal_14 .....................   Passed    0.18 sec
+ 17/270 Test  #15: gpu_metal_15 .....................   Passed    0.17 sec
+ 18/270 Test  #18: gpu_metal_18 .....................   Passed    0.16 sec
+        Start  31: gpu_metal_31
+        Start  32: gpu_metal_32
+        Start  33: gpu_metal_33
+        Start  34: gpu_metal_34
+ 19/270 Test  #16: gpu_metal_16 .....................   Passed    0.18 sec
+        Start  35: gpu_metal_35
+ 20/270 Test  #22: gpu_metal_22 .....................   Passed    0.07 sec
+        Start  36: gpu_metal_36
+ 21/270 Test  #20: gpu_metal_20 .....................   Passed    0.12 sec
+        Start  37: gpu_metal_37
+ 22/270 Test  #19: gpu_metal_19 .....................   Passed    0.12 sec
+        Start  38: gpu_metal_38
+ 23/270 Test  #37: gpu_metal_37 .....................   Passed    0.01 sec
+        Start  39: gpu_metal_39
+ 24/270 Test  #23: gpu_metal_23 .....................   Passed    0.14 sec
+ 25/270 Test  #38: gpu_metal_38 .....................   Passed    0.11 sec
+        Start  40: gpu_metal_40
+        Start  41: gpu_metal_41
+ 26/270 Test  #29: gpu_metal_29 .....................   Passed    0.14 sec
+ 27/270 Test  #35: gpu_metal_35 .....................   Passed    0.13 sec
+        Start  42: gpu_metal_42
+        Start  43: gpu_metal_43
+ 28/270 Test  #33: gpu_metal_33 .....................   Passed    0.14 sec
+ 29/270 Test  #39: gpu_metal_39 .....................   Passed    0.12 sec
+        Start  44: gpu_metal_44
+        Start  45: gpu_metal_45
+ 30/270 Test  #32: gpu_metal_32 .....................   Passed    0.14 sec
+ 31/270 Test  #31: gpu_metal_31 .....................   Passed    0.15 sec
+ 32/270 Test  #36: gpu_metal_36 .....................   Passed    0.14 sec
+        Start  46: gpu_metal_46
+        Start  47: gpu_metal_47
+        Start  48: gpu_metal_48
+ 33/270 Test  #24: gpu_metal_24 .....................   Passed    0.16 sec
+ 34/270 Test  #25: gpu_metal_25 .....................   Passed    0.16 sec
+ 35/270 Test  #26: gpu_metal_26 .....................   Passed    0.16 sec
+ 36/270 Test  #28: gpu_metal_28 .....................   Passed    0.16 sec
+ 37/270 Test  #30: gpu_metal_30 .....................   Passed    0.16 sec
+ 38/270 Test  #34: gpu_metal_34 .....................   Passed    0.15 sec
+        Start  49: gpu_metal_49
+        Start  50: gpu_metal_50
+        Start  51: gpu_metal_51
+        Start  52: gpu_metal_52
+        Start  53: gpu_metal_53
+        Start  54: gpu_metal_54
+ 39/270 Test  #47: gpu_metal_47 .....................   Passed    0.01 sec
+        Start  55: gpu_metal_55
+ 40/270 Test  #27: gpu_metal_27 .....................   Passed    0.22 sec
+        Start  56: gpu_metal_56
+ 41/270 Test  #43: gpu_metal_43 .....................   Passed    0.18 sec
+ 42/270 Test  #49: gpu_metal_49 .....................   Passed    0.17 sec
+ 43/270 Test  #56: gpu_metal_56 .....................   Passed    0.11 sec
+        Start  57: gpu_metal_57
+        Start  58: gpu_metal_58
+        Start  59: gpu_metal_59
+ 44/270 Test  #40: gpu_metal_40 .....................   Passed    0.20 sec
+ 45/270 Test  #41: gpu_metal_41 .....................   Passed    0.20 sec
+ 46/270 Test  #42: gpu_metal_42 .....................   Passed    0.20 sec
+ 47/270 Test  #44: gpu_metal_44 .....................   Passed    0.19 sec
+ 48/270 Test  #45: gpu_metal_45 .....................   Passed    0.19 sec
+ 49/270 Test  #46: gpu_metal_46 .....................   Passed    0.19 sec
+ 50/270 Test  #48: gpu_metal_48 .....................   Passed    0.18 sec
+ 51/270 Test  #50: gpu_metal_50 .....................   Passed    0.18 sec
+ 52/270 Test  #52: gpu_metal_52 .....................   Passed    0.18 sec
+ 53/270 Test  #53: gpu_metal_53 .....................   Passed    0.18 sec
+        Start  60: gpu_metal_60
+        Start  61: gpu_metal_61
+        Start  62: gpu_metal_62
+        Start  63: gpu_metal_63
+        Start  64: gpu_metal_64
+        Start  65: gpu_metal_65
+        Start  66: gpu_metal_66
+        Start  67: gpu_metal_67
+        Start  68: gpu_metal_68
+        Start  69: gpu_metal_69
+ 54/270 Test  #51: gpu_metal_51 .....................   Passed    0.21 sec
+        Start  70: gpu_metal_70
+ 55/270 Test  #60: gpu_metal_60 .....................   Passed    0.03 sec
+        Start  71: gpu_metal_71
+ 56/270 Test  #54: gpu_metal_54 .....................   Passed    0.25 sec
+        Start  72: gpu_metal_72
+ 57/270 Test  #58: gpu_metal_58 .....................   Passed    0.09 sec
+        Start  73: gpu_metal_73
+ 58/270 Test  #57: gpu_metal_57 .....................   Passed    0.10 sec
+        Start  74: gpu_metal_74
+ 59/270 Test  #55: gpu_metal_55 .....................   Passed    0.28 sec
+        Start  75: gpu_metal_75
+ 60/270 Test  #61: gpu_metal_61 .....................   Passed    0.21 sec
+ 61/270 Test  #66: gpu_metal_66 .....................   Passed    0.20 sec
+ 62/270 Test  #67: gpu_metal_67 .....................   Passed    0.19 sec
+        Start  76: gpu_metal_76
+        Start  77: gpu_metal_77
+        Start  78: gpu_metal_78
+ 63/270 Test  #59: gpu_metal_59 .....................   Passed    0.22 sec
+ 64/270 Test  #62: gpu_metal_62 .....................   Passed    0.21 sec
+ 65/270 Test  #63: gpu_metal_63 .....................   Passed    0.21 sec
+ 66/270 Test  #64: gpu_metal_64 .....................   Passed    0.21 sec
+ 67/270 Test  #65: gpu_metal_65 .....................   Passed    0.20 sec
+ 68/270 Test  #68: gpu_metal_68 .....................   Passed    0.20 sec
+ 69/270 Test  #69: gpu_metal_69 .....................   Passed    0.19 sec
+ 70/270 Test  #71: gpu_metal_71 .....................   Passed    0.19 sec
+ 71/270 Test  #73: gpu_metal_73 .....................   Passed    0.14 sec
+ 72/270 Test  #74: gpu_metal_74 .....................   Passed    0.13 sec
+        Start  79: gpu_metal_79
+        Start  80: gpu_metal_80
+        Start  81: gpu_metal_81
+        Start  82: gpu_metal_82
+        Start  83: gpu_metal_83
+        Start  84: gpu_metal_84
+        Start  85: gpu_metal_85
+        Start  86: gpu_metal_86
+        Start  87: gpu_metal_87
+        Start  88: gpu_metal_88
+ 73/270 Test  #70: gpu_metal_70 .....................   Passed    0.23 sec
+ 74/270 Test  #75: gpu_metal_75 .....................   Passed    0.15 sec
+        Start  89: gpu_metal_89
+        Start  90: gpu_metal_90
+ 75/270 Test  #72: gpu_metal_72 .....................   Passed    0.24 sec
+        Start  91: gpu_metal_91
+ 76/270 Test  #84: gpu_metal_84 .....................   Passed    0.17 sec
+        Start  92: gpu_metal_92
+ 77/270 Test  #76: gpu_metal_76 .....................   Passed    0.20 sec
+        Start  93: gpu_metal_93
+ 78/270 Test  #77: gpu_metal_77 .....................   Passed    0.20 sec
+ 79/270 Test  #79: gpu_metal_79 .....................   Passed    0.20 sec
+        Start  94: gpu_metal_94
+        Start  95: gpu_metal_95
+ 80/270 Test  #80: gpu_metal_80 .....................   Passed    0.19 sec
+ 81/270 Test  #78: gpu_metal_78 .....................   Passed    0.20 sec
+ 82/270 Test  #81: gpu_metal_81 .....................   Passed    0.19 sec
+ 83/270 Test  #83: gpu_metal_83 .....................   Passed    0.19 sec
+ 84/270 Test  #87: gpu_metal_87 .....................   Passed    0.17 sec
+        Start  96: gpu_metal_96
+        Start  97: gpu_metal_97
+        Start  98: gpu_metal_98
+        Start  99: gpu_metal_99
+        Start 100: gpu_metal_100
+ 85/270 Test  #85: gpu_metal_85 .....................   Passed    0.19 sec
+ 86/270 Test  #86: gpu_metal_86 .....................   Passed    0.19 sec
+ 87/270 Test  #88: gpu_metal_88 .....................   Passed    0.18 sec
+ 88/270 Test  #90: gpu_metal_90 .....................   Passed    0.18 sec
+        Start 101: gpu_metal_101
+        Start 102: gpu_metal_102
+        Start 103: gpu_metal_103
+        Start 104: gpu_metal_104
+ 89/270 Test  #82: gpu_metal_82 .....................   Passed    0.21 sec
+        Start 105: gpu_metal_105
+ 90/270 Test #101: gpu_metal_101 ....................   Passed    0.01 sec
+        Start 106: gpu_metal_106
+ 91/270 Test  #91: gpu_metal_91 .....................   Passed    0.17 sec
+        Start 107: gpu_metal_107
+ 92/270 Test  #89: gpu_metal_89 .....................   Passed    0.24 sec
+        Start 108: gpu_metal_108
+ 93/270 Test  #92: gpu_metal_92 .....................   Passed    0.19 sec
+ 94/270 Test  #93: gpu_metal_93 .....................   Passed    0.19 sec
+ 95/270 Test  #99: gpu_metal_99 .....................   Passed    0.18 sec
+ 96/270 Test #100: gpu_metal_100 ....................   Passed    0.17 sec
+ 97/270 Test #102: gpu_metal_102 ....................   Passed    0.17 sec
+ 98/270 Test #104: gpu_metal_104 ....................   Passed    0.17 sec
+        Start 109: gpu_metal_109
+        Start 110: gpu_metal_110
+        Start 111: gpu_metal_111
+        Start 112: gpu_metal_112
+        Start 113: gpu_metal_113
+        Start 114: gpu_metal_114
+ 99/270 Test  #95: gpu_metal_95 .....................   Passed    0.21 sec
+100/270 Test  #97: gpu_metal_97 .....................   Passed    0.20 sec
+101/270 Test #103: gpu_metal_103 ....................   Passed    0.19 sec
+        Start 115: gpu_metal_115
+        Start 116: gpu_metal_116
+        Start 117: gpu_metal_117
+102/270 Test #105: gpu_metal_105 ....................   Passed    0.20 sec
+103/270 Test  #96: gpu_metal_96 .....................   Passed    0.22 sec
+        Start 118: gpu_metal_118
+        Start 119: gpu_metal_119
+104/270 Test #106: gpu_metal_106 ....................   Passed    0.27 sec
+        Start 120: gpu_metal_120
+105/270 Test  #98: gpu_metal_98 .....................   Passed    0.29 sec
+        Start 121: gpu_metal_121
+106/270 Test  #94: gpu_metal_94 .....................   Passed    0.30 sec
+107/270 Test #107: gpu_metal_107 ....................   Passed    0.22 sec
+        Start 122: gpu_metal_122
+        Start 123: gpu_metal_123
+108/270 Test #108: gpu_metal_108 ....................   Passed    0.23 sec
+        Start 124: gpu_metal_124
+109/270 Test #109: gpu_metal_109 ....................   Passed    0.21 sec
+110/270 Test #110: gpu_metal_110 ....................   Passed    0.21 sec
+        Start 125: gpu_metal_125
+        Start 126: gpu_metal_126
+111/270 Test #113: gpu_metal_113 ....................   Passed    0.20 sec
+112/270 Test #114: gpu_metal_114 ....................   Passed    0.20 sec
+113/270 Test #118: gpu_metal_118 ....................   Passed    0.18 sec
+        Start 127: gpu_metal_127
+        Start 128: gpu_metal_128
+        Start 129: gpu_metal_129
+114/270 Test #121: gpu_metal_121 ....................   Passed    0.12 sec
+115/270 Test #124: gpu_metal_124 ....................   Passed    0.11 sec
+116/270 Test #115: gpu_metal_115 ....................   Passed    0.21 sec
+117/270 Test #111: gpu_metal_111 ....................   Passed    0.22 sec
+118/270 Test #112: gpu_metal_112 ....................   Passed    0.22 sec
+119/270 Test #116: gpu_metal_116 ....................   Passed    0.21 sec
+120/270 Test #120: gpu_metal_120 ....................   Passed    0.13 sec
+        Start 130: gpu_metal_130
+        Start 131: gpu_metal_131
+        Start 132: gpu_metal_132
+        Start 133: gpu_metal_133
+        Start 134: gpu_metal_134
+        Start 135: gpu_metal_135
+        Start 136: gpu_metal_136
+121/270 Test #117: gpu_metal_117 ....................   Passed    0.22 sec
+122/270 Test #122: gpu_metal_122 ....................   Passed    0.14 sec
+        Start 137: gpu_metal_137
+        Start 138: gpu_metal_138
+123/270 Test #123: gpu_metal_123 ....................   Passed    0.15 sec
+        Start 139: gpu_metal_139
+124/270 Test #119: gpu_metal_119 ....................   Passed    0.28 sec
+        Start 140: gpu_metal_140
+125/270 Test #125: gpu_metal_125 ....................   Passed    0.12 sec
+        Start 141: gpu_metal_141
+126/270 Test #128: gpu_metal_128 ....................   Passed    0.12 sec
+        Start 142: gpu_metal_142
+127/270 Test #127: gpu_metal_127 ....................   Passed    0.16 sec
+        Start 143: gpu_metal_143
+128/270 Test #126: gpu_metal_126 ....................   Passed    0.18 sec
+        Start 144: gpu_metal_144
+129/270 Test #131: gpu_metal_131 ....................   Passed    0.18 sec
+130/270 Test #132: gpu_metal_132 ....................   Passed    0.18 sec
+131/270 Test #133: gpu_metal_133 ....................   Passed    0.18 sec
+132/270 Test #137: gpu_metal_137 ....................   Passed    0.17 sec
+133/270 Test #139: gpu_metal_139 ....................   Passed    0.16 sec
+        Start 145: gpu_metal_145
+        Start 146: gpu_metal_146
+        Start 147: gpu_metal_147
+        Start 148: gpu_metal_148
+        Start 149: gpu_metal_149
+134/270 Test #129: gpu_metal_129 ....................   Passed    0.20 sec
+135/270 Test #130: gpu_metal_130 ....................   Passed    0.20 sec
+136/270 Test #138: gpu_metal_138 ....................   Passed    0.17 sec
+        Start 150: gpu_metal_150
+        Start 151: gpu_metal_151
+        Start 152: gpu_metal_152
+137/270 Test #141: gpu_metal_141 ....................   Passed    0.11 sec
+        Start 153: gpu_metal_153
+138/270 Test #135: gpu_metal_135 ....................   Passed    0.29 sec
+        Start 154: gpu_metal_154
+139/270 Test #134: gpu_metal_134 ....................   Passed    0.29 sec
+140/270 Test #136: gpu_metal_136 ....................   Passed    0.29 sec
+141/270 Test #140: gpu_metal_140 ....................   Passed    0.21 sec
+142/270 Test #142: gpu_metal_142 ....................   Passed    0.19 sec
+        Start 155: gpu_metal_155
+        Start 156: gpu_metal_156
+        Start 157: gpu_metal_157
+        Start 158: gpu_metal_158
+143/270 Test #154: gpu_metal_154 ....................   Passed    0.02 sec
+        Start 159: gpu_metal_159
+144/270 Test #153: gpu_metal_153 ....................   Passed    0.13 sec
+        Start 160: gpu_metal_160
+145/270 Test #143: gpu_metal_143 ....................   Passed    0.18 sec
+146/270 Test #145: gpu_metal_145 ....................   Passed    0.15 sec
+147/270 Test #149: gpu_metal_149 ....................   Passed    0.14 sec
+148/270 Test #150: gpu_metal_150 ....................   Passed    0.14 sec
+        Start 161: gpu_metal_161
+        Start 162: gpu_metal_162
+        Start 163: gpu_metal_163
+        Start 164: gpu_metal_164
+149/270 Test #162: gpu_metal_162 ....................   Passed    0.01 sec
+        Start 165: gpu_metal_165
+150/270 Test #148: gpu_metal_148 ....................   Passed    0.16 sec
+151/270 Test #152: gpu_metal_152 ....................   Passed    0.15 sec
+        Start 166: gpu_metal_166
+        Start 167: gpu_metal_167
+152/270 Test #146: gpu_metal_146 ....................   Passed    0.17 sec
+        Start 168: gpu_metal_168
+153/270 Test #167: gpu_metal_167 ....................   Passed    0.01 sec
+        Start 169: gpu_metal_169
+154/270 Test #151: gpu_metal_151 ....................   Passed    0.22 sec
+        Start 170: gpu_metal_170
+155/270 Test #147: gpu_metal_147 ....................   Passed    0.23 sec
+        Start 171: gpu_metal_171
+156/270 Test #144: gpu_metal_144 ....................   Passed    0.27 sec
+        Start 172: gpu_metal_172
+157/270 Test #164: gpu_metal_164 ....................   Passed    0.12 sec
+        Start 173: gpu_metal_173
+158/270 Test #155: gpu_metal_155 ....................   Passed    0.16 sec
+        Start 174: gpu_metal_174
+159/270 Test #163: gpu_metal_163 ....................   Passed    0.12 sec
+        Start 175: gpu_metal_175
+160/270 Test #159: gpu_metal_159 ....................   Passed    0.15 sec
+        Start 176: gpu_metal_176
+161/270 Test #156: gpu_metal_156 ....................   Passed    0.16 sec
+        Start 177: gpu_metal_177
+162/270 Test #157: gpu_metal_157 ....................   Passed    0.16 sec
+163/270 Test #160: gpu_metal_160 ....................   Passed    0.15 sec
+        Start 178: gpu_metal_178
+        Start 179: gpu_metal_179
+164/270 Test #177: gpu_metal_177 ....................   Passed    0.01 sec
+        Start 180: gpu_metal_180
+165/270 Test #165: gpu_metal_165 ....................   Passed    0.15 sec
+        Start 181: gpu_metal_181
+166/270 Test #170: gpu_metal_170 ....................   Passed    0.07 sec
+167/270 Test #172: gpu_metal_172 ....................   Passed    0.07 sec
+        Start 182: gpu_metal_182
+        Start 183: gpu_metal_183
+168/270 Test #158: gpu_metal_158 ....................   Passed    0.18 sec
+169/270 Test #166: gpu_metal_166 ....................   Passed    0.14 sec
+170/270 Test #171: gpu_metal_171 ....................   Passed    0.07 sec
+        Start 184: gpu_metal_184
+        Start 185: gpu_metal_185
+        Start 186: gpu_metal_186
+171/270 Test #169: gpu_metal_169 ....................   Passed    0.14 sec
+        Start 187: gpu_metal_187
+172/270 Test #168: gpu_metal_168 ....................   Passed    0.16 sec
+        Start 188: gpu_metal_188
+173/270 Test #161: gpu_metal_161 ....................   Passed    0.22 sec
+        Start 189: gpu_metal_189
+174/270 Test #173: gpu_metal_173 ....................   Passed    0.13 sec
+        Start 190: gpu_metal_190
+175/270 Test #174: gpu_metal_174 ....................   Passed    0.15 sec
+        Start 191: gpu_metal_191
+176/270 Test #180: gpu_metal_180 ....................   Passed    0.16 sec
+        Start 192: gpu_metal_192
+177/270 Test #176: gpu_metal_176 ....................   Passed    0.19 sec
+        Start 193: gpu_metal_193
+178/270 Test #189: gpu_metal_189 ....................   Passed    0.11 sec
+179/270 Test #175: gpu_metal_175 ....................   Passed    0.20 sec
+180/270 Test #178: gpu_metal_178 ....................   Passed    0.18 sec
+181/270 Test #181: gpu_metal_181 ....................   Passed    0.17 sec
+        Start 194: gpu_metal_194
+        Start 195: gpu_metal_195
+        Start 196: gpu_metal_196
+        Start 197: gpu_metal_197
+182/270 Test #179: gpu_metal_179 ....................   Passed    0.20 sec
+183/270 Test #187: gpu_metal_187 ....................   Passed    0.18 sec
+        Start 198: gpu_metal_198
+        Start 199: gpu_metal_199
+184/270 Test #183: gpu_metal_183 ....................   Passed    0.20 sec
+185/270 Test #190: gpu_metal_190 ....................   Passed    0.11 sec
+186/270 Test #185: gpu_metal_185 ....................   Passed    0.19 sec
+187/270 Test #182: gpu_metal_182 ....................   Passed    0.20 sec
+188/270 Test #184: gpu_metal_184 ....................   Passed    0.19 sec
+189/270 Test #186: gpu_metal_186 ....................   Passed    0.19 sec
+190/270 Test #188: gpu_metal_188 ....................   Passed    0.17 sec
+        Start 200: gpu_metal_200
+        Start 201: gpu_metal_201
+        Start 202: gpu_metal_202
+        Start 203: gpu_metal_203
+        Start 204: gpu_metal_204
+        Start 205: gpu_metal_205
+        Start 206: gpu_metal_206
+191/270 Test #199: gpu_metal_199 ....................   Passed    0.02 sec
+192/270 Test #200: gpu_metal_200 ....................   Passed    0.02 sec
+193/270 Test #201: gpu_metal_201 ....................   Passed    0.02 sec
+194/270 Test #202: gpu_metal_202 ....................   Passed    0.02 sec
+195/270 Test #203: gpu_metal_203 ....................   Passed    0.01 sec
+196/270 Test #204: gpu_metal_204 ....................   Passed    0.01 sec
+        Start 207: gpu_metal_207
+        Start 208: gpu_metal_208
+        Start 209: gpu_metal_209
+        Start 210: gpu_metal_210
+        Start 211: gpu_metal_211
+        Start 212: gpu_metal_212
+197/270 Test #191: gpu_metal_191 ....................   Passed    0.12 sec
+198/270 Test #205: gpu_metal_205 ....................   Passed    0.02 sec
+199/270 Test #206: gpu_metal_206 ....................   Passed    0.02 sec
+        Start 213: gpu_metal_213
+        Start 214: gpu_metal_214
+        Start 215: gpu_metal_215
+200/270 Test #207: gpu_metal_207 ....................   Passed    0.12 sec
+        Start 216: gpu_metal_216
+201/270 Test #192: gpu_metal_192 ....................   Passed    0.19 sec
+202/270 Test #197: gpu_metal_197 ....................   Passed    0.16 sec
+        Start 217: gpu_metal_217
+        Start 218: gpu_metal_218
+203/270 Test #196: gpu_metal_196 ....................   Passed    0.17 sec
+204/270 Test #194: gpu_metal_194 ....................   Passed    0.18 sec
+205/270 Test #208: gpu_metal_208 ....................   Passed    0.13 sec
+206/270 Test #211: gpu_metal_211 ....................   Passed    0.12 sec
+207/270 Test #195: gpu_metal_195 ....................   Passed    0.18 sec
+208/270 Test #193: gpu_metal_193 ....................   Passed    0.19 sec
+209/270 Test #212: gpu_metal_212 ....................   Passed    0.12 sec
+        Start 219: gpu_metal_219
+        Start 220: gpu_metal_220
+        Start 221: gpu_metal_221
+        Start 222: gpu_metal_222
+        Start 223: gpu_metal_223
+        Start 224: gpu_metal_224
+        Start 225: gpu_metal_225
+210/270 Test #198: gpu_metal_198 ....................   Passed    0.18 sec
+211/270 Test #210: gpu_metal_210 ....................   Passed    0.14 sec
+212/270 Test #216: gpu_metal_216 ....................   Passed    0.02 sec
+213/270 Test #213: gpu_metal_213 ....................   Passed    0.13 sec
+        Start 226: gpu_metal_226
+        Start 227: gpu_metal_227
+        Start 228: gpu_metal_228
+        Start 229: gpu_metal_229
+214/270 Test #214: gpu_metal_214 ....................   Passed    0.14 sec
+215/270 Test #209: gpu_metal_209 ....................   Passed    0.15 sec
+        Start 230: gpu_metal_230
+        Start 231: gpu_metal_231
+216/270 Test #215: gpu_metal_215 ....................   Passed    0.21 sec
+        Start 232: gpu_metal_232
+217/270 Test #218: gpu_metal_218 ....................   Passed    0.12 sec
+        Start 233: gpu_metal_233
+218/270 Test #217: gpu_metal_217 ....................   Passed    0.13 sec
+        Start 234: gpu_metal_234
+219/270 Test #226: gpu_metal_226 ....................   Passed    0.15 sec
+        Start 235: gpu_metal_235
+220/270 Test #219: gpu_metal_219 ....................   Passed    0.17 sec
+221/270 Test #220: gpu_metal_220 ....................   Passed    0.17 sec
+222/270 Test #221: gpu_metal_221 ....................   Passed    0.17 sec
+        Start 236: gpu_metal_236
+        Start 237: gpu_metal_237
+        Start 238: gpu_metal_238
+223/270 Test #223: gpu_metal_223 ....................   Passed    0.18 sec
+224/270 Test #227: gpu_metal_227 ....................   Passed    0.17 sec
+        Start 239: gpu_metal_239
+        Start 240: gpu_metal_240
+225/270 Test #232: gpu_metal_232 ....................   Passed    0.10 sec
+226/270 Test #228: gpu_metal_228 ....................   Passed    0.18 sec
+227/270 Test #229: gpu_metal_229 ....................   Passed    0.18 sec
+228/270 Test #222: gpu_metal_222 ....................   Passed    0.19 sec
+229/270 Test #225: gpu_metal_225 ....................   Passed    0.18 sec
+        Start 241: gpu_metal_241
+        Start 242: gpu_metal_242
+        Start 243: gpu_metal_243
+        Start 244: gpu_metal_244
+        Start 245: gpu_metal_245
+230/270 Test #224: gpu_metal_224 ....................   Passed    0.20 sec
+        Start 246: gpu_metal_246
+231/270 Test #233: gpu_metal_233 ....................   Passed    0.11 sec
+        Start 247: gpu_metal_247
+232/270 Test #234: gpu_metal_234 ....................   Passed    0.13 sec
+        Start 248: gpu_metal_248
+233/270 Test #231: gpu_metal_231 ....................   Passed    0.24 sec
+        Start 249: gpu_metal_249
+234/270 Test #249: gpu_metal_249 ....................   Passed    0.01 sec
+        Start 250: gpu_metal_250
+235/270 Test #230: gpu_metal_230 ....................   Passed    0.29 sec
+        Start 251: gpu_metal_251
+236/270 Test #236: gpu_metal_236 ....................   Passed    0.17 sec
+        Start 252: gpu_metal_252
+237/270 Test #238: gpu_metal_238 ....................   Passed    0.16 sec
+        Start 253: gpu_metal_253
+238/270 Test #237: gpu_metal_237 ....................   Passed    0.17 sec
+239/270 Test #241: gpu_metal_241 ....................   Passed    0.15 sec
+240/270 Test #242: gpu_metal_242 ....................   Passed    0.15 sec
+241/270 Test #243: gpu_metal_243 ....................   Passed    0.15 sec
+        Start 254: gpu_metal_254
+        Start 255: gpu_metal_255
+        Start 256: gpu_metal_256
+        Start 257: gpu_metal_257
+242/270 Test #240: gpu_metal_240 ....................   Passed    0.16 sec
+243/270 Test #245: gpu_metal_245 ....................   Passed    0.15 sec
+        Start 258: gpu_metal_258
+        Start 259: gpu_metal_259
+244/270 Test #235: gpu_metal_235 ....................   Passed    0.19 sec
+245/270 Test #239: gpu_metal_239 ....................   Passed    0.17 sec
+        Start 260: gpu_metal_260
+        Start 261: gpu_metal_261
+246/270 Test #251: gpu_metal_251 ....................   Passed    0.09 sec
+        Start 262: gpu_metal_262
+247/270 Test #247: gpu_metal_247 ....................   Passed    0.20 sec
+        Start 263: gpu_metal_263
+248/270 Test #250: gpu_metal_250 ....................   Passed    0.16 sec
+        Start 264: gpu_metal_264
+249/270 Test #263: gpu_metal_263 ....................   Passed    0.01 sec
+        Start 265: gpu_metal_265
+250/270 Test #248: gpu_metal_248 ....................   Passed    0.20 sec
+        Start 266: gpu_metal_266
+251/270 Test #246: gpu_metal_246 ....................   Passed    0.27 sec
+        Start 267: gpu_metal_267
+252/270 Test #253: gpu_metal_253 ....................   Passed    0.14 sec
+        Start 268: gpu_metal_268
+253/270 Test #244: gpu_metal_244 ....................   Passed    0.29 sec
+254/270 Test #252: gpu_metal_252 ....................   Passed    0.15 sec
+255/270 Test #257: gpu_metal_257 ....................   Passed    0.14 sec
+        Start 269: gpu_metal_269
+        Start 270: gpu_metal_270
+256/270 Test #258: gpu_metal_258 ....................   Passed    0.14 sec
+257/270 Test #260: gpu_metal_260 ....................   Passed    0.21 sec
+258/270 Test #254: gpu_metal_254 ....................   Passed    0.22 sec
+259/270 Test #256: gpu_metal_256 ....................   Passed    0.22 sec
+260/270 Test #255: gpu_metal_255 ....................   Passed    0.26 sec
+261/270 Test #259: gpu_metal_259 ....................   Passed    0.25 sec
+262/270 Test #262: gpu_metal_262 ....................   Passed    0.22 sec
+263/270 Test #261: gpu_metal_261 ....................   Passed    0.26 sec
+264/270 Test #264: gpu_metal_264 ....................   Passed    0.19 sec
+265/270 Test #265: gpu_metal_265 ....................   Passed    0.18 sec
+266/270 Test #266: gpu_metal_266 ....................   Passed    0.20 sec
+267/270 Test #268: gpu_metal_268 ....................   Passed    0.19 sec
+268/270 Test #267: gpu_metal_267 ....................   Passed    0.19 sec
+269/270 Test #270: gpu_metal_270 ....................   Passed    0.21 sec
+270/270 Test #269: gpu_metal_269 ....................   Passed    0.22 sec
+
+100% tests passed, 0 tests failed out of 270
+
+Label Time Summary:
+cuda        =   0.76 sec*proc (4 tests)
+gfortran    =  43.97 sec*proc (268 tests)
+llvm        =  44.18 sec*proc (270 tests)
+metal       =  44.18 sec*proc (270 tests)
+
+Total Test time (real) =   2.95 sec
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvm
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvm2
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvm_rtlib
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-c
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-cpp
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-x86
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-wasm
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-gfortran
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-flang
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvmImplicit
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvmStackArray
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvm_integer_8
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvm_infer
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-fortran
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-c_nopragma
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvm_nopragma
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvm_wasm
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvm_wasm_emcc
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvm_omp
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvm_submodule
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-mlir
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-mlir_omp
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-mlir_llvm_omp
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvm_goc
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-target_offload
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-llvm_single_invocation
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-metal
++ rm -rf /Users/ondrej/repos/lfortran-3/integration_tests/test-cuda
++ mkdir /Users/ondrej/repos/lfortran-3/integration_tests/test-metal
++ FC=lfortran cmake -DLFORTRAN_BACKEND=metal -DFAST=no -DDETECT_LEAKS=no -DLLVM_GOC=no  -DNOFAST_LLVM16=no  -DCMAKE_Fortran_COMPILER_WORKS=1 -DCMAKE_Fortran_COMPILER_FORCED=1 -DCURRENT_BINARY_DIR=/Users/ondrej/repos/lfortran-3/integration_tests/test-metal -S /Users/ondrej/repos/lfortran-3/integration_tests -B /Users/ondrej/repos/lfortran-3/integration_tests/test-metal
++ make -j16
++ ctest -j16 --output-on-failure
