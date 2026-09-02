@@ -1,7 +1,7 @@
 ! C1514: within the scope of a generic name, each pair of specific procedures
 ! shall be distinguishable.  Valid: distinguishable by type, by kind, by rank,
 ! and by the presence of a nonoptional argument the other lacks (rule (4)).
-module c1514_ok_1_m
+module c1514_valid_m
     implicit none
     interface g
         module procedure g_int, g_real, g_int8, g_int_rank1, g_two_args
@@ -29,8 +29,8 @@ contains
         g_two_args = 5
     end function
 end module
-program c1514_ok_1
-    use c1514_ok_1_m
+program c1514_valid
+    use c1514_valid_m
     implicit none
     if (g(1) /= 1) error stop
     if (g(1.0) /= 2) error stop

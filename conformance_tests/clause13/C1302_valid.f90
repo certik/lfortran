@@ -3,7 +3,7 @@
 !   - before a slash without repeat count, after a slash,
 !   - before or after a colon.
 ! Valid: each permitted omission.
-program c1302_ok_1
+program c1302_valid
     implicit none
     character(10) :: buf(2)
     write(buf(1), '(1PE10.3)') 1.5     ! P then E, no comma

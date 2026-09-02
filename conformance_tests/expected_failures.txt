@@ -1,14 +1,26 @@
-C1121_bad_1  # compiled without error (warnings only)
-C1302_bad_1  # compiled without error (warnings only)
-C1302_bad_2  # compiled without error (warnings only)
-C1302_bad_3  # compiled without error
-C1302_bad_4  # compiled without error (warnings only)
-C1514_bad_1  # compiled without error
-C1514_bad_2  # compiled without error
-C1514_bad_3  # compiled without error
-C1514_bad_4  # compiled without error
-C726_bad_4  # compiled without error
-C726_ok_1  # does not compile: semantic error: LEN parameters in parameterized derived types are not supported yet
-C801_bad_1  # compiled without error
-C815_bad_1  # compiled without error
-R1123_ok_2  # runtime exit code 1: ERROR STOP
+C726_invalid:module-function-result  # not detected
+C726_invalid:local-variable  # not detected
+C726_invalid:internal-function-result  # not detected
+C726_valid  # does not compile: semantic error: LEN parameters in parameterized derived types are not supported yet
+C801_invalid:allocatable  # not detected
+C801_invalid:intent  # not detected
+C801_invalid:parameter  # not detected
+C801_invalid:access-spec  # not detected
+C815_invalid:allocatable-stmt  # not detected
+C815_invalid:intent-stmt  # not detected
+C815_invalid:save-stmt  # not detected
+C815_invalid:access-stmt  # not detected
+C815_valid  # does not compile: LCOMPILERS_ASSERT failed: /home/user/lfortran/src/libasr/asr_expr_type_visitor.h
+C1121_invalid:real  # not detected (warning only)
+C1121_invalid:logical  # not detected
+C1121_invalid:real-dummy  # not detected (warning only)
+R1123_valid  # runtime exit code 1: ERROR STOP
+C1302_invalid:data-data  # not detected (warning only)
+C1302_invalid:p-then-i  # not detected (warning only)
+C1302_invalid:repeated-slash  # not detected (warning only)
+C1302_invalid:format-stmt  # not detected (warning only)
+C1514_invalid:same-tkr  # not detected
+C1514_invalid:function-and-subroutine  # not detected
+C1514_invalid:optional-only  # not detected
+C1514_invalid:intent-only  # not detected
+C1514_invalid:interface-block  # not detected

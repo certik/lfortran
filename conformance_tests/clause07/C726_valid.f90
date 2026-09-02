@@ -7,7 +7,7 @@
 !   - in an external function, to declare the character length parameter of the
 !     function result.
 ! Valid: every permitted use of `*` as a type-param-value.
-module c726_ok_1_m
+module c726_valid_m
     implicit none
     type :: pt(n)
         integer, len :: n
@@ -32,8 +32,8 @@ contains
         end select
     end subroutine
 end module
-program c726_ok_1
-    use c726_ok_1_m
+program c726_valid
+    use c726_valid_m
     implicit none
     character(*), parameter :: k = "named"       ! named constant
     type(pt(4)) :: v

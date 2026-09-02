@@ -1,6 +1,6 @@
 ! C801 (R801) The same attr-spec shall not appear more than once in a given
 ! type-declaration-stmt.  Valid: each attribute appears at most once.
-program c801_ok_1
+program c801_valid
     implicit none
     integer, dimension(3), parameter :: a = [1, 2, 3]
     real, allocatable, dimension(:) :: b
