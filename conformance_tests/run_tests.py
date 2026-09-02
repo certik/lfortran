@@ -29,8 +29,8 @@ or no compiler, agrees with can be reviewed.
 import argparse, glob, os, re, subprocess, sys, collections, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MARK = re.compile(r'!\s*\{error\s+([RC]\d+)(?:\s+([\w-]+))?\}')
-NAME = re.compile(r'^([RC]\d+)_(valid|invalid)\.f(90)?$')
+MARK = re.compile(r'!\s*\{error\s+([RC]\d+|S[\d.]+)(?:\s+([\w-]+))?\}')
+NAME = re.compile(r'^([RC]\d+|S[\d_]+)_(valid|invalid)\.f(90)?$')
 # "--error-format short" prints:  file:L1-L2:C1-C2: <stage> error[ [CODE]]: msg
 SHORT = re.compile(r'^(.*?):(\d+)-(\d+):(\d+)-(\d+): (.*?)(?: error| Error)(?: \[([A-Za-z0-9.]+)\])?: (.*)$')
 # gfortran:  file:LINE:COL:  followed later by "Error: ..."; flang: file:LINE:COL: error: ...
@@ -213,10 +213,13 @@ def main():
         print(f'reference compilers all agree with the test on {agree}/{len(results)} cases')
 
     if a.update_xfail:
+        # entries for tests that were not run (filtered out with -t) are kept
+        ran = {r[0] for r in results}
+        kept = [l for l in (open(xfail_path).read().splitlines() if os.path.exists(xfail_path) else [])
+                if l.split('#')[0].strip() and l.split('#')[0].strip() not in ran]
+        new = [f'{name}  # {why}' for name, rule, kind, ok, why, refs in results if not ok]
         with open(xfail_path, 'w') as f:
-            for name, rule, kind, ok, why, refs in results:
-                if not ok:
-                    f.write(f'{name}  # {why}\n')
+            f.write('\n'.join(sorted(kept + new)) + '\n')
         print('updated', xfail_path)
 
     if a.coverage:

@@ -40,15 +40,23 @@ Consequences:
    reference compilers, because the reference compilers are the only check that
    a "valid" program really is valid (5.1 shows how often this went wrong).
 
-### 2.1 What is *not* an R/C rule (out of scope, for now)
+### 2.1 What is *not* an R/C rule
 
 Normative "shall" sentences in the body text (e.g. "the value of `dim` shall
 be in the range 1 to n"), semantics that the processor need not detect
 (11.1.7.5 iteration independence in DO CONCURRENT), and processor-dependent
-behaviour (Annex A). These have no rule numbers and are not covered. The
-design leaves room for a third category (working name `S`, numbered by
-subclause, e.g. `S16.9.194`) holding *runtime* failure tests; separate
-project.
+behaviour (Annex A). These have no rule numbers. Most are out of scope, but
+some of them are the errors users actually make, and every compiler
+diagnoses them; the most common is an argument whose type or kind does not
+match an explicit interface (15.5.2.4, normative text: "the actual argument
+shall have the same kind type parameters"). Those get a third category, `S`
+(semantic requirement), identified by the subclause: file
+`S15_5_2_4_invalid.f90`, marker `! {error S15.5.2.4 real4-to-real8}`. `S`
+files follow the same conventions and runner as `R`/`C` files; the only
+difference is that they are added selectively, by judgement, rather than
+enumerated from the standard. Runtime-failure `S` tests (a "must fail at run
+time" kind) are still a separate, later project. The prototype
+`clause15/S15_5_2_4_invalid.f90` has eight mixed-kind argument cases.
 
 ## 3. Layout
 
@@ -156,7 +164,70 @@ that (2) is where most of them come from: C815 has five cases that differ
 only in which attribute statement repeats the attribute, and LFortran
 detects exactly one of them.
 
-### 3.3 Expected failures
+### 3.3 Kinds
+
+Every compiler supports a different set of kinds, so a test must not depend
+on any kind beyond the guaranteed set, and must not need a preprocessor to
+adapt. What the three compilers offer today (`ISO_FORTRAN_ENV` kind arrays):
+
+| type | LFortran | gfortran 13 | flang 18 |
+| --- | --- | --- | --- |
+| integer | 1 2 4 8 | 1 2 4 8 16 | 1 2 4 8 16 |
+| real | 4 8 16 | 4 8 10 16 | 2 3 4 8 10 16 |
+| complex | 4 8 (no 16) | 4 8 10 16 | 2 3 4 8 10 16 |
+| logical | 1 2 4 8 | 1 2 4 8 16 | 1 2 4 8 |
+| character | 1 | 1 4 | 1 2 4 |
+
+Rules:
+
+1. **Tests use only the common subset by default**: integer 1, 2, 4, 8;
+   real and complex 4, 8; logical 1, 2, 4, 8; character 1. It is enough:
+   kind is rarely the point of a rule, and where a rule needs "two different
+   kinds" or "a non-default kind", 4 and 8 do.
+2. **A kind outside the subset is never named by a digit.** When a test wants
+   to cover a wider kind if the processor has one, it selects it at compile
+   time with a constant expression and checks at run time whether it got it:
+
+   ```fortran
+   use iso_fortran_env, only: real64, real128
+   integer, parameter :: qp = merge(real128, real64, real128 > 0)
+   real(qp) :: c
+   ...
+   if (qp == real128) then ... extra checks ... end if
+   ```
+
+   This is conforming, needs no preprocessor, and compiles and runs on all
+   three compilers (`clause07/C722_valid.f90` does it). The same idiom with
+   `selected_int_kind(36)` covers 128-bit integers, `selected_char_kind('ISO_10646')`
+   covers UCS-4 characters. The test is then valid on every processor, and
+   exercises the wide kind wherever it exists.
+3. **A nonexistent kind is always 7.** Rules C720, C722, C732, C733 ("the
+   kind-param shall specify a representation method that exists on the
+   processor") and the corresponding kind-selector rules need a kind no
+   compiler has. It is not 3 (flang has real kind 3, bfloat16) and not 16;
+   7 is free for every type on every compiler, and this is the one place
+   where a digit outside the subset appears (`clause07/C722_invalid.f90`).
+4. **No preprocessor, no per-compiler files.** `.F90` files would take the
+   tests outside the standard, complicate the reference-compiler runs, and
+   hide from LFortran exactly the code we want it to see. Per-kind file
+   variants would multiply files for no coverage gain. Neither is needed
+   given rule 2.
+5. **No compiler options that change default kinds** (`-fdefault-real-8`
+   and friends) ever; the suite runs with `--std=f23` only, and default kinds
+   are what the rule text means by "default".
+
+**Mixed-kind mistakes.** Passing `real(4)` where `real(8)` is expected,
+comparing or assigning across kinds, `1.0` where `1.0d0` was meant: these
+are the most common kind-related errors in real code, but almost none of
+them are `R`/`C` rules. Argument type/kind agreement is normative text in
+15.5.2.4 (not a constraint); mixed-kind assignment and arithmetic are
+*conforming* (implicit conversion). So mixed-kind tests appear in the suite
+as `S` tests where the standard forbids the mix (2.1), and as valid tests
+where it allows it (the valid file for the intrinsic assignment and
+numeric-operation rules must exercise every kind pairing in the subset,
+with the result kind checked). The LFortran-side consequence is in 6.
+
+### 3.4 Expected failures
 
 `expected_failures.txt` lists failing tests one per line, keyed
 `<RULE>_valid` or `<RULE>_invalid:<case-id>`, with the reason as a trailing
@@ -166,7 +237,7 @@ a fix PR runs the update and commits the shrunken list. This separates the
 tests (which change rarely) from LFortran's status (which changes with every
 PR), as the LLVM `lit` and GCC test suites do.
 
-### 3.4 Per-rule manifest (planned)
+### 3.5 Per-rule manifest (planned)
 
 `rules.toml`, generated once from `doc/fortran_2023_rules.txt` and then
 maintained by hand, records per rule whether the valid and invalid files
@@ -242,12 +313,13 @@ and fails on `FAIL` and on `XPASS`.
 
 ## 5. Findings from prototyping
 
-Seven rules, 14 files, 33 invalid cases and 7 valid programs, chosen to be
+Nine rules, 17 files, 46 invalid cases and 8 valid programs, chosen to be
 awkward: a constraint with a five-item list of permitted contexts (C726),
 generic distinguishability (C1514), an exception list on format syntax
 (C1302), two near-duplicate attribute constraints (C801 vs C815), a syntax
-rule with three alternatives (R1123) and a plain type constraint (C1121).
-LFortran on current `main`: 14 pass, 26 fail. In detail:
+rule with three alternatives (R1123), a plain type constraint (C1121), a
+kind-existence constraint (C722) and the mixed-kind argument requirement
+(S15.5.2.4). LFortran on current `main`: 20 pass, 34 fail. In detail:
 
 | rule | LFortran today |
 | --- | --- |
@@ -258,10 +330,13 @@ LFortran on current `main`: 14 pass, 26 fail. In detail:
 | C1302 | 0 of 4: all four are warnings, and the warning text already cites "F2023 constraint C1302" |
 | C1514 | 0 of 5: no generic distinguishability check exists, not even for a generic mixing a subroutine and a function |
 | R1123 | 4 of 4 detected as syntax errors (message quotes the marker comment as the unexpected token); the valid file compiles but `local_init(u)` modifies the outer `u`, so it fails at run time |
+| C722 | 5 of 5 detected, valid file runs; gfortran and flang agree on all six |
+| S15.5.2.4 | 0 of 8 under `--std=f23` (see 6); 8 of 8 in default mode |
 
-Seven rules found four missing checks, three checks at the wrong severity,
+Nine rules found four missing checks, three checks at the wrong severity,
 two checks in the wrong compiler stage, one parser gap, one assertion
-failure and one code-generation bug. The full suite will find hundreds.
+failure, one code-generation bug and one option set that hides the most
+common user error. The full suite will find hundreds.
 
 ### 5.1 Authoring lessons
 
@@ -314,13 +389,16 @@ which do not affect the language).
 
 The current `--std=f23` is not that mode yet. It enables implicit typing and
 implicit interfaces (both conforming), but it also enables
-`implicit_argument_casting`, which is not: passing a `real` actual to an
-`integer` dummy through an explicit interface is then caught only by the ASR
-verifier ("Actual argument type r32 does not match formal argument type
-i32"), whereas the default mode reports a proper semantic error. And the
-warnings for C1121 and C1302 stay warnings under `--std=f23`. Auditing the
-option set behind `--std=f23` is the first LFortran-side task; the suite will
-then find the rest.
+`implicit_argument_casting`, which is not. With `--std=f23` alone, all eight
+mixed-kind argument cases of `clause15/S15_5_2_4_invalid.f90` (`real(4)` to
+`real(8)`, `integer(4)` to `integer(8)`, `logical(1)` to `logical(4)`,
+`character(kind=4)` to `character(kind=1)`, through internal and module
+procedures) compile silently; the default `lf` mode and
+`--std=f23 --disable-implicit-argument-casting` both report every one of
+them as "Type mismatch in argument". So today `--std=f23` is *less* strict
+than the default mode on the most common user error. The same holds for the
+C1121 and C1302 warnings. Auditing the option set behind `--std=f23` is the
+first LFortran-side task; the suite then finds the rest.
 
 ## 7. Error catalogue: LFortran's own codes, optional standard codes
 
@@ -417,5 +495,12 @@ question is whether each invalid case isolates the rule it claims to.
 5. Registry granularity: one code per check site, or one per "kind of
    mistake" shared by several sites? (Proposal: per kind of mistake, with a
    site-specific message; the code is what users search for.)
-6. Should `run_tests.py` also drive the future `S` (runtime) category, or is
+6. Should `run_tests.py` also drive future runtime-failure `S` tests, or is
    that a job for `integration_tests/` with `FAIL`?
+7. Which `S` requirements to include from the start? Proposed minimum:
+   argument type/kind/rank agreement with an explicit interface (15.5.2.4),
+   intrinsic argument type/kind requirements (16.9), and pointer/target
+   type agreement in pointer assignment (10.2.2.3).
+8. Kind subset: is dropping `real(16)`/`complex(16)` from the default subset
+   right, given LFortran has `real(16)` but no `complex(16)`? (Proposed: yes;
+   the `merge(real128, ...)` idiom covers it where it matters.)

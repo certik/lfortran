@@ -8,6 +8,10 @@ one valid file and one invalid file, grouped by clause:
 * `<RULE>_invalid.f90` holds many independent invalid cases, one per
   top-level program unit, each offending line marked `! {error <RULE> <case>}`.
 
+`<RULE>` is `R<n>` or `C<n>` from the standard, or `S<subclause>` for a
+normative requirement without a number (`S15_5_2_4_invalid.f90`, marker
+`S15.5.2.4`).
+
 Design, conventions and the plan for filling this in are in
 `doc/fortran_2023_conformance_tests.md`; the rules are in
 `doc/fortran_2023_rules.txt`.
