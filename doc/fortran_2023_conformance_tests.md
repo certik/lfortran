@@ -88,8 +88,9 @@ It was rejected because:
 
 One violation per file costs nothing but files (≈2 000–3 000 small files for
 the invalid side; `integration_tests/` already has 4 500) and one compiler
-invocation per file (≈40 ms each with `--semantics-only`, so a full run is a
-minute or two on one core and trivially parallel).
+invocation per file (about 10 ms each with `--semantics-only` in a debug
+build, so the invalid side of a full run takes well under a minute on one
+core and is trivially parallel).
 
 ### 3.2 Why one directory per clause, not one directory per rule
 
