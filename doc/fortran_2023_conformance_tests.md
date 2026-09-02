@@ -38,7 +38,7 @@ Consequences:
    for the invalid side, only "not implemented yet".
 3. **Only the valid tests need to run**, under LFortran and under the
    reference compilers, because the reference compilers are the only check that
-   a "valid" program really is valid (5.2 shows how often this went wrong).
+   a "valid" program really is valid (5.1 shows how often this went wrong).
 
 ### 2.1 What is *not* an R/C rule (out of scope, for now)
 
