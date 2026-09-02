@@ -1,0 +1,14 @@
+C1121_bad_1  # compiled without error (warnings only)
+C1302_bad_1  # compiled without error (warnings only)
+C1302_bad_2  # compiled without error (warnings only)
+C1302_bad_3  # compiled without error
+C1302_bad_4  # compiled without error (warnings only)
+C1514_bad_1  # compiled without error
+C1514_bad_2  # compiled without error
+C1514_bad_3  # compiled without error
+C1514_bad_4  # compiled without error
+C726_bad_4  # compiled without error
+C726_ok_1  # does not compile: semantic error: LEN parameters in parameterized derived types are not supported yet
+C801_bad_1  # compiled without error
+C815_bad_1  # compiled without error
+R1123_ok_2  # runtime exit code 1: ERROR STOP
