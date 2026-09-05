@@ -1,0 +1,5 @@
+semantic error: the external procedure `record_len_1` cannot be bound to the dummy procedure `cb`: its character argument `msg` is passed with a hidden length (the external calling convention), which the dummy procedure's is not; this is not supported yet
+  --> tests/errors/external_procedure_actual_string_abi_1.f90:25:23
+   |
+25 |         call driver_1(record_len_1, n)
+   |                       ^^^^^^^^^^^^ 

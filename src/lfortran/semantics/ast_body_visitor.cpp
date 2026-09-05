@@ -8928,6 +8928,16 @@ public:
                                 skip_check = true;
                             }
                         }
+                        // A non-character actual storage-associated with a
+                        // CHARACTER dummy through an implicit interface (a
+                        // legal F77 idiom); the dummy is typed from the
+                        // definition, see implicit_interface_character_dummy_type.
+                        if (!skip_check &&
+                                ASRUtils::get_FunctionType(f)->m_deftype == ASR::deftypeType::Interface &&
+                                ASRUtils::is_hidden_len_string(param_type) &&
+                                !ASRUtils::is_character(*passed_type)) {
+                            skip_check = true;
+                        }
                         // Check if types are equal
                         if (!skip_check && !ASRUtils::check_equal_type(passed_type, param_type, passed_arg, f->m_args[i+offset])) {
                             std::string passed_type_str = ASRUtils::type_to_str_with_kind(passed_type, nullptr);
@@ -9071,6 +9081,7 @@ public:
         ASR::call_arg_t* call_args = args.p;
         size_t n_call_args = args.size();
         ASRUtils::insert_self_arg(al, final_sym, call_args, n_call_args, v_expr);
+        check_procedure_actual_string_abi(final_sym, call_args, n_call_args);
         tmp = ASRUtils::make_SubroutineCall_t_util(al, x.base.base.loc,
                 final_sym, original_sym, call_args, n_call_args, v_expr, &cast_stmt, compiler_options.implicit_argument_casting, current_scope, current_function_dependencies);
 

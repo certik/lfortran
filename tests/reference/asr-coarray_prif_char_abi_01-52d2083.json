@@ -1,0 +1,13 @@
+{
+    "basename": "asr-coarray_prif_char_abi_01-52d2083",
+    "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
+    "infile": "tests/coarray_prif_char_abi_01.f90",
+    "infile_hash": "10cbc3cf1a7961be8935a9a6ff13c2ef46f3a46571e362c13e3ebe57",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "asr-coarray_prif_char_abi_01-52d2083.stdout",
+    "stdout_hash": "a7b1cba2d5754e6221789843d56f01692eb24c6f984107c109706448",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

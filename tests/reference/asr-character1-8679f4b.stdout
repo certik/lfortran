@@ -18,7 +18,7 @@
                                     Default
                                     (FunctionType
                                         [(Integer 4)]
-                                        (String 1 () AssumedLength DescriptorString)
+                                        (String 1 () AssumedLength HiddenLenString)
                                         BindC
                                         Interface
                                         ()
@@ -83,7 +83,7 @@
                                                     ()
                                                     ()
                                                     Default
-                                                    (String 1 () AssumedLength DescriptorString)
+                                                    (String 1 () AssumedLength HiddenLenString)
                                                     ()
                                                     BindC
                                                     Public
@@ -102,7 +102,7 @@
                                     ~implicit_interface_mess_3
                                     (FunctionType
                                         [(Integer 4)]
-                                        (String 1 () AssumedLength DescriptorString)
+                                        (String 1 () AssumedLength HiddenLenString)
                                         BindC
                                         Interface
                                         ()
@@ -129,7 +129,7 @@
                     (FunctionType
                         [(FunctionType
                             [(Integer 4)]
-                            (String 1 () AssumedLength DescriptorString)
+                            (String 1 () AssumedLength HiddenLenString)
                             BindC
                             Interface
                             ()
@@ -162,7 +162,7 @@
                             2 mess
                             ()
                             [((IntegerConstant 1 (Integer 4) Decimal))]
-                            (String 1 () AssumedLength DescriptorString)
+                            (String 1 () AssumedLength HiddenLenString)
                             ()
                             ()
                         )

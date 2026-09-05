@@ -1,0 +1,13 @@
+{
+    "basename": "asr-external_procedure_actual_string_abi_1-2040e2e",
+    "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
+    "infile": "tests/errors/external_procedure_actual_string_abi_1.f90",
+    "infile_hash": "a0e0fceea6a0f9248d5ff52d06eb9bc9b0b4d40237c920da6431a4ce",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": "asr-external_procedure_actual_string_abi_1-2040e2e.stderr",
+    "stderr_hash": "102407e248a079ee58c4a52b9688187e798059c543fef6a0ceb7c1e9",
+    "returncode": 2
+}

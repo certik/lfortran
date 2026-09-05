@@ -3374,6 +3374,10 @@ filename = "errors/continue_compilation_1.f90"
 semantics_only_cc = true
 
 [[test]]
+filename = "errors/external_procedure_actual_string_abi_1.f90"
+asr = true
+
+[[test]]
 filename = "errors/conditional_expr_syntax_1.f90"
 syntax_only_cc = true
 semantics_only_cc = true
@@ -5351,6 +5355,12 @@ semantics_only_cc = true
 filename = "coarray_collectives_01.f90"
 fortran = true
 pass = "coarray"   
+options = "--coarray=true"
+
+[[test]]
+filename = "coarray_prif_char_abi_01.f90"
+asr = true
+pass = "coarray"
 options = "--coarray=true"
 
 [[test]]

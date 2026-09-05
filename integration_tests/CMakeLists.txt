@@ -2027,7 +2027,9 @@ RUN(NAME bindc_53 LABELS llvm)
 RUN(NAME bindc_54 LABELS gfortran llvm)
 RUN(NAME bindc_55 LABELS gfortran llvm)
 RUN(NAME bindc_56 LABELS gfortran llvm)
+RUN(NAME bindc_57 LABELS gfortran llvm EXTRAFILES bindc_57.c)
 RUN(NAME bindc_58 LABELS gfortran llvm EXTRAFILES bindc_58_module.f90)
+RUN(NAME bindc_59 LABELS gfortran llvm EXTRAFILES bindc_59b.f90 bindc_59.c EXTRA_ARGS --implicit-interface)
 RUN(NAME bindc_60 LABELS gfortran llvm EXTRAFILES bindc_60.c)
 RUN(NAME bindc_iso_fb_01 LABELS gfortran llvm flang EXTRAFILES bindc_iso_fb_01c.c)
 RUN(NAME bindc_iso_fb_02 LABELS gfortran llvm flang EXTRAFILES bindc_iso_fb_02c.c)
@@ -2210,6 +2212,28 @@ RUN(NAME implicit_interface_49 LABELS gfortran llvm EXTRA_ARGS --implicit-interf
     EXTRAFILES implicit_interface_49b.f90)
 RUN(NAME implicit_interface_50 LABELS gfortran llvm EXTRA_ARGS --implicit-interface
     EXTRAFILES implicit_interface_50b.f90)
+RUN(NAME implicit_interface_51 LABELS gfortran llvm EXTRA_ARGS --implicit-interface
+    EXTRAFILES implicit_interface_51b.f90 GFORTRAN_ARGS -fallow-argument-mismatch)
+RUN(NAME implicit_interface_52 LABELS gfortran llvm EXTRA_ARGS --implicit-interface
+    EXTRAFILES implicit_interface_52b.f90)
+RUN(NAME implicit_interface_53 LABELS gfortran llvm EXTRA_ARGS --implicit-interface)
+RUN(NAME implicit_interface_54 LABELS gfortran llvm EXTRA_ARGS --implicit-interface
+    EXTRAFILES implicit_interface_54b.f90 GFORTRAN_ARGS -fallow-argument-mismatch)
+RUN(NAME implicit_interface_55 LABELS gfortran llvm
+    EXTRAFILES implicit_interface_55b.f90)
+RUN(NAME implicit_interface_56 LABELS gfortran llvm
+    EXTRA_ARGS --separate-compilation --implicit-interface
+    EXTRAFILES implicit_interface_56b.f90)
+RUN(NAME implicit_interface_57 LABELS gfortran llvm)
+RUN(NAME implicit_interface_58 LABELS gfortran)
+RUN(NAME implicit_interface_59 LABELS gfortran llvm EXTRA_ARGS --implicit-interface
+    GFORTRAN_ARGS -fallow-argument-mismatch)
+RUN(NAME implicit_interface_60 LABELS gfortran llvm EXTRA_ARGS --implicit-interface)
+RUN(NAME implicit_interface_61 LABELS gfortran EXTRA_ARGS --implicit-interface
+    EXTRAFILES implicit_interface_61b.f90)
+RUN(NAME implicit_interface_62 LABELS gfortran llvm
+    EXTRA_ARGS --separate-compilation --implicit-interface
+    EXTRAFILES implicit_interface_62b.f90)
 
 RUN(NAME implicit_typing_01 LABELS gfortran llvmImplicit)
 RUN(NAME implicit_typing_02 LABELS gfortran llvmImplicit)
@@ -4076,6 +4100,8 @@ RUN(NAME c_ptr_14 LABELS gfortran llvm)
 RUN(NAME c_ptr_15 LABELS gfortran llvm)
 RUN(NAME c_ptr_16 LABELS gfortran llvm EXTRAFILES c_ptr_16_module.f90)
 RUN(NAME c_ptr_17 LABELS gfortran llvm EXTRAFILES c_ptr_17_module.f90)
+RUN(NAME c_ptr_18 LABELS gfortran llvm EXTRA_ARGS --implicit-interface
+    EXTRAFILES c_ptr_18b.f90 GFORTRAN_ARGS -fallow-argument-mismatch)
 RUN(NAME target_01 LABELS gfortran llvm)
 RUN(NAME c_f_pointer_01 LABELS gfortran llvm)
 

@@ -40,6 +40,11 @@ public:
     std::string dt_name;
     bool in_submodule = false;
     bool is_interface = false;
+    // True while visiting the bodies of an `abstract interface` block. An
+    // abstract interface only names a set of characteristics that ordinary
+    // procedures are matched against, so it must not be treated as the
+    // declaration of a separately compiled external procedure.
+    bool is_abstract_interface = false;
     bool in_program = false;
     int program_count = 0; // To track number of program units in a single file
     Location first_program_loc; // Location of the first program unit
@@ -1322,6 +1327,9 @@ public:
         ASR::accessType s_access = dflt_access;
         ASR::deftypeType deftype = ASR::deftypeType::Implementation;
         std::string sym_name = to_lower(x.m_name);
+        // The dummy arguments of the subprogram this one is declared in;
+        // an interface body named after one of them types a dummy procedure.
+        std::vector<std::string> enclosing_procedure_args = current_procedure_args;
 
         SymbolTable *grandparent_scope = current_scope;
         SymbolTable *parent_scope = current_scope;
@@ -1395,6 +1403,10 @@ public:
         current_procedure_abi_type = ASR::abiType::Source;
         char *bindc_name=nullptr;
         extract_bind(x, current_procedure_abi_type, bindc_name, diag);
+        bool old_current_procedure_is_external = current_procedure_is_external;
+        current_procedure_is_external = declares_external_procedure(
+            parent_scope, has_module_prefix(x), current_procedure_abi_type,
+            sym_name, enclosing_procedure_args);
 
         // iterate over declarations and check if global save is present
         bool is_global_save_enabled_copy = is_global_save_enabled;
@@ -1766,6 +1778,7 @@ public:
            matter since we would have already checked the intent */
         current_procedure_args.clear();
         current_procedure_abi_type = ASR::abiType::Source;
+        current_procedure_is_external = old_current_procedure_is_external;
 
         // print_implicit_dictionary(implicit_dictionary);
         // get hash of the function and add it to the implicit_mapping
@@ -1873,6 +1886,8 @@ public:
         ASR::accessType s_access = dflt_access;
         ASR::deftypeType deftype = ASR::deftypeType::Implementation;
         std::string sym_name = to_lower(x.m_name);
+        // See visit_Subroutine.
+        std::vector<std::string> enclosing_procedure_args = current_procedure_args;
 
         SymbolTable *grandparent_scope = current_scope;
         SymbolTable *parent_scope = current_scope;
@@ -1945,6 +1960,10 @@ public:
         current_procedure_abi_type = ASR::abiType::Source;
         char *bindc_name=nullptr;
         extract_bind(x, current_procedure_abi_type, bindc_name, diag);
+        bool old_current_procedure_is_external = current_procedure_is_external;
+        current_procedure_is_external = declares_external_procedure(
+            parent_scope, has_module_prefix(x), current_procedure_abi_type,
+            sym_name, enclosing_procedure_args);
 
         // iterate over declarations and check if global save is present
         bool is_global_save_enabled_copy = is_global_save_enabled;
@@ -2572,6 +2591,7 @@ public:
         }
         current_procedure_args.clear();
         current_procedure_abi_type = ASR::abiType::Source;
+        current_procedure_is_external = old_current_procedure_is_external;
         current_symbol = -1;
         // print_implicit_dictionary(implicit_dictionary);
         // get hash of the function and add it to the implicit_mapping
@@ -3348,6 +3368,54 @@ public:
         }
     }
 
+    template <typename T>
+    static bool has_module_prefix(const T &x) {
+        for (size_t i = 0; i < x.n_attributes; i++) {
+            if (AST::is_a<AST::SimpleAttribute_t>(*x.m_attributes[i]) &&
+                    AST::down_cast<AST::SimpleAttribute_t>(x.m_attributes[i])->m_attr
+                        == AST::simple_attributeType::AttrModule) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // True when the subprogram being declared is a separately compiled
+    // external procedure, i.e. one whose caller and definition are linked
+    // without either seeing the other's ASR. Such a procedure has to use the
+    // classic Fortran external ABI, the one gfortran and flang use, so its
+    // CHARACTER dummies get the HiddenLenString physical type; everything
+    // else is free to use LFortran's own conventions.
+    //
+    //   * a subprogram defined at the top level (not contained in a module,
+    //     program or another subprogram) is such a procedure;
+    //   * an interface body in a plain interface block declares such a
+    //     procedure, unless the block is an `abstract interface` (it only
+    //     lists characteristics for procedure pointers, dummy procedures and
+    //     deferred bindings) or the body types a dummy procedure of the
+    //     enclosing subprogram (whatever procedure is bound to it, usually an
+    //     ordinary module or contained procedure, is what gets called).
+    //
+    // A `module` procedure is implemented in a submodule of the same build
+    // and a `bind(c)` procedure uses the C ABI, so neither is external.
+    bool declares_external_procedure(SymbolTable* parent_scope,
+            bool is_module_procedure, ASR::abiType abi,
+            const std::string& sym_name,
+            const std::vector<std::string>& enclosing_procedure_args) const {
+        if (abi == ASR::abiType::BindC || is_module_procedure) {
+            return false;
+        }
+        if (is_interface) {
+            if (is_abstract_interface) {
+                return false;
+            }
+            return std::find(enclosing_procedure_args.begin(),
+                enclosing_procedure_args.end(), sym_name)
+                == enclosing_procedure_args.end();
+        }
+        return parent_scope != nullptr && parent_scope->parent == nullptr;
+    }
+
     void visit_Interface(const AST::Interface_t &x) {
         if (AST::is_a<AST::InterfaceHeaderName_t>(*x.m_header)) {
             std::string generic_name = to_lower(AST::down_cast<AST::InterfaceHeaderName_t>(x.m_header)->m_name);
@@ -3364,9 +3432,13 @@ public:
         } else if (AST::is_a<AST::InterfaceHeader_t>(*x.m_header) ||
                    AST::is_a<AST::AbstractInterfaceHeader_t>(*x.m_header)) {
             std::vector<std::string> proc_names;
+            bool old_is_abstract_interface = is_abstract_interface;
+            is_abstract_interface = AST::is_a<AST::AbstractInterfaceHeader_t>(
+                *x.m_header);
             for (size_t i = 0; i < x.n_items; i++) {
                 visit_interface_item(*x.m_items[i]);
             }
+            is_abstract_interface = old_is_abstract_interface;
         } else if (AST::is_a<AST::InterfaceHeaderOperator_t>(*x.m_header)) {
             std::string op = intrinsic2str[AST::down_cast<AST::InterfaceHeaderOperator_t>(x.m_header)->m_op];
             std::vector<std::string> proc_names;

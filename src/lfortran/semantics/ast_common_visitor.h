@@ -2170,6 +2170,12 @@ public:
     std::vector<std::string> excluded_from_symtab;
     int64_t current_symbol;
     ASR::abiType current_procedure_abi_type = ASR::abiType::Source;
+    // True while the declarations of a separately compiled external
+    // procedure are processed: a subprogram defined at the top level, or an
+    // interface body that describes one. Its CHARACTER dummies get the
+    // HiddenLenString physical type, the classic Fortran external ABI. See
+    // `declares_external_procedure` in the symbol-table visitor.
+    bool current_procedure_is_external = false;
     bool is_derived_type = false;
     // Maps (PDT-template symtab ptr, member_var_name) ->
     // (inner_PDT_name, sentinel_kind_arg_values).
@@ -10273,10 +10279,14 @@ public:
                     nullptr, 0,
                     ASR::array_physical_typeType::AssumedRankArray, ASR::memory_spaceType::Global));
             } else {
+                // An assumed-size CHARACTER dummy, `character :: text(*)`,
+                // is one contiguous run of elements reached through a single
+                // pointer, like any other assumed-size array.
                 type = ASRUtils::make_Array_t_util(
                     al, loc, type, dims.p, dims.size(), abi, is_argument,
                     dims.size() > 0 && abi == ASR::abiType::BindC && (is_dimension_star || ASRUtils::is_fixed_size_array(dims.p, dims.n)) ? ASR::array_physical_typeType::StringArraySinglePointer :
                                     ASRUtils::is_fixed_size_array(dims.p, dims.n) ? ASR::array_physical_typeType::PointerArray :
+                                    (is_dimension_star && is_argument) ? ASR::array_physical_typeType::UnboundedPointerArray :
                                     ASR::array_physical_typeType::DescriptorArray,
                     dims.size() > 0 ? true : false);
             }
@@ -10285,7 +10295,29 @@ public:
                 type = ASRUtils::TYPE(ASR::make_Pointer_t(al, loc,
                     ASRUtils::type_get_past_allocatable(type)));
             }
-            
+
+            // A CHARACTER dummy of a separately compiled external procedure
+            // is received by the classic Fortran external ABI: the data
+            // pointer at the argument position and the per-element length
+            // as a hidden trailing argument. That ABI carries a scalar or a
+            // contiguous explicit-shape or assumed-size array; allocatable,
+            // pointer and assumed-shape dummies need an explicit interface
+            // and keep LFortran's descriptor.
+            if (is_argument && current_procedure_is_external &&
+                    abi != ASR::abiType::BindC && !is_pointer && !is_allocatable) {
+                ASR::String_t* elem = ASRUtils::get_string_type(type);
+                bool contiguous = !ASRUtils::is_array(type);
+                if (!contiguous) {
+                    ASR::array_physical_typeType phys = ASRUtils::extract_physical_type(type);
+                    contiguous = phys == ASR::array_physical_typeType::PointerArray ||
+                        phys == ASR::array_physical_typeType::UnboundedPointerArray;
+                }
+                if (contiguous &&
+                        elem->m_physical_type == ASR::string_physical_typeType::DescriptorString) {
+                    elem->m_physical_type = ASR::string_physical_typeType::HiddenLenString;
+                }
+            }
+
             if (abi == ASR::abiType::BindC) {
                 ASR::ttype_t *inner_type = ASRUtils::type_get_past_allocatable(
                     ASRUtils::type_get_past_array(
@@ -12847,6 +12879,15 @@ public:
                         !ASRUtils::is_array(arg_type) && !ASRUtils::is_array(orig_arg_type)) {
                         allow_mismatch = true;
                     }
+                    // A non-character actual storage-associated with a
+                    // CHARACTER dummy through an implicit interface (a legal
+                    // F77 idiom); the dummy is typed from the definition, see
+                    // implicit_interface_character_dummy_type.
+                    if (ASRUtils::get_FunctionType(func)->m_deftype == ASR::deftypeType::Interface &&
+                        ASRUtils::is_hidden_len_string(orig_arg_type) &&
+                        !ASRUtils::is_character(*arg_type)) {
+                        allow_mismatch = true;
+                    }
                     if (!allow_mismatch) {
                         std::string arg_str = ASRUtils::type_to_str_with_kind(arg_type, arg);
                         std::string orig_arg_str = ASRUtils::type_to_str_with_kind(orig_arg_type, func->m_args[i]);
@@ -13301,6 +13342,7 @@ public:
         ASRUtils::set_absent_optional_arguments_to_null(args, func, al);
         legacy_array_sections_helper(v, args, loc);
         validate_create_function_arguments(args, v);
+        check_procedure_actual_string_abi(v, args.p, args.size());
         if (!func->m_deterministic) {
             current_function_deterministic = false;
         }
@@ -17014,6 +17056,116 @@ public:
     }
 
 
+    // The scalar CHARACTER dummy an implicit interface synthesizes from an
+    // actual argument. The external procedure receives the actual by classic
+    // F77 storage association: the character data pointer plus a hidden
+    // trailing length, never a descriptor. That is a plain assumed-length
+    // dummy, `character(len=*)`, with the HiddenLenString physical type, for
+    // every kind of character actual: fixed length, deferred length
+    // (an allocatable, or a result such as trim(...)) or one that already
+    // travels that way.
+    ASR::ttype_t* implicit_interface_character_dummy_type(ASR::ttype_t* var_type) {
+        ASR::String_t* str = ASRUtils::get_string_type(var_type);
+        return ASRUtils::TYPE(ASR::make_String_t(al, var_type->base.loc,
+            str->m_kind, nullptr, ASR::string_length_kindType::AssumedLength,
+            ASR::string_physical_typeType::HiddenLenString));
+    }
+
+    // The array dummy an implicit interface synthesizes from an actual
+    // argument: for arrays like A(n, m) we use A(*), a PointerArray over the
+    // contiguous element storage (an assumed-rank actual keeps its physical
+    // type). A CHARACTER array is associated the same way, so its elements
+    // get the assumed-length HiddenLenString type of the scalar case: the
+    // separately compiled callee receives one data pointer and one hidden
+    // per-element length, not an array descriptor.
+    ASR::ttype_t* implicit_interface_array_dummy_type(ASR::ttype_t* var_type) {
+        ASR::ttype_t* array_var_type = ASRUtils::type_get_past_allocatable(
+            ASRUtils::type_get_past_pointer(var_type));
+        ASR::Array_t* array_type = ASR::down_cast<ASR::Array_t>(array_var_type);
+        ASR::array_physical_typeType phys_type;
+        if (array_type->m_physical_type == ASR::array_physical_typeType::AssumedRankArray) {
+            phys_type = array_type->m_physical_type;
+        } else {
+            phys_type = ASR::array_physical_typeType::PointerArray;
+        }
+        if (ASRUtils::is_character(*array_type->m_type) &&
+                phys_type == ASR::array_physical_typeType::PointerArray) {
+            ASR::ttype_t* elem = implicit_interface_character_dummy_type(array_type->m_type);
+            Vec<ASR::dimension_t> empty_dims;
+            empty_dims.reserve(al, array_type->n_dims);
+            for (size_t i = 0; i < array_type->n_dims; i++) {
+                ASR::dimension_t empty_dim;
+                empty_dim.loc = var_type->base.loc;
+                empty_dim.m_start = nullptr;
+                empty_dim.m_length = nullptr;
+                empty_dims.push_back(al, empty_dim);
+            }
+            return ASRUtils::TYPE(ASR::make_Array_t(al, var_type->base.loc, elem,
+                empty_dims.p, empty_dims.size(), phys_type, array_type->m_memory_space));
+        }
+        return ASRUtils::duplicate_type_with_empty_dims(al, array_var_type, phys_type, true);
+    }
+
+    // A separately compiled external procedure receives its CHARACTER dummies
+    // by the classic Fortran external ABI (HiddenLenString), while a dummy
+    // procedure or procedure pointer is called through LFortran's descriptor
+    // ABI (DescriptorString). Binding one to the other would call the
+    // procedure with the wrong argument list, so refuse it until a cast
+    // between the two procedure types exists.
+    void check_procedure_actual_string_abi(ASR::symbol_t* callee,
+            ASR::call_arg_t* args, size_t n_args) {
+        ASR::symbol_t* callee_sym = ASRUtils::symbol_get_past_external(callee);
+        if (callee_sym == nullptr || !ASR::is_a<ASR::Function_t>(*callee_sym)) {
+            return;
+        }
+        ASR::Function_t* func = ASR::down_cast<ASR::Function_t>(callee_sym);
+        for (size_t i = 0; i < n_args && i < func->n_args; i++) {
+            if (args[i].m_value == nullptr || !ASR::is_a<ASR::Var_t>(*args[i].m_value)
+                    || !ASR::is_a<ASR::Var_t>(*func->m_args[i])) {
+                continue;
+            }
+            ASR::symbol_t* actual = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(args[i].m_value)->m_v);
+            ASR::symbol_t* formal = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(func->m_args[i])->m_v);
+            if (!ASR::is_a<ASR::Function_t>(*actual) || !ASR::is_a<ASR::Function_t>(*formal)) {
+                continue;
+            }
+            ASR::Function_t* actual_fn = ASR::down_cast<ASR::Function_t>(actual);
+            ASR::Function_t* formal_fn = ASR::down_cast<ASR::Function_t>(formal);
+            ASR::FunctionType_t* actual_ft = ASRUtils::get_FunctionType(actual_fn);
+            ASR::FunctionType_t* formal_ft = ASRUtils::get_FunctionType(formal_fn);
+            for (size_t j = 0; j < actual_ft->n_arg_types && j < formal_ft->n_arg_types; j++) {
+                ASR::ttype_t* a = actual_ft->m_arg_types[j];
+                ASR::ttype_t* f = formal_ft->m_arg_types[j];
+                if (!ASRUtils::is_character(*a) || !ASRUtils::is_character(*f)) {
+                    continue;
+                }
+                bool a_hidden = ASRUtils::is_hidden_len_string(a);
+                bool f_hidden = ASRUtils::is_hidden_len_string(f);
+                if (a_hidden == f_hidden) {
+                    continue;
+                }
+                ASR::Function_t* external_fn = a_hidden ? actual_fn : formal_fn;
+                std::string external_arg = j < external_fn->n_args
+                    ? ASRUtils::symbol_name(ASR::down_cast<ASR::Var_t>(external_fn->m_args[j])->m_v)
+                    : std::to_string(j + 1);
+                diag.add(Diagnostic(
+                    "the external procedure `" + std::string(external_fn->m_name) +
+                    "` cannot be bound to the dummy procedure `" +
+                    std::string(ASRUtils::symbol_name(formal)) +
+                    "`: its character argument `" + external_arg +
+                    "` is passed with a hidden length (the external calling"
+                    " convention), which the dummy procedure's is not; this is"
+                    " not supported yet",
+                    Level::Error, Stage::Semantic, {
+                        Label("", {args[i].m_value->base.loc})
+                    }));
+                throw SemanticAbort();
+            }
+        }
+    }
+
     template <class Call>
     void create_implicit_interface_function(const Call &x, std::string func_name, bool add_return, ASR::ttype_t* old_type) {
         is_implicit_interface = true;
@@ -17069,9 +17221,12 @@ public:
         args.reserve(al, c_args.size());
         std::string sym_name = to_lower(func_name);
 
-        // For implicit argument casting, look up the Implementation to get correct param types
+        // The definition of the external procedure, when it is in this
+        // translation unit: for implicit argument casting it supplies the
+        // integer kinds of the dummies, and it always says which dummies are
+        // CHARACTER (see below).
         ASR::Function_t* impl_func = nullptr;
-        if (compiler_options.implicit_argument_casting) {
+        {
             SymbolTable* global_scope = parent_scope;
             while (global_scope->parent != nullptr) {
                 global_scope = global_scope->parent;
@@ -17101,26 +17256,26 @@ public:
                     ASR::Variable_t* impl_arg = ASRUtils::EXPR2VAR(impl_func->m_args[i]);
                     ASR::ttype_t* impl_type = impl_arg->m_type;
                     // Only override for scalar integers with different kinds
-                    if (ASR::is_a<ASR::Integer_t>(*ASRUtils::type_get_past_array(var_type)) &&
+                    if (compiler_options.implicit_argument_casting &&
+                        ASR::is_a<ASR::Integer_t>(*ASRUtils::type_get_past_array(var_type)) &&
                         ASR::is_a<ASR::Integer_t>(*ASRUtils::type_get_past_array(impl_type)) &&
                         !ASRUtils::is_array(var_type) && !ASRUtils::is_array(impl_type)) {
                         var_type = impl_type;
                     }
+                    // A non-character actual passed by classic F77 storage
+                    // association to a CHARACTER dummy that is received with
+                    // a hidden length: the dummy must stay CHARACTER, so the
+                    // call passes the length the definition expects. Only the
+                    // definition can say so; without it (a separately
+                    // compiled definition) no length is passed, as gfortran
+                    // does, and the callee must not read LEN().
+                    if (!ASRUtils::is_character(*var_type) &&
+                        ASRUtils::is_hidden_len_string(impl_type)) {
+                        var_type = ASRUtils::duplicate_type(al, impl_type);
+                    }
                 }
                 if (ASRUtils::is_array(var_type)) {
-                    // For arrays like A(n, m) we use A(*) in implicit interface.
-                    ASR::ttype_t* array_var_type = ASRUtils::type_get_past_allocatable(
-                        ASRUtils::type_get_past_pointer(var_type));
-                    ASR::Array_t* array_type = ASR::down_cast<ASR::Array_t>(array_var_type);
-                    ASR::array_physical_typeType phys_type;
-                    if (ASRUtils::is_character(*array_type->m_type)) {
-                        phys_type = ASR::array_physical_typeType::DescriptorArray;
-                    } else if (array_type->m_physical_type == ASR::array_physical_typeType::AssumedRankArray) {
-                        phys_type = array_type->m_physical_type;
-                    } else {
-                        phys_type = ASR::array_physical_typeType::PointerArray;
-                    }
-                    var_type = ASRUtils::duplicate_type_with_empty_dims(al, array_var_type, phys_type, true);
+                    var_type = implicit_interface_array_dummy_type(var_type);
                 } else if (ASR::is_a<ASR::ArrayItem_t>(*var_expr) && compiler_options.legacy_array_sections) {
                     ASR::symbol_t* func_sym = parent_scope->resolve_symbol(func_name);
                     ASR::Function_t* func = nullptr;
@@ -17136,6 +17291,8 @@ public:
                         ASR::array_physical_typeType expected_phys = ASRUtils::extract_physical_type(expected_arg_type);
                         var_type = ASRUtils::duplicate_type_with_empty_dims(al, expected_arg_type, expected_phys, true);
                     }
+                } else if (ASRUtils::is_character(*var_type)) {
+                    var_type = implicit_interface_character_dummy_type(var_type);
                 }
                 SetChar variable_dependencies_vec;
                 variable_dependencies_vec.reserve(al, 1);
