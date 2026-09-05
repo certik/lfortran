@@ -678,6 +678,7 @@ namespace LCompilers {
         switch (str->m_physical_type)
         {
         case ASR::DescriptorString:
+        case ASR::HiddenLenString:
             return string_descriptor;
         case ASR::CChar:
             return llvm::Type::getInt8Ty(context);
@@ -1195,6 +1196,11 @@ namespace LCompilers {
 
     std::vector<llvm::Type*> LLVMUtils::convert_args(const ASR::Function_t& x, llvm::Module* module) {
         std::vector<llvm::Type*> args;
+        // A HiddenLenString dummy uses the classic Fortran external ABI: it is
+        // received as a bare data pointer at the argument position, and its
+        // per-element length as a hidden i64 after all positional arguments,
+        // one per such dummy in argument order.
+        std::vector<llvm::Type*> hidden_char_lengths;
         for (size_t i=0; i<x.n_args; i++) {
             if (ASR::is_a<ASR::Variable_t>(*ASRUtils::symbol_get_past_external(
                 ASR::down_cast<ASR::Var_t>(x.m_args[i])->m_v))) {
@@ -1266,6 +1272,10 @@ namespace LCompilers {
                         is_array_type = false;
                     }
                 }
+                if( ASRUtils::is_hidden_len_string(arg->m_type) ) {
+                    type = llvm::Type::getInt8Ty(context)->getPointerTo();
+                    hidden_char_lengths.push_back(llvm::Type::getInt64Ty(context));
+                }
                 args.push_back(type);
             } else if (ASR::is_a<ASR::Function_t>(*ASRUtils::symbol_get_past_external(
                 ASR::down_cast<ASR::Var_t>(x.m_args[i])->m_v))) {
@@ -1281,6 +1291,7 @@ namespace LCompilers {
                 throw CodeGenError("Argument type not implemented");
             }
         }
+        args.insert(args.end(), hidden_char_lengths.begin(), hidden_char_lengths.end());
         return args;
     }
 
@@ -2196,7 +2207,8 @@ namespace LCompilers {
             case ASR::DescriptorArray:{
                 switch (str_type->m_physical_type){
                     // A pointer to the Array Descriptor => `{ %string_descriptor*, i32, %dimension_descriptor*, i1, i32 }`
-                    case ASR::DescriptorString:{
+                    case ASR::DescriptorString:
+                    case ASR::HiddenLenString:{
                         return str->getType()->isPointerTy() &&
                             !str->getType()->getPointerElementType()->isPointerTy() &&
                             (str->getType()->getPointerElementType()->getContainedType(0) == string_descriptor->getPointerTo());
@@ -2212,6 +2224,7 @@ namespace LCompilers {
                 switch (str_type->m_physical_type){
                     // `string_descriptor*` and `char*`
                     case ASR::DescriptorString :
+                    case ASR::HiddenLenString :
                     case ASR::CChar : {
                         return str->getType()->isPointerTy() &&
                             !str->getType()->getPointerElementType()->isPointerTy() &&
@@ -2237,6 +2250,7 @@ namespace LCompilers {
 #if LLVM_VERSION_MAJOR < 15
         switch (str_type->m_physical_type){
             case ASR::DescriptorString:
+            case ASR::HiddenLenString:
             case ASR::CChar: { // Check for => `string_descriptor*` and `char*`
                 return str->getType()->isPointerTy() &&
                     !str->getType()->getPointerElementType()->isPointerTy() &&
@@ -2258,7 +2272,8 @@ namespace LCompilers {
         /* Fetch String Data Based On PhysicalType */
         llvm::Value *str_data {};
         switch (str_physical_type) {
-            case ASR::DescriptorString: {
+            case ASR::DescriptorString:
+            case ASR::HiddenLenString: {
                 str_data = CreateGEP2(string_descriptor, str, 0);
                 break;
             }
@@ -2298,7 +2313,7 @@ namespace LCompilers {
         llvm::Value* str, llvm::Value* len, int char_kind){
 
         llvm::Value* str_len{}, *str_data{};
-        if(str_physical_type == ASR::DescriptorString){
+        if(LLVM::is_descriptor_string(str_physical_type)){
             str_data = CreateGEP2(string_descriptor, str, 0);
             str_len = CreateGEP2(string_descriptor, str, 1);
         } else {
@@ -2316,7 +2331,8 @@ namespace LCompilers {
 
     llvm::Value* LLVMUtils::create_string(ASR::String_t* str, std::string name){
         switch(str->m_physical_type){
-            case (ASR::DescriptorString):{
+            case (ASR::DescriptorString):
+            case (ASR::HiddenLenString):{
                 return create_string_descriptor(name);
                 break;
             }
@@ -2351,7 +2367,8 @@ namespace LCompilers {
 
     bool LLVMUtils::is_string_length_setable(ASR::String_t* string_t){
         switch(string_t->m_physical_type){
-            case ASR::DescriptorString:{
+            case ASR::DescriptorString:
+            case ASR::HiddenLenString:{
                 return true;
             }
             case ASR::CChar:{
@@ -2390,7 +2407,8 @@ namespace LCompilers {
         llvm::Value* ptr_to_data {};
         switch (str_type->m_physical_type)
         {
-            case ASR::DescriptorString:{
+            case ASR::DescriptorString:
+            case ASR::HiddenLenString:{
                 ptr_to_data = create_gep2(string_descriptor, str, 0);
                 break;
             }
@@ -2421,7 +2439,8 @@ namespace LCompilers {
         } else {
             switch (str_type->m_physical_type)
             {
-                case ASR::DescriptorString:{
+                case ASR::DescriptorString:
+                case ASR::HiddenLenString:{
                     llvm::Value* ptr_to_len = create_gep2(string_descriptor, str, 1);
                     if(get_pointer_to_len){
                         return ptr_to_len;
@@ -2858,7 +2877,7 @@ namespace LCompilers {
         sequence.resize(total_len, ' ');
 
         // For DescriptorString, we need to create a global variable with the correct initializer
-        if(elem_string->m_physical_type == ASR::DescriptorString){
+        if(LLVM::is_descriptor_string(elem_string->m_physical_type)){
             // Create the character array type [total_len x i8]
             llvm::ArrayType *char_array_type = llvm::ArrayType::get(llvm::Type::getInt8Ty(context), total_len);
 
@@ -2985,7 +3004,8 @@ namespace LCompilers {
         }
         // Declare the global string based on its physical type
         switch(str->m_physical_type) {
-            case ASR::DescriptorString:{
+            case ASR::DescriptorString:
+            case ASR::HiddenLenString:{
                 llvm::Constant* string_descriptor_constant = llvm::ConstantStruct::get(
                     llvm::dyn_cast<llvm::StructType>(string_descriptor),
                     {string_constant, len_constant});
@@ -3071,7 +3091,8 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(
 
     // 4. Create and return the descriptor
     switch (elem_string->m_physical_type) {
-        case ASR::DescriptorString: {
+        case ASR::DescriptorString:
+        case ASR::HiddenLenString: {
             llvm::Constant* string_descriptor_constant = llvm::ConstantStruct::get(
                 llvm::dyn_cast<llvm::StructType>(string_descriptor), {string_constant, len_constant}
             );
@@ -3909,7 +3930,7 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(
                 if(ASRUtils::is_string_only(ASRUtils::type_get_past_array(asr_src_type))){
                     ASR::String_t* src_str_type = ASRUtils::get_string_type(asr_src_type);
                     if (!ASRUtils::is_allocatable(asr_dest_type) &&
-                        src_str_type->m_physical_type == ASR::DescriptorString) {
+                        LLVM::is_descriptor_string(src_str_type->m_physical_type)) {
                         // A character *pointer* propagates by association, not by value:
                         // copy the {i8*, i64} descriptor so dest aliases src's target,
                         // exactly as the pointer descriptor-array case below does. A

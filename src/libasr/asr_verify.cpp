@@ -1319,6 +1319,18 @@ public:
                 require(x.m_intent != ASR::Local,
                     "CChar-string-physical type shouldn't be used with local variables");
             }
+            // A HiddenLenString travels as a data pointer plus a hidden
+            // trailing length, which only exists at a procedure boundary:
+            // the string physical type is for dummy arguments, and only
+            // for the ones the classic Fortran external ABI can carry.
+            if(str->m_physical_type == ASR::HiddenLenString){
+                require(x.m_intent != ASR::Local,
+                    "HiddenLenString-string-physical type shouldn't be used with local variables");
+                require(!ASRUtils::is_allocatable(x.m_type) && !ASRUtils::is_pointer(x.m_type),
+                    "HiddenLenString-string-physical type shouldn't be used with allocatable or pointer variables");
+                require(str->m_len_kind != ASR::DeferredLength,
+                    "HiddenLenString-string-physical type shouldn't have length kind \"DeferredLength\"");
+            }
             if(str->m_len_kind == ASR::AssumedLength && 
                 x.m_storage !=ASR::Parameter &&
                 !ASRUtils::is_pointer(x.m_type) /*Tolerate pointer*/){
@@ -2211,7 +2223,19 @@ public:
                                 ASRUtils::get_type_code(formal_type),
                             passed_arg_expr->base.loc);
                     }
+                    // Through an implicit interface a non-character actual
+                    // may be storage-associated with a CHARACTER dummy that
+                    // is received with a hidden length (a legal F77 idiom):
+                    // the call then passes the actual's address and the
+                    // dummy's declared length. The dummy is only known to be
+                    // CHARACTER when its definition is in this translation
+                    // unit, which is where the frontend types it from.
+                    bool storage_associated_character =
+                        ASRUtils::is_hidden_len_string(formal_type) &&
+                        !ASRUtils::is_character(*actual_type) &&
+                        !callee_is_defined;
                     require_with_loc_id(
+                        storage_associated_character ||
                         ASRUtils::check_equal_type(
                             actual_type, formal_type,
                             type_context(passed_arg_expr),
@@ -2222,6 +2246,35 @@ public:
                             " does not match formal argument type " +
                             ASRUtils::get_type_code(formal_type),
                         passed_arg_expr->base.loc);
+                    // The string physical type is part of how the callee
+                    // receives a CHARACTER argument, so the call has to
+                    // pass exactly the one the dummy declares; the
+                    // frontend inserts a StringPhysicalCast where the
+                    // actual's differs. For an array of strings this is
+                    // only enforced where the hidden-length ABI is
+                    // involved: a bind(c) CChar array is converted by its
+                    // ArrayPhysicalCast to StringArraySinglePointer, and a
+                    // CChar array behind a DescriptorArray is still passed
+                    // as the descriptor of the actual.
+                    bool array_of_strings = ASRUtils::is_array(actual_type)
+                        || ASRUtils::is_array(formal_type);
+                    if (ASRUtils::is_character(*actual_type) &&
+                            ASRUtils::is_character(*formal_type) &&
+                            !storage_associated_character &&
+                            (!array_of_strings ||
+                             ASRUtils::is_hidden_len_string(actual_type) ||
+                             ASRUtils::is_hidden_len_string(formal_type))) {
+                        require_with_loc_id(
+                            ASRUtils::get_string_type(actual_type)->m_physical_type ==
+                                ASRUtils::get_string_type(formal_type)->m_physical_type,
+                            "asr.verify.call.string_physical_type_matches_formal",
+                            "Actual argument type " +
+                                ASRUtils::get_type_code(actual_type) +
+                                " does not have the string physical type of"
+                                " the formal argument type " +
+                                ASRUtils::get_type_code(formal_type),
+                            passed_arg_expr->base.loc);
+                    }
                 }
 
                 if (check_external &&
@@ -3022,6 +3075,16 @@ public:
                     " \"StringArraySinglePointer\" must have string physical"
                     " type \"CChar\", not \"DescriptorString\"")
             }
+            // A HiddenLenString array is one contiguous run of elements
+            // behind a single data pointer, so only the array physical types
+            // that are a bare pointer to contiguous storage can carry it.
+            if(ASRUtils::is_hidden_len_string(x.m_type)){
+                require(x.m_physical_type == ASR::PointerArray ||
+                        x.m_physical_type == ASR::UnboundedPointerArray,
+                    "Array of strings with string physical type"
+                    " \"HiddenLenString\" must have array physical type"
+                    " \"PointerArray\" or \"UnboundedPointerArray\"")
+            }
         }
         if(ASRUtils::is_class_type(x.m_type)){
             require(x.m_physical_type != ASR::FixedSizeArray,
@@ -3081,8 +3144,10 @@ public:
         }
 /*Check Valid String type state based on the physical type*/
         if (x.m_physical_type == DescriptorString ||
-            x.m_physical_type == CChar){
-            std::string type_as_str = (x.m_physical_type == DescriptorString) ? "\"DescriptorString\"" : "\"CChar\"";
+            x.m_physical_type == CChar ||
+            x.m_physical_type == HiddenLenString){
+            std::string type_as_str = (x.m_physical_type == DescriptorString) ? "\"DescriptorString\"" :
+                (x.m_physical_type == CChar) ? "\"CChar\"" : "\"HiddenLenString\"";
             if(x.m_len){
                 require(x.m_len_kind == ExpressionLength,
                     "String of physical type " +
@@ -3110,8 +3175,20 @@ public:
     void visit_StringPhysicalCast(const StringPhysicalCast_t &x){
         require(x.m_type, "x.m_type cannot be nullptr");
         ASR::ttype_t* cast_type = ASRUtils::type_get_past_allocatable(x.m_type);
+        // An array of strings is cast element-wise: its array physical type
+        // and dimensions are those of the argument.
+        if (ASR::is_a<ASR::Array_t>(*cast_type)) {
+            require(ASRUtils::is_array(ASRUtils::expr_type(x.m_arg)),
+                "StringPhysicalCast of an array of strings must have an array argument");
+            cast_type = ASR::down_cast<ASR::Array_t>(cast_type)->m_type;
+        }
         require(ASR::is_a<ASR::String_t>(*cast_type), "StringPhysicalCast should be of string type");
         ASR::String_t* str = ASR::down_cast<ASR::String_t>(cast_type);
+        require(str->m_physical_type == x.m_new,
+            "StringPhysicalCast return type must have the physical type it casts to");
+        require(ASRUtils::is_character(*ASRUtils::expr_type(x.m_arg)) &&
+            ASRUtils::get_string_type(ASRUtils::expr_type(x.m_arg))->m_physical_type == x.m_old,
+            "StringPhysicalCast argument must have the physical type it casts from");
         require(!str->m_len,
             "StringPhysicalCast return type shouldn't have length "
             "(Length should be implicit).")

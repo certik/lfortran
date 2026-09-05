@@ -203,6 +203,18 @@ class ASRToLLVMVisitor;
 
     namespace LLVM {
 
+        // Inside a procedure this backend represents a HiddenLenString exactly
+        // like a DescriptorString: as a %string_descriptor. The two differ
+        // only at a procedure boundary. A HiddenLenString dummy is received
+        // as a bare data pointer plus a hidden trailing length (convert_args)
+        // and passed the same way (convert_call_args); declare_args rebuilds
+        // the descriptor from that pair on entry, so the body never sees the
+        // difference.
+        static inline bool is_descriptor_string(ASR::string_physical_typeType t) {
+            return t == ASR::string_physical_typeType::DescriptorString ||
+                   t == ASR::string_physical_typeType::HiddenLenString;
+        }
+
         llvm::Value* CreateStore(llvm::IRBuilder<> &builder, llvm::Value *x, llvm::Value *y);
         void set_memory_debug(bool state);
         bool use_memory_debug();

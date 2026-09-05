@@ -958,7 +958,7 @@ public:
         this->visit_expr_load_wrapper(str_expr, 0);
 
         int64_t bindc_inline_len = 0;
-        if (str->m_physical_type == ASR::DescriptorString
+        if (LLVM::is_descriptor_string(str->m_physical_type)
                 && tmp->getType()->isPointerTy()
                 && ASRUtils::is_inline_character_struct_member(str_expr)) {
             bindc_inline_len = 1;
@@ -979,7 +979,8 @@ public:
         }
         switch (str->m_physical_type)
         {
-            case ASR::DescriptorString:{
+            case ASR::DescriptorString:
+            case ASR::HiddenLenString:{
                 if (!tmp->getType()->isPointerTy()) {
                     llvm::Value* tmp_ptr = llvm_utils->CreateAlloca(
                         *builder, tmp->getType(), nullptr, "str_value");
@@ -1035,8 +1036,8 @@ public:
     llvm::Value* inline_char_member_as_string_descriptor(ASR::expr_t* arg,
             llvm::Value* value, std::string name) {
         if (!ASRUtils::is_string_only(expr_type(arg))
-                || ASRUtils::get_string_type(expr_type(arg))->m_physical_type
-                    != ASR::DescriptorString
+                || !LLVM::is_descriptor_string(
+                    ASRUtils::get_string_type(expr_type(arg))->m_physical_type)
                 || !ASRUtils::is_inline_character_struct_member(arg)) {
             return value;
         }
@@ -1063,7 +1064,8 @@ public:
         switch(ASRUtils::extract_physical_type(expr_type(expr))){
             case ASR::DescriptorArray : {
                 switch(str_type->m_physical_type){
-                    case ASR::DescriptorString : {
+                    case ASR::DescriptorString :
+                    case ASR::HiddenLenString : {
                         llvm::Value* temp{};
                         temp = arr_descr->get_pointer_to_data(expr, ASRUtils::expr_type(expr), str, module.get());
                         temp = builder->CreateLoad(
@@ -1078,7 +1080,8 @@ public:
             }
             case ASR::PointerArray:{
                 switch(str_type->m_physical_type){
-                    case ASR::DescriptorString : {
+                    case ASR::DescriptorString :
+                    case ASR::HiddenLenString : {
                         return builder->CreateLoad(llvm::Type::getInt64Ty(context),
                                 llvm_utils->create_gep2(string_descriptor, str, 1));
                     }
@@ -1109,7 +1112,8 @@ public:
 
         switch (str->m_physical_type)
         {
-            case ASR::DescriptorString:{
+            case ASR::DescriptorString:
+            case ASR::HiddenLenString:{
                 // Set length Length could be explicit
                 if(str->m_len && ASR::is_a<ASR::IntegerConstant_t>(*str->m_len)){ // Explicit-Constant Length
                     ASR::IntegerConstant_t* len = ASR::down_cast<ASR::IntegerConstant_t>(str->m_len);
@@ -1187,7 +1191,8 @@ public:
         ptr_loads = ptr_loads_copy;
         switch (str->m_physical_type)
         {
-            case ASR::DescriptorString:{
+            case ASR::DescriptorString:
+            case ASR::HiddenLenString:{
                 return builder->CreateLoad(
                     character_type,
                     llvm_utils->create_gep2(string_descriptor, tmp, 0));
@@ -1269,7 +1274,7 @@ public:
         LCOMPILERS_ASSERT(ASRUtils::is_array(var_type) && ASRUtils::is_character(*var_type))
         ASR::String_t* str = ASR::down_cast<ASR::String_t>(ASRUtils::extract_type(var_type));
 
-        if(str->m_physical_type == ASR::DescriptorString){
+        if(LLVM::is_descriptor_string(str->m_physical_type)){
             llvm::Value* str_desc = llvm_utils->create_empty_string_descriptor(name); // StringDesc with initial state.
             // Setup Length
             setup_string_length(str_desc, str, str->m_len);
@@ -8107,6 +8112,11 @@ public:
     void declare_args(const ASR::Function_t &x, llvm::Function &F) {
         size_t asr_arg_idx = 0;
         auto arg_it = F.arg_begin();
+        // A HiddenLenString dummy arrives as a bare data pointer plus a
+        // hidden trailing length. Record the data pointers here and rebuild
+        // the string descriptors after the positional arguments, once the
+        // trailing lengths are known (see LLVM::is_descriptor_string).
+        std::vector<std::pair<ASR::Variable_t*, llvm::Value*>> hidden_len_dummies;
 
         // Windows complex(kind=8) uses "pass-as-subroutine" (sret-style) ABI:
         // the LLVM function has an extra hidden first argument to store the
@@ -8123,8 +8133,10 @@ public:
             ++arg_it;
         }
 
-        for (; arg_it != F.arg_end(); ++arg_it) {
-            LCOMPILERS_ASSERT(asr_arg_idx < x.n_args);
+        // The LLVM function has more parameters than the ASR function has
+        // arguments when hidden trailing CHARACTER lengths are appended, so
+        // stop at the last positional argument and pick the lengths up below.
+        for (; arg_it != F.arg_end() && asr_arg_idx < x.n_args; ++arg_it) {
             llvm::Argument &llvm_arg = *arg_it;
             ASR::symbol_t *s = symbol_get_past_external(
                     ASR::down_cast<ASR::Var_t>(x.m_args[asr_arg_idx])->m_v);
@@ -8196,6 +8208,10 @@ public:
                     std::string arg_s = arg->m_name;
                     llvm_arg.setName(arg_s);
                     llvm_symtab[h] = llvm_sym;
+                    if (ASRUtils::is_hidden_len_string(arg->m_type)) {
+                        hidden_len_dummies.push_back(std::make_pair(
+                            arg, static_cast<llvm::Value*>(&llvm_arg)));
+                    }
                 }
             }
             if (is_a<ASR::Function_t>(*s)) {
@@ -8216,6 +8232,22 @@ public:
                 }
             }
             asr_arg_idx++;
+        }
+
+        // Rebuild the string descriptor of every HiddenLenString dummy from
+        // its (data pointer, hidden trailing length) pair. The trailing
+        // lengths follow all positional arguments, in the order the dummies
+        // appear.
+        for (auto& dummy : hidden_len_dummies) {
+            LCOMPILERS_ASSERT(arg_it != F.arg_end());
+            llvm::Argument& len_arg = *arg_it;
+            ++arg_it;
+            ASR::Variable_t* arg = dummy.first;
+            len_arg.setName(std::string(arg->m_name) + "_len");
+            llvm::Value* desc = llvm_utils->create_string_descriptor(
+                dummy.second, &len_arg, arg->m_name);
+            uint32_t h = get_hash((ASR::asr_t*)arg);
+            llvm_symtab[h] = desc;
         }
 
         // Second pass: handle array dummy arguments with VALUE attribute.
@@ -8732,7 +8764,7 @@ public:
                 ASR::String_t* str_t = ASRUtils::get_string_type(symbol_type);
                 ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(sym.second);
                 if (str_t->m_len_kind == ASR::ExpressionLength && str_t->m_len &&
-                    str_t->m_physical_type == ASR::DescriptorString &&
+                    LLVM::is_descriptor_string(str_t->m_physical_type) &&
                     !var->m_value_attr) {
                     uint32_t h = get_hash((ASR::asr_t*)sym.second);
                     LCOMPILERS_ASSERT(llvm_symtab.find(h) != llvm_symtab.end());
@@ -9106,7 +9138,22 @@ public:
             tmp = llvm_utils->CreateLoad2(nested_type, tmp);
         }
         ASR::ttype_t* arg_type = ASRUtils::get_contained_type(ASRUtils::expr_type(x.m_arg));
-        if( ASRUtils::is_array(arg_type) ) {
+        bool string_in_one_descriptor = false;
+        if( ASRUtils::is_character(*arg_type) ) {
+            // A CHARACTER scalar, or a CHARACTER array held as a single
+            // string descriptor over its contiguous element storage: the C
+            // address is the descriptor's data pointer.
+            ASR::array_physical_typeType phys = ASRUtils::is_array(arg_type)
+                ? ASRUtils::extract_physical_type(arg_type)
+                : ASR::array_physical_typeType::PointerArray;
+            string_in_one_descriptor =
+                LLVM::is_descriptor_string(ASRUtils::get_string_type(arg_type)->m_physical_type) &&
+                (phys == ASR::array_physical_typeType::PointerArray ||
+                 phys == ASR::array_physical_typeType::UnboundedPointerArray);
+        }
+        if( string_in_one_descriptor ) {
+            tmp = llvm_utils->get_string_data(ASRUtils::get_string_type(arg_type), tmp);
+        } else if( ASRUtils::is_array(arg_type) ) {
             llvm::Type* elem_type = llvm_utils->get_type_from_ttype_t_util(ASRUtils::get_contained_type(arg_type), nullptr, module.get());
             tmp = llvm_utils->CreateLoad2(elem_type->getPointerTo(), arr_descr->get_pointer_to_data(elem_type, tmp));
         }
@@ -10434,7 +10481,8 @@ public:
                 builder->CreateStore(value_ptr, target_ptr);
                 switch (ASRUtils::get_string_type(target_type)->m_physical_type)
                 {
-                    case ASR::DescriptorString:{
+                    case ASR::DescriptorString:
+                    case ASR::HiddenLenString:{
                         llvm::Value* target_length = llvm_utils->get_string_length(
                             ASRUtils::get_string_type(target_type), llvm_target, true); // i64*
                         llvm::Value* value_length = llvm_utils->get_string_length(
@@ -13698,9 +13746,12 @@ public:
                 arr_data_loaded); //StringArraySinglePointer = `char*`
         } else if (
             m_new == ASR::array_physical_typeType::StringArraySinglePointer &&
-            m_old == ASR::array_physical_typeType::PointerArray) {
+            (m_old == ASR::array_physical_typeType::PointerArray ||
+             m_old == ASR::array_physical_typeType::UnboundedPointerArray)) {
             if (ASRUtils::is_character(*ASRUtils::extract_type(ASRUtils::expr_type(m_arg)))) {
-                // For character arrays in bind(c) context
+                // A CHARACTER array held as a single string descriptor over
+                // its contiguous element storage: read the C `char*` out of
+                // the descriptor's data field.
                 ASR::ttype_t* old_ttype = ASRUtils::extract_type(ASRUtils::expr_type(m_arg));
                 llvm::Type* str_desc = llvm_utils->get_type_from_ttype_t_util(m_arg, old_ttype, module.get());
                 tmp = llvm_utils->create_gep2(str_desc, tmp, 0);
@@ -15340,14 +15391,28 @@ public:
     }
 
     void visit_StringPhysicalCast(const ASR::StringPhysicalCast_t &x){
-        if( x.m_old == ASR::string_physical_typeType::DescriptorString &&
+        if( LLVM::is_descriptor_string(x.m_old) &&
+            LLVM::is_descriptor_string(x.m_new) ){
+            // DescriptorString <-> HiddenLenString: inside a procedure both
+            // are a %string_descriptor (see LLVM::is_descriptor_string). The
+            // hidden length only appears at a call, where convert_call_args
+            // splits the descriptor of an actual passed to a HiddenLenString
+            // dummy, so the cast is a pointer to the argument's descriptor.
+            this->visit_expr_load_wrapper(x.m_arg, 0);
+            if (!tmp->getType()->isPointerTy()) {
+                llvm::Value* desc = llvm_utils->CreateAlloca(
+                    *builder, tmp->getType(), nullptr, "string_cast_desc");
+                builder->CreateStore(tmp, desc);
+                tmp = desc;
+            }
+        } else if( LLVM::is_descriptor_string(x.m_old) &&
             x.m_new == ASR::string_physical_typeType::CChar){
             // CChar -> is represented as `char*` in LLVM backend.
             this->visit_expr_load_wrapper(x.m_arg, 0);
             bool is_alloc = ASRUtils::is_allocatable(x.m_type);
             tmp = llvm_utils->get_string_data(ASRUtils::get_string_type(x.m_arg), tmp, is_alloc);
         } else if (x.m_old == ASR::string_physical_typeType::CChar &&
-            x.m_new == ASR::string_physical_typeType::DescriptorString){
+            LLVM::is_descriptor_string(x.m_new)){
             this->visit_expr_load_wrapper(x.m_arg, 0);// Typically a bind-C-function return
 
             int len = -1;
@@ -21833,7 +21898,7 @@ public:
         } else if (ASR::is_a<ASR::String_t>(*type)) {
             res += "S-";
             ASR::String_t* str_type = ASR::down_cast<ASR::String_t>(type);
-            if(str_type->m_physical_type == ASR::DescriptorString) res += "DESC";
+            if(LLVM::is_descriptor_string(str_type->m_physical_type)) res += "DESC";
             else if(str_type->m_physical_type == ASR::CChar) res +="CCHAR";
             else throw LCompilersException("Unhandled string physical type");
             // The character kind tells the runtime how many bytes one character
@@ -22368,6 +22433,10 @@ public:
     template <typename T>
     std::vector<llvm::Value*> convert_call_args(const T &x, bool skip_self = false, size_t skip_self_idx = 0) {
         std::vector<llvm::Value *> args;
+        // The hidden trailing lengths of the actuals passed to HiddenLenString
+        // dummies, appended after all positional arguments in the order the
+        // dummies appear (the mirror image of convert_args).
+        std::vector<llvm::Value*> hidden_char_length_args;
         convert_call_args_depth++;
         // Only reset alloca pool indices at outermost call to avoid
         // nested calls (in argument expressions) clobbering allocas
@@ -23370,6 +23439,7 @@ public:
             // already occurred via ArrayPhysicalCast or other mechanisms.
             if (orig_arg && x_abi == ASR::abiType::BindC &&
                 ASRUtils::is_character(*orig_arg->m_type) &&
+                !ASRUtils::is_hidden_len_string(orig_arg->m_type) &&
                 ASRUtils::is_array(orig_arg->m_type) &&
                 ASR::is_a<ASR::Var_t>(*x.m_args[i].m_value)) {
                 ASR::array_physical_typeType phys_type = ASRUtils::extract_physical_type(orig_arg->m_type);
@@ -23800,33 +23870,45 @@ public:
                 tmp = descriptor;
             }
 
-            {
-                ASR::symbol_t* called_sym =
-                    symbol_get_past_external(x.m_name);
-                bool is_proc_ptr_call =
-                    called_sym && ASR::is_a<ASR::Variable_t>(*called_sym);
-                if (orig_arg && callee_fn_type &&
-                        !is_proc_ptr_call &&
-                        x.m_dt == nullptr &&
-                        !callee_fn_type->m_module &&
-                        func_subrout->type == ASR::symbolType::Function &&
-                        callee_fn_type->m_deftype == ASR::deftypeType::Interface &&
-                        callee_fn_type->m_abi == ASR::abiType::Source &&
-                        !ASRUtils::is_array(orig_arg->m_type) &&
-                        ASR::is_a<ASR::String_t>(*ASRUtils::extract_type(orig_arg->m_type)) &&
-                        tmp->getType() ==
-                            llvm_utils->string_descriptor->getPointerTo()) {
-                    ASR::Function_t* called_fn =
-                        ASR::down_cast<ASR::Function_t>(func_subrout);
-                    if (called_fn->n_body == 0) {
-                        llvm::Value* data_gep = llvm_utils->create_gep2(
-                            llvm_utils->string_descriptor, tmp, 0);
-                        llvm::Value* data_ptr = llvm_utils->CreateLoad2(
-                            llvm::Type::getInt8Ty(context)->getPointerTo(),
-                            data_gep);
-                        tmp = builder->CreateBitCast(
-                            data_ptr,
-                            llvm_utils->string_descriptor->getPointerTo());
+            if (orig_arg && ASRUtils::is_hidden_len_string(orig_arg->m_type)) {
+                // The dummy uses the classic Fortran external ABI: pass the
+                // character data pointer at the argument position and the
+                // per-element length as a hidden trailing argument.
+                if (ASRUtils::is_character(*ASRUtils::expr_type(x.m_args[i].m_value))) {
+                    // The frontend cast the actual to HiddenLenString, so it
+                    // is a string descriptor here (LLVM::is_descriptor_string):
+                    // split it into its (data pointer, length) pair.
+                    if (!tmp->getType()->isPointerTy()) {
+                        llvm::Value* slot = llvm_utils->CreateAlloca(
+                            *builder, tmp->getType(), nullptr, "str_arg_value");
+                        builder->CreateStore(tmp, slot);
+                        tmp = slot;
+                    }
+                    llvm::Value* data_ptr;
+                    llvm::Value* len_val;
+                    std::tie(data_ptr, len_val) = llvm_utils->get_string_length_data(
+                        ASRUtils::get_string_type(x.m_args[i].m_value), tmp);
+                    len_val = builder->CreateSExtOrTrunc(
+                        len_val, llvm::Type::getInt64Ty(context));
+                    hidden_char_length_args.push_back(len_val);
+                    tmp = data_ptr;
+                } else {
+                    // A non-character actual passed by storage association
+                    // through an implicit interface (a legal F77 idiom): pass
+                    // its address as the data pointer and the dummy's declared
+                    // per-element length as the trailing length.
+                    int64_t fixed_len = ASRUtils::get_fixed_string_len(
+                        ASRUtils::extract_type(orig_arg->m_type));
+                    hidden_char_length_args.push_back(llvm::ConstantInt::get(
+                        llvm::Type::getInt64Ty(context), fixed_len >= 0 ? fixed_len : 1));
+                    llvm::Type* i8ptr = llvm::Type::getInt8Ty(context)->getPointerTo();
+                    if (!tmp->getType()->isPointerTy()) {
+                        llvm::Value* slot = builder->CreateAlloca(tmp->getType());
+                        builder->CreateStore(tmp, slot);
+                        tmp = slot;
+                    }
+                    if (tmp->getType() != i8ptr) {
+                        tmp = builder->CreateBitCast(tmp, i8ptr);
                     }
                 }
             }
@@ -23866,6 +23948,8 @@ public:
 
             args.push_back(tmp);
         }
+        args.insert(args.end(), hidden_char_length_args.begin(),
+            hidden_char_length_args.end());
         convert_call_args_depth--;
         return args;
     }
@@ -25294,7 +25378,7 @@ public:
             if (!ASR::is_a<ASR::StringPhysicalCast_t>(*x.m_args[i].m_value)) continue;
             ASR::StringPhysicalCast_t* cast =
                 ASR::down_cast<ASR::StringPhysicalCast_t>(x.m_args[i].m_value);
-            if (cast->m_old != ASR::string_physical_typeType::DescriptorString ||
+            if (!LLVM::is_descriptor_string(cast->m_old) ||
                 cast->m_new != ASR::string_physical_typeType::CChar) continue;
             size_t arg_idx = i;
             if (arg_idx >= s->n_args) continue;

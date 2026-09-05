@@ -1314,6 +1314,12 @@ bool is_directly_addressable_expr(ASR::expr_t* value) {
 
 bool is_temporary_needed(ASR::expr_t* value) {
     if(!value) { return false; }
+    // A StringPhysicalCast of an array of strings re-describes its argument
+    // in place (the call site handles the cast, see below), so whether a
+    // temporary is needed is a question about the argument.
+    if( ASR::is_a<ASR::StringPhysicalCast_t>(*value) ) {
+        return is_temporary_needed(ASR::down_cast<ASR::StringPhysicalCast_t>(value)->m_arg);
+    }
     bool is_expr_with_no_type = (std::find(exprs_with_no_type.begin(), exprs_with_no_type.end(),
         value->type) == exprs_with_no_type.end()) && ASRUtils::is_array(ASRUtils::expr_type(value));
     bool is_non_empty_fixed_size_array = (!ASRUtils::is_fixed_size_array(ASRUtils::expr_type(value)) ||
@@ -1529,13 +1535,27 @@ class ArgSimplifier: public ASR::CallReplacerOnExpressionsVisitor<ArgSimplifier>
             }
             if( is_temporary_needed(x_m_args[i].m_value) ) {
                 visit_call_arg(x_m_args[i]);
-                ASR::expr_t* array_var_temporary = call_create_and_allocate_temporary_variable(x_m_args[i].m_value, al, current_body, name_hint, current_scope, exprs_with_target);
-                if( ASR::is_a<ASR::ArrayPhysicalCast_t>(*x_m_args[i].m_value) ) {
-                    ASR::ArrayPhysicalCast_t* x_m_args_i = ASR::down_cast<ASR::ArrayPhysicalCast_t>(x_m_args[i].m_value);
+                // The temporary holds the argument of a StringPhysicalCast,
+                // whose result type (an implicit length) cannot be a
+                // variable's; the cast is put back around the temporary.
+                ASR::StringPhysicalCast_t* string_cast = nullptr;
+                ASR::expr_t* arg_value = x_m_args[i].m_value;
+                if( ASR::is_a<ASR::StringPhysicalCast_t>(*arg_value) ) {
+                    string_cast = ASR::down_cast<ASR::StringPhysicalCast_t>(arg_value);
+                    arg_value = string_cast->m_arg;
+                }
+                ASR::expr_t* array_var_temporary = call_create_and_allocate_temporary_variable(arg_value, al, current_body, name_hint, current_scope, exprs_with_target);
+                if( ASR::is_a<ASR::ArrayPhysicalCast_t>(*arg_value) ) {
+                    ASR::ArrayPhysicalCast_t* x_m_args_i = ASR::down_cast<ASR::ArrayPhysicalCast_t>(arg_value);
                     array_var_temporary = ASRUtils::EXPR(ASRUtils::make_ArrayPhysicalCast_t_util(
                         al, array_var_temporary->base.loc, array_var_temporary,
                         ASRUtils::extract_physical_type(ASRUtils::expr_type(array_var_temporary)),
                         x_m_args_i->m_new, x_m_args_i->m_type, nullptr));
+                }
+                if( string_cast ) {
+                    array_var_temporary = ASRUtils::EXPR(ASR::make_StringPhysicalCast_t(
+                        al, array_var_temporary->base.loc, array_var_temporary,
+                        string_cast->m_old, string_cast->m_new, string_cast->m_type, nullptr));
                 }
                 ASR::call_arg_t call_arg;
                 call_arg.loc = array_var_temporary->base.loc;

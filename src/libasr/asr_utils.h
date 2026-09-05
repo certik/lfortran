@@ -4621,15 +4621,27 @@ static inline bool is_array_of_strings(ASR::ttype_t* type){
  * If the string is already of the required physical type, it returns the same string
  * PointerString -> Needs to have information about the length of the string
 */
+// Casts `string`, a string or an array of strings, to the string physical
+// type `to`. The result's length is implicit (it is whatever the argument
+// carries at run time); for an array the dimensions and the array physical
+// type are kept, only the element's string physical type changes.
 static inline ASR::expr_t* create_string_physical_cast(Allocator& al, ASR::expr_t* string,
         ASR::string_physical_typeType to, bool make_allocatable = false){
     LCOMPILERS_ASSERT(is_character(*ASRUtils::expr_type(string)))
-    ASR::String_t* str_type = ASR::down_cast<ASR::String_t>(ASRUtils::extract_type(expr_type(string)));
+    ASR::ttype_t* string_type = ASRUtils::expr_type(string);
+    ASR::String_t* str_type = ASR::down_cast<ASR::String_t>(ASRUtils::extract_type(string_type));
     LCOMPILERS_ASSERT(to != str_type->m_physical_type)
     ASR::ttype_t* cast_expr_type = ASRUtils::TYPE(
         ASR::make_String_t(al, string->base.loc,
-            1, nullptr,
+            str_type->m_kind, nullptr,
             ASR::ImplicitLength, to));
+    if (is_array(string_type)) {
+        ASR::Array_t* arr = ASR::down_cast<ASR::Array_t>(
+            type_get_past_allocatable_pointer(string_type));
+        cast_expr_type = ASRUtils::TYPE(ASR::make_Array_t(al, string->base.loc,
+            cast_expr_type, arr->m_dims, arr->n_dims, arr->m_physical_type,
+            arr->m_memory_space));
+    }
     if (make_allocatable) {
         cast_expr_type = ASRUtils::TYPE(
             ASR::make_Allocatable_t(al, string->base.loc, cast_expr_type));
@@ -7656,6 +7668,17 @@ static inline bool is_allocatable_or_pointer(ASR::ttype_t* type) {
     return is_allocatable(type) || is_pointer(type);
 }
 
+// True when `type` is a CHARACTER, or an array of CHARACTER, whose string
+// physical type is HiddenLenString: the classic Fortran external ABI, in
+// which the data pointer is passed at the argument position and the
+// per-element length as a hidden trailing argument (see ASR.asdl).
+static inline bool is_hidden_len_string(ASR::ttype_t* type) {
+    ASR::ttype_t* bare = extract_type(type);
+    return ASR::is_a<ASR::String_t>(*bare) &&
+        ASR::down_cast<ASR::String_t>(bare)->m_physical_type
+            == ASR::string_physical_typeType::HiddenLenString;
+}
+
 static inline bool is_coarray(ASR::symbol_t* s) {
     s = symbol_get_past_external(s);
     if (ASR::is_a<ASR::Variable_t>(*s)) {
@@ -8624,7 +8647,16 @@ static inline void Call_t_body(Allocator& al, ASR::symbol_t* a_name,
                     al, arg->base.loc, arg, one, end, one, section_type, nullptr));
             }
         }
+        // A non-character actual storage-associated with a CHARACTER dummy
+        // through an implicit interface (a legal F77 idiom): the dummy is
+        // typed from the definition so the call passes the hidden length it
+        // expects, and the actual's address is what the callee receives.
+        bool storage_associated_character =
+            func_type->m_deftype == ASR::deftypeType::Interface &&
+            ASRUtils::is_hidden_len_string(orig_arg_type) &&
+            !ASRUtils::is_character(*arg_type);
         if( !ASRUtils::is_intrinsic_symbol(a_name_) &&
+            !storage_associated_character &&
             !(ASRUtils::is_class_type(ASRUtils::type_get_past_array(arg_type)) ||
               ASRUtils::is_class_type(ASRUtils::type_get_past_array(orig_arg_type))) &&
             !(ASR::is_a<ASR::FunctionType_t>(*ASRUtils::type_get_past_array(arg_type)) ||
@@ -8909,6 +8941,21 @@ static inline void Call_t_body(Allocator& al, ASR::symbol_t* a_name,
                     orig_arg_array_t->m_physical_type = ASR::array_physical_typeType::AssumedRankArray;
                 }
             }
+        }
+        // An array of strings has a string physical type of its own (that
+        // of its elements) on top of its array physical type; cast it too,
+        // after the array physical cast above, so the outermost expression
+        // matches the dummy in both. Only the hidden-length ABI needs this:
+        // a bind(c) CChar array is a flat character buffer whose conversion
+        // the ArrayPhysicalCast to StringArraySinglePointer already carries.
+        if( ASRUtils::is_array_of_strings(orig_arg_type) &&
+            ASRUtils::is_array_of_strings(arg_type) &&
+            (ASRUtils::is_hidden_len_string(orig_arg_type) ||
+             ASRUtils::is_hidden_len_string(ASRUtils::expr_type(a_args[i].m_value))) &&
+            get_string_type(orig_arg_type)->m_physical_type !=
+                get_string_type(ASRUtils::expr_type(a_args[i].m_value))->m_physical_type ) {
+            a_args[i].m_value = create_string_physical_cast(al, a_args[i].m_value,
+                get_string_type(orig_arg_type)->m_physical_type);
         }
         if(is_stringToArray_cast_needed(arg_type, orig_arg_type)){
             ASR::ttype_t* string_array_target = orig_arg_type;

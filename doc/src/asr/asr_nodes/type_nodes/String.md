@@ -33,9 +33,10 @@ runtime expression (`ExpressionLength`), inherited from the actual argument
 operation that produced the value (`ImplicitLength`).
 
 `physical_type` is separate from all of that: it says whether the value is
-carried as a descriptor or as a bare pointer, and
+carried as a descriptor, as a bare pointer, or as a pointer with a hidden
+trailing length, and
 [StringPhysicalCast](../expression_nodes/StringPhysicalCast.md) is what moves
-between the two without changing the logical type.
+between them without changing the logical type.
 
 ## Examples
 
