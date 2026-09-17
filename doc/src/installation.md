@@ -254,6 +254,15 @@ See [how to run tests](#Tests) to make sure all tests pass
 
 ## Enabling the Jupyter Kernel
 
+The quickest way is the pixi task, which builds LFortran with the kernel
+enabled and opens JupyterLab on the demo notebooks, without installing
+anything outside the repository:
+```
+pixi run lab-native
+```
+See [LFortran in the Browser](jupyterlite.md) for details, and read on for the
+manual route.
+
 To install the Jupyter kernel, install the following Conda packages also:
 ```
 conda install xeus=6.0.0 xeus-zmq=4.0.0 nlohmann_json

@@ -18,6 +18,14 @@ pixi run lab   # builds the WASM kernel and the site, then serves it at
                # http://localhost:8000/lab/index.html
 ```
 
+If you want the same notebooks but with LFortran running **on the server**
+rather than in the browser, use the native xeus kernel instead:
+
+```bash
+pixi run lab-native   # builds LFortran with -DWITH_XEUS=yes, then opens
+                      # JupyterLab on share/lfortran/nb/
+```
+
 ## How the deployed site is produced
 
 The site is built and deployed by the `build_xlfortran_jupyterlite` and
@@ -41,7 +49,7 @@ Pick the cheapest one that still shows the bug:
 | Approach | Build cost | Use when |
 | --- | --- | --- |
 | C++ evaluator test (`FortranEvaluator::evaluate2`) | native build only | Almost always — this is also the form the *fix* has to be tested in. See "Writing a test" below. |
-| Native Jupyter kernel (`-DWITH_XEUS=yes`) + JupyterLab | native build only | You need real notebook behaviour: rich display (`display_data`), streams, cell-by-cell state, error rendering. |
+| Native Jupyter kernel (`pixi run lab-native`) | native build only | You need real notebook behaviour: rich display (`display_data`), streams, cell-by-cell state, error rendering. |
 | Full JupyterLite/WASM build (`pixi run lab`) | ~30–60 min the first time | The bug is WASM-specific, or you want to confirm the fix in exactly the deployed artifact. |
 
 The kernel logic is shared by all three: `src/lfortran/fortran_kernel.cpp`
@@ -53,8 +61,30 @@ usually, in a plain C++ evaluator test.
 
 ## Option A — native Jupyter kernel (fast loop)
 
-This is the ordinary xeus kernel, described in
-[Enabling the Jupyter Kernel](installation.md). In short:
+Here LFortran runs as an ordinary [xeus](https://github.com/jupyter-xeus/xeus)
+kernel *on your machine*, talking ZeroMQ to a local JupyterLab — the
+server-side counterpart of the browser lab. One command:
+
+```bash
+pixi run lab-native
+```
+
+This builds LFortran with `-DWITH_XEUS=yes` into `build-lab-native/`, installs
+it (binary, runtime `.mod` files and the `fortran` kernelspec) into
+`build-lab-native/install/`, and opens JupyterLab on the demo notebooks in
+`share/lfortran/nb/` with `Fortran` as the default kernel. The task declares
+its `inputs`/`outputs`, so re-running it after an unrelated change starts the
+lab immediately; edit a source file and only the compiler is rebuilt.
+
+Nothing outside the repository is touched: the kernelspec is found through
+`JUPYTER_PATH`, not by installing into the environment or `~/.jupyter`.
+
+The build tree is deliberately separate from the in-source one made by
+`build1.sh`, because xeus needs RTTI and that is a global compile option —
+sharing a CMake cache would mean a full rebuild on every switch.
+
+To do the same by hand against your own environment
+(see [Enabling the Jupyter Kernel](installation.md)):
 
 ```bash
 conda install xeus>=6.0.0 xeus-zmq>=4.0.0 nlohmann_json jupyter -c conda-forge
@@ -116,6 +146,8 @@ for Windows. Verified end-to-end on macOS (arm64) and, in CI, on Linux.
 | `pixi run wasm-test` | Runs the evaluator test-suite inside the WASM runtime under `node`, exactly as CI does. |
 | `pixi run lab-build` | `jupyter lite build`: assembles the site into `dist/`, embedding the kernel and the demo notebooks. |
 | `pixi run lab` | Serves `dist/` at <http://localhost:8000/lab/index.html>. |
+| `pixi run lab-native-build` | `lab-native-build.sh`: builds LFortran with `-DWITH_XEUS=yes` and installs it, with its kernelspec, into `build-lab-native/install/`. |
+| `pixi run lab-native` | Opens JupyterLab on `share/lfortran/nb/` with the native kernel (Option A above). |
 
 Each task depends on the previous ones, so any of them can be invoked directly.
 
@@ -141,6 +173,7 @@ Three pixi environments back these tasks:
 | `wasm-build` | native tools (python, cmake, re2c, bison) plus the Emscripten toolchain (`emcmake`, `emmake`, `node`) |
 | `wasm-host` | WASM *target* libraries — `llvm`, `xeus`, `xeus-lite`, `nlohmann_json` — plus the runtime `.mod` files |
 | `lite` | `jupyterlite-xeus` + `jupyter_server`, to assemble and serve the site |
+| `lab-native` | native toolchain (`llvmdev`, `xeus`, `xeus-zmq`, `nlohmann_json`) plus `jupyterlab`, for the server-side kernel |
 
 `wasm-host` targets the `emscripten-wasm32` platform, which the host machine
 cannot execute, so pixi only installs it when that platform is named

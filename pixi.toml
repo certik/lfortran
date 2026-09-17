@@ -171,6 +171,18 @@ xeus = "==6.0.5"
 nlohmann_json = "==3.12.0"
 llvm = "==22.1.8"
 
+# ─── Native Jupyter kernel ("lab-native") ────────────────────────────────────
+# The server-side counterpart of `lab`: LFortran is built natively with
+# -DWITH_XEUS=yes and runs as an ordinary xeus kernel talking ZeroMQ to a local
+# JupyterLab, instead of as WebAssembly inside the browser. Same kernel logic
+# (src/lfortran/fortran_kernel.cpp), different transport and codegen target.
+# See doc/src/jupyterlite.md.
+[feature.lab-native]
+platforms = ["osx-arm64", "linux-64"]
+
+[feature.lab-native.dependencies]
+jupyterlab = "*"
+
 [feature.lite]
 platforms = ["osx-arm64", "linux-64"]
 
@@ -244,6 +256,39 @@ outputs = ["dist/xeus/wasm-host/bin/xlfortran.js"]
 cmd = "python ci/lite_server.py -d dist 8000"
 depends-on = ["lab-build"]
 
+# Build LFortran with the xeus kernel and install it (binary, runtime .mod
+# files and the "fortran" kernelspec) into build-lab-native/install.
+# Outputs must live outside .pixi/, which pixi's glob walker skips — hence the
+# self-contained prefix rather than installing into the environment.
+[feature.lab-native.tasks.lab-native-build]
+cmd = "bash ./lab-native-build.sh"
+inputs = [
+    "src/**/*.cpp",
+    "src/**/*.h",
+    "src/**/*.hpp",
+    "src/**/*.f90",
+    "src/**/CMakeLists.txt",
+    "CMakeLists.txt",
+    "cmake/**",
+    "grammar/**",
+    "share/jupyter/kernels/fortran/*",
+    "lab-native-build.sh",
+]
+outputs = [
+    "build-lab-native/install/bin/lfortran",
+    "build-lab-native/install/share/jupyter/kernels/fortran/kernel.json",
+]
+
+# Open JupyterLab (http://localhost:8888/ by default) on the demo notebooks,
+# with the native kernel selected by default.
+# JUPYTER_PATH is prepended to Jupyter's data-directory search path, so the
+# freshly installed "Fortran" kernelspec is picked up without touching the
+# environment or the user's home directory.
+[feature.lab-native.tasks.lab-native]
+cmd = "jupyter lab --notebook-dir=share/lfortran/nb --MultiKernelManager.default_kernel_name=fortran"
+env = { JUPYTER_PATH = "$PIXI_PROJECT_ROOT/build-lab-native/install/share/jupyter" }
+depends-on = ["lab-native-build"]
+
 [environments]
 default = {features = ["native"]}
 llvm7 = {features = ["llvm7", "build"]}
@@ -267,3 +312,4 @@ test = {features = ["test"]}
 wasm-build = {features = ["wasm-build"], no-default-feature = true}
 wasm-host = {features = ["wasm-host"], no-default-feature = true}
 lite = {features = ["lite"], no-default-feature = true}
+lab-native = {features = ["llvm11", "build", "lab-native"]}

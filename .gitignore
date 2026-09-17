@@ -189,6 +189,7 @@ __pycache__/
 .Python
 build/
 build-wasm/
+build-lab-native/
 .jupyterlite.doit.db
 develop-eggs/
 dist/
