@@ -552,10 +552,15 @@ if (WITH_RUNTIME_LIBRARY)
   endif()
 
 
+  # Explicit -S/-B: a tree previously built in-source by build1.sh leaves a
+  # CMakeCache.txt in src/runtime/, and the positional form would take that
+  # source path for an existing *binary* directory and configure there instead.
   add_custom_target(configure_runtime
     ALL
     COMMAND "${CMAKE_COMMAND}"
     "-G" "${CMAKE_GENERATOR}"
+    "-S" "${CMAKE_SOURCE_DIR}/src/runtime"
+    "-B" "${CMAKE_BINARY_DIR}/src/runtime"
     "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}"
     "-DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}"
     "-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}"
@@ -565,7 +570,6 @@ if (WITH_RUNTIME_LIBRARY)
 #    "-DCMAKE_VERBOSE_MAKEFILE:BOOL=${CMAKE_VERBOSE_MAKEFILE}"
     "-DCMAKE_Fortran_COMPILER=${LFORTRAN_PATH}"
     "-DLFORTRAN_NESTED_BUILD=yes"
-    "${CMAKE_SOURCE_DIR}/src/runtime/"
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/src/runtime")
 
   add_dependencies(configure_runtime lfortran)
