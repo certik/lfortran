@@ -11045,6 +11045,13 @@ public:
                 }
                 llvm_diminfo.push_back(al, dim_length);
             }
+            // A character array component stored inline in the struct is a
+            // flat byte blob, not a descriptor, so value_desc points at the
+            // bytes themselves. Wrap it in a descriptor over those bytes so
+            // the section is cut from the blob instead of from whatever the
+            // first bytes of the data happen to spell.
+            value_desc = inline_char_member_as_string_descriptor(
+                array_section->m_v, value_desc, "inline_char_member_desc");
             arr_descr->fill_descriptor_for_array_section_data_only(value_desc, value_el_type, expr_type(x.m_value),
                 target, expr_type(x.m_target), x.m_target,
                 target_type,
