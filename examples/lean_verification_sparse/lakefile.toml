@@ -1,0 +1,14 @@
+name = "sparse_lean"
+version = "0.1.0"
+defaultTargets = ["SparseLean"]
+
+[leanOptions]
+relaxedAutoImplicit = false
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.32.0-rc1"
+
+[[lean_lib]]
+name = "SparseLean"
