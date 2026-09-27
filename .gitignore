@@ -17,6 +17,16 @@ src/lfortran/tests/test_serialization*
 src/lfortran/tests/test_cwrapper
 src/lfortran/tests/test_serialization
 src/lfortran/tests/test_lfortran
+src/lfortran/tests/test_init_engine
+src/lfortran/tests/test_init_native_ab
+src/lfortran/tests/test_init_native_ba
+src/lfortran/tests/test_init_native_barrier
+src/lfortran/tests/test_init_native_dlopen
+src/lfortran/tests/test_init_native_malformed_load
+src/lfortran/tests/test_init_native_order
+src/lfortran/tests/test_init_native_race
+src/lfortran/tests/test_init_native_reload
+src/lfortran/tests/test_init_native_*_lld
 src/lfortran/tests/write32
 src/lfortran/tests/write32.asm
 src/lfortran/tests/subroutines32
