@@ -1108,6 +1108,9 @@ class ASRToLLVMVisitor;
                     ASR::symbol_t* final_sym = struct_sym->m_symtab->parent->get_symbol(final_proc_name);
                     if (final_sym) {
                         final_sym = ASRUtils::symbol_get_past_external(final_sym);
+                        ASR::Function_t* final_proc = ASR::down_cast<ASR::Function_t>(final_sym);
+                        if (ASRUtils::extract_n_dims_from_ttype(
+                                ASRUtils::expr_type(final_proc->m_args[0])) != 0) continue;
                         uint32_t fh = get_hash((ASR::asr_t*)final_sym);
                         if (llvm_symtab_fn_.find(fh) != llvm_symtab_fn_.end()) {
                             llvm::Function* final_fn = llvm_symtab_fn_[fh];
