@@ -11,6 +11,23 @@
 
 
 namespace LCompilers {
+ASR::Function_t *select_final_procedure(ASR::Struct_t *st, int rank) {
+    if (st == nullptr) return nullptr;
+    ASR::Function_t *elemental = nullptr;
+    for (size_t i = 0; i < st->n_member_functions; i++) {
+        ASR::symbol_t *sym = st->m_symtab->parent->get_symbol(
+            st->m_member_functions[i]);
+        LCOMPILERS_ASSERT(sym != nullptr);
+        if (sym == nullptr) continue;
+        sym = ASRUtils::symbol_get_past_external(sym);
+        ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(sym);
+        if (ASRUtils::extract_n_dims_from_ttype(
+                ASRUtils::expr_type(fn->m_args[0])) == rank) return fn;
+        if (ASRUtils::is_elemental(sym)) elemental = fn;
+    }
+    return elemental;
+}
+
 // Deallocate allocatable `intent(out)` dummy arguments at function entry.
 //
 // Notes / limitations:
@@ -505,12 +522,11 @@ class IntentOutDeallocateVisitor : public ASR::BaseWalkVisitor<IntentOutDealloca
             SymbolTable* current_scope,
             const Location& loc,
             Vec<ASR::stmt_t*>& out_stmts) {
-        for (size_t fi = 0; fi < st->n_member_functions; fi++) {
-            std::string final_proc_name = st->m_member_functions[fi];
-            ASR::symbol_t* final_sym =
-                st->m_symtab->parent->get_symbol(final_proc_name);
-            LCOMPILERS_ASSERT(final_sym != nullptr);
-            if (final_sym == nullptr) continue;
+        ASR::Function_t *selected = select_final_procedure(st,
+            ASRUtils::extract_n_dims_from_ttype(ASRUtils::expr_type(entity_expr)));
+        if (selected != nullptr) {
+            std::string final_proc_name = selected->m_name;
+            ASR::symbol_t* final_sym = &selected->base;
 
             ASR::symbol_t* local_final_sym =
                 current_scope->resolve_symbol(final_proc_name);

@@ -8,6 +8,7 @@
 #include <llvm/IR/Module.h>
 #include <llvm/IR/IRBuilder.h>
 #include <libasr/asr.h>
+#include <libasr/pass/intent_out_deallocate.h>
 
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
@@ -1103,47 +1104,41 @@ class ASRToLLVMVisitor;
                     finalize(ptr, type, struct_sym, in_struct);
                     return;
                 }
-                for (size_t fi = 0; fi < struct_sym->n_member_functions; fi++) {
-                    std::string final_proc_name = struct_sym->m_member_functions[fi];
-                    ASR::symbol_t* final_sym = struct_sym->m_symtab->parent->get_symbol(final_proc_name);
-                    if (final_sym) {
-                        final_sym = ASRUtils::symbol_get_past_external(final_sym);
-                        ASR::Function_t* final_proc = ASR::down_cast<ASR::Function_t>(final_sym);
-                        if (ASRUtils::extract_n_dims_from_ttype(
-                                ASRUtils::expr_type(final_proc->m_args[0])) != 0) continue;
-                        uint32_t fh = get_hash((ASR::asr_t*)final_sym);
-                        if (llvm_symtab_fn_.find(fh) != llvm_symtab_fn_.end()) {
-                            llvm::Function* final_fn = llvm_symtab_fn_[fh];
-                            if (ASR::is_a<ASR::Array_t>(*v_type_past)) {
-                                // Variable is an array but the final subroutine
-                                // takes a scalar — call it element-by-element.
-                                ASR::Array_t* arr_t = ASR::down_cast<ASR::Array_t>(v_type_past);
-                                llvm::Type* elem_llvm_type = get_llvm_type(arr_t->m_type, struct_sym);
-                                llvm::Value* data_ptr = builder_->CreateBitCast(
-                                    ptr, elem_llvm_type->getPointerTo());
-                                int64_t array_size = ASRUtils::get_fixed_size_of_array(type);
-                                auto iter_type = llvm::Type::getInt64Ty(builder_->getContext());
-                                auto* iter = builder_->CreateAlloca(iter_type, nullptr, "final_iter");
-                                builder_->CreateStore(
-                                    llvm::ConstantInt::get(iter_type, -1, true), iter);
-                                auto cond_fn = [&]() {
-                                    auto* loaded = builder_->CreateLoad(iter_type, iter);
-                                    auto* next = builder_->CreateAdd(loaded,
-                                        llvm::ConstantInt::get(iter_type, 1));
-                                    builder_->CreateStore(next, iter);
-                                    return builder_->CreateICmpSLT(next,
-                                        llvm::ConstantInt::get(iter_type, array_size));
-                                };
-                                auto body_fn = [&]() {
-                                    auto* idx = builder_->CreateLoad(iter_type, iter);
-                                    auto* elem = llvm_utils_->create_ptr_gep2(
-                                        elem_llvm_type, data_ptr, idx);
-                                    builder_->CreateCall(final_fn, {elem});
-                                };
-                                llvm_utils_->create_loop("Final_array_elems", cond_fn, body_fn);
-                            } else {
-                                builder_->CreateCall(final_fn, {ptr});
-                            }
+                ASR::Function_t *final_proc = select_final_procedure(struct_sym, 0);
+                if (final_proc) {
+                    ASR::symbol_t* final_sym = &final_proc->base;
+                    uint32_t fh = get_hash((ASR::asr_t*)final_sym);
+                    if (llvm_symtab_fn_.find(fh) != llvm_symtab_fn_.end()) {
+                        llvm::Function* final_fn = llvm_symtab_fn_[fh];
+                        if (ASR::is_a<ASR::Array_t>(*v_type_past)) {
+                            // Variable is an array but the final subroutine
+                            // takes a scalar — call it element-by-element.
+                            ASR::Array_t* arr_t = ASR::down_cast<ASR::Array_t>(v_type_past);
+                            llvm::Type* elem_llvm_type = get_llvm_type(arr_t->m_type, struct_sym);
+                            llvm::Value* data_ptr = builder_->CreateBitCast(
+                                ptr, elem_llvm_type->getPointerTo());
+                            int64_t array_size = ASRUtils::get_fixed_size_of_array(type);
+                            auto iter_type = llvm::Type::getInt64Ty(builder_->getContext());
+                            auto* iter = builder_->CreateAlloca(iter_type, nullptr, "final_iter");
+                            builder_->CreateStore(
+                                llvm::ConstantInt::get(iter_type, -1, true), iter);
+                            auto cond_fn = [&]() {
+                                auto* loaded = builder_->CreateLoad(iter_type, iter);
+                                auto* next = builder_->CreateAdd(loaded,
+                                    llvm::ConstantInt::get(iter_type, 1));
+                                builder_->CreateStore(next, iter);
+                                return builder_->CreateICmpSLT(next,
+                                    llvm::ConstantInt::get(iter_type, array_size));
+                            };
+                            auto body_fn = [&]() {
+                                auto* idx = builder_->CreateLoad(iter_type, iter);
+                                auto* elem = llvm_utils_->create_ptr_gep2(
+                                    elem_llvm_type, data_ptr, idx);
+                                builder_->CreateCall(final_fn, {elem});
+                            };
+                            llvm_utils_->create_loop("Final_array_elems", cond_fn, body_fn);
+                        } else {
+                            builder_->CreateCall(final_fn, {ptr});
                         }
                     }
                 }
