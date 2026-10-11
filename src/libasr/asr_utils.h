@@ -1859,6 +1859,16 @@ static inline bool is_tu_scope(const SymbolTable *s) {
     return s->asr_owner != nullptr && ASR::is_a<ASR::unit_t>(*s->asr_owner);
 }
 
+// Access of a helper procedure a pass builds in `scope` (one implementing an
+// intrinsic, say). One built directly in a translation unit is built again by
+// every unit that needs it and is called from that unit only, so it is
+// private to the unit: two units that both build it must not clash at link
+// time.
+static inline ASR::accessType generated_procedure_access(const SymbolTable *scope) {
+    return is_tu_scope(scope) ? ASR::accessType::Private
+        : ASR::accessType::Public;
+}
+
 // Interactive evaluation compiles one TranslationUnit per cell, chained by
 // scope, and a cell may redeclare a name an earlier cell already used. Both
 // declarations stay live -- code compiled earlier keeps using the old one -- so

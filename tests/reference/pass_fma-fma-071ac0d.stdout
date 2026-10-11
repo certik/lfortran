@@ -150,7 +150,7 @@
                         .false.
                     )]
                     (Var 3 _lcompilers_optimization_fma_f32)
-                    Public
+                    Private
                     .false.
                     .false.
                     ()
@@ -303,7 +303,7 @@
                         .false.
                     )]
                     (Var 4 _lcompilers_optimization_fma_f321)
-                    Public
+                    Private
                     .false.
                     .false.
                     ()
@@ -456,7 +456,7 @@
                         .false.
                     )]
                     (Var 6 _lcompilers_optimization_fma_f322)
-                    Public
+                    Private
                     .false.
                     .false.
                     ()
@@ -609,7 +609,7 @@
                         .false.
                     )]
                     (Var 7 _lcompilers_optimization_fma_f323)
-                    Public
+                    Private
                     .false.
                     .false.
                     ()
@@ -762,7 +762,7 @@
                         .false.
                     )]
                     (Var 5 _lcompilers_optimization_fma_f64)
-                    Public
+                    Private
                     .false.
                     .false.
                     ()

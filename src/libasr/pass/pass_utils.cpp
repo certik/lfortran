@@ -1297,7 +1297,8 @@ namespace LCompilers {
                 vector_copy_symtab,
                 s2c(al, vector_copy_name), nullptr, 0, arg_exprs.p, arg_exprs.size(),
                 /* nullptr, 0, */ body.p, body.size(), nullptr,
-                ASR::abiType::Source, ASR::accessType::Public,
+                ASR::abiType::Source,
+                ASRUtils::generated_procedure_access(global_scope),
                 ASR::deftypeType::Implementation,
                 nullptr, false, false, false, false, false,
                 nullptr, 0, false, false, false);

@@ -328,7 +328,8 @@ public:
                     new_args.p, new_args.n,
                     new_body.p, new_body.n,
                     return_var,
-                    ASR::abiType::Source, ASR::accessType::Public, ASR::deftypeType::Implementation,
+                    ASR::abiType::Source, ASRUtils::generated_procedure_access(new_scope->parent),
+                    ASR::deftypeType::Implementation,
                     nullptr, false, false, false, false, false, nullptr, 0,
                     false, false, false);
 
@@ -431,7 +432,8 @@ public:
                     new_args.p, new_args.n,
                     new_body.p, new_body.n,
                     return_var,
-                    ASR::abiType::Source, ASR::accessType::Public, ASR::deftypeType::Implementation,
+                    ASR::abiType::Source, ASRUtils::generated_procedure_access(new_scope->parent),
+                    ASR::deftypeType::Implementation,
                     nullptr, false, false, false, false, false, nullptr, 0,
                     false, false, false);
 

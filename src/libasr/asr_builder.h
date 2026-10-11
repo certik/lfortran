@@ -102,7 +102,7 @@ class ASRBuilder {
             deftype, bindc_name)                                                \
         ASR::down_cast<ASR::symbol_t>( ASRUtils::make_Function_t_util(al, loc,  \
         symtab, s2c(al, name), dep.p, dep.n, args.p, args.n, body.p, body.n,    \
-        return_var, abi, ASR::accessType::Public,                 \
+        return_var, abi, ASRUtils::generated_procedure_access(symtab->parent),  \
         deftype, bindc_name, false, false, false, false,      \
         false, nullptr, 0, false, false, false));
 
@@ -110,7 +110,7 @@ class ASRBuilder {
             abi, deftype, bindc_name)                                           \
         ASR::down_cast<ASR::symbol_t>( ASRUtils::make_Function_t_util(al, loc,  \
         symtab, s2c(al, name), dep.p, dep.n, args.p, args.n, body.p, body.n,    \
-        nullptr, abi, ASR::accessType::Public,                    \
+        nullptr, abi, ASRUtils::generated_procedure_access(symtab->parent),     \
         deftype, bindc_name, false, false, false, false,      \
         false, nullptr, 0, false, false, false));
 
