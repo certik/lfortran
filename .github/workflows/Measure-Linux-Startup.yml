@@ -1,0 +1,114 @@
+name: Measure Linux startup (temporary, fork only)
+
+on:
+  push:
+    branches:
+      - measure-linux-startup
+
+jobs:
+  measure:
+    if: github.repository != 'lfortran/lfortran'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Same environment as Quick's "Compiler compatibility / Test LLVM 11".
+      - uses: mamba-org/setup-micromamba@v2.0.2
+        with:
+          micromamba-version: '2.0.4-0'
+          environment-file: ci/environment_linux_llvm.yml
+          create-args: >-
+            python=3.10
+            llvmdev=11
+            bison=3.4
+            openblas=0.3.21
+            llvm-openmp=14.0.4
+            make=4.3
+
+      - name: Install libunwind
+        run: micromamba install -y -n lf libunwind=1.7.2
+
+      - name: Build (same as Quick's LLVM 11 Debug compiler)
+        shell: bash -e -l {0}
+        run: |
+          ./build0.sh
+          export CFLAGS="-Werror -D_GLIBCXX_ASSERTIONS -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG"
+          export CXXFLAGS="$CFLAGS"
+          cmake . -GNinja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS_RELEASE="-Wall -Wextra -O3 -funroll-loops -DNDEBUG" \
+            -DWITH_LLVM=yes -DWITH_LSP=yes -DLFORTRAN_BUILD_ALL=yes \
+            -DWITH_STACKTRACE=no -DWITH_RUNTIME_STACKTRACE=yes \
+            -DWITH_INTERNAL_ALLOC_CHECK=yes \
+            -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" -DCMAKE_INSTALL_PREFIX=`pwd`/inst
+          cmake --build . -j$(nproc) --target install
+
+      - name: Build link variants
+        shell: bash -e -l {0}
+        run: |
+          link=$(ninja -t commands src/bin/lfortran | tail -1)
+          echo "$link" | grep -q -- "--export-dynamic" || { echo "no --export-dynamic in link command"; exit 1; }
+          mkdir -p variants
+          cp src/bin/lfortran variants/lfortran_export_all
+          # No dynamic exports at all (measurement only; breaks JIT lookups).
+          eval "$(echo "$link" | sed 's#-Wl,--export-dynamic##; s# -o src/bin/lfortran # -o variants/lfortran_no_exports #')"
+          # Candidate fix: export C symbols only, hide C++ (_Z*) symbols.
+          printf '{\n  global: [!_]*; _[!Z]*;\n  local: *;\n};\n' > variants/c_only.map
+          eval "$(echo "$link" | sed "s# -o src/bin/lfortran # -o variants/lfortran_c_only -Wl,--version-script=$PWD/variants/c_only.map #")"
+
+      - name: Measure
+        shell: bash -e -l {0}
+        run: |
+          printf 'program p\nend program\n' > /tmp/empty.f90
+          {
+          echo "## Linux startup (Debug, LLVM 11, as in Quick)"
+          echo
+          echo "| Variant | Size MB | Dynamic symbols | Weak | Relocations | --version min/median ms | empty -c min/median ms |"
+          echo "| --- | --- | --- | --- | --- | --- | --- |"
+          } >> $GITHUB_STEP_SUMMARY
+          for v in export_all no_exports c_only; do
+            b=variants/lfortran_$v
+            size=$(( $(stat -c %s $b) / 1000000 ))
+            dyn=$(readelf --dyn-syms -W $b | grep -c -E '^ +[0-9]+:')
+            weak=$(readelf --dyn-syms -W $b | grep -c ' WEAK ')
+            rel=$(readelf -r -W $b | grep -c -E '^[0-9a-f]{16} ')
+            times=$(python3 - "$b" <<'PY'
+          import subprocess, sys, time
+          b = sys.argv[1]
+          def t(args):
+              ts = []
+              for _ in range(15):
+                  s = time.perf_counter(); subprocess.run([b] + args, capture_output=True); ts.append(time.perf_counter() - s)
+              ts.sort(); return f"{1000*ts[0]:.1f} / {1000*ts[7]:.1f}"
+          print(t(["--version"]) + " | " + t(["-c", "/tmp/empty.f90", "-o", "/tmp/empty.o"]))
+          PY
+          )
+            echo "| $v | $size | $dyn | $weak | $rel | $times |" >> $GITHUB_STEP_SUMMARY
+            echo "=== $v: LD_DEBUG=statistics"
+            LD_DEBUG=statistics $b --version 2>&1 >/dev/null | sed -n '1,12p'
+          done
+
+      - name: Check the C-only variant (JIT, exports)
+        shell: bash -e -l {0}
+        run: |
+          ./src/bin/lfortran < src/bin/example_input.txt > /tmp/jit_all.txt 2>&1
+          cp variants/lfortran_c_only src/bin/lfortran
+          ./src/bin/lfortran < src/bin/example_input.txt > /tmp/jit_c.txt 2>&1
+          diff /tmp/jit_all.txt /tmp/jit_c.txt && echo "JIT output identical" >> $GITHUB_STEP_SUMMARY
+          echo "C-only exported C symbols: $(readelf --dyn-syms -W src/bin/lfortran | awk '$7!="UND" && $5=="GLOBAL"' | wc -l), C++: $(readelf --dyn-syms -W src/bin/lfortran | awk '$7!="UND" && $8 ~ /^_Z/' | wc -l)" >> $GITHUB_STEP_SUMMARY
+          cp variants/lfortran_export_all src/bin/lfortran
+
+      - name: Time an integration pass (export all vs C only)
+        shell: bash -e -l {0}
+        run: |
+          export PATH="$(pwd)/src/bin:$PATH"
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration pass (-b llvm, -j$(nproc)) | Seconds | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- | --- |" >> $GITHUB_STEP_SUMMARY
+          for v in export_all c_only; do
+            cp variants/lfortran_$v src/bin/lfortran
+            (cd integration_tests && rm -rf test-llvm && s=$(date +%s) && { ./run_tests.py -b llvm -j$(nproc) > /tmp/int_$v.log 2>&1 && rc=0 || rc=$?; } && e=$(date +%s); echo "| $v | $((e-s)) | exit $rc, $(grep 'tests passed' /tmp/int_$v.log | tail -1) |" >> $GITHUB_STEP_SUMMARY)
+          done
