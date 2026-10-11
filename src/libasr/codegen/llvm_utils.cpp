@@ -362,7 +362,8 @@ namespace LCompilers {
         return allocator_instance;
     }
 
-    llvm::Value* LLVMUtils::string_format_fortran(const std::vector<llvm::Value*> &args, llvm::Value* decimal_mode, llvm::Value* sign_mode, llvm::Value* round_mode, bool leading_blank)
+    llvm::Value* LLVMUtils::string_format_fortran(const std::vector<llvm::Value*> &args, llvm::Value* decimal_mode, llvm::Value* sign_mode, llvm::Value* round_mode, bool leading_blank,
+        llvm::Value* dtio_unit, llvm::Value* n_dtio, llvm::Value* dtio_procs)
     {
         llvm::Function *fn_printf = module->getFunction("_lcompilers_string_format_fortran");
         if (!fn_printf) {
@@ -377,7 +378,10 @@ namespace LCompilers {
                     llvm::Type::getInt32Ty(context),
                     llvm::Type::getInt32Ty(context),
                     llvm::Type::getInt32Ty(context),
-                    llvm::Type::getInt32Ty(context)}, true);
+                    llvm::Type::getInt32Ty(context),
+                    llvm::Type::getInt32Ty(context), // dtio_unit
+                    llvm::Type::getInt32Ty(context), // n_dtio
+                    llvm::Type::getInt8Ty(context)->getPointerTo()->getPointerTo()}, true); // dtio_procs
             fn_printf = llvm::Function::Create(function_type,
                     llvm::Function::ExternalLinkage, "_lcompilers_string_format_fortran", module);
         }
@@ -404,6 +408,12 @@ namespace LCompilers {
             full_args.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0));
         }
         full_args.push_back(llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), leading_blank));
+        full_args.push_back(dtio_unit ? dtio_unit :
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0));
+        full_args.push_back(n_dtio ? n_dtio :
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0));
+        full_args.push_back(dtio_procs ? dtio_procs : llvm::ConstantPointerNull::get(
+            llvm::Type::getInt8Ty(context)->getPointerTo()->getPointerTo()));
         for (size_t i = 6; i < args.size(); i++) {
             full_args.push_back(args[i]);
         }
