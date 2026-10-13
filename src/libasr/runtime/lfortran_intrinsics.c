@@ -3470,7 +3470,8 @@ static char* dtio_call(lfortran_allocator_t* al, char** result,
         int64_t* cursor, int64_t* extent, int64_t* content_end,
         int32_t dtio_unit, int32_t n_dtio, lfortran_dtio_write_fn* dtio_procs,
         int32_t k, void* dtv, const char* iotype, int64_t iotype_len,
-        int32_t n_v, int32_t* v_list, bool* failed);
+        int32_t n_v, int32_t* v_list, bool* failed,
+        int64_t* continuation_start);
 
 // With `leading_blank`, a blank is written before the first item, so that
 // output with no items stays empty. A derived-type item with defined output
@@ -3546,7 +3547,7 @@ void default_formatting(lfortran_allocator_t* al, char** result, int64_t *result
             char* error = dtio_call(al, result, &result_size, &extent,
                 &content_end, dtio_unit, n_dtio, dtio_procs,
                 s_info->current_dtio_index, s_info->current_arg_info.current_arg,
-                "LISTDIRECTED", 12, 0, empty_v_list, &failed);
+                "LISTDIRECTED", 12, 0, empty_v_list, &failed, NULL);
             // The child output may have reallocated the buffer to its
             // exact size.
             result_capacity = result_size;
@@ -3597,9 +3598,28 @@ static inline int64_t get_current_record_column(int64_t result_len, const char* 
     return result_len - get_current_record_start(result_len, result) + 1;
 }
 
+typedef struct dtio_formatter_frame {
+    char** result;
+    int64_t first_written;
+    struct dtio_formatter_frame* previous;
+} DTIO_Formatter_Frame;
+
+static DTIO_Formatter_Frame* dtio_formatter = NULL;
+
+// Leading positioning does not overwrite an earlier transfer. Track the
+// start of the output span; padding between its fields belongs to this transfer.
+static void dtio_mark_written(const char* result, int64_t pos, int64_t len) {
+    DTIO_Formatter_Frame* frame = dtio_formatter;
+    if (frame == NULL || result != *frame->result || len == 0) return;
+    if (frame->first_written < 0 || pos < frame->first_written) {
+        frame->first_written = pos;
+    }
+}
+
 static inline char* write_to_result_at_pos(lfortran_allocator_t* al,
         char* dest, int64_t* used_len, int64_t pos,
         const char* src, int64_t src_len) {
+    dtio_mark_written(dest, pos, src_len);
     int64_t new_end = pos + src_len;
     int64_t cap_len = (*used_len > new_end) ? *used_len : new_end;
     dest = (char*)ALLOCATOR_REALLOC(al, dest, (cap_len + 1) * sizeof(char));
@@ -3612,6 +3632,20 @@ static inline char* write_to_result_at_pos(lfortran_allocator_t* al,
     }
     dest[*used_len] = '\0';
     return dest;
+}
+
+// Parent output resumes a child transfer at its cursor, not at its record
+// extent. A forward gap is blank-filled only when more data is written.
+static void dtio_fill_continuation_gap(char* result, int64_t extent,
+        int64_t cursor, int64_t* continuation_start) {
+    if (*continuation_start >= 0 && cursor > *continuation_start) {
+        int64_t end = cursor < extent ? cursor : extent;
+        if (end > *continuation_start) {
+            dtio_mark_written(result, *continuation_start, end - *continuation_start);
+            memset(result + *continuation_start, ' ', end - *continuation_start);
+        }
+    }
+    *continuation_start = -1;
 }
 
 /*
@@ -3640,11 +3674,42 @@ typedef struct dtio_capture_frame {
     int64_t* cursor;        // its current position,
     int64_t* extent;        // its end,
     int64_t* content_end;   // and the end of its non-blank content.
+    int64_t* continuation_start;
 } DTIO_Capture_Frame;
 
 static DTIO_Capture_Frame* dtio_capture_stack = NULL;
 static int32_t dtio_capture_depth = 0;
 static int32_t dtio_capture_capacity = 0;
+
+// The formatter and the subsequent output call share the same result buffer.
+// Keep its final cursor and output span until that call consumes it.
+typedef struct dtio_formatted_result {
+    const char* result;
+    int64_t cursor;
+    int64_t first_written;
+} DTIO_Formatted_Result;
+
+static DTIO_Formatted_Result dtio_formatted_result = {NULL, 0, 0};
+static const DTIO_Formatted_Result dtio_empty_formatted_result = {NULL, 0, 0};
+
+static void dtio_remember_formatted_cursor(const char* result, int64_t cursor,
+        int64_t first_written) {
+    dtio_formatted_result = dtio_empty_formatted_result;
+    if (dtio_capture_depth > 0) {
+        DTIO_Formatted_Result metadata = {result, cursor, first_written};
+        dtio_formatted_result = metadata;
+    }
+}
+
+static DTIO_Formatted_Result dtio_take_formatted_result(const char* result,
+        int64_t extent) {
+    DTIO_Formatted_Result metadata = {result, extent, 0};
+    if (dtio_formatted_result.result == result) {
+        metadata = dtio_formatted_result;
+        dtio_formatted_result = dtio_empty_formatted_result;
+    }
+    return metadata;
+}
 
 #ifdef LFORTRAN_INTERNAL_ALLOC_CHECK
 // The serial number of the first internal allocation of the outermost
@@ -3734,6 +3799,7 @@ static DTIO_Capture_Frame* dtio_find_capture_frame(int32_t unit_num) {
 static bool dtio_capture_formatted(int32_t unit_num, int32_t* iostat,
         const char* str, int64_t str_len) {
     if (dtio_capture_depth == 0) return false;
+    DTIO_Formatted_Result metadata = dtio_take_formatted_result(str, str_len);
     DTIO_Capture_Frame* frame = dtio_find_capture_frame(unit_num);
     if (frame == NULL) return false;
     if (str_len > 0 && str[0] == '\b') {
@@ -3744,11 +3810,30 @@ static bool dtio_capture_formatted(int32_t unit_num, int32_t* iostat,
         *iostat = 11;
         return true;
     }
-    *frame->result = write_to_result_at_pos(frame->al, *frame->result,
-        frame->extent, *frame->cursor, str, str_len);
-    *frame->cursor += str_len;
-    if (*frame->cursor > *frame->content_end) {
-        *frame->content_end = *frame->cursor;
+    int64_t start = *frame->cursor;
+    if (frame->continuation_start != NULL && str_len > 0) {
+        dtio_fill_continuation_gap(*frame->result, *frame->extent,
+            start, frame->continuation_start);
+    }
+    if (metadata.first_written >= 0 && metadata.first_written < str_len) {
+        int64_t begin = metadata.first_written;
+        *frame->result = write_to_result_at_pos(frame->al, *frame->result,
+            frame->extent, start + begin, str + begin, str_len - begin);
+    }
+    if (start + str_len > *frame->content_end) {
+        *frame->content_end = start + str_len;
+    }
+    *frame->cursor += frame->continuation_start != NULL ? metadata.cursor : str_len;
+    if (frame->continuation_start != NULL) {
+        if (str_len > 0) {
+            *frame->continuation_start = *frame->cursor;
+        } else if (*frame->continuation_start < 0) {
+            *frame->continuation_start = start;
+        }
+        if (*frame->cursor > *frame->extent) {
+            *frame->result = write_to_result_at_pos(frame->al, *frame->result,
+                frame->extent, *frame->cursor, "", 0);
+        }
     }
     if (iostat != NULL) *iostat = 0;
     return true;
@@ -3763,7 +3848,8 @@ static char* dtio_call(lfortran_allocator_t* al, char** result,
         int64_t* cursor, int64_t* extent, int64_t* content_end,
         int32_t dtio_unit, int32_t n_dtio, lfortran_dtio_write_fn* dtio_procs,
         int32_t k, void* dtv, const char* iotype, int64_t iotype_len,
-        int32_t n_v, int32_t* v_list, bool* failed) {
+        int32_t n_v, int32_t* v_list, bool* failed,
+        int64_t* continuation_start) {
     if (k < 0 || k >= n_dtio || dtio_procs == NULL || dtio_procs[k] == NULL) {
         char* msg = (char*)internal_malloc(80);
         snprintf(msg, 80, "no defined output procedure for a derived-type item");
@@ -3775,7 +3861,8 @@ static char* dtio_call(lfortran_allocator_t* al, char** result,
             dtio_capture_capacity * sizeof(DTIO_Capture_Frame));
     }
     int32_t unit = (dtio_unit == INT32_MIN) ? INT32_MIN + 1 + dtio_capture_depth : dtio_unit;
-    DTIO_Capture_Frame frame = {unit, al, result, cursor, extent, content_end};
+    DTIO_Capture_Frame frame = {unit, al, result, cursor, extent, content_end,
+        continuation_start};
     dtio_capture_stack[dtio_capture_depth++] = frame;
 
     int32_t iostat = 0;
@@ -3786,6 +3873,7 @@ static char* dtio_call(lfortran_allocator_t* al, char** result,
 
     dtio_capture_depth--;
     if (dtio_capture_depth == 0) {
+        dtio_formatted_result = dtio_empty_formatted_result;
         internal_free(dtio_capture_stack);
         dtio_capture_stack = NULL;
         dtio_capture_capacity = 0;
@@ -3804,7 +3892,8 @@ static char* dtio_call(lfortran_allocator_t* al, char** result,
 static char* dtio_invoke(lfortran_allocator_t* al, char** result,
         int64_t* cursor, int64_t* extent, int64_t* content_end,
         int32_t dtio_unit, int32_t n_dtio, lfortran_dtio_write_fn* dtio_procs,
-        int32_t k, void* dtv, const char* descriptor, bool* failed) {
+        int32_t k, void* dtv, const char* descriptor, bool* failed,
+        int64_t* continuation_start) {
     // iotype: "DT" followed by the character literal, if any.
     int64_t descriptor_len = (int64_t)strlen(descriptor);
     int64_t pos = 2;
@@ -3852,7 +3941,7 @@ static char* dtio_invoke(lfortran_allocator_t* al, char** result,
 
     char* error = dtio_call(al, result, cursor, extent, content_end,
         dtio_unit, n_dtio, dtio_procs, k, dtv, iotype, literal_len + 2,
-        n_v, v_list, failed);
+        n_v, v_list, failed, continuation_start);
     internal_free(iotype);
     internal_free(v_list);
     return error;
@@ -3916,6 +4005,7 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
         default_formatting(al, &result, result_size, &s_info, decimal_mode, leading_blank != 0,
             dtio_unit, n_dtio, dtio_procs);
         free_serialization_info(&s_info);
+        dtio_remember_formatted_cursor(result, *result_size, 0);
         return result;
     }
 
@@ -3963,6 +4053,10 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
     // X edit descriptors advance position but don't produce content, so trailing
     // blanks from X should be trimmed from the output record.
     int64_t content_end = 0;  // end of real content in current record
+    int64_t continuation_start = -1;
+    DTIO_Formatter_Frame formatter = {&result, -1, dtio_formatter};
+    bool capture_written = dtio_capture_depth > 0;
+    if (capture_written) dtio_formatter = &formatter;
     while (1) {
         bool consumed_data_item_in_cycle = false;
         bool is_array = false;
@@ -4005,6 +4099,7 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                 if (!move_to_next_element(&s_info, true)) break;
                 continue;
             } else if (value[0] == '/') {
+                continuation_start = -1;
                 // Trim trailing blanks from the current record before newline.
                 // Also ensure we don't lose content when cursor is behind high-water mark (after TL).
                 if (result_len > content_end) {
@@ -4031,6 +4126,10 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                 char* inner_value = substring(value, 1, strlen(value) - 1);
                 int64_t val_len = 0;
                 char* unescaped_value = unescape_quoted_literal(inner_value, strlen(inner_value), quote_char, &val_len);
+                if (val_len > 0) {
+                    dtio_fill_continuation_gap(result, result_extent,
+                        result_len, &continuation_start);
+                }
                 result = write_to_result_at_pos(al, result, &result_extent, result_len, unescaped_value, val_len);
                 result_len += val_len;
                 if (result_len > content_end) content_end = result_len;
@@ -4043,6 +4142,10 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                 }
                 if (hollerith != NULL) {
                     int64_t hollerith_len = (int64_t)strlen(hollerith + 1);
+                    if (hollerith_len > 0) {
+                        dtio_fill_continuation_gap(result, result_extent,
+                            result_len, &continuation_start);
+                    }
                     result = write_to_result_at_pos(al, result, &result_extent, result_len,
                         hollerith + 1, hollerith_len);
                     result_len += hollerith_len;
@@ -4142,6 +4245,10 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                 if (!move_to_next_element(&s_info, false)) break;
                 consumed_data_item_in_cycle = true;
                 bool is_dt_descriptor = tolower(value[0]) == 'd' && tolower(value[1]) == 't';
+                if (!is_dt_descriptor) {
+                    dtio_fill_continuation_gap(result, result_extent,
+                        result_len, &continuation_start);
+                }
                 if (is_dt_descriptor || s_info.current_element_type == DTIO_TYPE) {
                     char* error = NULL;
                     bool failed = false;
@@ -4165,7 +4272,8 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                         error = dtio_invoke(al, &result, &result_len, &result_extent,
                             &content_end, dtio_unit, n_dtio, dtio_procs,
                             s_info.current_dtio_index,
-                            s_info.current_arg_info.current_arg, value, &failed);
+                            s_info.current_arg_info.current_arg, value, &failed,
+                            &continuation_start);
                     }
                     if (failed) {
                         // The items after it are not written; the record
@@ -4749,6 +4857,7 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
                 break;
             }
             if (!array) {
+                continuation_start = -1;
                 // Trim trailing blanks from X/T positioning before record separator.
                 // Also ensure we don't lose content when cursor is behind high-water mark (after TL).
                 if (result_len > content_end) {
@@ -4773,6 +4882,9 @@ LFORTRAN_API char* _lcompilers_string_format_fortran(lfortran_allocator_t* al, c
     va_end(args);
     internal_free(format_values);
     free_serialization_info(&s_info);
+
+    if (capture_written) dtio_formatter = formatter.previous;
+    dtio_remember_formatted_cursor(result, result_len, formatter.first_written);
 
     // Trim trailing blanks from X/T positioning in the final record.
     // Skip trimming when result is an error message (starts with '\b').
@@ -13524,7 +13636,7 @@ bool is_write_and_open_format_match(bool unit_file_bin, const char* format_data)
 LFORTRAN_API void _lfortran_file_write(int32_t unit_num, int32_t* iostat, const char* format_data, int64_t format_len, ...)
 {
     int32_t dtio_iostat = format_data[0] != '\0' ? dtio_take_error(iostat) : 0;
-    if (format_data[0] != '\0' && dtio_find_capture_frame(unit_num) != NULL) {
+    if (format_data[0] != '\0' && dtio_capture_depth > 0) {
         // Formatted output of a defined output procedure (child data
         // transfer) goes into the record of its parent statement.
         va_list args;
@@ -13538,10 +13650,10 @@ LFORTRAN_API void _lfortran_file_write(int32_t unit_num, int32_t* iostat, const 
             str = wide_encoded;
         }
         va_end(args);
-        dtio_capture_formatted(unit_num, iostat, str, str_len);
-        if (dtio_iostat != 0) *iostat = dtio_iostat;
+        bool captured = dtio_capture_formatted(unit_num, iostat, str, str_len);
+        if (captured && dtio_iostat != 0) *iostat = dtio_iostat;
         internal_free(wide_encoded);
-        return;
+        if (captured) return;
     }
     bool unit_file_bin;
     int access_id;
@@ -13821,6 +13933,8 @@ LFORTRAN_API void _lfortran_string_write(lfortran_allocator_t* al, char **str_ho
         fprintf(stderr,"Compiler Error : Undefined Format");
         exit(1);
     }
+
+    dtio_take_formatted_result(str, str_len);
 
     // Detect "\b" to raise error
     if(str_len > 0 && str[0] == '\b'){
