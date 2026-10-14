@@ -15,6 +15,8 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: '8'
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Initialize evidence directory
         shell: pwsh
         run: |
