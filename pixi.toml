@@ -129,7 +129,9 @@ CXX = "/usr/bin/clang++"
 LFORTRAN_LINKER_PATH = "/usr/bin"
 
 [feature.build.target.win.activation.env]
-PATH = "$PIXI_PROJECT_ROOT/build/$PIXI_ENVIRONMENT_NAME/src/bin;$PATH"
+# Pixi executes Windows activation with cmd.exe.
+LFORTRAN_BUILD_DIR = "%PIXI_PROJECT_ROOT%/build/%PIXI_ENVIRONMENT_NAME%"
+PATH = "%PIXI_PROJECT_ROOT%/build/%PIXI_ENVIRONMENT_NAME%/src/bin;%PATH%"
 
 # Dependencies to build the project to be installed on the build machine.
 # feature.default.build-dependencies.
