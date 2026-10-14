@@ -1,0 +1,55 @@
+# Fork-only evidence for a maintainer-requested Windows replay; no PR.
+name: Verify original issue 10947 on Windows
+on:
+  push:
+    branches: ['verify/10947-windows-20261014']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-windows:
+    if: github.repository == 'certik/lfortran'
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: '8'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: prefix-dev/setup-pixi@v0.11.0
+        with:
+          environments: llvm11
+          cache: false
+          run-install: false
+      - name: Build and verify with native MSVC and Pixi
+        shell: cmd
+        run: |
+          if not exist .fix-issue\10947\windows mkdir .fix-issue\10947\windows
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
+            call "%%i\VC\Auxiliary\Build\vcvars64.bat"
+          )
+          if errorlevel 1 exit /b %errorlevel%
+          if not defined VCToolsInstallDir exit /b 1
+          if not defined WindowsSdkDir exit /b 1
+          where cl
+          if errorlevel 1 exit /b %errorlevel%
+          set CC=cl.exe
+          set CXX=cl.exe
+          set "PATH=%ProgramFiles%\Git\bin;%PATH%"
+          set "PATH=%PATH:C:\mingw64\bin;=%"
+          (where cl & where bash & pixi --version & set VCTools & set WindowsSDK & set WindowsSdk & set VSCMD_ARG) > .fix-issue\10947\windows\sdk.log 2>&1
+          type .fix-issue\10947\windows\sdk.log
+          pixi run -e llvm11 build -DCMAKE_C_FLAGS= -DCMAKE_CXX_FLAGS= > .fix-issue\10947\windows\build.log 2>&1
+          set VERIFY_BUILD_EXIT=%errorlevel%
+          type .fix-issue\10947\windows\build.log
+          if not "%VERIFY_BUILD_EXIT%"=="0" exit /b %VERIFY_BUILD_EXIT%
+          pixi run -e llvm11 python verification\10947\verify_windows.py > .fix-issue\10947\windows\verify.log 2>&1
+          set VERIFY_RESULT_EXIT=%errorlevel%
+          type .fix-issue\10947\windows\verify.log
+          exit /b %VERIFY_RESULT_EXIT%
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: original-10947-windows-llvm11
+          path: .fix-issue/10947/windows
+          include-hidden-files: true
+          if-no-files-found: error
