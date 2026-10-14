@@ -166,6 +166,9 @@ bison = "==3.4"
 
 [feature.build.target.win.dependencies]
 m2-bison = "==3.0.4"
+# build0.sh executes scripts with /usr/bin/env and expects an MSYS filesystem.
+m2-filesystem = "*"
+m2-coreutils = "*"
 
 [feature.build.tasks]
 build = {cmd = 'bash ./build1.sh "$LFORTRAN_BUILD_DIR"', default-environment = "llvm11"}

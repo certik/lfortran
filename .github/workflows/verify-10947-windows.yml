@@ -42,6 +42,10 @@ jobs:
           set "PATH=%PATH:C:\mingw64\bin;=%"
           (where cl & where bash & pixi --version & set VCTools & set WindowsSDK & set WindowsSdk & set VSCMD_ARG) > .fix-issue\10947\windows\sdk.log 2>&1
           type .fix-issue\10947\windows\sdk.log
+          pixi run -e llvm11 python -c "import os,shutil; print({key: os.environ.get(key) for key in ['PIXI_ENVIRONMENT_NAME','CONDA_PREFIX','LFORTRAN_BUILD_DIR']}); print({name: shutil.which(name) for name in ['bash','env','cmake','cl','link']})" > .fix-issue\10947\windows\activation.log 2>&1
+          set VERIFY_ACTIVATION_EXIT=%errorlevel%
+          type .fix-issue\10947\windows\activation.log
+          if not "%VERIFY_ACTIVATION_EXIT%"=="0" exit /b %VERIFY_ACTIVATION_EXIT%
           pixi run -e llvm11 build -DCMAKE_C_FLAGS= -DCMAKE_CXX_FLAGS= > .fix-issue\10947\windows\build.log 2>&1
           set VERIFY_BUILD_EXIT=%errorlevel%
           type .fix-issue\10947\windows\build.log
