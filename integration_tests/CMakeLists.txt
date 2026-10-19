@@ -6410,6 +6410,7 @@ RUN(NAME gpu_metal_506 LABELS gfortran llvm metal cuda_cpu cuda)
 RUN(NAME gpu_kernel_source_35 LABELS gfortran llvm metal cuda_cpu cuda)
 RUN(NAME gpu_metal_488 LABELS gfortran llvm cuda cuda_cpu)
 RUN(NAME gpu_metal_489 LABELS gfortran llvm cuda cuda_cpu EXTRAFILES gpu_metal_489_mod.f90 EXTRA_ARGS --separate-compilation)
+RUN(NAME gpu_metal_490 LABELS gfortran llvm metal cuda_cpu cuda)
 RUN(NAME gpu_metal_483 LABELS gfortran llvm metal cuda cuda_cpu)
 RUN(NAME gpu_metal_482 LABELS gfortran llvm metal cuda_cpu cuda)
 # gfortran evaluates a `do concurrent` limit twice, so gpu_metal_369 has no
