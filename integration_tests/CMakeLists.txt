@@ -6430,6 +6430,7 @@ RUN(NAME gpu_metal_481 LABELS gfortran llvm metal cuda_cpu)
 RUN(NAME gpu_metal_482 LABELS llvm metal cuda_cpu cuda)
 # GFortran 13 in Quick cannot compile these LOCAL locality fixtures.
 RUN(NAME gpu_metal_483 LABELS llvm metal cuda cuda_cpu)
+RUN(NAME gpu_metal_511 LABELS gfortran llvm metal cuda_cpu cuda)
 RUN(NAME gpu_metal_512 LABELS gfortran llvm metal cuda_cpu cuda)
 RUN(NAME gpu_metal_510 LABELS gfortran llvm metal cuda_cpu cuda)
 # GFortran 13 cannot compile this LOCAL fixture. cuda_cpu uses GPU lowering

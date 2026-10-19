@@ -25,6 +25,7 @@ namespace LCompilers {
 enum GpuLoopTransform {
     GpuLoopFuse = 1,
     GpuLoopSwap = 2,
+    GpuLoopSplit = 4,
 };
 bool gpu_loop_transform_enabled(const PassOptions &pass_options,
     GpuLoopTransform t);
@@ -178,6 +179,10 @@ bool gpu_simple_body(ASR::stmt_t **body, size_t n);
 // runs, each subexpression for which `f` returns an expression.
 void gpu_replace_exprs(ASR::stmt_t **body, size_t n,
     const std::function<ASR::expr_t*(ASR::expr_t*)> &f);
+
+// Every BLOCK a statement list runs, at any depth.
+void gpu_collect_blocks(ASR::stmt_t **body, size_t n,
+    std::set<ASR::symbol_t*> &blocks);
 
 // Every variable referenced.
 void gpu_collect_symbols(ASR::expr_t *e, std::set<ASR::symbol_t*> &syms);

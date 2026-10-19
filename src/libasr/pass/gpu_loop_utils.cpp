@@ -18,7 +18,8 @@ bool gpu_loop_transform_enabled(const PassOptions &pass_options,
     std::string item;
     while (std::getline(ss, item, ',')) {
         if ((item == "fuse" && t == GpuLoopFuse)
-                || (item == "swap" && t == GpuLoopSwap)) {
+                || (item == "swap" && t == GpuLoopSwap)
+                || (item == "split" && t == GpuLoopSplit)) {
             return true;
         }
     }
@@ -706,6 +707,19 @@ void gpu_replace_exprs(ASR::stmt_t **body, size_t n,
     ExprReplaceAll r;
     r.f = &f;
     for (size_t i = 0; i < n; i++) r.visit_stmt(*body[i]);
+}
+
+void gpu_collect_blocks(ASR::stmt_t **body, size_t n,
+        std::set<ASR::symbol_t*> &blocks) {
+    struct Blocks : public ASRUtils::BlockBodyWalkVisitor<Blocks> {
+        std::set<ASR::symbol_t*> *blocks;
+        void visit_BlockCall(const ASR::BlockCall_t &x) {
+            blocks->insert(ASRUtils::symbol_get_past_external(x.m_m));
+            ASRUtils::BlockBodyWalkVisitor<Blocks>::visit_BlockCall(x);
+        }
+    } c;
+    c.blocks = &blocks;
+    for (size_t i = 0; i < n; i++) c.visit_stmt(*body[i]);
 }
 
 void gpu_collect_symbols(ASR::expr_t *e, std::set<ASR::symbol_t*> &syms) {
