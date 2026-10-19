@@ -1,5 +1,7 @@
 #include <filesystem>
+#include <functional>
 #include <iostream>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -125,6 +127,128 @@ static size_t contiguous_store_dimension(const ParallelLoopNest &nest) {
         }
     }
     return 0;
+}
+
+// Counts the references to each symbol, in BLOCK bodies too, and notes a
+// statement that can end an iteration before the end of its body.
+class GpuSymbolReferenceCounter :
+        public ASR::BaseWalkVisitor<GpuSymbolReferenceCounter> {
+    std::set<ASR::symbol_t*> visited_blocks;
+public:
+    std::map<ASR::symbol_t*, size_t> count;
+    bool leaves_early = false;
+
+    void visit_Var(const ASR::Var_t &x) {
+        count[ASRUtils::symbol_get_past_external(x.m_v)]++;
+    }
+
+    void visit_Cycle(const ASR::Cycle_t &) { leaves_early = true; }
+    void visit_Exit(const ASR::Exit_t &) { leaves_early = true; }
+    void visit_Return(const ASR::Return_t &) { leaves_early = true; }
+    void visit_GoTo(const ASR::GoTo_t &) { leaves_early = true; }
+    void visit_Stop(const ASR::Stop_t &) { leaves_early = true; }
+    void visit_ErrorStop(const ASR::ErrorStop_t &) { leaves_early = true; }
+
+    void visit_BlockCall(const ASR::BlockCall_t &x) {
+        ASR::symbol_t *symbol = ASRUtils::symbol_get_past_external(x.m_m);
+        if (!visited_blocks.insert(symbol).second) return;
+        const auto &block = *ASR::down_cast<ASR::Block_t>(symbol);
+        for (size_t i = 0; i < block.n_body; i++) visit_stmt(*block.m_body[i]);
+    }
+};
+
+// The array parameters of intrinsic type of a kernel that every iteration
+// assigns one element of, at the iteration's own indices, before anything
+// else can happen to them: the assignment is a statement of the body every
+// iteration runs (not under a condition, a loop or another construct, and
+// in a body no iteration leaves early) and the body names the array
+// nowhere else, so it reads no element of it. A launch over the array's
+// whole index range then assigns every element and reads none, and what
+// the array held before the launch does not matter. `loop_vars` are the
+// kernel's loop variables, one for each dimension of the nest; the
+// subscripts of an array are a permutation of them.
+std::vector<GpuOffloadVisitor::GpuWholeWrite> gpu_whole_writes(
+        ASR::stmt_t **body, size_t n_body, const Vec<ASR::expr_t*> &kernel_args,
+        const std::vector<ASR::symbol_t*> &loop_vars) {
+    std::map<ASR::symbol_t*, size_t> arguments;
+    for (size_t i = 0; i < kernel_args.n; i++) {
+        arguments[ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(kernel_args.p[i])->m_v)] = i;
+    }
+    std::map<ASR::symbol_t*, GpuOffloadVisitor::GpuWholeWrite> found;
+    std::map<ASR::symbol_t*, size_t> assignments;
+    std::set<ASR::symbol_t*> rejected;
+    std::function<void(ASR::stmt_t**, size_t)> scan =
+            [&](ASR::stmt_t **stmts, size_t n) {
+        for (size_t i = 0; i < n; i++) {
+            if (ASR::is_a<ASR::BlockCall_t>(*stmts[i])) {
+                ASR::symbol_t *block = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::BlockCall_t>(stmts[i])->m_m);
+                const auto &b = *ASR::down_cast<ASR::Block_t>(block);
+                scan(b.m_body, b.n_body);
+                continue;
+            }
+            if (!ASR::is_a<ASR::Assignment_t>(*stmts[i])) continue;
+            const auto &a = *ASR::down_cast<ASR::Assignment_t>(stmts[i]);
+            if (a.m_overloaded || a.m_realloc_lhs || a.m_move_allocation
+                    || !ASR::is_a<ASR::ArrayItem_t>(*a.m_target)) {
+                continue;
+            }
+            const auto &item = *ASR::down_cast<ASR::ArrayItem_t>(a.m_target);
+            if (!ASR::is_a<ASR::Var_t>(*item.m_v)) continue;
+            ASR::symbol_t *array = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(item.m_v)->m_v);
+            auto argument = arguments.find(array);
+            if (argument == arguments.end()) continue;
+            std::vector<size_t> dims;
+            std::set<size_t> seen;
+            // An element of intrinsic type is all of its storage: assigning
+            // one of derived type also reaches what its components point at.
+            ASR::ttype_t *element = ASRUtils::type_get_past_array(
+                ASRUtils::type_get_past_allocatable_pointer(
+                    ASRUtils::symbol_type(array)));
+            bool exact = item.n_args == loop_vars.size()
+                && ASRUtils::extract_n_dims_from_ttype(
+                    ASRUtils::symbol_type(array)) == (int)loop_vars.size()
+                && !ASRUtils::is_pointer(ASRUtils::symbol_type(array))
+                && (ASRUtils::is_integer(*element)
+                    || ASRUtils::is_real(*element)
+                    || ASRUtils::is_complex(*element)
+                    || ASRUtils::is_logical(*element));
+            for (size_t k = 0; exact && k < item.n_args; k++) {
+                const ASR::array_index_t &index = item.m_args[k];
+                exact = index.m_left == nullptr && index.m_step == nullptr
+                    && index.m_right != nullptr
+                    && ASR::is_a<ASR::Var_t>(*index.m_right);
+                if (!exact) break;
+                ASR::symbol_t *v = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<ASR::Var_t>(index.m_right)->m_v);
+                size_t d = 0;
+                while (d < loop_vars.size() && loop_vars[d] != v) d++;
+                exact = d < loop_vars.size() && seen.insert(d).second;
+                dims.push_back(d);
+            }
+            auto previous = found.find(array);
+            if (!exact || (previous != found.end()
+                    && previous->second.loop_dims != dims)) {
+                rejected.insert(array);
+                continue;
+            }
+            found[array] = {array, argument->second, dims};
+            assignments[array]++;
+        }
+    };
+    scan(body, n_body);
+    GpuSymbolReferenceCounter references;
+    for (size_t i = 0; i < n_body; i++) references.visit_stmt(*body[i]);
+    std::vector<GpuOffloadVisitor::GpuWholeWrite> whole;
+    if (references.leaves_early) return whole;
+    for (auto &f : found) {
+        if (rejected.count(f.first)) continue;
+        if (references.count[f.first] != assignments[f.first]) continue;
+        whole.push_back(f.second);
+    }
+    return whole;
 }
 
 // The loop was assigned to the device by the unsupported-construct check,
@@ -2723,6 +2847,16 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
     for (size_t i = 0; i < body_copy.n; i++) {
         kernel_body.push_back(al, body_copy.p[i]);
     }
+    std::vector<GpuWholeWrite> whole_writes;
+    {
+        std::vector<ASR::symbol_t*> kernel_loop_vars;
+        for (size_t d = 0; d < n_dims; d++) {
+            kernel_loop_vars.push_back(kernel_scope->get_symbol(
+                loop_var_names[d]));
+        }
+        whole_writes = gpu_whole_writes(body_copy.p, body_copy.n,
+            kernel_args, kernel_loop_vars);
+    }
 
     // 5. Build function signature
     // FunctionType arg_types must not contain scope-bound expressions,
@@ -2782,6 +2916,7 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
     plan.dim_info = dim_info;
     plan.optional_syms = optional_syms;
     plan.tile_shift_arg = tile_shift_arg;
+    plan.whole_writes = whole_writes;
     plan.tile_dims[0] = tiled ? dimension_at(0) : 0;
     plan.tile_dims[1] = tiled ? dimension_at(1) : 0;
     build_kernel_launch(region, work, loc, plan);

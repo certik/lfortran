@@ -956,6 +956,27 @@ class DeviceLaunchExpandVisitor :
             auto access = [&](bool written) {
                 return b.i32(written ? 1 : 0);
             };
+            // A buffer the launch assigns every element of before the
+            // kernel reads any, when its check holds (GpuKernelLaunch
+            // overwrites and overwrite_checks), need not be copied in.
+            auto buffer_access = [&](const ASR::GpuKernelLaunch_t &launch,
+                    const ASR::gpu_kernel_argument_t &buffer) {
+                if (!buffer.m_written || buffer.m_member != nullptr) {
+                    return access(buffer.m_written);
+                }
+                ASR::symbol_t *variable = ASRUtils::symbol_get_past_external(
+                    buffer.m_variable);
+                for (size_t k = 0; k < launch.n_overwrites; k++) {
+                    if (ASRUtils::symbol_get_past_external(
+                            launch.m_overwrites[k]) != variable) {
+                        continue;
+                    }
+                    return ASRUtils::EXPR(ASR::make_IfExp_t(al, loc,
+                        launch.m_overwrite_checks[k], b.i32(2), b.i32(1),
+                        int32, nullptr));
+                }
+                return access(true);
+            };
             bool any_written = false;
             for (size_t i = 0; i < layout.n_buffers; i++) {
                 any_written |= layout.m_buffers[i].m_written;
@@ -1030,7 +1051,7 @@ class DeviceLaunchExpandVisitor :
                     args.push_back(al, call_arg(loc, buffer.address));
                     args.push_back(al, call_arg(loc, buffer.byte_size));
                     args.push_back(al, call_arg(loc,
-                        access(layout.m_buffers[i].m_written)));
+                        buffer_access(x, layout.m_buffers[i])));
                     out.push_back(al, b.SubroutineCall(set_buffer_sym, args));
                 }
             }

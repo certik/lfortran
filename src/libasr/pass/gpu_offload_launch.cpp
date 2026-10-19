@@ -1,3 +1,4 @@
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -372,12 +373,78 @@ void GpuOffloadVisitor::build_kernel_launch(const ASR::OMPRegion_t &region,
                 extent(d));
         }
     }
+    // The arrays the loop assigns every element of when it runs over their
+    // whole index range (gpu_whole_writes in gpu_offload.cpp), which the
+    // launch checks against the actual array: what such an array holds
+    // before the launch need not reach the device. An array that another
+    // name may share storage with is left out, since the kernel may read
+    // it through that name.
+    Vec<ASR::symbol_t*> overwrites;
+    Vec<ASR::expr_t*> overwrite_checks;
+    overwrites.reserve(al, plan.whole_writes.size());
+    overwrite_checks.reserve(al, plan.whole_writes.size());
+    std::function<bool(ASR::expr_t*)> unshared = [&](ASR::expr_t *e) {
+        if (ASR::is_a<ASR::Var_t>(*e)) {
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(e)->m_v);
+            if (!ASR::is_a<ASR::Variable_t>(*sym)) return false;
+            const auto &v = *ASR::down_cast<ASR::Variable_t>(sym);
+            return !v.m_target_attr && !ASRUtils::is_pointer(v.m_type);
+        }
+        if (ASR::is_a<ASR::StructInstanceMember_t>(*e)) {
+            const auto &m = *ASR::down_cast<ASR::StructInstanceMember_t>(e);
+            return !ASRUtils::is_pointer(ASRUtils::symbol_type(
+                    ASRUtils::symbol_get_past_external(m.m_m)))
+                && unshared(m.m_v);
+        }
+        return false;
+    };
+    for (auto &w : plan.whole_writes) {
+        ASR::expr_t *actual = plan.call_args.p[w.argument].m_value;
+        if (actual == nullptr || !ASRUtils::is_array(
+                ASRUtils::expr_type(actual)) || !unshared(actual)) {
+            continue;
+        }
+        ASR::ttype_t *logical_type = ASRUtils::TYPE(
+            ASR::make_Logical_t(al, loc, 4));
+        ASR::expr_t *whole = nullptr;
+        for (size_t k = 0; k < w.loop_dims.size(); k++) {
+            size_t d = w.loop_dims[k];
+            for (bool upper : {false, true}) {
+                ASRUtils::ExprStmtDuplicator copy(al);
+                copy.success = true;
+                ASR::expr_t *limit = copy.duplicate_expr(
+                    upper ? ends[d] : starts[d]);
+                ASR::expr_t *array = copy.duplicate_expr(actual);
+                LCOMPILERS_ASSERT(copy.success && limit && array);
+                ASR::ttype_t *int_type = ASRUtils::expr_type(limit);
+                ASR::expr_t *bound = ASRUtils::EXPR(ASR::make_ArrayBound_t(
+                    al, loc, array, ASRUtils::EXPR(
+                        ASR::make_IntegerConstant_t(al, loc, k + 1,
+                            ASRUtils::TYPE(ASR::make_Integer_t(al, loc, 4)),
+                            ASR::integerbozType::Decimal)),
+                    ASRUtils::duplicate_type(al, int_type),
+                    upper ? ASR::arrayboundType::UBound
+                        : ASR::arrayboundType::LBound, nullptr));
+                ASR::expr_t *same = ASRUtils::EXPR(
+                    ASR::make_IntegerCompare_t(al, loc, limit,
+                        ASR::cmpopType::Eq, bound, logical_type, nullptr));
+                whole = whole == nullptr ? same : ASRUtils::EXPR(
+                    ASR::make_LogicalBinOp_t(al, loc, whole,
+                        ASR::logicalbinopType::And, same, logical_type,
+                        nullptr));
+            }
+        }
+        overwrites.push_back(al, w.parameter);
+        overwrite_checks.push_back(al, whole);
+    }
     launch_stmts.push_back(al, ASRUtils::STMT(
         ASR::make_GpuKernelLaunch_t(al, loc,
             ASR::down_cast<ASR::symbol_t>(plan.kernel_func),
             thread_count, block_size_const,
             plan.call_args.p, plan.call_args.n, component_fit, nullptr,
-            0, nullptr, nullptr, 0)));
+            0, nullptr, nullptr, 0, overwrites.p, overwrites.n,
+            overwrite_checks.p, overwrite_checks.n)));
 
     // The launch does not wait for the kernel. What follows reads what the
     // kernel wrote, so the `gpu_launch_sync` pass puts the GpuSync that

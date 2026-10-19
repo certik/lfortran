@@ -112,7 +112,11 @@ enum {
     // The kernel only reads the buffer.
     LFORTRAN_GPU_READ = 0,
     // The kernel may write the buffer.
-    LFORTRAN_GPU_WRITE = 1
+    LFORTRAN_GPU_WRITE = 1,
+    // The kernel may write the buffer, and it assigns every element before
+    // it reads any: what the buffer holds before the launch need not reach
+    // the device. A runtime may treat it as LFORTRAN_GPU_WRITE.
+    LFORTRAN_GPU_OVERWRITE = 2
 };
 
 // The kernel sees the `size` bytes at `ptr` as they are when the launch is

@@ -3276,6 +3276,33 @@ public:
                 "the size and read-back count of a GpuKernelLaunch scratch "
                 "buffer must be integers");
         }
+        const ASR::Function_t &kernel = *ASR::down_cast<ASR::Function_t>(
+            ASRUtils::symbol_get_past_external(x.m_kernel));
+        require_id(x.n_overwrites == x.n_overwrite_checks,
+            "asr.verify.gpu_kernel_launch.overwrite_checks",
+            "a GpuKernelLaunch must have one overwrite check for each array "
+            "it overwrites");
+        for (size_t i = 0; i < x.n_overwrites && i < x.n_overwrite_checks;
+                i++) {
+            ASR::symbol_t *variable = ASRUtils::symbol_get_past_external(
+                x.m_overwrites[i]);
+            bool is_argument = false;
+            for (size_t k = 0; k < kernel.n_args; k++) {
+                is_argument |= ASR::is_a<ASR::Var_t>(*kernel.m_args[k]) &&
+                    ASRUtils::symbol_get_past_external(ASR::down_cast<
+                        ASR::Var_t>(kernel.m_args[k])->m_v) == variable;
+            }
+            require_id(is_argument && ASRUtils::is_array(
+                    ASRUtils::symbol_type(variable)),
+                "asr.verify.gpu_kernel_launch.overwrite_argument",
+                "a GpuKernelLaunch overwrite must name an array argument of "
+                "the kernel");
+            require_id(ASRUtils::is_logical(*ASRUtils::expr_type(
+                    x.m_overwrite_checks[i])),
+                "asr.verify.gpu_kernel_launch.overwrite_condition",
+                "the condition of a GpuKernelLaunch overwrite must be "
+                "logical");
+        }
         BaseWalkVisitor<VerifyVisitor>::visit_GpuKernelLaunch(x);
     }
 

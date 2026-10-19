@@ -9,7 +9,8 @@ Launches a GPU kernel.
 ```text
 GpuKernelLaunch(symbol kernel, expr thread_count, expr block_size,
     call_arg* args, symbol? component_fit, gpu_scratch_buffer* scratch,
-    expr? stop_status, stmt* stop_replay)
+    expr? stop_status, stmt* stop_replay, symbol* overwrites,
+    expr* overwrite_checks)
 gpu_scratch_buffer = (int argument_index, expr size, expr? read_back)
 ```
 
@@ -25,6 +26,8 @@ gpu_scratch_buffer = (int argument_index, expr size, expr? read_back)
 | `scratch` | the arguments that are buffers only the device holds (below). |
 | `stop_status` | the host array passed as the status buffer of a kernel that can `stop`, or `nil`. |
 | `stop_replay` | the host statements that run the `stop` a thread of the launch recorded (below). |
+| `overwrites` | array parameters of the kernel whose every element the launch may assign before the kernel reads any (below). |
+| `overwrite_checks` | for each of `overwrites`, the host condition under which it does. |
 
 ### Return values
 
@@ -95,6 +98,16 @@ the launch, which the `gpu_launch_sync` pass places, copies of them after
 each GpuSync the launch may still be pending at; that pass also clears the
 first element of `stop_status` once, on entry to the procedure.
 
+An entry of `overwrites` is an array parameter of the kernel that every
+iteration assigns one element of, at the iteration's own indices, in a
+statement every iteration runs, and that the body names nowhere else; the
+`gpu_offload` pass finds them. Its entry of `overwrite_checks` is true when
+the loop runs over the whole index range of the actual argument, so the
+launch assigns every element and reads none: `device_launch_expand` then
+tells the runtime that what the array holds before the launch need not be
+copied to the device (`LFORTRAN_GPU_OVERWRITE`). An actual argument that
+another name may share storage with (a pointer or a target) is not entered.
+
 Private array storage is placed after shared lowering by `gpu_kernel_storage`,
 before address-space specialization. Fixed-size arrays that fit the device's
 stack budget have `Thread` memory space. Larger arrays have `Global` memory
@@ -131,6 +144,8 @@ placement never turns an iteration-private value into a shared value.
   :scratch []
   :stop_status nil
   :stop_replay []
+  :overwrites []
+  :overwrite_checks []
 )
 ```
 

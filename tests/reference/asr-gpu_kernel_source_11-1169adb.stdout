@@ -291,6 +291,38 @@
                         []
                         ()
                         []
+                        [4 a]
+                        [(LogicalBinOp
+                            (IntegerCompare
+                                (IntegerConstant 1 (Integer 4) Decimal)
+                                Eq
+                                (ArrayBound
+                                    (Var 2 a)
+                                    (IntegerConstant 1 (Integer 4) Decimal)
+                                    (Integer 4)
+                                    LBound
+                                    ()
+                                )
+                                (Logical 4)
+                                ()
+                            )
+                            And
+                            (IntegerCompare
+                                (IntegerConstant 4 (Integer 4) Decimal)
+                                Eq
+                                (ArrayBound
+                                    (Var 2 a)
+                                    (IntegerConstant 1 (Integer 4) Decimal)
+                                    (Integer 4)
+                                    UBound
+                                    ()
+                                )
+                                (Logical 4)
+                                ()
+                            )
+                            (Logical 4)
+                            ()
+                        )]
                     )
                     (DoLoop
                         ()

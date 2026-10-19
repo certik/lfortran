@@ -4839,6 +4839,14 @@ gpu_metal_kernel = true
 filename = "../integration_tests/gpu_metal_485.f90"
 gpu_cuda_kernel = true
 
+# A launch carries, for each array its loop assigns every element of, the
+# check that the loop runs over the whole array, which lets the runtime
+# skip copying the array in.
+[[test]]
+filename = "../integration_tests/gpu_metal_487.f90"
+asr = true
+options = "--gpu=cuda --pass=gpu_offload --cumulative"
+
 [[test]]
 filename = "../integration_tests/gpu_kernel_source_09.f90"
 gpu_cuda_kernel = true

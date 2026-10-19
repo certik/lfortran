@@ -616,7 +616,10 @@ void lfortran_gpu_set_buffer_arg(lfortran_gpu_kernel* k, int idx,
     if (!k || idx >= MAX_ARGS) return;
     k->ptrs[idx] = ptr;
     k->sizes[idx] = size;
-    k->access[idx] = access;
+    // A buffer the kernel assigns whole is copied in like any other one it
+    // may write.
+    k->access[idx] = access == LFORTRAN_GPU_READ ? LFORTRAN_GPU_READ
+        : LFORTRAN_GPU_WRITE;
     set_arg(k, idx, ARG_BUFFER);
 }
 

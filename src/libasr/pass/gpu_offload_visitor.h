@@ -520,6 +520,16 @@ public:
     // launch as a value rather than leaving it on the visitor: a member
     // would outlive the region and one region's bindings would reach the
     // next.
+    // An array parameter of the kernel the loop assigns every element of
+    // (gpu_whole_writes in gpu_offload.cpp): its index among the kernel's
+    // arguments, and the dimension of the nest each of its subscripts runs
+    // over.
+    struct GpuWholeWrite {
+        ASR::symbol_t *parameter;
+        size_t argument;
+        std::vector<size_t> loop_dims;
+    };
+
     struct GpuLaunchPlan {
         ASR::asr_t *kernel_func = nullptr;
         std::string kernel_name;
@@ -541,6 +551,7 @@ public:
         // range.
         int tile_shift_arg = -1;
         size_t tile_dims[2] = {0, 0};
+        std::vector<GpuWholeWrite> whole_writes;
     };
 
     void decline(const ASR::OMPRegion_t &x);

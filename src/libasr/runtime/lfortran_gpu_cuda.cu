@@ -27,6 +27,10 @@ default stream ordering every copy and launch:
   bytes are copied in when the entry is not dirty; after the launch the
   entry is dirty, a later launch handed the same range uses the same memory
   without a copy, and lfortran_gpu_sync copies every dirty entry back.
+  A buffer the kernel assigns whole before reading it
+  (LFORTRAN_GPU_OVERWRITE) is resident the same way, but nothing is copied
+  in, unless the launch also hands the kernel a range to read that overlaps
+  it.
 * A buffer the kernel only reads is copied in, before the launch on the
   stream, into memory the argument slot of its kernel keeps; the stream
   orders that copy after every earlier launch that read the memory. When it
@@ -166,7 +170,7 @@ static int overlaps_dirty(void *host, size_t size) {
     return 0;
 }
 
-static void* resident_for_write(void *host, size_t size) {
+static void* resident_for_write(void *host, size_t size, int copy_in) {
     int i = find_entry(host);
     if (i >= 0 && entries[i].size != size) {
         if (entries[i].dirty) sync_all();
@@ -195,8 +199,10 @@ static void* resident_for_write(void *host, size_t size) {
         e->device = device_alloc(size);
         e->capacity = size;
     }
-    check(cudaMemcpyAsync(e->device, host, size, cudaMemcpyHostToDevice, 0),
-        "cudaMemcpyAsync H2D");
+    if (copy_in) {
+        check(cudaMemcpyAsync(e->device, host, size, cudaMemcpyHostToDevice,
+            0), "cudaMemcpyAsync H2D");
+    }
     e->dirty = 1;
     return e->device;
 }
@@ -364,13 +370,26 @@ void lfortran_gpu_launch(lfortran_gpu_ctx* ctx, lfortran_gpu_kernel* k,
     // The ranges the kernel may write first, so that one it is also handed
     // to read is read from the same memory.
     for (int i = 0; i < k->n_args; i++) {
-        if (k->kind[i] != ARG_BUFFER || k->access[i] != LFORTRAN_GPU_WRITE)
+        if (k->kind[i] != ARG_BUFFER || k->access[i] == LFORTRAN_GPU_READ)
             continue;
+        int copy_in = 1;
+        if (k->access[i] == LFORTRAN_GPU_OVERWRITE) {
+            copy_in = 0;
+            for (int j = 0; j < k->n_args; j++) {
+                if (k->kind[j] == ARG_BUFFER
+                        && k->access[j] == LFORTRAN_GPU_READ
+                        && overlaps(k->buffer_host_ptrs[j], k->buffer_sizes[j],
+                            k->buffer_host_ptrs[i], k->buffer_sizes[i])) {
+                    copy_in = 1;
+                }
+            }
+        }
         k->buffer_device_ptrs[i] = k->buffer_sizes[i] == 0 ? NULL
-            : resident_for_write(k->buffer_host_ptrs[i], k->buffer_sizes[i]);
+            : resident_for_write(k->buffer_host_ptrs[i], k->buffer_sizes[i],
+                copy_in);
     }
     for (int i = 0; i < k->n_args; i++) {
-        if (k->kind[i] != ARG_BUFFER || k->access[i] == LFORTRAN_GPU_WRITE)
+        if (k->kind[i] != ARG_BUFFER || k->access[i] != LFORTRAN_GPU_READ)
             continue;
         size_t size = k->buffer_sizes[i];
         void *host = k->buffer_host_ptrs[i];

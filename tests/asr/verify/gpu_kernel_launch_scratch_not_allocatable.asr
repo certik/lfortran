@@ -148,6 +148,8 @@
                   ]
                   :stop_status nil
                   :stop_replay []
+                  :overwrites []
+                  :overwrite_checks []
                 )
                 (GpuSync)
               ]
