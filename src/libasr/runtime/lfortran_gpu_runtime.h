@@ -112,7 +112,13 @@ enum {
     // The kernel only reads the buffer.
     LFORTRAN_GPU_READ = 0,
     // The kernel may write the buffer.
-    LFORTRAN_GPU_WRITE = 1
+    LFORTRAN_GPU_WRITE = 1,
+    // Added to one of the two above: the kernel reads and writes the host
+    // memory itself (--gpu-memory=unified), so nothing is copied. Until the
+    // next lfortran_gpu_sync the host must not write or free the range, nor
+    // read it when the kernel may write it. A runtime whose device cannot
+    // access host memory ends the program at the launch.
+    LFORTRAN_GPU_SHARED = 2
 };
 
 // The kernel sees the `size` bytes at `ptr` as they are when the launch is

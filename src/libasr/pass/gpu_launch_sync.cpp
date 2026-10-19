@@ -40,6 +40,12 @@ host -- where the host next needs that, and nowhere else:
   pending: what the caller sees is complete;
 * before any statement this pass does not know.
 
+With unified memory (PassOptions::gpu_unified_memory) a launch hands the
+kernel the host's storage itself, read or written, and nothing is copied, so
+what a pending launch only reads counts as what it writes above: the host
+may not change or free it until it waits. Nothing is discarded either: the
+storage a pending launch uses is waited for before it is freed.
+
 After every GpuSync, the stops each pending launch may have recorded are
 replayed (GpuKernelLaunch.stop_replay, see gpu_offload_stop.h), in launch
 order; the status buffers are cleared once, on entry to the procedure.
@@ -138,8 +144,9 @@ bool launches(ASR::stmt_t **body, size_t n_body) {
 class RoutineSync {
 public:
     RoutineSync(Allocator &al_, SymbolTable *routine_,
-            const PointerTargets &pointers_)
-        : al(al_), routine(routine_), pointers(pointers_) {}
+            const PointerTargets &pointers_, bool unified_memory_)
+        : al(al_), routine(routine_), pointers(pointers_),
+          unified_memory(unified_memory_) {}
 
     // The new body of the routine.
     Vec<ASR::stmt_t*> run(ASR::stmt_t **body, size_t n_body,
@@ -176,6 +183,8 @@ private:
     Allocator &al;
     SymbolTable *routine;
     const PointerTargets &pointers;
+    // The kernels access the host's storage itself.
+    bool unified_memory;
     // Which procedures may act outside the program.
     std::map<ASR::Function_t*, bool> outside;
     std::vector<SymbolTable*> blocks;
@@ -241,6 +250,7 @@ private:
         Vec<ASR::expr_t*> vars;
         vars.reserve(al, 1);
         std::vector<Path> kept;
+        // Storage a kernel uses itself cannot be freed under it.
         bool must_sync = false;
         for (const Path &p : s.written) {
             bool local = p.root != nullptr
@@ -253,7 +263,7 @@ private:
                 kept.push_back(p);
                 continue;
             }
-            if (!p.members.empty() || p.shallow) {
+            if (!p.members.empty() || p.shallow || unified_memory) {
                 must_sync = true;
                 kept.push_back(p);
                 continue;
@@ -396,6 +406,9 @@ private:
             if (v) c.visit_expr(*v);
         }
         std::vector<Path> writes;
+        // A buffer whose storage the kernel uses, which this pass cannot
+        // name: the launch is waited for right away.
+        bool unknown_storage = false;
         for (size_t i = 0; i < layout.n_buffers; i++) {
             const ASR::gpu_kernel_argument_t &e = layout.m_buffers[i];
             ASR::expr_t *arg = x.m_args[e.m_argument_index].m_value;
@@ -405,6 +418,8 @@ private:
             std::vector<ASR::expr_t*> subscripts;
             if (!path_of(pointers, arg, p, &subscripts)) {
                 acc.everything = true;
+                unknown_storage |= unified_memory
+                    && handling == GpuBufferHandling::Storage;
                 continue;
             }
             for (ASR::expr_t *sub : subscripts) c.visit_expr(*sub);
@@ -425,7 +440,10 @@ private:
                 q.shallow = true;
                 acc.paths.push_back(q);
             }
-            if (e.m_written) writes.push_back(p);
+            if (e.m_written || (unified_memory
+                    && handling == GpuBufferHandling::Storage)) {
+                writes.push_back(p);
+            }
         }
         before(acc, s, emit, out, loc);
         if (x.m_stop_status != nullptr) {
@@ -449,12 +467,15 @@ private:
         s.any = true;
         for (const Path &p : writes) s.add_written(p);
         if (x.m_stop_status != nullptr) s.add_stop(&x);
+        if (unknown_storage) sync(s, emit, out, loc);
     }
 
     // Deallocating storage a pending launch writes does not need the
     // values: the runtime forgets them instead.
     void deallocate(ASR::expr_t **vars, size_t n_vars, State &s, bool emit,
             Vec<ASR::stmt_t*> *out, const Location &loc) {
+        // Storage a kernel uses itself is waited for instead, as any access.
+        if (unified_memory) return;
         Vec<ASR::expr_t*> forget;
         forget.reserve(al, n_vars);
         for (size_t i = 0; i < n_vars; i++) {
@@ -754,12 +775,12 @@ public:
 };
 
 void place_syncs(Allocator &al, SymbolTable *scope, ASR::stmt_t **&body,
-        size_t &n_body, const Location &loc) {
+        size_t &n_body, const Location &loc, bool unified_memory) {
     if (!launches(body, n_body)) return;
     PointerTargets targets;
     PointerCollector collector(targets);
     for (size_t i = 0; i < n_body; i++) collector.visit_stmt(*body[i]);
-    RoutineSync sync(al, scope, targets);
+    RoutineSync sync(al, scope, targets, unified_memory);
     Vec<ASR::stmt_t*> result = sync.run(body, n_body, loc);
     body = result.p;
     n_body = result.n;
@@ -767,23 +788,24 @@ void place_syncs(Allocator &al, SymbolTable *scope, ASR::stmt_t **&body,
     for (size_t i = 0; i < n_body; i++) clearer.visit_stmt(*body[i]);
 }
 
-void visit_scope(Allocator &al, SymbolTable *scope) {
+void visit_scope(Allocator &al, SymbolTable *scope, bool unified_memory) {
     for (auto &item : scope->get_scope()) {
         ASR::symbol_t *sym = item.second;
         if (ASR::is_a<ASR::Function_t>(*sym)) {
             ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(sym);
             if (fn->m_gpu == nullptr) {
                 place_syncs(al, fn->m_symtab, fn->m_body, fn->n_body,
-                    fn->base.base.loc);
+                    fn->base.base.loc, unified_memory);
             }
-            visit_scope(al, fn->m_symtab);
+            visit_scope(al, fn->m_symtab, unified_memory);
         } else if (ASR::is_a<ASR::Program_t>(*sym)) {
             ASR::Program_t *p = ASR::down_cast<ASR::Program_t>(sym);
             place_syncs(al, p->m_symtab, p->m_body, p->n_body,
-                p->base.base.loc);
-            visit_scope(al, p->m_symtab);
+                p->base.base.loc, unified_memory);
+            visit_scope(al, p->m_symtab, unified_memory);
         } else if (ASR::is_a<ASR::Module_t>(*sym)) {
-            visit_scope(al, ASR::down_cast<ASR::Module_t>(sym)->m_symtab);
+            visit_scope(al, ASR::down_cast<ASR::Module_t>(sym)->m_symtab,
+                unified_memory);
         }
     }
 }
@@ -793,7 +815,7 @@ void visit_scope(Allocator &al, SymbolTable *scope) {
 void pass_gpu_launch_sync(Allocator &al, ASR::TranslationUnit_t &unit,
         const PassOptions &pass_options) {
     if (!gpu_device_capabilities(pass_options).device_selected()) return;
-    visit_scope(al, unit.m_symtab);
+    visit_scope(al, unit.m_symtab, pass_options.gpu_unified_memory);
 }
 
 } // namespace LCompilers

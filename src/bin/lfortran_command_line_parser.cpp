@@ -351,6 +351,7 @@ namespace LCompilers::CommandLineInterface {
         app.add_option("--gpu", compiler_options.gpu_backend, "Enable GPU offloading for do concurrent (metal, cuda, cuda_cpu)")->capture_default_str()->group(group_backend_codegen_options);
         app.add_option("--device-compiler", compiler_options.device_compiler, "Toolchain driver used to compile and link GPU device code")->capture_default_str()->group(group_backend_codegen_options);
         app.add_option("--gpu-arch", compiler_options.gpu_arch, "GPU architecture to compile device code for with --gpu=cuda (e.g. sm_120); defaults to the GPUs of the compiling machine")->group(group_backend_codegen_options);
+        app.add_option("--gpu-memory", opts.gpu_memory, "How kernels reach host data with --gpu=cuda or cuda_cpu: `explicit` copies it to and from device memory (default), `unified` has the GPU access host memory directly, which needs a GPU that can access pageable host memory (HMM or ATS)")->capture_default_str()->group(group_backend_codegen_options);
         app.add_flag("--gpu-offload-omp-loops", compiler_options.po.gpu_offload_omp_loops, "Offload an `!$omp parallel do` loop onto the GPU as well")->group(group_backend_codegen_options);
         app.add_flag("--gpu-allow-cpu-fallback", compiler_options.po.gpu_allow_cpu_fallback, "Run a parallel loop that uses a construct the selected GPU does not support (real(8) on Metal, real(10) or real(16), or input/output) on the CPU with a warning instead of failing compilation")->group(group_backend_codegen_options);
 
@@ -529,6 +530,17 @@ namespace LCompilers::CommandLineInterface {
                 "The GPU backend `" + compiler_options.gpu_backend
                 + "` is not supported; supported values: metal, cuda, cuda_cpu"
             );
+        }
+        if (opts.gpu_memory == "unified") {
+            if (!compiler_options.po.gpu_offload_cuda) {
+                throw lc::LCompilersException(
+                    "--gpu-memory=unified requires --gpu=cuda or --gpu=cuda_cpu");
+            }
+            compiler_options.po.gpu_unified_memory = true;
+        } else if (opts.gpu_memory != "explicit") {
+            throw lc::LCompilersException(
+                "The GPU memory mode `" + opts.gpu_memory
+                + "` is not supported; supported values: explicit, unified");
         }
 
         for (auto &f_flag : opts.f_flags) {

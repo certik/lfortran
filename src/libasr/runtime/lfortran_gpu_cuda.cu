@@ -39,6 +39,12 @@ default stream ordering every copy and launch:
   stream runs the launches one after another, so every launch of the kernel
   uses the same memory, however many of them are still pending.
 * Memory a launch may still use is freed only at the next sync.
+* A shared buffer (LFORTRAN_GPU_SHARED, --gpu-memory=unified) is not copied
+  at all: the kernel is handed the host address, which a GPU that can access
+  pageable host memory (HMM or ATS) dereferences directly. The compiler has
+  the host wait before it touches such a range again. One that overlaps a
+  dirty range, from a launch that was not shared, makes the runtime sync
+  first, so that the host bytes are current.
 */
 
 enum { MAX_RESIDENT = 1024, MAX_DEFERRED = 4096 };
@@ -69,6 +75,8 @@ static resident entries[MAX_RESIDENT];
 static int n_entries = 0;
 static void *deferred_free[MAX_DEFERRED];
 static int n_deferred = 0;
+// A launch was made since the last sync, which has to wait for it.
+static int launched = 0;
 
 extern "C" void lfortran_gpu_register_kernel(const char *name, kernel_func_t func) {
     if (n_registered >= MAX_KERNELS) {
@@ -145,7 +153,10 @@ static void remove_entry(int i) {
 }
 
 static void sync_all(void) {
-    check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+    if (launched || n_deferred > 0) {
+        check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+        launched = 0;
+    }
     for (int i = 0; i < n_entries; i++) {
         if (!entries[i].used || !entries[i].dirty) continue;
         check(cudaMemcpy(entries[i].host, entries[i].device, entries[i].size,
@@ -156,11 +167,13 @@ static void sync_all(void) {
     n_deferred = 0;
 }
 
-static int overlaps_dirty(void *host, size_t size) {
+// Whether the range overlaps a dirty one; `same` counts the very same range
+// as well.
+static int overlaps_dirty(void *host, size_t size, int same) {
     for (int i = 0; i < n_entries; i++) {
         resident *e = &entries[i];
         if (!e->used || !e->dirty) continue;
-        if (e->host == host && e->size == size) continue;
+        if (!same && e->host == host && e->size == size) continue;
         if (overlaps(e->host, e->size, host, size)) return 1;
     }
     return 0;
@@ -221,6 +234,26 @@ static void* slot_buffer(slot_cache *cache, int idx, size_t size) {
     cache->buffers[idx] = device_alloc(length);
     cache->capacities[idx] = length;
     return cache->buffers[idx];
+}
+
+// A shared buffer is handed to the kernel as the host address, so the device
+// has to be able to access pageable host memory: there is no copy to fall
+// back to that the compiler arranged the waits for.
+static void require_pageable_memory_access(void) {
+    static int checked = 0;
+    if (checked) return;
+    int device = 0, pageable = 0;
+    check(cudaGetDevice(&device), "cudaGetDevice");
+    check(cudaDeviceGetAttribute(&pageable,
+        cudaDevAttrPageableMemoryAccess, device), "cudaDeviceGetAttribute");
+    if (!pageable) {
+        fprintf(stderr, "lfortran_gpu: the program was compiled with "
+            "--gpu-memory=unified, but gpu %d cannot access pageable host "
+            "memory (it needs hmm or ats support in the driver); compile "
+            "with --gpu-memory=explicit instead\n", device);
+        exit(1);
+    }
+    checked = 1;
 }
 
 extern "C" {
@@ -356,10 +389,18 @@ void lfortran_gpu_launch(lfortran_gpu_ctx* ctx, lfortran_gpu_kernel* k,
     for (int i = 0; i < k->n_args; i++) {
         if (k->kind[i] == ARG_BUFFER
                 && overlaps_dirty(k->buffer_host_ptrs[i],
-                    k->buffer_sizes[i])) {
+                    k->buffer_sizes[i],
+                    (k->access[i] & LFORTRAN_GPU_SHARED) != 0)) {
             sync_all();
             break;
         }
+    }
+    for (int i = 0; i < k->n_args; i++) {
+        if (k->kind[i] != ARG_BUFFER
+                || (k->access[i] & LFORTRAN_GPU_SHARED) == 0) continue;
+        require_pageable_memory_access();
+        k->buffer_device_ptrs[i] = k->buffer_sizes[i] == 0 ? NULL
+            : k->buffer_host_ptrs[i];
     }
     // The ranges the kernel may write first, so that one it is also handed
     // to read is read from the same memory.
@@ -370,7 +411,7 @@ void lfortran_gpu_launch(lfortran_gpu_ctx* ctx, lfortran_gpu_kernel* k,
             : resident_for_write(k->buffer_host_ptrs[i], k->buffer_sizes[i]);
     }
     for (int i = 0; i < k->n_args; i++) {
-        if (k->kind[i] != ARG_BUFFER || k->access[i] == LFORTRAN_GPU_WRITE)
+        if (k->kind[i] != ARG_BUFFER || k->access[i] != LFORTRAN_GPU_READ)
             continue;
         size_t size = k->buffer_sizes[i];
         void *host = k->buffer_host_ptrs[i];
@@ -407,6 +448,7 @@ void lfortran_gpu_launch(lfortran_gpu_ctx* ctx, lfortran_gpu_kernel* k,
     dim3 blockDim(block[0], block[1], block[2]);
     check(cudaLaunchKernel((const void*)k->func, gridDim, blockDim, args, 0,
         0), "cudaLaunchKernel");
+    launched = 1;
 }
 
 void lfortran_gpu_sync(lfortran_gpu_ctx* ctx) {

@@ -68,8 +68,9 @@ class DeviceLaunchExpandVisitor :
     public:
 
         DeviceLaunchExpandVisitor(Allocator &al_,
-                ASR::TranslationUnit_t &unit_) :
-            PassVisitor(al_, nullptr), unit(unit_) {}
+                ASR::TranslationUnit_t &unit_, bool unified_memory_) :
+            PassVisitor(al_, nullptr), unit(unit_),
+            unified_memory(unified_memory_) {}
 
         void visit_GpuKernelLaunch(const ASR::GpuKernelLaunch_t &x) {
             LCOMPILERS_ASSERT(ASR::down_cast<ASR::Function_t>(
@@ -127,6 +128,9 @@ class DeviceLaunchExpandVisitor :
     private:
 
         ASR::TranslationUnit_t &unit;
+        // The kernels access the host's memory itself (lfortran_gpu_runtime.h,
+        // LFORTRAN_GPU_SHARED).
+        bool unified_memory;
         std::map<ASR::Function_t*, ASR::symbol_t*> scalar_arg_structs;
         // Sizes buffer of a decomposed member, so a workspace can be
         // counted from the same element the device strides by.
@@ -853,6 +857,8 @@ class DeviceLaunchExpandVisitor :
             // temporaries it frees, after the launch.
             std::vector<ASR::stmt_t*> writebacks;
             std::vector<ASR::stmt_t*> cleanups;
+            // Copies the host makes for the launch, which the kernel reads.
+            bool host_temporaries = false;
 
             ASR::expr_t *ctx = declare_local(loc, "gpu_ctx", b.CPtr());
             ASR::expr_t *gpu_kernel = declare_local(loc, "gpu_kernel",
@@ -938,6 +944,7 @@ class DeviceLaunchExpandVisitor :
                     buffers.push_back({buffer_arg,
                         address_of(loc, buffer_arg),
                         buffer_byte_size(loc, buffer_arg)});
+                    host_temporaries |= buffer_arg != arg;
                     if (ASRUtils::is_array(arg_type)) {
                         // The buffers the device reads a component through
                         // are named after the kernel's own parameter, so
@@ -953,8 +960,10 @@ class DeviceLaunchExpandVisitor :
 
             // How the kernel uses each buffer, which decides whether the
             // device keeps it after the launch (lfortran_gpu_runtime.h).
+            // With unified memory the kernel is handed the host memory
+            // itself.
             auto access = [&](bool written) {
-                return b.i32(written ? 1 : 0);
+                return b.i32((written ? 1 : 0) + (unified_memory ? 2 : 0));
             };
             bool any_written = false;
             for (size_t i = 0; i < layout.n_buffers; i++) {
@@ -1157,8 +1166,14 @@ class DeviceLaunchExpandVisitor :
             for (auto &read_back : read_backs) {
                 reads_back |= read_back.first.scratch->m_read_back != nullptr;
             }
+            // With unified memory the kernel reads the host's copies
+            // themselves, so they have to outlive it even when it only
+            // reads them: the host frees or refills them below or at the
+            // next launch.
+            host_temporaries |= !packed_buffers.empty() || !cleanups.empty();
             if ((!packed_buffers.empty() && any_written)
-                    || !writebacks.empty() || reads_back) {
+                    || !writebacks.empty() || reads_back
+                    || (unified_memory && host_temporaries)) {
                 Vec<ASR::call_arg_t> sync_args;
                 sync_args.reserve(al, 1);
                 sync_args.push_back(al, call_arg(loc, ctx));
@@ -1360,7 +1375,7 @@ void pass_device_launch_expand(Allocator &al, ASR::TranslationUnit_t &unit,
     if (!gpu_device_capabilities(pass_options).device_selected()) {
         return;
     }
-    DeviceLaunchExpandVisitor v(al, unit);
+    DeviceLaunchExpandVisitor v(al, unit, pass_options.gpu_unified_memory);
     v.visit_TranslationUnit(unit);
     PassUtils::UpdateDependenciesVisitor u(al);
     u.visit_TranslationUnit(unit);

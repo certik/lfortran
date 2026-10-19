@@ -86,6 +86,11 @@ struct PassOptions {
     // warning instead of being a compile-time error. It never affects a
     // loop the offloading pipeline fails on.
     bool gpu_allow_cpu_fallback = false;
+    // The device reads and writes the host's own memory (--gpu-memory=unified,
+    // for a GPU that can access memory the host allocates): a launch hands the
+    // kernel host addresses and nothing is copied, so the host waits before
+    // it touches anything a pending launch reads or writes.
+    bool gpu_unified_memory = false;
     // The device kernels are only being shown, not built. A loop that uses a
     // construct on the unsupported list then runs on the CPU with a warning,
     // so that the kernels of the other loops are still produced.

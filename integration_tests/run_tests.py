@@ -24,6 +24,7 @@ BUILD_DIR = Path(BASE_DIR)
 fast_tests = "no"
 detect_leaks_tests = "no"
 separate_compilation = "no"
+gpu_memory = ""
 use_ninja = False
 user_specified_threads = False
 verbose = False
@@ -95,9 +96,12 @@ def run_test(backend, std, test_pattern=None, smoke=False):
             f"-DCMAKE_Fortran_FLAGS=\"-fPIC\" {std_string}" + common,
                 cwd=cwd)
     else:
+        gpu_memory_string = (f"-DGPU_MEMORY={gpu_memory} "
+                             if backend in ("cuda", "cuda_cpu") and gpu_memory
+                             else "")
         run_cmd(f"FC=lfortran cmake -DLFORTRAN_BACKEND={backend} -DFAST={fast_tests} "
                 f"-DDETECT_LEAKS={detect_leaks_tests} -DLLVM_GOC={separate_compilation} "
-                f"{std_string} " + common,
+                f"{gpu_memory_string}{std_string} " + common,
                 cwd=cwd)
 
     # If a test pattern is provided, find matching tests and build only those
@@ -209,6 +213,9 @@ def get_args():
                 help="Run LFortran tests with --detect-leaks")
     parser.add_argument("-sc", "--separate_compilation", action='store_true',
                 help="Run tests with --separate-compilation")
+    parser.add_argument("--gpu-memory", dest="gpu_memory", type=str, default="",
+                choices=["", "explicit", "unified"],
+                help="Run the cuda and cuda_cpu tests with --gpu-memory=<value>")
     parser.add_argument("-t", "--test", type=str,
                 help="Run specific tests matching pattern (regex)")
     parser.add_argument("--smoke", action="store_true",
@@ -233,7 +240,7 @@ def main():
         return
 
     # Setup
-    global NO_OF_THREADS, fast_tests, detect_leaks_tests, std_f23_tests, separate_compilation, use_ninja, user_specified_threads, verbose, BUILD_DIR
+    global NO_OF_THREADS, fast_tests, detect_leaks_tests, std_f23_tests, separate_compilation, gpu_memory, use_ninja, user_specified_threads, verbose, BUILD_DIR
     compiler_dir = str(args.compiler_dir.resolve()) if args.compiler_dir else LFORTRAN_PATH
     if args.compiler_dir and shutil.which("lfortran", path=compiler_dir) is None:
         raise SystemExit(f"lfortran not found in {compiler_dir}; build this configuration first")
@@ -258,6 +265,7 @@ def main():
     fast_tests = "yes" if args.fast else "no"
     detect_leaks_tests = "yes" if args.detect_leaks else "no"
     separate_compilation = "yes" if args.separate_compilation else "no"
+    gpu_memory = args.gpu_memory
     use_ninja = args.ninja
     verbose = args.verbose
     test_pattern = args.test

@@ -61,6 +61,7 @@ namespace LCompilers::CommandLineInterface {
         std::string arg_kernel_f;
         std::string linker{""};
         std::string linker_path{""};
+        std::string gpu_memory = "explicit";
         bool print_targets = false;
         bool print_c_include_dir = false;
         bool fixed_form_infer = false;

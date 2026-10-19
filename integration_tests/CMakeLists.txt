@@ -17,6 +17,7 @@ endif()
 
 set(STD_F23 no CACHE BOOL "Run tests with --std-f23")
 set(LLVM_GOC no CACHE BOOL "Run tests with --separate-compilation")
+set(GPU_MEMORY "" CACHE STRING "Run the cuda and cuda_cpu tests with --gpu-memory=<value>")
 
 enable_testing()
 
@@ -36,6 +37,10 @@ message("DETECT_LEAKS: ${DETECT_LEAKS}")
 
 message("STD_F23: ${STD_F23}")
 message("LLVM_GOC: ${LLVM_GOC}")
+message("GPU_MEMORY: ${GPU_MEMORY}")
+if (GPU_MEMORY)
+    set(GPU_MEMORY_ARG --gpu-memory=${GPU_MEMORY})
+endif()
 
 # Make ISO_Fortran_binding.h available to the C compiler.
 # LFortran ships its own header in src/libasr/runtime/.
@@ -258,16 +263,16 @@ macro(RUN_UTIL RUN_FAIL RUN_NAME RUN_FILE_NAME RUN_LABELS RUN_EXTRAFILES RUN_EXT
             add_test(${name} ${CURRENT_BINARY_DIR}/${name})
         elseif (LFORTRAN_BACKEND STREQUAL "cuda")
             add_executable(${name} ${file_name}.f90 ${extra_files})
-            target_compile_options(${name} PUBLIC $<$<COMPILE_LANGUAGE:Fortran>:--gpu=cuda ${extra_args}>)
+            target_compile_options(${name} PUBLIC $<$<COMPILE_LANGUAGE:Fortran>:--gpu=cuda ${GPU_MEMORY_ARG} ${extra_args}>)
             target_link_options(${name} PUBLIC --gpu=cuda)
             add_test(${name} ${CURRENT_BINARY_DIR}/${name})
         elseif (LFORTRAN_BACKEND STREQUAL "cuda_cpu")
             add_executable(${name} ${file_name}.f90 ${extra_files})
-            target_compile_options(${name} PUBLIC $<$<COMPILE_LANGUAGE:Fortran>:--gpu=cuda_cpu ${extra_args}>)
+            target_compile_options(${name} PUBLIC $<$<COMPILE_LANGUAGE:Fortran>:--gpu=cuda_cpu ${GPU_MEMORY_ARG} ${extra_args}>)
             target_link_options(${name} PUBLIC --gpu=cuda_cpu)
             if (static_library_files)
                 add_library(${name}_staticlib STATIC ${static_library_files})
-                target_compile_options(${name}_staticlib PRIVATE $<$<COMPILE_LANGUAGE:Fortran>:--gpu=cuda_cpu ${extra_args}>)
+                target_compile_options(${name}_staticlib PRIVATE $<$<COMPILE_LANGUAGE:Fortran>:--gpu=cuda_cpu ${GPU_MEMORY_ARG} ${extra_args}>)
                 target_link_libraries(${name} PRIVATE ${name}_staticlib)
             endif()
             add_test(${name} ${CURRENT_BINARY_DIR}/${name})
@@ -6406,6 +6411,7 @@ RUN(NAME gpu_metal_481 LABELS gfortran llvm metal cuda cuda_cpu)
 RUN(NAME gpu_metal_484 LABELS gfortran llvm metal cuda cuda_cpu)
 RUN(NAME gpu_metal_483 LABELS gfortran llvm metal cuda cuda_cpu)
 RUN(NAME gpu_metal_482 LABELS gfortran llvm metal cuda_cpu cuda)
+RUN(NAME gpu_unified_memory_01 LABELS gfortran llvm cuda cuda_cpu EXTRA_ARGS $<$<STREQUAL:${LFORTRAN_BACKEND},cuda>:--gpu-memory=unified> $<$<STREQUAL:${LFORTRAN_BACKEND},cuda_cpu>:--gpu-memory=unified>)
 # gfortran evaluates a `do concurrent` limit twice, so gpu_metal_369 has no
 # gfortran label. The llvm backend and gfortran evaluate the limits of an
 # inner index again for every value of the outer one, so gpu_metal_370 is for
