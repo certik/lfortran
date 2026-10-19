@@ -96,6 +96,28 @@ step "workspace solver, cuda_cpu (dumps shared input)" "$LOGS/12-workspace-cuda-
     formal_fpm run --compiler "$LFORTRAN_COMPILER" --build-dir "$CPU_BUILD" --flag "$CPU_FLAGS" $EXAMPLE -- $GAUSS_ARGS \
         --dump-input "$V/gaussian-input.fadv2d" --dump-final-raw "$V/gaussian-cuda-cpu-final.fadv2d"
 
+# Every `do concurrent` is offloaded. Without --gpu-allow-cpu-fallback a loop
+# LFortran cannot offload is a compile error; with it, such a loop is
+# reported as "parallel loop runs on the CPU" instead. Building all of
+# Formal (library, tests, every example) with the fallback allowed and
+# finding no such report shows that none would run on the host.
+all_do_concurrent_offloaded() {
+    local b="$FORMAL_ROOT/build/fallback-check" log="$LOGS/19-fallback-build.log"
+    local f="$NATIVE_FLAGS --gpu-allow-cpu-fallback"
+    formal_fpm build --compiler "$LFORTRAN_COMPILER" --build-dir "$b" --flag "$f" --tests > "$log" 2>&1 || return 1
+    for ex in $(cd "$FORMAL_ROOT/example" && ls *.F90 *.f90 2>/dev/null | sed 's/\.[Ff]90$//'); do
+        grep -qE "^\s*program\b" "$FORMAL_ROOT/example/$ex".[Ff]90 2>/dev/null || continue
+        formal_fpm run --compiler "$LFORTRAN_COMPILER" --build-dir "$b" --flag "$f" \
+            --example "$ex" --runner true >> "$log" 2>&1 || return 1
+    done
+    echo "do concurrent constructs in Formal: $(grep -rciE '^\s*([a-z_0-9]+\s*:\s*)?do\s+concurrent' \
+        "$FORMAL_ROOT/src" "$FORMAL_ROOT/test" "$FORMAL_ROOT/example" | awk -F: '{s+=$2} END {print s}')"
+    echo "loops reported as running on the CPU: $(grep -c 'runs on the CPU' "$log")"
+    ! grep -q 'runs on the CPU' "$log"
+}
+step "every do concurrent offloaded (no CPU fallback)" "$LOGS/19-all-do-concurrent-offloaded.log" \
+    all_do_concurrent_offloaded
+
 # 3. Native CUDA. With PTX JIT disabled a binary built for the wrong
 # architecture fails instead of silently JIT compiling.
 export CUDA_DISABLE_PTX_JIT=1
