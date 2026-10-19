@@ -26,6 +26,17 @@ static inline void lfortran_gpu_copy_kernel_name(char *dest, const char *name,
     dest[name_len] = '\0';
 }
 
+// Whether a launch has no threads: a grid or block extent that is not
+// positive, as an empty iteration space gives. Such a launch runs nothing.
+static inline int lfortran_gpu_launch_is_empty(const int grid[3],
+    const int block[3])
+{
+    for (int i = 0; i < 3; i++) {
+        if (grid[i] <= 0 || block[i] <= 0) return 1;
+    }
+    return 0;
+}
+
 // The size in bytes of the device heap of a launch that allocates on the
 // device: the value of the environment variable LFORTRAN_GPU_HEAP_SIZE, a
 // number with an optional K, M or G suffix (powers of 1024), or 256 MiB when
@@ -122,7 +133,8 @@ void lfortran_gpu_set_buffer_arg(lfortran_gpu_kernel* k, int idx,
 void lfortran_gpu_set_scalar_arg(lfortran_gpu_kernel* k, int idx,
     const void* val, size_t size);
 // A buffer of `size` bytes only the device holds: nothing is copied in or
-// back, and the kernel object owns it until it is released.
+// back. What the launch leaves in it lasts until the next launch of the
+// kernel; the runtime may keep the memory for later launches.
 void lfortran_gpu_set_scratch_arg(lfortran_gpu_kernel* k, int idx,
     size_t size);
 // Copies the leading `size` bytes of the scratch buffer `idx` into `dst`,
