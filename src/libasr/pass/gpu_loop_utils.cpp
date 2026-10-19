@@ -208,6 +208,18 @@ std::string gpu_array_key(ASR::expr_t *e) {
 // ---------------------------------------------------------------------------
 // GpuDuplicator
 
+// A name for a new BLOCK that no other BLOCK of the unit has: the offload
+// pipeline finds the BLOCKs a kernel runs by name in one table.
+static std::string unique_block_name(SymbolTable *scope,
+        const std::string &base) {
+    static int64_t counter = 0;
+    std::string name;
+    do {
+        name = base + "_" + std::to_string(++counter);
+    } while (scope->resolve_symbol(name) != nullptr);
+    return name;
+}
+
 ASR::asr_t* GpuDuplicator::duplicate_Var(ASR::Var_t *x) {
     ASR::symbol_t *s = x->m_v;
     auto vm = value_map.find(s);
@@ -371,7 +383,7 @@ ASR::asr_t* GpuDuplicator::duplicate_BlockCall(ASR::BlockCall_t *x) {
     Vec<ASR::stmt_t*> body;
     duplicate_body(b->m_body, b->n_body, body);
     scope = outer;
-    std::string name = outer->get_unique_name(b->m_name, false);
+    std::string name = unique_block_name(outer, "__gpu_block");
     ASR::asr_t *nb = ASR::make_Block_t(al, b->base.base.loc, symtab,
         s2c(al, name), body.p, body.n);
     symtab->asr_owner = nb;
@@ -514,6 +526,108 @@ void gpu_collect_array_reads(ASR::expr_t *e, std::set<std::string> &arrays) {
 void gpu_collect_array_reads(ASR::stmt_t **body, size_t n,
         std::set<std::string> &arrays) {
     ReadCollector c(arrays);
+    for (size_t i = 0; i < n; i++) c.visit_stmt(*body[i]);
+}
+
+namespace {
+
+bool intrinsic_scalar(ASR::ttype_t *t) {
+    if (ASRUtils::is_array(t) || ASRUtils::is_allocatable(t)
+            || ASRUtils::is_pointer(t)) {
+        return false;
+    }
+    return ASR::is_a<ASR::Real_t>(*t) || ASR::is_a<ASR::Integer_t>(*t)
+        || ASR::is_a<ASR::Logical_t>(*t);
+}
+
+class SimpleBody : public ASRUtils::BlockBodyWalkVisitor<SimpleBody> {
+public:
+    bool ok = true;
+    void visit_stmt(const ASR::stmt_t &x) {
+        switch (x.type) {
+            case ASR::stmtType::Assignment: {
+                const ASR::Assignment_t &a =
+                    *ASR::down_cast<const ASR::Assignment_t>(&x);
+                if (a.m_overloaded || a.m_realloc_lhs || a.m_move_allocation
+                        || !intrinsic_scalar(ASRUtils::expr_type(a.m_target))
+                        || !(ASR::is_a<ASR::Var_t>(*a.m_target)
+                            || ASR::is_a<ASR::ArrayItem_t>(*a.m_target))) {
+                    ok = false;
+                    return;
+                }
+                break;
+            }
+            case ASR::stmtType::If:
+            case ASR::stmtType::Select:
+            case ASR::stmtType::DoLoop:
+                break;
+            case ASR::stmtType::BlockCall: {
+                ASR::symbol_t *b = ASRUtils::symbol_get_past_external(
+                    ASR::down_cast<const ASR::BlockCall_t>(&x)->m_m);
+                if (!ASR::is_a<ASR::Block_t>(*b)) {
+                    ok = false;
+                    return;
+                }
+                for (auto &item : ASR::down_cast<ASR::Block_t>(b)
+                        ->m_symtab->get_scope()) {
+                    if (ASR::is_a<ASR::Block_t>(*item.second)) continue;
+                    if (!ASR::is_a<ASR::Variable_t>(*item.second)
+                            || !intrinsic_scalar(ASR::down_cast<
+                                ASR::Variable_t>(item.second)->m_type)) {
+                        ok = false;
+                        return;
+                    }
+                }
+                break;
+            }
+            default:
+                ok = false;
+                return;
+        }
+        ASRUtils::BlockBodyWalkVisitor<SimpleBody>::visit_stmt(x);
+    }
+    void visit_FunctionCall(const ASR::FunctionCall_t &x) {
+        ASR::symbol_t *f = ASRUtils::symbol_get_past_external(x.m_name);
+        if (!ASR::is_a<ASR::Function_t>(*f)) {
+            ok = false;
+            return;
+        }
+        ASR::Function_t *fn = ASR::down_cast<ASR::Function_t>(f);
+        ASR::FunctionType_t *ft = ASRUtils::get_FunctionType(fn);
+        if ((!ft->m_pure && !ft->m_elemental)
+                || !intrinsic_scalar(x.m_type)) {
+            ok = false;
+            return;
+        }
+        ASRUtils::BlockBodyWalkVisitor<SimpleBody>::visit_FunctionCall(x);
+    }
+    void visit_ArraySection(const ASR::ArraySection_t &) { ok = false; }
+    void visit_StructConstructor(const ASR::StructConstructor_t &) {
+        ok = false;
+    }
+    void visit_IntrinsicArrayFunction(const ASR::IntrinsicArrayFunction_t &) {
+        ok = false;
+    }
+};
+
+} // namespace
+
+bool gpu_simple_body(ASR::stmt_t **body, size_t n) {
+    SimpleBody c;
+    for (size_t i = 0; i < n && c.ok; i++) c.visit_stmt(*body[i]);
+    return c.ok;
+}
+
+void gpu_collect_blocks(ASR::stmt_t **body, size_t n,
+        std::set<ASR::symbol_t*> &blocks) {
+    struct Blocks : public ASRUtils::BlockBodyWalkVisitor<Blocks> {
+        std::set<ASR::symbol_t*> *blocks;
+        void visit_BlockCall(const ASR::BlockCall_t &x) {
+            blocks->insert(ASRUtils::symbol_get_past_external(x.m_m));
+            ASRUtils::BlockBodyWalkVisitor<Blocks>::visit_BlockCall(x);
+        }
+    } c;
+    c.blocks = &blocks;
     for (size_t i = 0; i < n; i++) c.visit_stmt(*body[i]);
 }
 
@@ -848,6 +962,12 @@ ASR::expr_t *GpuInliner::inline_call(ASR::FunctionCall_t *call,
         ASR::expr_t *actual = call->m_args[i].m_value;
         if (actual == nullptr) return nullptr;
         if (ASRUtils::is_array(dv->m_type)) {
+            // A change of the descriptor of the actual is not one of its
+            // elements.
+            while (ASR::is_a<ASR::ArrayPhysicalCast_t>(*actual)) {
+                actual = ASR::down_cast<ASR::ArrayPhysicalCast_t>(
+                    actual)->m_arg;
+            }
             if (gpu_array_key(actual).empty()) return nullptr;
             ASR::ttype_t *at = ASRUtils::expr_type(actual);
             if (!ASRUtils::is_array(at) || ASRUtils::extract_n_dims_from_ttype(
@@ -1029,7 +1149,7 @@ bool GpuInliner::inline_stmt(SymbolTable *scope, ASR::stmt_t *&s) {
     pre.reserve(al, 4);
     if (any) {
         SymbolTable *symtab = al.make_new<SymbolTable>(scope);
-        std::string name = scope->get_unique_name("__gpu_inline", false);
+        std::string name = unique_block_name(scope, "__gpu_inline");
         ASR::asr_t *b = ASR::make_Block_t(al, s->base.loc, symtab,
             s2c(al, name), nullptr, 0);
         symtab->asr_owner = b;

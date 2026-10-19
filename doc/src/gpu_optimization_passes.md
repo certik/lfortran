@@ -86,3 +86,44 @@ throughput.
 Effect (2048², 1000 steps): 0.544 s to 0.454 s. The fused stage kernel takes
 95 µs, the copy of the renamed field 10 µs, against 137 µs for the two
 original kernels.
+
+When inlining has shifted the subscripts of an intermediate array by its
+lower bounds, the fused loop also requires (at run time) each lower bound to
+be the producer's first index, and uses that value instead of reading the
+bound: the subscripts become constant offsets of the loop indices, which the
+index-set splitting below can reason about.
+
+## Index-set splitting (`split`, `gpu_index_set_split.cpp`)
+
+A stencil evaluates different formulas near the boundaries of its domain:
+its body, often the bodies of the pure functions it calls, tests the loop
+indices against the bounds (`if (i == 1) ... else if (i + 2 < n) ...`). Every
+iteration runs the tests, and the compiler cannot share loads between the
+formulas of neighbouring faces or of different quantities, which sit in
+different branches. Far from the boundaries every such test has one value.
+
+The pass inlines the pure functions the body calls, collects the tests that
+compare one loop index with an expression differing from the loop's lower or
+upper bound by a small constant (up to 16), and takes for each dimension the
+fewest iterations at each end outside of which all of them have one value
+(shrunk as long as no test that had one value stops having it). The nest
+becomes:
+
+* the interior, where every test the affine analysis proves to have one
+  value is replaced by the branch it takes, giving straight-line code;
+* the frame, the iterations outside the interior, numbered by one index and
+  mapped back to the original ones (bands of whole rows at both ends of the
+  outer dimension, then strips at both ends of the inner one), running the
+  original body.
+
+A domain too small to have an interior runs the original nest. Nests of one
+and two dimensions are split, and only bodies that compute values of
+intrinsic scalar types (assignments of scalars and array elements, `if`,
+`select case`, `do`, `block`, calls of pure functions with scalar results);
+the offload pipeline analyses other constructs on the loop as written. Tests
+that the analysis cannot decide stay in the interior as they are.
+
+Effect (2048², after fusion): 0.454 s to 0.219 s. The fused stage kernel
+goes from 95 µs to 25.5 µs (interior) plus 8.2 µs (frame): with the boundary
+rows gone the diffusive and advective fluxes of a face share their loads,
+and the remaining loads and arithmetic are those of the interior formulas.

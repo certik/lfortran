@@ -162,6 +162,18 @@ void gpu_collect_array_reads(ASR::expr_t *e, std::set<std::string> &arrays);
 void gpu_collect_array_reads(ASR::stmt_t **body, size_t n,
     std::set<std::string> &arrays);
 
+// Whether a loop body only computes values of intrinsic scalar types:
+// assignments of such scalars and array elements, IF, SELECT CASE, DO and
+// BLOCK constructs with scalar locals, and calls of pure functions with
+// scalar results. The loop transformations leave any other body alone,
+// since the offload pipeline analyses some constructs (allocatable
+// components, derived-type assignments) on the loop as written.
+bool gpu_simple_body(ASR::stmt_t **body, size_t n);
+
+// Every BLOCK a statement list runs, at any depth.
+void gpu_collect_blocks(ASR::stmt_t **body, size_t n,
+    std::set<ASR::symbol_t*> &blocks);
+
 // Every variable referenced.
 void gpu_collect_symbols(ASR::expr_t *e, std::set<ASR::symbol_t*> &syms);
 void gpu_collect_symbols(ASR::stmt_t **body, size_t n,
