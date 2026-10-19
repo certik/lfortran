@@ -441,8 +441,7 @@ public:
             SymbolTable *parent_scope);
 
     bool hoist_struct_element_gathers(const ParallelLoopNest &nest,
-            Vec<ASR::stmt_t*> &gather_stmts,
-            Vec<ASR::stmt_t*> &scatter_stmts);
+            Vec<ASR::stmt_t*> &gather_stmts);
 
     bool host_nameable(ASR::symbol_t *sym);
 
@@ -529,7 +528,6 @@ public:
         Vec<ASR::call_arg_t> call_args;
         Vec<ASR::stmt_t*> private_shapes;
         Vec<ASR::stmt_t*> gather_stmts;
-        Vec<ASR::stmt_t*> scatter_stmts;
         std::vector<LiveoutScalarInfo> liveout_scalars;
         std::vector<GpuReductionInfo> reductions;
         std::vector<DimInfo> dim_info;

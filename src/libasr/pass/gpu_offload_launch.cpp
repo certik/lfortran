@@ -168,7 +168,7 @@ void GpuOffloadVisitor::build_kernel_launch(const ASR::OMPRegion_t &region,
     // present() guard so the host never reads a null descriptor.
     Vec<ASR::stmt_t*> launch_stmts;
     launch_stmts.reserve(al, plan.gather_stmts.n + pre_launch_stmts.n
-        + plan.scatter_stmts.n + plan.liveout_scalars.size() + 2
+        + plan.liveout_scalars.size() + 2
         + plan.liveout_scalars.size() + plan.private_shapes.n);
     for (size_t i = 0; i < plan.private_shapes.n; i++) {
         launch_stmts.push_back(al, plan.private_shapes[i]);
@@ -205,7 +205,7 @@ void GpuOffloadVisitor::build_kernel_launch(const ASR::OMPRegion_t &region,
     }
     // The components the kernel writes are made ready from the loop as the
     // source wrote it, which the rewrites above left untouched, and before
-    // any element is gathered into a copy.
+    // any element is bound to a pointer.
     // The launch names the block that does it, which the device heap
     // later reads and changes.
     ASR::symbol_t *component_fit = nullptr;
@@ -320,12 +320,6 @@ void GpuOffloadVisitor::build_kernel_launch(const ASR::OMPRegion_t &region,
     // The launch does not wait for the kernel. What follows reads what the
     // kernel wrote, so the `gpu_launch_sync` pass puts the GpuSync that
     // waits for it in front of it.
-
-    // Put every gathered element the kernel wrote into back over the
-    // original, before anything on the host can read it again.
-    for (size_t si = 0; si < plan.scatter_stmts.n; si++) {
-        launch_stmts.push_back(al, plan.scatter_stmts.p[si]);
-    }
 
     // Copy liveout scalar results back from the 1-element array
     // buffers after the kernel has completed

@@ -238,21 +238,18 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
     }
 
     // An element of an array of derived type reached through a
-    // component -- `x%c_(k)` -- is copied to a temporary of this
-    // scope before the launch, and the loop body reads the temporary.
+    // component -- `x%c_(k)` -- is bound to a pointer of this scope
+    // before the launch, and the loop body reads the pointer.
     // This runs ahead of the checks below on purpose: they must judge
     // the shape the kernel would really be built from.
     Vec<ASR::stmt_t*> gather_stmts;
     gather_stmts.reserve(al, 1);
-    Vec<ASR::stmt_t*> scatter_stmts;
-    scatter_stmts.reserve(al, 1);
-    // The gather is a copy the host makes before it launches, so this
+    // The association is made by the host before it launches, so this
     // holds for every dialect.
-    if (!hoist_struct_element_gathers(work, gather_stmts,
-            scatter_stmts)) {
+    if (!hoist_struct_element_gathers(work, gather_stmts)) {
         // The element could not be hoisted -- a subscript that moves
-        // with the loop, or a write to the object that the copy back
-        // after the launch could not reproduce exactly. Passing
+        // with the loop, or a write to the object outside the element
+        // that could reach the storage the pointer names. Passing
         // the chain on unchanged reaches the device as a component of
         // the wrong element, which is a wrong number and no
         // diagnostic, so decline the loop instead.
@@ -2665,7 +2662,6 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
     plan.call_args = call_args;
     plan.private_shapes = private_shapes;
     plan.gather_stmts = gather_stmts;
-    plan.scatter_stmts = scatter_stmts;
     plan.liveout_scalars = liveout_scalars;
     plan.reductions = pending_reductions;
     plan.dim_info = dim_info;

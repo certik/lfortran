@@ -181,27 +181,24 @@ void GpuOffloadVisitor::migrate_inlined_assoc_symbols(
     }
 }
 
-// Copy every loop-invariant, read-only element of an array of
-// derived type that the loop reaches through a component --
-// `x%c_(k)` -- into a temporary of the enclosing scope, and let the
-// loop body name the temporary instead.  The copy runs once, on the
-// host, before the launch; the temporary is then an ordinary
-// derived-type kernel argument whose own components have extents
-// the device can be told about, which is what the chain itself does
-// not.
+// Bind every loop-invariant element of an array of derived type that
+// the loop reaches through a component -- `x%c_(k)` -- to a pointer
+// of the enclosing scope, and let the loop body name the pointer
+// instead.  The association is made once, on the host, before the
+// launch; the pointer is then an ordinary derived-type kernel argument
+// whose own components have extents the device can be told about,
+// which is what the chain itself does not.  Nothing of the element is
+// copied: the launch hands the device the element's own component
+// storage, as it would that of a variable.
 //
-// An element the loop writes into is handled the same way, with a
-// copy back over the original after the launch: because the gather
-// brought the whole element in first, the bytes the kernel left
-// alone still hold what was read, so the copy back is exact even
-// when only part of the element was written.  It is only allowed
-// when every write to the object lands inside that one element --
-// a write anywhere else, `allocate` of the array the element comes
-// from included, would be undone by the copy back.
+// An element the loop writes into is bound the same way, and the
+// kernel's writes then land in the element itself.  It is only allowed
+// when every write to the object lands inside that one element -- a
+// write anywhere else, `allocate` of the array the element comes from
+// included, could reach the storage the pointer names.
 bool GpuOffloadVisitor::hoist_struct_element_gathers(
         const ParallelLoopNest &nest,
-        Vec<ASR::stmt_t*> &gather_stmts,
-        Vec<ASR::stmt_t*> &scatter_stmts) {
+        Vec<ASR::stmt_t*> &gather_stmts) {
     GpuStructElementGatherCollector collector;
     for (size_t i = 0; i < nest.n_body; i++) {
         collector.visit_stmt(*nest.body[i]);
@@ -225,18 +222,16 @@ bool GpuOffloadVisitor::hoist_struct_element_gathers(
         ASR::expr_t *chain = ASRUtils::EXPR((ASR::asr_t*)item);
         GpuDesignatorBase base = gpu_designator_base(chain);
         if (!base.is_known()) return false;
-        // A write to the object the chain hangs off makes a
-        // read-only copy stale. The copy can still stand in for the
-        // element when every such write lands inside that element,
-        // because it is then put back over the original after the
-        // launch. A write anywhere else in the object would be lost
-        // or, worse, undone by that copy back.
-        bool scatter = false;
+        // A write to the object the chain hangs off may move or free
+        // the storage the pointer is bound to. The pointer can still
+        // stand in for the element when every such write lands inside
+        // that element, whose own components a kernel cannot
+        // reallocate.
+        bool written_into = false;
         if (written.roots.count(base.root)) {
             // A callee that writes the object through one of its
             // dummies is spliced into the kernel, and the pass does
-            // not build a kernel for that shape yet; the copy back
-            // would be over storage the launch never reached.
+            // not build a kernel for that shape yet.
             if (written.call_roots.count(base.root)) return false;
             for (ASR::expr_t *target : written.targets) {
                 if (gpu_designator_base(target).root != base.root) {
@@ -244,7 +239,7 @@ bool GpuOffloadVisitor::hoist_struct_element_gathers(
                 }
                 if (!gpu_designator_within(target, chain)) return false;
             }
-            scatter = true;
+            written_into = true;
         }
         if (!host_nameable(base.root)) return false;
         // The subscripts have to mean the same thing for every
@@ -276,17 +271,19 @@ bool GpuOffloadVisitor::hoist_struct_element_gathers(
         GpuStructElementGather g;
         g.chain = chain;
         g.temp = nullptr;
-        g.scatter = scatter;
+        g.written = written_into;
         gathers.push_back(g);
     }
     if (gathers.empty()) return true;
 
     // Two elements of the same object can designate the same
     // storage at run time -- `x%c_(i)` and `x%c_(k)` with `i == k`
-    // -- and then one copy back would silently undo the other. Take
-    // only a single element per written object.
+    // -- and the launch would then hand the device the one storage as
+    // two buffers, the copy back of one undoing the writes made
+    // through the other. Take only a single element per written
+    // object.
     for (const GpuStructElementGather &g : gathers) {
-        if (!g.scatter) continue;
+        if (!g.written) continue;
         ASR::symbol_t *root = gpu_designator_base(g.chain).root;
         for (const GpuStructElementGather &other : gathers) {
             if (&other == &g) continue;
@@ -297,7 +294,6 @@ bool GpuOffloadVisitor::hoist_struct_element_gathers(
     }
 
     gather_stmts.reserve(al, gathers.size());
-    scatter_stmts.reserve(al, gathers.size());
     for (GpuStructElementGather &g : gathers) {
         const Location &gloc = g.chain->base.loc;
         GpuDesignatorBase base = gpu_designator_base(g.chain);
@@ -305,29 +301,25 @@ bool GpuOffloadVisitor::hoist_struct_element_gathers(
             ? std::string("elem")
             : std::string(ASRUtils::symbol_name(base.members.front()));
         std::string name = current_scope->get_unique_name(
-            "__gpu_gather_" + stem);
+            "__gpu_alias_" + stem);
+        // A pointer, not a copy: associating it neither allocates nor
+        // copies the element's components, and as a pointer nothing
+        // finalizes or deallocates it when the scope ends.
+        ASR::ttype_t *pointer_type = ASRUtils::TYPE(ASR::make_Pointer_t(
+            al, gloc, ASRUtils::duplicate_type(al,
+                ASRUtils::expr_type(g.chain))));
         ASR::symbol_t *temp = gpu_new_variable(al, gloc, current_scope,
-            name, ASRUtils::duplicate_type(al,
-                ASRUtils::expr_type(g.chain)), ASR::intentType::Local,
+            name, pointer_type, ASR::intentType::Local,
             ASRUtils::get_struct_sym_from_struct_expr(g.chain));
         g.temp = temp;
         ASRUtils::ExprStmtDuplicator dup(al);
         dup.success = true;
-        ASR::expr_t *rhs = dup.duplicate_expr(g.chain);
-        if (!rhs || !dup.success) rhs = g.chain;
+        ASR::expr_t *target = dup.duplicate_expr(g.chain);
+        if (!target || !dup.success) target = g.chain;
         gather_stmts.push_back(al, ASRUtils::STMT(
-            ASR::make_Assignment_t(al, gloc,
+            ASR::make_Associate_t(al, gloc,
                 ASRUtils::EXPR(ASR::make_Var_t(al, gloc, temp)),
-                rhs, nullptr, false, false, false)));
-        if (!g.scatter) continue;
-        ASRUtils::ExprStmtDuplicator back(al);
-        back.success = true;
-        ASR::expr_t *lhs = back.duplicate_expr(g.chain);
-        if (!lhs || !back.success) lhs = g.chain;
-        scatter_stmts.push_back(al, ASRUtils::STMT(
-            ASR::make_Assignment_t(al, gloc, lhs,
-                ASRUtils::EXPR(ASR::make_Var_t(al, gloc, temp)),
-                nullptr, false, false, false)));
+                target)));
     }
 
     GpuStructElementGatherVisitor sub(al, gathers);

@@ -573,9 +573,9 @@ public:
 // ordinary as `size(x%c_(k)%upper_, 1)` cannot be evaluated there and
 // the loop is declined.
 //
-// Copying the element into a temporary on the host before the launch
-// removes the whole difficulty: the temporary is an ordinary derived-type
-// kernel argument, and `size(t%upper_, 1)` is the shape the existing
+// Binding a pointer to the element on the host before the launch removes
+// the whole difficulty: the pointer is an ordinary derived-type kernel
+// argument, and `size(t%upper_, 1)` is the shape the existing
 // per-component extent machinery already resolves.
 //
 // An element reached directly from a variable, `c(k)`, is deliberately
@@ -590,8 +590,8 @@ public:
             const_cast<ASR::ttype_t*>(x.m_type));
         if (!t || ASR::is_a<ASR::Array_t>(*t)) return false;
         if (!ASR::is_a<ASR::StructType_t>(*t)) return false;
-        // A polymorphic element carries a dynamic type the copy would
-        // not reproduce.
+        // A polymorphic element carries a dynamic type the pointer of
+        // the declared type would not.
         if (ASRUtils::is_class_type(t)) return false;
         ASR::expr_t *base = ASRUtils::get_past_array_physical_cast(x.m_v);
         if (!base || !ASR::is_a<ASR::StructInstanceMember_t>(*base)) {
@@ -624,17 +624,16 @@ public:
     }
 };
 
-// One gathered element: the designator that was copied and the host
-// temporary that now stands for it.
+// One hoisted element: the designator and the host pointer bound to it
+// that now stands for it.
 struct GpuStructElementGather {
     ASR::expr_t *chain = nullptr;
     ASR::symbol_t *temp = nullptr;
-    // The loop writes into this element, so the temporary has to be
-    // copied back over it once the kernel has finished.
-    bool scatter = false;
+    // The loop writes into this element.
+    bool written = false;
 };
 
-// Replaces each collected designator with a reference to its temporary.
+// Replaces each collected designator with a reference to its pointer.
 class GpuStructElementGatherReplacer :
         public ASR::BaseExprReplacer<GpuStructElementGatherReplacer> {
 public:
