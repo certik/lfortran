@@ -4875,6 +4875,11 @@ gpu_metal_kernel = true
 gpu_cuda_kernel = true
 
 [[test]]
+filename = "../integration_tests/gpu_kernel_source_30.f90"
+gpu_metal_kernel = true
+gpu_cuda_kernel = true
+
+[[test]]
 filename = "../integration_tests/gpu_kernel_source_16.f90"
 gpu_metal_kernel = true
 gpu_cuda_kernel = true

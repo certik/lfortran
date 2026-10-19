@@ -7,8 +7,8 @@ struct __ScalarArgs___lfortran_gpu_kernel_0 {
 };
 
 extern "C" __global__ void __lfortran_gpu_kernel_0(
-    float* a,
-    float* lap,
+    float* __restrict__ a,
+    float* __restrict__ lap,
     __ScalarArgs___lfortran_gpu_kernel_0 __scalar_args)
 {
     int __loop_end_0 = __scalar_args.__loop_end_0;
@@ -37,7 +37,7 @@ struct __ScalarArgs___lfortran_gpu_kernel_1 {
 };
 
 extern "C" __global__ void __lfortran_gpu_kernel_1(
-    int* b,
+    int* __restrict__ b,
     __ScalarArgs___lfortran_gpu_kernel_1 __scalar_args)
 {
     int __tile_shift = __scalar_args.__tile_shift;
@@ -65,7 +65,7 @@ struct __ScalarArgs___lfortran_gpu_kernel_2 {
 };
 
 extern "C" __global__ void __lfortran_gpu_kernel_2(
-    int* c,
+    int* __restrict__ c,
     __ScalarArgs___lfortran_gpu_kernel_2 __scalar_args)
 {
     int __loop_start_1 = __scalar_args.__loop_start_1;
@@ -97,7 +97,7 @@ struct __ScalarArgs___lfortran_gpu_kernel_3 {
 };
 
 extern "C" __global__ void __lfortran_gpu_kernel_3(
-    int* d,
+    int* __restrict__ d,
     __ScalarArgs___lfortran_gpu_kernel_3 __scalar_args)
 {
     int __tile_shift = __scalar_args.__tile_shift;
@@ -124,7 +124,7 @@ struct __ScalarArgs___lfortran_gpu_kernel_4 {
 };
 
 extern "C" __global__ void __lfortran_gpu_kernel_4(
-    int* e,
+    int* __restrict__ e,
     __ScalarArgs___lfortran_gpu_kernel_4 __scalar_args)
 {
     int __tile_shift = __scalar_args.__tile_shift;
@@ -152,8 +152,8 @@ struct __ScalarArgs___lfortran_gpu_kernel_5 {
 };
 
 extern "C" __global__ void __lfortran_gpu_kernel_5(
-    int* b,
-    int* s,
+    int* __restrict__ b,
+    int* __restrict__ s,
     __ScalarArgs___lfortran_gpu_kernel_5 __scalar_args)
 {
     int __lb_s_0 = __scalar_args.__lb_s_0;
