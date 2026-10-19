@@ -160,10 +160,9 @@ struct CudaDialect {
 
     void emit_translation_unit_epilogue(std::stringstream &src,
             const std::vector<std::string> &kernel_names) const {
-        if (!emit_registrar) return;
+        if (!emit_registrar || kernel_names.empty()) return;
         src << "\n// Auto-generated kernel registration\n";
         if (emulate_cpu) {
-            if (kernel_names.empty()) return;
             // The thunks are registered instead of the kernels, and a plain
             // constructor attribute keeps the file free of any C++ runtime
             // dependency. Under separate compilation the per-object device
@@ -186,15 +185,20 @@ struct CudaDialect {
         src << "typedef void (*kernel_func_t)(void);\n";
         src << "extern \"C\" void lfortran_gpu_register_kernel("
                "const char *name, kernel_func_t func);\n\n";
+        // As above, the registrar is named after the first kernel so that
+        // the concatenated per-object device sources do not collide; the
+        // anonymous namespace also keeps it local to its translation unit.
+        const std::string registrar = "_lfortran_cuda_registrar_"
+            + kernel_names[0];
         src << "namespace {\n";
-        src << "struct _lfortran_cuda_registrar {\n";
-        src << "    _lfortran_cuda_registrar() {\n";
+        src << "struct " << registrar << " {\n";
+        src << "    " << registrar << "() {\n";
         for (auto &kname : kernel_names) {
             src << "        lfortran_gpu_register_kernel(\""
                 << kname << "\", (kernel_func_t)" << kname << ");\n";
         }
         src << "    }\n";
-        src << "} _lfortran_cuda_reg;\n";
+        src << "} " << registrar << "_instance;\n";
         src << "}\n";
     }
 };
