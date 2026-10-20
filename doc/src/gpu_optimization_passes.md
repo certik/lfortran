@@ -116,6 +116,15 @@ becomes:
   outer dimension, then strips at both ends of the inner one), running the
   original body.
 
+The frame is not a launch of its own: its iterations are few and each runs
+the long general body, so on its own it leaves the device mostly idle for as
+long as one of them takes (8 µs at 2048²). They are packed as extra rows in
+front of the interior's outer dimension instead, so they start first and run
+alongside the interior, in the same launch. The nest keeps the original loop
+indices for the interior; the offload pipeline still picks the contiguous
+index of the launch from the interior's stores (a store whose subscript
+names no loop index, such as the frame's, does not decide it).
+
 A domain too small to have an interior runs the original nest. Nests of one
 and two dimensions are split, and only bodies that compute values of
 intrinsic scalar types (assignments of scalars and array elements, `if`,
@@ -123,7 +132,9 @@ intrinsic scalar types (assignments of scalars and array elements, `if`,
 the offload pipeline analyses other constructs on the loop as written. Tests
 that the analysis cannot decide stay in the interior as they are.
 
-Effect (2048², after fusion): 0.454 s to 0.219 s. The fused stage kernel
+Effect (2048², after fusion): 0.454 s to 0.219 s with the frame in a launch
+of its own, and from 0.170 s to 0.149 s (after the ping-pong buffers below)
+by packing the frame into the interior's launch. The fused stage kernel
 goes from 95 µs to 25.5 µs (interior) plus 8.2 µs (frame): with the boundary
 rows gone the diffusive and advective fluxes of a face share their loads,
 and the remaining loads and arithmetic are those of the interior formulas.
