@@ -6467,7 +6467,7 @@ RUN(NAME gpu_metal_525 LABELS gfortran llvm metal cuda_cpu cuda)
 # No metal or cuda label: a GPU kernel does not copy a LOCAL_INIT scalar in
 # (#14792), and the device compiler folds tests on it as undefined.
 RUN(NAME gpu_metal_526 LABELS llvm cuda_cpu) # `local_init` locality is not accepted by every supported gfortran
-RUN(NAME gpu_metal_513 LABELS gfortran llvm metal cuda_cpu cuda EXTRA_ARGS --gpu-cache-bytes=32768)
+RUN(NAME gpu_metal_513 LABELS llvm metal cuda_cpu cuda EXTRA_ARGS --gpu-cache-bytes=32768) # `local` locality is not accepted by every supported gfortran
 RUN(NAME gpu_metal_530 LABELS gfortran llvm metal cuda_cpu cuda EXTRA_ARGS --gpu-cache-bytes=4096)
 RUN(NAME gpu_metal_531 LABELS gfortran llvm metal cuda_cpu cuda EXTRA_ARGS --gpu-cache-bytes=4096)
 RUN(NAME gpu_metal_532 LABELS gfortran llvm metal cuda_cpu cuda EXTRA_ARGS --gpu-cache-bytes=4096)
