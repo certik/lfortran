@@ -427,6 +427,8 @@ ASR::asr_t* GpuDuplicator::duplicate_BlockCall(ASR::BlockCall_t *x) {
     SymbolTable *symtab = al.make_new<SymbolTable>(outer);
     for (auto &item : b->m_symtab->get_scope()) {
         ASR::symbol_t *old = item.second;
+        // A BLOCK nested in this one is copied where the body runs it.
+        if (ASR::is_a<ASR::Block_t>(*old)) continue;
         if (!ASR::is_a<ASR::Variable_t>(*old)) {
             ok = false;
             continue;

@@ -156,3 +156,26 @@ execution left in the copy, if it is there. Exchanging the allocations with
 the offload pipeline wait for the device.
 
 Effect (2048²): 0.217 s to 0.170 s (the 10 µs copy per stage goes).
+
+## Unroll-and-jam of the interior (`jam`, part of `gpu_index_set_split.cpp`)
+
+The interior of a split nest of two dimensions runs several consecutive
+iterations of its outer dimension (the non-contiguous one) in one thread,
+one after the other. The iterations of a parallel loop are independent, so
+any of them may run in one thread in any order; run one after the other in
+straight-line code, what neighbouring rows read and compute in common (the
+loads of the rows between them, and for a stencil the fluxes of the faces
+they share) is loaded and computed once by the device compiler (the kernel
+buffers do not alias, so the stores of one row do not force the next row
+to reload). The interior's rows are a multiple of the factor, and the rows
+left over join the frame.
+
+The factor is three when the body reads some array at two or more offsets
+along the outer dimension, and one otherwise. With the fourth-order stencil
+three rows compute 6 instead of 12 y faces; two and four rows were slower
+(more instructions per cell with two, register pressure with four).
+
+Effect (2048²): 0.149 s to 0.133 s. The stage kernel goes from 29 µs to
+24.7 µs, with 37% fewer instructions; it now runs at the L2 bandwidth
+(5.8 TB/s, 166 MB of L2 traffic per stage against 117 MB of compulsory
+traffic).
