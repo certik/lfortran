@@ -312,25 +312,34 @@ inputs. The roof is the compulsory traffic of 16 bytes per cell and step at
 | fuse | 0.1190 | 0.4096 | 2.561 |
 | fuse, swap | 0.1048 | 0.3614 | 2.192 |
 | fuse, swap, split | 0.0479 | 0.1341 | 1.391 |
-| all (+ jam) | **0.0463** | **0.1186** | **1.390** |
-| % of the roof (all) | 6.6% | 10.3% | 12.1% |
-| speed-up (all / none) | 1.9x | 4.6x | 2.2x |
+| fuse, swap, split, jam | 0.0463 | 0.1186 | 1.390 |
+| all (+ skew) | **0.0431** | **0.1186** | **0.556** |
+| % of the roof (all) | 7.1% | 10.3% | 30.2% |
+| speed-up (all / none) | 2.0x | 4.6x | 5.5x |
+
+The rows up to the jam were measured with the commits that introduced
+them; the last row in a later run (none: 0.0846 / 0.5441 / 3.069 s), where
+skewing, which the cost model only picks at 4096², leaves 1024² and 2048²
+as they were (1024² within noise of 0.0432 s).
 
 `solve_seconds` includes copying the fields to the device at the start of
 the solve and back at its end (about 5.5 ms at 1024², 20 ms at 2048² and
-95 ms at 4096²); without it the timesteps take 38 ms, 99.5 ms and 1.30 s,
-8%, 12% and 13% of the roof. Fusion alone is slower at 1024², where the two
+95 ms at 4096²); without it the timesteps take 38 ms, 99.5 ms and 0.46 s
+(1.30 s before skewing), 8%, 12% and 36% of the roof. Fusion alone is slower at 1024², where the two
 original kernels are short, until index-set splitting removes the boundary
 branches it duplicates.
 
 For comparison, the hand-written C + CUDA of the same method (built from
-Formal's `benchmarks/2d-advection-cuda`, measured in the same runs): `split`
-(the same two kernels per stage) 0.0739 / 0.5546 / 3.023 s; `regyf` (fused
-stage kernel, register blocking, interior and boundary kernels) 0.0387 /
-0.1101 / 1.151 s; `lean2` 0.0375 / 0.0654 s and `march` 0.295 s at 4096²
-(two and four stages per kernel). The transformations bring the compiled
-Fortran to the level of the hand-written per-stage kernels; what remains is
-fusing stages, which these passes do not do.
+Formal's `benchmarks/2d-advection-cuda`, measured in the same runs as the
+last row): `split` (the same two kernels per stage) 0.0740 / 0.5547 /
+3.023 s; `regyf` (fused stage kernel, register blocking, interior and
+boundary kernels) 0.0388 / 0.1102 / 1.151 s; `lean2` 0.0375 / 0.0654 s
+(two stages per kernel); `pair` 0.652 s and `march` 0.294 s at 4096² (two
+and four stages per kernel). The compiled Fortran is at the level of the
+hand-written per-stage kernels at 1024² and 2048², and at 4096² faster
+than them and than `pair`, since the bands keep several stages in the L2
+cache; what remains is fusing stages within a kernel, which these passes
+do not do.
 
 ## What was tried and not kept
 
