@@ -6427,7 +6427,6 @@ RUN(NAME gpu_metal_479 LABELS gfortran llvm metal cuda_cpu)
 RUN(NAME gpu_metal_480 LABELS gfortran llvm metal cuda_cpu)
 RUN(NAME gpu_metal_481 LABELS gfortran llvm metal cuda_cpu)
 RUN(NAME gpu_metal_488 LABELS gfortran llvm cuda cuda_cpu)
-RUN(NAME gpu_metal_505 LABELS gfortran llvm metal cuda_cpu cuda)
 # GFortran 13 in Quick cannot compile the LOCAL locality of gpu_metal_505.
 RUN(NAME gpu_metal_505 LABELS llvm metal cuda_cpu cuda)
 RUN(NAME gpu_metal_506 LABELS gfortran llvm metal cuda_cpu cuda)
@@ -6455,8 +6454,6 @@ if (LFORTRAN_BACKEND STREQUAL "cuda")
     set_tests_properties(gpu_cuda_scratch_order_alias PROPERTIES
         LABELS cuda TIMEOUT 30)
 endif()
-# GFortran 13 in Quick does not support REDUCE.
-RUN(NAME gpu_metal_485 LABELS llvm metal cuda cuda_cpu)
 RUN(NAME gpu_metal_485 LABELS gfortran llvm metal cuda cuda_cpu)
 RUN(NAME gpu_metal_490 LABELS gfortran llvm metal cuda cuda_cpu)
 RUN(NAME gpu_metal_491 LABELS gfortran llvm cuda cuda_cpu) # metal declines integer(8) loop indices
