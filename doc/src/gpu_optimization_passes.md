@@ -8,7 +8,11 @@ them knows anything about a particular application. Each proves that what it
 does preserves the meaning of the program, and leaves the loops as they are
 when it cannot.
 
-They run for `--gpu=cuda` and `--gpu=cuda_cpu`. `--gpu-loop-transforms`
+They run for `--gpu=cuda` and `--gpu=cuda_cpu` (on by default), right after
+the dispatch has assigned the loops (`gpu_loop_fusion`, then
+`gpu_index_set_split`, before `gpu_offload`), so their output is ordinary
+`do concurrent` nests that the rest of the offload pipeline lowers as it
+lowers any other; Metal keeps its loops as written. `--gpu-loop-transforms`
 selects them: `all` (the default), `none`, or a comma separated list of
 `fuse`, `swap`, `split` and `jam`.
 
@@ -196,3 +200,84 @@ Effect (2048²): 0.149 s to 0.133 s. The stage kernel goes from 29 µs to
 (5.8 TB/s, 166 MB of L2 traffic per stage against 117 MB of compulsory
 traffic). At 4096² the run-time choice keeps the plain nest (1.39 s, against
 1.50 s with the jam).
+
+## Results
+
+Formal's 2D advection-diffusion example, `--workspace-kernel split` (the
+original source), 1000 steps, `solve_seconds` (medians of 5 interleaved
+runs), with the transformations enabled cumulatively. 4096² uses the
+analytic initial state (`--cells 4096,4096`, with Formal's 512 MiB
+working-set guard raised for the benchmark), the other sizes the shared
+inputs. The roof is the compulsory traffic of 16 bytes per cell and step at
+5.5 TB/s (the L2-resident copy rate) for 1024² and 2048² and at 1.598 TB/s
+(DRAM) for 4096².
+
+| transformations | 1024² | 2048² | 4096² |
+|---|---:|---:|---:|
+| none | 0.0879 | 0.5435 | 3.066 |
+| fuse | 0.1190 | 0.4096 | 2.561 |
+| fuse, swap | 0.1048 | 0.3614 | 2.192 |
+| fuse, swap, split | 0.0479 | 0.1341 | 1.391 |
+| all (+ jam) | **0.0463** | **0.1186** | **1.390** |
+| % of the roof (all) | 6.6% | 10.3% | 12.1% |
+| speed-up (all / none) | 1.9x | 4.6x | 2.2x |
+
+`solve_seconds` includes copying the fields to the device at the start of
+the solve and back at its end (about 5.5 ms at 1024², 20 ms at 2048² and
+95 ms at 4096²); without it the timesteps take 38 ms, 99.5 ms and 1.30 s,
+8%, 12% and 13% of the roof. Fusion alone is slower at 1024², where the two
+original kernels are short, until index-set splitting removes the boundary
+branches it duplicates.
+
+For comparison, the hand-written C + CUDA of the same method (built from
+Formal's `benchmarks/2d-advection-cuda`, measured in the same runs): `split`
+(the same two kernels per stage) 0.0739 / 0.5546 / 3.023 s; `regyf` (fused
+stage kernel, register blocking, interior and boundary kernels) 0.0387 /
+0.1101 / 1.151 s; `lean2` 0.0375 / 0.0654 s and `march` 0.295 s at 4096²
+(two and four stages per kernel). The transformations bring the compiled
+Fortran to the level of the hand-written per-stage kernels; what remains is
+fusing stages, which these passes do not do.
+
+## What was tried and not kept
+
+* The frame as a launch of its own: the frame's iterations are latency
+  bound (8 µs per stage at 2048², a few blocks on a mostly idle device).
+* Merging the frame into the interior's launch before the offload pipeline
+  could tell which index is contiguous: the stores of the frame, at
+  computed indices, made it number the threads along the wrong dimension
+  (5x slower), hence the rule above.
+* Unroll-and-jam along the contiguous dimension (two columns per thread):
+  strided accesses and the wrong thread numbering, 4x slower.
+* Jam factors of 2 and 4 along the outer dimension (2048²: 0.1353 and
+  0.1346 s against 0.1326 s for 3).
+* Tiles of 64 or 128 iterations of the contiguous dimension, and 512
+  threads per block: within 3% either way.
+* Exchanging the ping-pong buffers with `move_alloc`: the host statements it
+  lowers to make the offload pipeline wait for the device every stage.
+* Unswitching a test the loop does not change (`select case (stage)`, a
+  kernel per stage): 5% faster at 2048², 6% slower at 1024², where the
+  launches of four different kernels leave longer gaps between them.
+
+## Next passes
+
+* Stage fusion with overlapped tiling: a block computes the first stage on
+  its tile and a halo into shared memory, waits for its threads, and
+  computes the second stage from it; the stage's fields then leave the chip
+  once per two stages. This needs a block-cooperative kind of iteration in
+  the offload pipeline (a loop iteration run by the threads of a block, its
+  inner loops shared out, barriers between them and its private arrays in
+  shared memory), which the lanes of `gpu_vector_lanes` provide for Metal
+  SIMD-groups and which CUDA could get with a block in place of a
+  SIMD-group. It is what separates `regyf` from `pair` (1.151 s and
+  0.653 s at 4096²).
+* Time skewing of the step and stage loops over bands of rows, each band
+  small enough to stay in the L2 cache across the stages, for problems that
+  do not fit: the per-stage kernels are reused, launched on skewed row
+  ranges; with a skew of the stencil's radius per stage the two ping-pong
+  buffers still suffice. The DRAM traffic per step would drop from that of
+  four stages to that of one.
+* Scalar replacement across the iterations of a sequential loop (predictive
+  commoning) in place of the fixed jam, so that a thread can march down a
+  column carrying the faces it shares with the next rows in registers.
+* Faster copies at the start and end of a solve (pinned staging buffers),
+  which take 15% of the time at 2048².
