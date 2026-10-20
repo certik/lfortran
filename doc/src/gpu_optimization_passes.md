@@ -376,6 +376,38 @@ do not do.
 * CUDA graphs over the repeated launches: at 1024² the device is idle
   between launches for 0.29 µs (median), 1.2 ms of the 38 ms of time
   steps, so a graph could not save more than 3%.
+* Fusing two Runge-Kutta stages into one kernel, measured first on
+  prototypes of the interior (the stencil without the boundary rows,
+  written in the form a compiler pass would generate; all variants give
+  the same checksum as two separate stages). Two per-stage launches of a
+  plain one-cell-per-thread kernel take 44.8 µs at 2048² (22.4 µs per
+  stage, at the L2 roof of the per-stage scheme; the generated per-stage
+  kernel takes 24.7 µs). Fused versions:
+  * block-cooperative, overlapped tiling in x (6 halo columns recomputed)
+    and the block marching down its rows with the input and the first
+    stage in shared-memory row rings, two barriers per step: 67-92 µs for
+    tiles of 32-128 columns × 4-16 rows and segments of 16-128 rows;
+  * register streaming without shared memory: a warp owns 32 columns (20
+    after the halo lanes the two stages consume), marches down its rows
+    carrying the last rows of the input and of the first stage and the y
+    faces in registers (scalar replacement down the column, every face
+    computed once), and exchanges x neighbours with warp shuffles:
+    39.3 µs (segments of 32 rows; 43.9 µs at 16, 57.6 µs at 128); two
+    columns per lane 42-60 µs, several rows per step (more parallel work
+    per thread) 47-66 µs;
+  * the same streaming for one stage (scalar replacement down the column
+    alone): 54-96 µs for two stages, slower than the plain kernel.
+
+  The best fused form is 12% faster than two plain stages at 2048² and
+  slower at 1024² (17.6 µs against 13.1 µs), and at 4096² it halves the
+  DRAM traffic (322 µs against 602 µs unskewed) but stays above what time
+  skewing gets from the plain stages in L2 (about 230 µs per two stages in
+  the full solver). The hand-written `lean2`, which reaches 28 µs per two
+  stages at 2048² including the boundary rows, adds what a generic pass
+  does not: a padded layout without bounds checks, 64-bit loads of column
+  pairs, x faces shared through shared memory, 167 registers, and a
+  separate boundary grid launched programmatically. A pass for a new
+  block- or warp-cooperative iteration mode was not worth building for 12%.
 * Capping the registers of the kernels for occupancy (`-maxrregcount`):
   3% faster at 4096² before time skewing (40 registers; 32 was slower),
   where the plain stage kernel was DRAM bound; with the bands in the L2
@@ -383,23 +415,13 @@ do not do.
 
 ## Next passes
 
-* Stage fusion with overlapped tiling: a block computes the first stage on
-  its tile and a halo into shared memory, waits for its threads, and
-  computes the second stage from it; the stage's fields then leave the chip
-  once per two stages. This is what remains between the compiled Fortran
-  and the hand-written `lean2` at 2048² (0.065 s against 0.119 s) and
-  `march` at 4096² (0.295 s against 0.556 s). It needs a block-cooperative
-  kind of iteration in the offload pipeline (a loop iteration run by the
-  threads of a block, its inner loops shared out, barriers between them and
-  its private arrays in shared memory), which the lanes of
-  `gpu_vector_lanes` provide for Metal SIMD-groups and which CUDA could get
-  with a block in place of a SIMD-group, and a cost model that weighs the
-  recomputed halo against the traffic saved (in the cache-resident case
-  the fused kernel risks becoming issue bound).
-* Scalar replacement across the iterations of a sequential loop
-  (predictive commoning) in place of the fixed jam, so that a thread can
-  march down a column carrying the faces it shares with the next rows in
-  registers.
+* Stage fusion within a kernel, only together with the layout and code
+  choices of the hand-written kernels (see the prototypes above): a
+  generic fused kernel gains 12% at most over the plain per-stage kernels
+  that time skewing keeps in the cache.
+* The generated stage kernel takes 24.7 µs at 2048², a plain interior
+  kernel of the same stencil 22.4 µs: about 10% is left in the per-stage
+  kernel itself (the frame packed into the launch, index arithmetic).
 * Keeping arrays on the device across calls of a solver (the copies at the
   start and end of a solve are 13-17% of `solve_seconds`): the runtime
   would have to know that the host did not write them between the calls.
