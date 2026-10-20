@@ -6457,6 +6457,7 @@ endif()
 # GFortran 13 in Quick does not support REDUCE.
 RUN(NAME gpu_metal_485 LABELS llvm metal cuda cuda_cpu)
 RUN(NAME gpu_metal_485 LABELS gfortran llvm metal cuda cuda_cpu)
+RUN(NAME gpu_metal_490 LABELS gfortran llvm cuda cuda_cpu)
 # gfortran evaluates a `do concurrent` limit twice, so gpu_metal_369 has no
 # gfortran label. The llvm backend and gfortran evaluate the limits of an
 # inner index again for every value of the outer one, so gpu_metal_370 is for
