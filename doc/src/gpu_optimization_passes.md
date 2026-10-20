@@ -76,6 +76,12 @@ Legality:
   later: the original loops run in that iteration and the fused loop in all
   others. Without such loops nothing is fused.
 
+The original loops, which run only in the last iteration, are left as
+written by the passes after this one (index-set splitting would split them
+too): the offload pipeline then still sees that the producer assigns its
+arrays whole, so they are not copied to the device before it runs (4 ms at
+2048², 17 MB per array).
+
 Cost model: an element is computed by every iteration that reads it. The
 fusion is made when that extra arithmetic, the producer's expression with
 the bodies of the functions it calls times the reads beyond the first, is at
