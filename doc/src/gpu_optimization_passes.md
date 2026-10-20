@@ -181,7 +181,18 @@ along the outer dimension, and one otherwise. With the fourth-order stencil
 three rows compute 6 instead of 12 y faces; two and four rows were slower
 (more instructions per cell with two, register pressure with four).
 
+The jam pays only while what a launch touches stays in the device's cache,
+where the copies share loads and arithmetic. When the data streams from
+memory it does not reduce the memory traffic, and its registers lower the
+occupancy the memory throughput needs (at 4096² the jammed stage kernel
+reaches 1.22 TB/s of DRAM bandwidth at 60% occupancy, the plain one 1.36
+TB/s at 70%). Both nests are generated, and the host picks the jammed one
+when the launch's iterations times the bytes an iteration names (one
+element of every array of the body) fit in the last-level cache, which the
+runtime reports (`lfortran_gpu_cache_bytes`, the L2 size on CUDA).
+
 Effect (2048²): 0.149 s to 0.133 s. The stage kernel goes from 29 µs to
 24.7 µs, with 37% fewer instructions; it now runs at the L2 bandwidth
 (5.8 TB/s, 166 MB of L2 traffic per stage against 117 MB of compulsory
-traffic).
+traffic). At 4096² the run-time choice keeps the plain nest (1.39 s, against
+1.50 s with the jam).
