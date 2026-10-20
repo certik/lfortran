@@ -127,3 +127,21 @@ Effect (2048², after fusion): 0.454 s to 0.219 s. The fused stage kernel
 goes from 95 µs to 25.5 µs (interior) plus 8.2 µs (frame): with the boundary
 rows gone the diffusive and advective fluxes of a face share their loads,
 and the remaining loads and arithmetic are those of the interior formulas.
+
+## Ping-pong buffers (`swap`, part of `gpu_loop_fusion.cpp`)
+
+The copy of a renamed array is copied back after every fused loop unless it
+can take turns with the array: the fused loop then reads one of the two and
+writes the other, which one alternating from one execution to the next (a
+host flag picks between two copies of the fused loop), and nothing is copied.
+This is valid when the copy starts equal to the array (a device loop copies
+it once, before the `do` loops the fusion relies on) and the two keep
+agreeing on every element the consumer does not write: no other statement in
+those loops writes the array, the consumer writes the same elements in every
+execution (its bounds do not change), and the array is not a target. The
+original loops, run in the last iteration, first copy back what the latest
+execution left in the copy, if it is there. Exchanging the allocations with
+`move_alloc` would do the same, but the host statements around a move make
+the offload pipeline wait for the device.
+
+Effect (2048²): 0.217 s to 0.170 s (the 10 µs copy per stage goes).
