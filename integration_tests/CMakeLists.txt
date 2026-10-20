@@ -6413,6 +6413,7 @@ RUN(NAME gpu_metal_489 LABELS gfortran llvm cuda cuda_cpu EXTRAFILES gpu_metal_4
 RUN(NAME gpu_metal_490 LABELS gfortran llvm metal cuda_cpu cuda)
 RUN(NAME gpu_metal_491 LABELS gfortran llvm metal cuda_cpu cuda)
 RUN(NAME gpu_metal_492 LABELS gfortran llvm metal cuda_cpu cuda)
+RUN(NAME gpu_metal_493 LABELS gfortran llvm metal cuda_cpu cuda EXTRA_ARGS --gpu-cache-bytes=32768)
 RUN(NAME gpu_metal_483 LABELS gfortran llvm metal cuda cuda_cpu)
 RUN(NAME gpu_metal_482 LABELS gfortran llvm metal cuda_cpu cuda)
 # gfortran evaluates a `do concurrent` limit twice, so gpu_metal_369 has no
@@ -6500,6 +6501,7 @@ RUN(NAME gpu_kernel_source_16 LABELS gfortran llvm metal cuda cuda_cpu)
 RUN(NAME gpu_kernel_source_30 LABELS gfortran llvm cuda_cpu cuda)
 RUN(NAME gpu_kernel_source_17 LABELS gfortran llvm metal cuda_cpu cuda)
 RUN(NAME gpu_kernel_source_18 LABELS gfortran llvm metal cuda_cpu cuda)
+RUN(NAME gpu_kernel_source_19 LABELS gfortran llvm metal cuda_cpu cuda EXTRA_ARGS --gpu-cache-bytes=32768)
 
 RUN(NAME real128_arith_01 LABELS gfortran llvm)
 RUN(NAME real128_arith_02 LABELS gfortran llvm)
