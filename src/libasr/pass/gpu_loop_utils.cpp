@@ -20,7 +20,8 @@ bool gpu_loop_transform_enabled(const PassOptions &pass_options,
         if ((item == "fuse" && t == GpuLoopFuse)
                 || (item == "swap" && t == GpuLoopSwap)
                 || (item == "split" && t == GpuLoopSplit)
-                || (item == "jam" && t == GpuLoopJam)) {
+                || (item == "jam" && t == GpuLoopJam)
+                || (item == "skew" && t == GpuLoopSkew)) {
             return true;
         }
     }
@@ -50,6 +51,59 @@ void gpu_mark_rarely_run(ASR::stmt_t *loop) {
 
 bool gpu_rarely_run(ASR::stmt_t *loop) {
     return rarely_run_loops().count(loop) > 0;
+}
+
+namespace {
+
+std::map<ASR::stmt_t*, GpuWindow> &window_loops() {
+    static std::map<ASR::stmt_t*, GpuWindow> loops;
+    return loops;
+}
+
+} // namespace
+
+void gpu_window_clear() {
+    window_loops().clear();
+}
+
+void gpu_mark_window(ASR::stmt_t *loop, const GpuWindow &w) {
+    window_loops()[loop] = w;
+}
+
+bool gpu_window(ASR::stmt_t *loop, GpuWindow &w) {
+    auto it = window_loops().find(loop);
+    if (it == window_loops().end()) return false;
+    w = it->second;
+    return true;
+}
+
+ASR::expr_t *gpu_cache_bytes(Allocator &al, SymbolTable *unit_scope,
+        const PassOptions &pass_options, const Location &loc) {
+    ASRUtils::ASRBuilder b(al, loc);
+    if (pass_options.gpu_cache_bytes >= 0) {
+        return b.i64(pass_options.gpu_cache_bytes);
+    }
+    const std::string name = "lfortran_gpu_cache_bytes";
+    ASR::symbol_t *sym = unit_scope->get_symbol(name);
+    ASR::ttype_t *i64 = ASRUtils::TYPE(ASR::make_Integer_t(al, loc, 8));
+    if (sym == nullptr) {
+        SymbolTable *fn_symtab = al.make_new<SymbolTable>(unit_scope);
+        ASR::expr_t *return_var = b.Variable(fn_symtab, name,
+            ASRUtils::duplicate_type(al, i64),
+            ASRUtils::intent_return_var, nullptr, ASR::abiType::BindC,
+            false);
+        ASR::asr_t *fn = ASRUtils::make_Function_t_util(al, loc,
+            fn_symtab, s2c(al, name), nullptr, 0, nullptr, 0, nullptr, 0,
+            return_var, ASR::abiType::BindC, ASR::accessType::Public,
+            ASR::deftypeType::Interface, s2c(al, name), false, false,
+            false, false, false, nullptr, 0, false, false, false,
+            nullptr);
+        sym = ASR::down_cast<ASR::symbol_t>(fn);
+        unit_scope->add_symbol(name, sym);
+    }
+    Vec<ASR::call_arg_t> args;
+    args.reserve(al, 1);
+    return b.Call(sym, args, ASRUtils::duplicate_type(al, i64));
 }
 
 ASR::expr_t *gpu_i32(Allocator &al, const Location &loc, int64_t v) {
@@ -477,6 +531,15 @@ ASR::asr_t* GpuDuplicator::duplicate_BlockCall(ASR::BlockCall_t *x) {
     outer->add_symbol(name, nbs);
     if (added) added->push_back({outer, name});
     return ASR::make_BlockCall_t(al, x->base.base.loc, x->m_label, nbs);
+}
+
+ASR::asr_t* GpuDuplicator::duplicate_OMPRegion(ASR::OMPRegion_t *x) {
+    ASR::asr_t *r = ASR::BaseExprStmtDuplicator<GpuDuplicator>::
+        duplicate_OMPRegion(x);
+    if (gpu_rarely_run(&x->base)) {
+        gpu_mark_rarely_run(ASR::down_cast<ASR::stmt_t>(r));
+    }
+    return r;
 }
 
 void GpuDuplicator::duplicate_body(ASR::stmt_t **body, size_t n,

@@ -27,6 +27,7 @@ enum GpuLoopTransform {
     GpuLoopSwap = 2,
     GpuLoopSplit = 4,
     GpuLoopJam = 8,
+    GpuLoopSkew = 16,
 };
 bool gpu_loop_transform_enabled(const PassOptions &pass_options,
     GpuLoopTransform t);
@@ -44,6 +45,26 @@ bool gpu_loop_transforms_apply(const PassOptions &pass_options);
 void gpu_rarely_run_clear();
 void gpu_mark_rarely_run(ASR::stmt_t *loop);
 bool gpu_rarely_run(ASR::stmt_t *loop);
+
+// The parallel loops that time skewing (gpu_time_skew.cpp) runs on a window
+// of their outermost dimension: the loop's bounds are host variables that
+// hold the intersection of the window with the domain `start` .. `end`,
+// the bounds the loop had. Index-set splitting finds the iterations near
+// the domain's ends from these, not from the window's. The skewing pass
+// starts the list afresh.
+struct GpuWindow {
+    ASR::expr_t *start = nullptr;
+    ASR::expr_t *end = nullptr;
+};
+void gpu_window_clear();
+void gpu_mark_window(ASR::stmt_t *loop, const GpuWindow &w);
+bool gpu_window(ASR::stmt_t *loop, GpuWindow &w);
+
+// The size in bytes of the device's last-level cache, as an integer(8)
+// expression: the --gpu-cache-bytes option, or a call of the runtime's
+// lfortran_gpu_cache_bytes() (declared in `unit_scope` if needed).
+ASR::expr_t *gpu_cache_bytes(Allocator &al, SymbolTable *unit_scope,
+    const PassOptions &pass_options, const Location &loc);
 
 // A `do concurrent` nest (or an offloaded `!$omp parallel do`) that the
 // dispatch assigned to the device: a ParallelDo OMPRegion whose body is
@@ -116,6 +137,8 @@ public:
     ASR::asr_t* duplicate_ArrayBound(ASR::ArrayBound_t *x);
     ASR::asr_t* duplicate_FunctionCall(ASR::FunctionCall_t *x);
     ASR::asr_t* duplicate_BlockCall(ASR::BlockCall_t *x);
+    // A copy of a parallel loop that rarely runs rarely runs too.
+    ASR::asr_t* duplicate_OMPRegion(ASR::OMPRegion_t *x);
     // The duplicate of the subscripts of an element, shifted for an array
     // dummy.
     ASR::array_index_t* duplicate_indices(ASR::ArrayItem_t *x,

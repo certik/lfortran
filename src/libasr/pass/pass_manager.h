@@ -70,6 +70,7 @@
 #include <libasr/pass/device_launch_expand.h>
 #include <libasr/pass/gpu_launch_sync.h>
 #include <libasr/pass/gpu_loop_fusion.h>
+#include <libasr/pass/gpu_time_skew.h>
 #include <libasr/pass/gpu_index_set_split.h>
 #include <libasr/pass/gpu_array_statements.h>
 #include <libasr/pass/dead_array_store.h>
@@ -151,6 +152,7 @@ namespace LCompilers {
             {"device_partition", &pass_device_partition},
             {"gpu_launch_sync", &pass_gpu_launch_sync},
             {"gpu_loop_fusion", &pass_gpu_loop_fusion},
+            {"gpu_time_skew", &pass_gpu_time_skew},
             {"gpu_index_set_split", &pass_gpu_index_set_split},
             {"device_launch_expand", &pass_device_launch_expand},
             {"gpu_device_workspace", &pass_gpu_device_workspace},
@@ -318,6 +320,7 @@ namespace LCompilers {
                 // and blocked while they are still loops of the source
                 // (see gpu_loop_fusion.cpp and the passes after it).
                 "gpu_loop_fusion",
+                "gpu_time_skew",
                 "gpu_index_set_split",
                 // A whole-array assignment in a host loop that launches
                 // kernels, on the data they use, runs on the device too.
