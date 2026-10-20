@@ -3,7 +3,7 @@
 #include <libasr/pass/gpu_loop_utils.h>
 #include <libasr/pass/gpu_affine.h>
 #include <libasr/pass/gpu_decline.h>
-#include <libasr/pass/intrinsic_functions.h>
+#include <libasr/pass/intrinsic_function_registry.h>
 
 #include <sstream>
 
