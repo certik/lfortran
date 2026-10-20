@@ -273,9 +273,10 @@ fusing stages, which these passes do not do.
 * Time skewing of the step and stage loops over bands of rows, each band
   small enough to stay in the L2 cache across the stages, for problems that
   do not fit: the per-stage kernels are reused, launched on skewed row
-  ranges; with a skew of the stencil's radius per stage the two ping-pong
-  buffers still suffice. The DRAM traffic per step would drop from that of
-  four stages to that of one.
+  ranges (a skew of the stencil's radius per stage keeps every read ahead
+  of the writes of the ping-pong buffers, which has to be checked by the
+  pass). The DRAM traffic per step would drop from that of four stages to
+  that of one.
 * Scalar replacement across the iterations of a sequential loop (predictive
   commoning) in place of the fixed jam, so that a thread can march down a
   column carrying the faces it shares with the next rows in registers.
