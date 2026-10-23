@@ -52,13 +52,15 @@ static ASR::expr_t* gpu_liveout_slot(Allocator &al, const Location &loc,
         ASR::arraystorageType::ColMajor, nullptr, false));
 }
 
-// Puts the value of the private copy of a liveout scalar back into its
-// buffer after every assignment to it in the kernel.
+// Puts the value of the private copy of a liveout variable back where the
+// value is shared after every assignment to it in the kernel. `entries` are
+// the assignments that give each copy its value on entry, from the shared
+// place, which is what the writes go to.
 class GpuLiveoutWriteBack : public PassUtils::PassVisitor<GpuLiveoutWriteBack> {
 public:
-    // The private copy, and its buffer and type.
-    std::map<ASR::symbol_t*, std::pair<ASR::symbol_t*, ASR::ttype_t*>>
-        buffers;
+    std::set<ASR::stmt_t*> entries;
+    // The private copy, and the shared place of its value.
+    std::map<ASR::symbol_t*, ASR::expr_t*> shared;
 
     GpuLiveoutWriteBack(Allocator &al_)
         : PassUtils::PassVisitor<GpuLiveoutWriteBack>(al_, nullptr) {
@@ -68,24 +70,106 @@ public:
     void visit_Assignment(const ASR::Assignment_t &x) {
         if (!ASR::is_a<ASR::Var_t>(*x.m_target)) return;
         ASR::symbol_t *copy = ASR::down_cast<ASR::Var_t>(x.m_target)->m_v;
-        auto it = buffers.find(copy);
-        if (it == buffers.end()) return;
-        // The copy taken from the buffer on entry.
-        if (ASR::is_a<ASR::ArrayItem_t>(*x.m_value)) {
-            ASR::expr_t *base = ASR::down_cast<ASR::ArrayItem_t>(
-                x.m_value)->m_v;
-            if (ASR::is_a<ASR::Var_t>(*base) && ASR::down_cast<ASR::Var_t>(
-                    base)->m_v == it->second.first) {
-                return;
-            }
+        if (entries.count(const_cast<ASR::stmt_t*>(&x.base))) {
+            shared[copy] = x.m_value;
+            return;
         }
+        auto it = shared.find(copy);
+        if (it == shared.end()) return;
         const Location &loc = x.base.base.loc;
+        ASRUtils::ExprStmtDuplicator dup(al);
         pass_result.push_back(al, const_cast<ASR::stmt_t*>(&x.base));
         pass_result.push_back(al, ASRUtils::STMT(ASR::make_Assignment_t(al,
-            loc, gpu_liveout_slot(al, loc, it->second.first,
-                it->second.second),
+            loc, dup.duplicate_expr(it->second),
             ASRUtils::EXPR(ASR::make_Var_t(al, loc, copy)),
             nullptr, false, false, false)));
+    }
+};
+
+// The scalar components of liveout derived-type variables a loop body
+// assigns that each iteration can keep a private copy of: a number or a
+// logical, neither allocatable nor a pointer, of a variable the body only
+// names through its components and whose component is never an actual
+// argument, which a procedure could define.
+class GpuPrivateComponentCollector :
+        public ASRUtils::BlockBodyWalkVisitor<GpuPrivateComponentCollector> {
+public:
+    const std::set<ASR::symbol_t*> &variables;
+    // (variable, component name) -> the component and its type.
+    std::map<std::pair<ASR::symbol_t*, std::string>,
+        std::pair<ASR::symbol_t*, ASR::ttype_t*>> assigned;
+    std::set<ASR::symbol_t*> whole;
+    std::set<std::pair<ASR::symbol_t*, std::string>> passed;
+
+    GpuPrivateComponentCollector(const std::set<ASR::symbol_t*> &v)
+        : variables(v) {}
+
+    // The variable and component name `e` designates, if it is a
+    // component of one of the variables.
+    bool component(ASR::expr_t *e,
+            std::pair<ASR::symbol_t*, std::string> &key) {
+        if (!ASR::is_a<ASR::StructInstanceMember_t>(*e)) return false;
+        ASR::StructInstanceMember_t *m =
+            ASR::down_cast<ASR::StructInstanceMember_t>(e);
+        if (!ASR::is_a<ASR::Var_t>(*m->m_v)) return false;
+        ASR::symbol_t *v = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(m->m_v)->m_v);
+        if (!variables.count(v)) return false;
+        key = {v, ASRUtils::symbol_name(
+            ASRUtils::symbol_get_past_external(m->m_m))};
+        return true;
+    }
+
+    void visit_Assignment(const ASR::Assignment_t &x) {
+        std::pair<ASR::symbol_t*, std::string> key;
+        if (component(x.m_target, key)) {
+            ASR::StructInstanceMember_t *m =
+                ASR::down_cast<ASR::StructInstanceMember_t>(x.m_target);
+            ASR::ttype_t *t = m->m_type;
+            if (!ASRUtils::is_array(t) && !ASRUtils::is_allocatable(t)
+                    && !ASRUtils::is_pointer(t)
+                    && (ASR::is_a<ASR::Integer_t>(*t)
+                        || ASR::is_a<ASR::Real_t>(*t)
+                        || ASR::is_a<ASR::Complex_t>(*t)
+                        || ASR::is_a<ASR::Logical_t>(*t))) {
+                assigned[key] = {m->m_m, t};
+            }
+        }
+        ASR::BaseWalkVisitor<GpuPrivateComponentCollector>::
+            visit_Assignment(x);
+    }
+
+    void visit_StructInstanceMember(const ASR::StructInstanceMember_t &x) {
+        std::pair<ASR::symbol_t*, std::string> key;
+        if (component(const_cast<ASR::expr_t*>(&x.base), key)) return;
+        ASR::BaseWalkVisitor<GpuPrivateComponentCollector>::
+            visit_StructInstanceMember(x);
+    }
+
+    void visit_Var(const ASR::Var_t &x) {
+        ASR::symbol_t *v = ASRUtils::symbol_get_past_external(x.m_v);
+        if (variables.count(v)) whole.insert(v);
+    }
+
+    void note_arguments(ASR::call_arg_t *args, size_t n) {
+        for (size_t i = 0; i < n; i++) {
+            std::pair<ASR::symbol_t*, std::string> key;
+            if (args[i].m_value && component(args[i].m_value, key)) {
+                passed.insert(key);
+            }
+        }
+    }
+
+    void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
+        note_arguments(x.m_args, x.n_args);
+        ASR::BaseWalkVisitor<GpuPrivateComponentCollector>::
+            visit_SubroutineCall(x);
+    }
+
+    void visit_FunctionCall(const ASR::FunctionCall_t &x) {
+        note_arguments(x.m_args, x.n_args);
+        ASR::BaseWalkVisitor<GpuPrivateComponentCollector>::
+            visit_FunctionCall(x);
     }
 };
 
@@ -519,8 +603,11 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
     // assigns it: an iteration that reads the scalar reads its own value,
     // and the one iteration that defines it leaves its value behind. A
     // derived-type value is not wrapped: it is a kernel argument like any
-    // other, which the device writes in place.
+    // other, which the device writes in place, and each thread keeps a
+    // private copy of the scalar components the loop assigns instead
+    // (below).
     std::vector<LiveoutScalarInfo> liveout_scalars;
+    std::set<ASR::symbol_t*> liveout_structs;
     {
         ASR::ttype_t *int4_type = ASRUtils::TYPE(
             ASR::make_Integer_t(al, loc, 4));
@@ -535,8 +622,17 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
             auto it = involved_syms.find(name);
             if (it != involved_syms.end()) {
                 ASR::ttype_t *type = it->second.first;
-                if (!ASRUtils::is_array(type) && !ASR::is_a<ASR::StructType_t>(
+                if (ASRUtils::is_array(type)) continue;
+                if (ASR::is_a<ASR::StructType_t>(
                         *ASRUtils::extract_type(type))) {
+                    if (!ASRUtils::is_class_type(type)) {
+                        if (ASR::symbol_t *v = current_scope->resolve_symbol(
+                                name)) {
+                            liveout_structs.insert(
+                                ASRUtils::symbol_get_past_external(v));
+                        }
+                    }
+                } else {
                     liveout_names.push_back(name);
                 }
             }
@@ -611,6 +707,44 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
             // side is a plain array dummy, which is what an allocatable
             // actual is passed to anywhere else.
             it->second.first = arr_type;
+        }
+    }
+
+    // A scalar component of a liveout derived-type variable is shared by
+    // the threads like the variable, so an iteration that defines it and
+    // then reads it could read what another iteration wrote in between.
+    // Each thread keeps a private copy of it instead, taken from the
+    // variable on entry, and after each assignment to the copy puts the
+    // component -- only that one, so that what other iterations define
+    // of the variable is left alone -- back into the variable. A variable
+    // the body also names whole, or a component of it that is an actual
+    // argument, stays shared.
+    struct PrivateComponent {
+        std::string struct_name;
+        std::string member_name;
+        std::string copy_name;
+        ASR::symbol_t *struct_sym;
+        ASR::symbol_t *member_sym;
+        ASR::ttype_t *type;
+    };
+    std::vector<PrivateComponent> private_components;
+    std::map<std::pair<std::string, std::string>, std::string>
+        private_component_map;
+    if (!liveout_structs.empty()) {
+        GpuPrivateComponentCollector components(liveout_structs);
+        for (size_t i = 0; i < work.n_body; i++) {
+            components.visit_stmt(*work.body[i]);
+        }
+        for (auto &[key, member] : components.assigned) {
+            if (components.whole.count(key.first)) continue;
+            if (components.passed.count(key)) continue;
+            std::string struct_name = ASRUtils::symbol_name(key.first);
+            std::string copy_name = "__gpu_private_" + struct_name + "_"
+                + key.second;
+            private_components.push_back({struct_name, key.second,
+                copy_name, current_scope->resolve_symbol(struct_name),
+                member.first, member.second});
+            private_component_map[{struct_name, key.second}] = copy_name;
         }
     }
 
@@ -1132,10 +1266,15 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
             ASR::intentType::Local, type_decl);
     }
 
-    // The private copy of each liveout scalar.
+    // The private copy of each liveout scalar, and of each component
+    // above.
     for (auto &ls : liveout_scalars) {
         gpu_new_variable(al, loc, kernel_scope, ls.orig_name,
             ASRUtils::duplicate_type(al, ls.scalar_type));
+    }
+    for (auto &pc : private_components) {
+        gpu_new_variable(al, loc, kernel_scope, pc.copy_name,
+            ASRUtils::duplicate_type(al, pc.type));
     }
 
     // Import functions/subroutines called in the loop body
@@ -2071,6 +2210,38 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
         }
     }
 
+    // The body works on the private copies of the components, which
+    // start as the components of the variable. The assignments that
+    // give them that value are written over the host's symbols, like
+    // the body, and remapped with it.
+    std::set<ASR::stmt_t*> liveout_entries;
+    if (!private_components.empty()) {
+        GpuDecomposeStructVisitor private_visitor(al, kernel_scope,
+            private_component_map);
+        for (size_t i = 0; i < body_copy.n; i++) {
+            private_visitor.visit_stmt(*body_copy.p[i]);
+        }
+        Vec<ASR::stmt_t*> body_with_entries;
+        body_with_entries.reserve(al,
+            private_components.size() + body_copy.n);
+        for (auto &pc : private_components) {
+            ASR::stmt_t *entry = ASRUtils::STMT(ASR::make_Assignment_t(al,
+                loc, ASRUtils::EXPR(ASR::make_Var_t(al, loc,
+                    kernel_scope->get_symbol(pc.copy_name))),
+                ASRUtils::EXPR(ASR::make_StructInstanceMember_t(al, loc,
+                    ASRUtils::EXPR(ASR::make_Var_t(al, loc, pc.struct_sym)),
+                    pc.member_sym, ASRUtils::duplicate_type(al, pc.type),
+                    nullptr)),
+                nullptr, false, false, false));
+            liveout_entries.insert(entry);
+            body_with_entries.push_back(al, entry);
+        }
+        for (size_t i = 0; i < body_copy.n; i++) {
+            body_with_entries.push_back(al, body_copy.p[i]);
+        }
+        body_copy = body_with_entries;
+    }
+
     // The accumulator slot this thread owns. Created here because the
     // substitution below has to run before the body is remapped into
     // kernel scope: the name being replaced is still the host's scalar,
@@ -2619,6 +2790,13 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
         }
         // Replace StructInstanceMember references to decomposed
         // allocatable members inside the block body.
+        if (!private_components.empty()) {
+            GpuDecomposeStructVisitor block_private(al, kernel_scope,
+                private_component_map);
+            for (size_t j = 0; j < block->n_body; j++) {
+                block_private.visit_stmt(*block->m_body[j]);
+            }
+        }
         if (!decomp_map.empty()) {
             GpuDecomposeStructVisitor block_decomp(al, kernel_scope,
                 decomp_map);
@@ -2814,12 +2992,14 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
 
     // A liveout scalar starts as the value the host gave it.
     for (auto &ls : liveout_scalars) {
-        kernel_body.push_back(al, ASRUtils::STMT(ASR::make_Assignment_t(al,
+        ASR::stmt_t *entry = ASRUtils::STMT(ASR::make_Assignment_t(al,
             loc, ASRUtils::EXPR(ASR::make_Var_t(al, loc,
                 kernel_scope->get_symbol(ls.orig_name))),
             gpu_liveout_slot(al, loc, kernel_scope->get_symbol(ls.buf_name),
                 ls.scalar_type),
-            nullptr, false, false, false)));
+            nullptr, false, false, false));
+        liveout_entries.insert(entry);
+        kernel_body.push_back(al, entry);
     }
 
     // Add copied loop body (already remapped)
@@ -2867,12 +3047,9 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
         kernel_body.p, kernel_body.n,
         nullptr, ASR::accessType::Public, false, false,
         nullptr, nullptr, nullptr, nullptr);
-    if (!liveout_scalars.empty()) {
+    if (!liveout_entries.empty()) {
         GpuLiveoutWriteBack write_back(al);
-        for (auto &ls : liveout_scalars) {
-            write_back.buffers[kernel_scope->get_symbol(ls.orig_name)] = {
-                kernel_scope->get_symbol(ls.buf_name), ls.scalar_type};
-        }
+        write_back.entries = liveout_entries;
         write_back.visit_Function(
             *ASR::down_cast2<ASR::Function_t>(kernel_func));
     }
