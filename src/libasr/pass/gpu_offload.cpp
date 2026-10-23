@@ -557,7 +557,9 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
     // Each thread works on a private copy of the scalar, which it takes
     // from the buffer on entry and puts back into it every time it
     // assigns it: an iteration that reads the scalar reads its own value,
-    // and the one iteration that defines it leaves its value behind.
+    // and the one iteration that defines it leaves its value behind. A
+    // derived-type value is not wrapped: it is a kernel argument like any
+    // other, which the device writes in place.
     std::vector<LiveoutScalarInfo> liveout_scalars;
     {
         ASR::ttype_t *int4_type = ASRUtils::TYPE(
@@ -573,7 +575,8 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
             auto it = involved_syms.find(name);
             if (it != involved_syms.end()) {
                 ASR::ttype_t *type = it->second.first;
-                if (!ASRUtils::is_array(type)) {
+                if (!ASRUtils::is_array(type) && !ASR::is_a<ASR::StructType_t>(
+                        *ASRUtils::extract_type(type))) {
                     liveout_names.push_back(name);
                 }
             }
