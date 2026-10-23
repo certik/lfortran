@@ -32,6 +32,63 @@ using ASR::is_a;
 
 static int gpu_kernel_counter = 0;
 
+// The one element of the buffer a liveout scalar is handed to the kernel
+// in.
+static ASR::expr_t* gpu_liveout_slot(Allocator &al, const Location &loc,
+        ASR::symbol_t *buffer, ASR::ttype_t *scalar_type) {
+    ASR::array_index_t index;
+    index.loc = loc;
+    index.m_left = nullptr;
+    index.m_right = ASRUtils::EXPR(ASR::make_IntegerConstant_t(al, loc, 1,
+        ASRUtils::TYPE(ASR::make_Integer_t(al, loc, 4)),
+        ASR::integerbozType::Decimal));
+    index.m_step = nullptr;
+    Vec<ASR::array_index_t> indices;
+    indices.reserve(al, 1);
+    indices.push_back(al, index);
+    return ASRUtils::EXPR(ASR::make_ArrayItem_t(al, loc,
+        ASRUtils::EXPR(ASR::make_Var_t(al, loc, buffer)), indices.p, 1,
+        ASRUtils::duplicate_type(al, scalar_type),
+        ASR::arraystorageType::ColMajor, nullptr, false));
+}
+
+// Puts the value of the private copy of a liveout scalar back into its
+// buffer after every assignment to it in the kernel.
+class GpuLiveoutWriteBack : public PassUtils::PassVisitor<GpuLiveoutWriteBack> {
+public:
+    // The private copy, and its buffer and type.
+    std::map<ASR::symbol_t*, std::pair<ASR::symbol_t*, ASR::ttype_t*>>
+        buffers;
+
+    GpuLiveoutWriteBack(Allocator &al_)
+        : PassUtils::PassVisitor<GpuLiveoutWriteBack>(al_, nullptr) {
+        pass_result.reserve(al, 2);
+    }
+
+    void visit_Assignment(const ASR::Assignment_t &x) {
+        if (!ASR::is_a<ASR::Var_t>(*x.m_target)) return;
+        ASR::symbol_t *copy = ASR::down_cast<ASR::Var_t>(x.m_target)->m_v;
+        auto it = buffers.find(copy);
+        if (it == buffers.end()) return;
+        // The copy taken from the buffer on entry.
+        if (ASR::is_a<ASR::ArrayItem_t>(*x.m_value)) {
+            ASR::expr_t *base = ASR::down_cast<ASR::ArrayItem_t>(
+                x.m_value)->m_v;
+            if (ASR::is_a<ASR::Var_t>(*base) && ASR::down_cast<ASR::Var_t>(
+                    base)->m_v == it->second.first) {
+                return;
+            }
+        }
+        const Location &loc = x.base.base.loc;
+        pass_result.push_back(al, const_cast<ASR::stmt_t*>(&x.base));
+        pass_result.push_back(al, ASRUtils::STMT(ASR::make_Assignment_t(al,
+            loc, gpu_liveout_slot(al, loc, it->second.first,
+                it->second.second),
+            ASRUtils::EXPR(ASR::make_Var_t(al, loc, copy)),
+            nullptr, false, false, false)));
+    }
+};
+
 class GpuContiguousStoreFinder : public ASR::BaseWalkVisitor<GpuContiguousStoreFinder> {
     const std::set<ASR::symbol_t*> &loop_variables;
     // Which subscript of a store, counted from the contiguous one.
@@ -497,6 +554,10 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
     // Wrap liveout scalars (assigned user variables still in
     // involved_syms) in 1-element FixedSizeArrays so they can be
     // passed as writable device buffers and read back after the kernel.
+    // Each thread works on a private copy of the scalar, which it takes
+    // from the buffer on entry and puts back into it every time it
+    // assigns it: an iteration that reads the scalar reads its own value,
+    // and the one iteration that defines it leaves its value behind.
     std::vector<LiveoutScalarInfo> liveout_scalars;
     {
         ASR::ttype_t *int4_type = ASRUtils::TYPE(
@@ -544,7 +605,12 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
             ASR::symbol_t *buf_sym = gpu_new_variable(al, loc,
                 current_scope, buf_name, ASRUtils::duplicate_type(al,
                     arr_type));
-            it->second.first = arr_type;
+            // The kernel takes the buffer, and the scalar is a local of
+            // it.
+            involved_syms.erase(it);
+            involved_syms[buf_name] = {arr_type,
+                ASRUtils::EXPR(ASR::make_Var_t(al, loc, buf_sym))};
+            local_scalar_names.insert(name);
 
             liveout_scalars.push_back(
                 {name, buf_name, buf_sym, orig_sym, scalar_type});
@@ -741,17 +807,7 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
 
         ASR::call_arg_t carg;
         carg.loc = loc;
-        // For liveout scalars, use the host-side 1-element array
-        // buffer as the call arg so it's passed as a device buffer
         bool is_liveout = false;
-        for (auto &ls : liveout_scalars) {
-            if (ls.orig_name == sym_name) {
-                carg.m_value = ASRUtils::EXPR(
-                    ASR::make_Var_t(al, loc, ls.host_buf_sym));
-                is_liveout = true;
-                break;
-            }
-        }
         for (auto &r : pending_reductions) {
             if (r.host_buf_sym && r.orig_name == sym_name) {
                 carg.m_value = ASRUtils::EXPR(
@@ -2785,6 +2841,16 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
         }
     }
 
+    // A liveout scalar starts as the value the host gave it.
+    for (auto &ls : liveout_scalars) {
+        kernel_body.push_back(al, ASRUtils::STMT(ASR::make_Assignment_t(al,
+            loc, ASRUtils::EXPR(ASR::make_Var_t(al, loc,
+                kernel_scope->get_symbol(ls.orig_name))),
+            gpu_liveout_slot(al, loc, kernel_scope->get_symbol(ls.buf_name),
+                ls.scalar_type),
+            nullptr, false, false, false)));
+    }
+
     // Add copied loop body (already remapped)
     for (size_t i = 0; i < body_copy.n; i++) {
         kernel_body.push_back(al, body_copy.p[i]);
@@ -2830,6 +2896,15 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
         kernel_body.p, kernel_body.n,
         nullptr, ASR::accessType::Public, false, false,
         nullptr, nullptr, nullptr, nullptr);
+    if (!liveout_scalars.empty()) {
+        GpuLiveoutWriteBack write_back(al);
+        for (auto &ls : liveout_scalars) {
+            write_back.buffers[kernel_scope->get_symbol(ls.orig_name)] = {
+                kernel_scope->get_symbol(ls.buf_name), ls.scalar_type};
+        }
+        write_back.visit_Function(
+            *ASR::down_cast2<ASR::Function_t>(kernel_func));
+    }
     gpu_lift_host_association(al,
         *ASR::down_cast2<ASR::Function_t>(kernel_func));
 
