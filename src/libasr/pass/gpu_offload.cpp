@@ -543,7 +543,10 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
         }
         for (auto &name : liveout_names) {
             auto it = involved_syms.find(name);
-            ASR::ttype_t *scalar_type = it->second.first;
+            // What the buffer and the private copy hold is the value, of
+            // an allocatable or pointer scalar too.
+            ASR::ttype_t *scalar_type =
+                ASRUtils::type_get_past_allocatable_pointer(it->second.first);
             ASR::symbol_t *orig_sym = current_scope->resolve_symbol(name);
 
             ASR::dimension_t dim;
@@ -573,7 +576,6 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
             involved_syms.erase(it);
             involved_syms[buf_name] = {arr_type,
                 ASRUtils::EXPR(ASR::make_Var_t(al, loc, buf_sym))};
-            local_scalar_names.insert(name);
 
             liveout_scalars.push_back(
                 {name, buf_name, buf_sym, orig_sym, scalar_type});
@@ -1128,6 +1130,12 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
         gpu_new_variable(al, loc, kernel_scope, name,
             ASRUtils::duplicate_type(al, type),
             ASR::intentType::Local, type_decl);
+    }
+
+    // The private copy of each liveout scalar.
+    for (auto &ls : liveout_scalars) {
+        gpu_new_variable(al, loc, kernel_scope, ls.orig_name,
+            ASRUtils::duplicate_type(al, ls.scalar_type));
     }
 
     // Import functions/subroutines called in the loop body
