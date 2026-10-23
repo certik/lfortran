@@ -6640,6 +6640,7 @@ RUN(NAME gpu_decline_16 LABELS gfortran llvm)
 RUN(NAME gpu_decline_17 LABELS llvm)
 RUN(NAME gpu_decline_18 LABELS llvm)
 RUN(NAME gpu_decline_19 LABELS llvm)
+RUN(NAME gpu_decline_22 LABELS gfortran llvm GFORTRAN_ARGS -fopenmp)
 RUN(NAME gpu_decline_24 LABELS gfortran llvm)
 
 # One program per entry of the GPU unsupported list. Each runs on the CPU with
