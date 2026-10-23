@@ -681,7 +681,8 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
             orig_sym = ASR::down_cast<ASR::Var_t>(sym_info.second)->m_v;
         }
         if (orig_sym) {
-            type_decl = import_struct_type(orig_sym,
+            type_decl = import_struct_type(
+                ASRUtils::symbol_get_past_external(orig_sym),
                 orig_scope, kernel_scope, loc);
         }
 
@@ -707,7 +708,7 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
                                 ASR::storage_typeType::Parameter,
                                 ASRUtils::duplicate_type(al,
                                     orig_var->m_type),
-                                nullptr, orig_var->m_abi,
+                                type_decl, orig_var->m_abi,
                                 orig_var->m_access,
                                 ASR::presenceType::Required, false));
                     kernel_scope->add_symbol(sym_name, cloned);
@@ -1894,7 +1895,9 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
                                 ASR::storage_typeType::Parameter,
                                 ASRUtils::duplicate_type(al,
                                     orig_var->m_type),
-                                nullptr, orig_var->m_abi,
+                                import_struct_type(resolved_sym,
+                                    orig_scope, kernel_scope, loc),
+                                orig_var->m_abi,
                                 orig_var->m_access,
                                 ASR::presenceType::Required, false));
                     func->m_symtab->add_symbol(local_name, new_var);
@@ -1920,7 +1923,9 @@ void GpuOffloadVisitor::visit_OMPRegion(const ASR::OMPRegion_t &region) {
                                 ASR::intentType::InOut,
                                 nullptr, nullptr,
                                 ASR::storage_typeType::Default,
-                                dup_type, nullptr,
+                                dup_type,
+                                import_struct_type(resolved_sym,
+                                    orig_scope, kernel_scope, loc),
                                 ASR::abiType::Source,
                                 ASR::accessType::Public,
                                 ASR::presenceType::Required,
