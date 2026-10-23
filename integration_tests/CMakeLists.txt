@@ -6651,6 +6651,7 @@ RUN(NAME gpu_decline_18 LABELS llvm)
 RUN(NAME gpu_decline_19 LABELS llvm)
 RUN(NAME gpu_decline_25 LABELS gfortran llvm)
 RUN(NAME gpu_decline_26 LABELS gfortran llvm)
+RUN(NAME gpu_decline_27 LABELS gfortran llvm)
 
 # One program per entry of the GPU unsupported list. Each runs on the CPU with
 # --gpu-allow-cpu-fallback where its loop is on the list, and the error
