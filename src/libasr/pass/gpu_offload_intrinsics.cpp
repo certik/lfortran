@@ -476,17 +476,6 @@ void GpuOffloadVisitor::inline_intrinsic_all(ParallelLoopNest &nest) {
             new_body.push_back(al, ASRUtils::STMT(
                 ASR::make_Assignment_t(al, loc, asgn->m_target,
                     new_value, nullptr, false, false, false)));
-            // Track non-array scalar targets as reduction liveouts
-            if (ASR::is_a<ASR::Var_t>(*asgn->m_target)) {
-                ASR::ttype_t *tgt_type =
-                    ASRUtils::expr_type(asgn->m_target);
-                if (!ASRUtils::is_array(tgt_type)) {
-                    all_reduction_targets.insert(
-                        ASRUtils::symbol_name(
-                            ASR::down_cast<ASR::Var_t>(
-                                asgn->m_target)->m_v));
-                }
-            }
         } else {
             new_body.push_back(al, stmt);
         }

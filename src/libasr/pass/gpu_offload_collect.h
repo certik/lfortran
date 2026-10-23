@@ -254,6 +254,18 @@ public:
 bool is_single_assignment_binding(ASR::symbol_t *sym,
         ASR::stmt_t **body, size_t n_body);
 
+// Whether the procedure a call names may define its `i`-th actual argument:
+// the dummy argument it is associated with is not `intent(in)` and not
+// passed by value, or is not known.
+bool gpu_call_may_define(const ASR::SubroutineCall_t &x, size_t i);
+
+// The scalar variable whose own storage a designator that is defined
+// defines: `k`, `y`, `y%k`, `y%a%x` or `y%c(i)` for a component `c` that is
+// neither allocatable nor a pointer. Nullptr for anything else: an array
+// variable, or a part of an allocatable or pointer array or component,
+// which is not stored in the variable.
+ASR::symbol_t *gpu_defined_variable(ASR::expr_t *designator);
+
 // Collects local variables used in do concurrent body that are NOT
 // arrays and NOT the loop variables — these are per-thread temporaries
 class GpuLocalVarCollector :
@@ -268,45 +280,44 @@ public:
         const std::set<SymbolTable*> &scopes = {})
         : assigned_vars(av), inner_loop_vars(ilv), enclosing_scopes(scopes) {}
 
+    // A variable the body defines, unless it is a local of a BLOCK or
+    // ASSOCIATE in the body.
+    void note(ASR::symbol_t *sym) {
+        if (sym == nullptr) return;
+        if (!ASR::is_a<ASR::Variable_t>(*sym)) {
+            if (ASR::is_a<ASR::ExternalSymbol_t>(*sym)) {
+                assigned_vars.insert(ASRUtils::symbol_name(sym));
+            }
+            return;
+        }
+        ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(sym);
+        if (var->m_parent_symtab->asr_owner) {
+            ASR::symbol_t *owner = ASR::down_cast<ASR::symbol_t>(
+                var->m_parent_symtab->asr_owner);
+            if ((ASR::is_a<ASR::Block_t>(*owner) ||
+                    ASR::is_a<ASR::AssociateBlock_t>(*owner)) &&
+                    enclosing_scopes.find(var->m_parent_symtab)
+                        == enclosing_scopes.end()) {
+                return;
+            }
+        }
+        assigned_vars.insert(ASRUtils::symbol_name(sym));
+    }
+
     void visit_Assignment(const ASR::Assignment_t &x) {
-        // Check if target is a simple Var (not ArrayItem)
-        if (ASR::is_a<ASR::Var_t>(*x.m_target)) {
-            ASR::Var_t *v = ASR::down_cast<ASR::Var_t>(x.m_target);
-            // Skip variables local to Block or AssociateBlock scopes
-            bool is_block_local = false;
-            if (ASR::is_a<ASR::Variable_t>(*v->m_v)) {
-                ASR::Variable_t *var = ASR::down_cast<ASR::Variable_t>(v->m_v);
-                if (var->m_parent_symtab->asr_owner) {
-                    ASR::symbol_t *owner = ASR::down_cast<ASR::symbol_t>(
-                        var->m_parent_symtab->asr_owner);
-                    if (ASR::is_a<ASR::Block_t>(*owner) ||
-                        ASR::is_a<ASR::AssociateBlock_t>(*owner)) {
-                        if (enclosing_scopes.find(var->m_parent_symtab)
-                                == enclosing_scopes.end()) {
-                            is_block_local = true;
-                        }
-                    }
-                }
-            }
-            if (!is_block_local) {
-                std::string name = ASRUtils::symbol_name(v->m_v);
-                ASR::ttype_t *type = ASRUtils::symbol_type(v->m_v);
-                if (!ASRUtils::is_array(type)) {
-                    assigned_vars.insert(name);
-                }
-            }
-        }
-        // Check if target is a StructInstanceMember (e.g., x%v = ...)
-        if (ASR::is_a<ASR::StructInstanceMember_t>(*x.m_target)) {
-            ASR::StructInstanceMember_t *sm =
-                ASR::down_cast<ASR::StructInstanceMember_t>(x.m_target);
-            if (ASR::is_a<ASR::Var_t>(*sm->m_v)) {
-                ASR::Var_t *v = ASR::down_cast<ASR::Var_t>(sm->m_v);
-                std::string name = ASRUtils::symbol_name(v->m_v);
-                assigned_vars.insert(name);
-            }
-        }
+        note(gpu_defined_variable(x.m_target));
         ASR::BaseWalkVisitor<GpuLocalVarCollector>::visit_Assignment(x);
+    }
+
+    // An actual argument the procedure may define.
+    void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
+        for (size_t i = 0; i < x.n_args; i++) {
+            if (x.m_args[i].m_value && gpu_call_may_define(x, i)) {
+                note(gpu_defined_variable(x.m_args[i].m_value));
+            }
+        }
+        if (x.m_dt) note(gpu_defined_variable(x.m_dt));
+        ASR::BaseWalkVisitor<GpuLocalVarCollector>::visit_SubroutineCall(x);
     }
 
     void visit_DoLoop(const ASR::DoLoop_t &x) {
@@ -436,21 +447,6 @@ public:
     }
 };
 
-// Collects StructInstanceMember references to allocatable array members
-// in the loop body. Used to decompose struct-typed kernel
-// parameters into separate flat array buffers for Metal.
-// Collects all variable names referenced (read) in a set of statements.
-// Used to determine which variables are live after a parallel loop.
-class PostLoopVarCollector :
-        public ASRUtils::BlockBodyWalkVisitor<PostLoopVarCollector> {
-public:
-    std::set<std::string> &referenced_vars;
-    PostLoopVarCollector(std::set<std::string> &rv) : referenced_vars(rv) {}
-    void visit_Var(const ASR::Var_t &x) {
-        referenced_vars.insert(ASRUtils::symbol_name(x.m_v));
-    }
-};
-
 // Collects the symbols targeted by Var nodes in a set of statements,
 // including the bodies of nested Block and AssociateBlock scopes. Used to
 // decide whether a scope is still needed after its associate aliases have
@@ -466,6 +462,9 @@ public:
     }
 };
 
+// Collects StructInstanceMember references to allocatable array members
+// in the loop body. Used to decompose struct-typed kernel
+// parameters into separate flat array buffers for Metal.
 class GpuAllocStructMemberCollector :
     public ASRUtils::BlockBodyWalkVisitor<GpuAllocStructMemberCollector> {
 public:

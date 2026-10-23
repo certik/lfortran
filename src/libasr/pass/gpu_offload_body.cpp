@@ -30,7 +30,6 @@ void GpuOffloadVisitor::rewrite_loop_body_for_kernel(ParallelLoopNest &work,
     hoist_array_function_results(work);
 
     // Inline IntrinsicArrayFunction All before kernel extraction
-    all_reduction_targets.clear();
     inline_intrinsic_all(work);
 
     // Hoist matmuls out of the expression positions the matmul

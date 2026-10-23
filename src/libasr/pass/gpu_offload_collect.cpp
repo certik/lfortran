@@ -73,6 +73,61 @@ std::vector<ASR::Function_t*> reachable_routines(ASR::stmt_t **body,
     return order;
 }
 
+bool gpu_call_may_define(const ASR::SubroutineCall_t &x, size_t i) {
+    // Which dummy argument a type-bound call associates an actual
+    // argument with depends on the passed object; it is not worked out.
+    if (x.m_dt != nullptr) return true;
+    ASR::symbol_t *callee = ASRUtils::symbol_get_past_external(x.m_name);
+    if (!ASR::is_a<ASR::Function_t>(*callee)) return true;
+    ASR::Function_t *f = ASR::down_cast<ASR::Function_t>(callee);
+    if (i >= f->n_args || !ASR::is_a<ASR::Var_t>(*f->m_args[i])) return true;
+    ASR::symbol_t *dummy = ASRUtils::symbol_get_past_external(
+        ASR::down_cast<ASR::Var_t>(f->m_args[i])->m_v);
+    if (!ASR::is_a<ASR::Variable_t>(*dummy)) return true;
+    ASR::Variable_t *v = ASR::down_cast<ASR::Variable_t>(dummy);
+    return v->m_intent != ASR::intentType::In && !v->m_value_attr;
+}
+
+ASR::symbol_t *gpu_defined_variable(ASR::expr_t *e) {
+    while (ASR::is_a<ASR::ArrayPhysicalCast_t>(*e)) {
+        e = ASR::down_cast<ASR::ArrayPhysicalCast_t>(e)->m_arg;
+    }
+    // An allocatable or pointer array component handed over whole: what
+    // is defined is its elements.
+    if (!ASR::is_a<ASR::Var_t>(*e) && ASRUtils::is_array(
+            ASRUtils::expr_type(e)) && ASRUtils::is_allocatable_or_pointer(
+                ASRUtils::expr_type(e))) {
+        return nullptr;
+    }
+    while (true) {
+        ASR::expr_t *base = nullptr;
+        if (ASR::is_a<ASR::Var_t>(*e)) {
+            if (ASRUtils::is_array(ASRUtils::expr_type(e))) return nullptr;
+            return ASR::down_cast<ASR::Var_t>(e)->m_v;
+        } else if (ASR::is_a<ASR::StructInstanceMember_t>(*e)) {
+            base = ASR::down_cast<ASR::StructInstanceMember_t>(e)->m_v;
+        } else if (ASR::is_a<ASR::ArrayItem_t>(*e)) {
+            base = ASR::down_cast<ASR::ArrayItem_t>(e)->m_v;
+        } else if (ASR::is_a<ASR::ArraySection_t>(*e)) {
+            base = ASR::down_cast<ASR::ArraySection_t>(e)->m_v;
+        } else {
+            return nullptr;
+        }
+        // A part of what an allocatable or a pointer designates is not
+        // stored in the variable.
+        if (!ASR::is_a<ASR::Var_t>(*base) &&
+                ASRUtils::is_allocatable_or_pointer(
+                    ASRUtils::expr_type(base))) {
+            return nullptr;
+        }
+        if (ASR::is_a<ASR::Var_t>(*base) && ASRUtils::is_array(
+                ASRUtils::expr_type(base))) {
+            return nullptr;
+        }
+        e = base;
+    }
+}
+
 std::set<ASR::Function_t*> gpu_parallel_loop_routines(Allocator &al,
         ASR::TranslationUnit_t &unit, const PassOptions &pass_options) {
     std::set<ASR::Function_t*> routines;
