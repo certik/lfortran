@@ -439,17 +439,40 @@ public:
 // Collects StructInstanceMember references to allocatable array members
 // in the loop body. Used to decompose struct-typed kernel
 // parameters into separate flat array buffers for Metal.
-// Collects all variable names referenced (read) in a set of statements.
-// Used to determine which variables are live after a parallel loop.
+// Collects all variable names referenced in a set of statements, except
+// in the parallel loop `skip`. Used to determine which variables are live
+// after that loop.
 class PostLoopVarCollector :
         public ASRUtils::BlockBodyWalkVisitor<PostLoopVarCollector> {
 public:
     std::set<std::string> &referenced_vars;
-    PostLoopVarCollector(std::set<std::string> &rv) : referenced_vars(rv) {}
+    const ASR::OMPRegion_t *skip;
+    PostLoopVarCollector(std::set<std::string> &rv,
+        const ASR::OMPRegion_t *skip_ = nullptr)
+        : referenced_vars(rv), skip(skip_) {}
     void visit_Var(const ASR::Var_t &x) {
         referenced_vars.insert(ASRUtils::symbol_name(x.m_v));
     }
+    void visit_OMPRegion(const ASR::OMPRegion_t &x) {
+        if (&x == skip) return;
+        ASR::BaseWalkVisitor<PostLoopVarCollector>::visit_OMPRegion(x);
+    }
 };
+
+// The names of the variables a statement of the procedure (or main
+// program) that holds the parallel loop `loop` may reference once the
+// loop has run: the statements after it, in the statement list that holds
+// it and in each construct around it, and every other statement of a
+// loop around it, which can run again.
+std::set<std::string> gpu_names_referenced_after_loop(
+    const ASR::OMPRegion_t &loop, SymbolTable *scope);
+
+// Whether the value a parallel loop in `scope` gives the variable `sym`
+// can be read once the procedure (or main program) holding the loop has
+// returned, or by another procedure: it is a dummy argument or the
+// function result, it is saved, or it belongs to a module or to a host
+// procedure.
+bool gpu_visible_outside_procedure(ASR::symbol_t *sym, SymbolTable *scope);
 
 // Collects the symbols targeted by Var nodes in a set of statements,
 // including the bodies of nested Block and AssociateBlock scopes. Used to
