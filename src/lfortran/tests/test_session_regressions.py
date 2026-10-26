@@ -90,10 +90,11 @@ def value(client, code, timeout=20):
 
 
 @contextlib.contextmanager
-def kernel(exe, cwd, ip="127.0.0.1"):
+def kernel(exe, cwd, ip="127.0.0.1", managed=False):
     """A kernel started on a connection file, as a Jupyter frontend does, a
     function that connects a client to it, and the connection file's content
-    with its "path"."""
+    with its "path". `managed` selects the built-in kernel, which flushes
+    subscribers before STOP ends the process; the Xeus kernel does not."""
     connection = cwd / ("kernel-" + uuid.uuid4().hex + ".json")
     write_connection_file(str(connection), ip=ip, key=uuid.uuid4().hex.encode())
     clients = []
@@ -102,8 +103,11 @@ def kernel(exe, cwd, ip="127.0.0.1"):
         clients.append(connect(connection))
         return clients[-1]
 
+    command = [exe, "--no-color", "kernel", "-f", str(connection)]
+    if managed:
+        command.append("--managed")
     with connection.with_suffix(".log").open("wb") as log:
-        process = subprocess.Popen([exe, "--no-color", "kernel", "-f", str(connection)],
+        process = subprocess.Popen(command,
             cwd=cwd, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
         info = json.loads(connection.read_text())
         info["path"] = str(connection)
@@ -246,7 +250,7 @@ def stop_flushes(exe, cwd):
         ("print *, 'before'\nerror stop\nprint *, 'after'", 1, "ERROR STOP"),
     ]
     for code, status, shown in cases:
-        with kernel(exe, cwd) as (process, join, _info):
+        with kernel(exe, cwd, managed=True) as (process, join, _info):
             client = join()
             msg_id = client.execute(code)
             texts = []
