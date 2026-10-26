@@ -159,7 +159,9 @@ by its owner only.
 
 In a build with `WITH_XEUS=yes`, `lfortran kernel` without `--managed` runs
 the Xeus kernel instead. A `--managed` kernel is still LFortran's own, as
-Xeus cannot tell when the last client disconnects. See
+Xeus cannot tell when the last client disconnects. With Xeus 5, a READ whose
+client has disconnected waits instead of failing, and `lfortran -v` does not
+show a cell's AST, ASR and LLVM IR in that kernel. See
 `src/lfortran/jupyter.cpp`.
 
 ## Invoking LFortran
