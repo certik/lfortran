@@ -29,7 +29,14 @@ exit gates below remain unchecked.
   pushing, or opening PRs is authorized by this milestone. Future execution
   is coordinated by Astra using GPT-6.1-Sol agents with high reasoning effort
   for bounded implementation tasks; coordination does not replace acceptance
-  evidence.
+  evidence. The explicitly authorized IEEE issue report below does not
+  authorize source publication.
+- Prioritize high-performance Fortran + LFortran inference. IEEE exception-flag
+  and procedure-lifecycle diagnostics are not inference prerequisites; defer
+  that facility to [#16342](https://github.com/lfortran/lfortran/issues/16342).
+  No IEEE ASR-schema or procedure-lifecycle implementation belongs in this
+  project. Fix compiler bugs required by inference; record and report
+  orthogonal bugs separately rather than expanding implementation scope.
 
 ## Assessment inputs, not benchmark results
 
@@ -106,6 +113,12 @@ tolerances or regenerate an oracle merely to accept a failure. A reference
 correction requires independent evidence, a versioned change, and rerunning
 all dependent validation.
 
+Core BF16/q8 bit-pattern, special-value, binary32-representation, and immutable
+oracle checks remain mandatory. Separate optional IEEE exception-flag and
+procedure-lifecycle conformance tests from those core checks, explicitly
+reporting unsupported or failing IEEE features without hiding them. This test
+separation is a future action, not an already implemented or validated split.
+
 ### Performance acceptance
 
 - Benchmark the pinned MLX implementation's **actual comparable greedy path**,
@@ -123,8 +136,9 @@ all dependent validation.
 - Report best of at least three measured repetitions, medians, and spread,
   not just the fastest run. Use the same protocol on both sides.
 - Separate startup, tokenizer/config loading, JIT, and weight loading from
-  TTFT, prefill, decode, and total wall time. Report GPU-busy time alongside
-  wall time, plus allocation, copy (counts and bytes), and dispatch counts.
+  TTFT, prefill tokens/s, decode tokens/s, and total wall time. Report GPU-busy
+  time alongside wall time, plus allocation, copy (counts and bytes), and
+  dispatch counts.
 - Keep each optimization only with a meaningful reproducible gain of at
   least 2% on its declared metric/workload, beyond observed noise, and disclose
   effects on the other balanced workloads. One profile-driven technique per
@@ -259,11 +273,17 @@ end-to-end config/weights/tokenizer/chat/CLI acceptance without C kernels.
 
 ### Phase 3a — The same Fortran program on LFortran CPU
 
+- [ ] Separate the mandatory core precision/oracle checks from optional IEEE
+  diagnostics before claiming core-only LFortran acceptance. The unchanged
+  precision precursor's results above do not establish that separation.
 - [ ] Compile the same application with LFortran, without compiler-specific
   application rewrites that conceal incorrect semantics.
 - [ ] Reduce actual failures into MREs and registered standalone integration
-  regressions. Fix independent compiler bugs in focused commits and scoped,
-  isolated worktrees; verify both the reduction and original application case.
+  regressions. Fix inference-required compiler bugs in focused commits and
+  scoped, isolated worktrees; verify both the reduction and original
+  application case. The `IBSET` signed sign-bit conversion fix remains in
+  scope because the actual precision conversion needs it. Defer orthogonal
+  IEEE flag/lifecycle work to #16342, not an inference-blocking compiler change.
 - [ ] Validate against the frozen oracle and both the GFortran and Flang
   applications under the shared correctness contract.
 
@@ -399,6 +419,9 @@ Complete parent review of the **phase 0 baseline gate in the application
 repository** before accepting later model work. The validated precision
 precursor does not establish MLX-baseline acceptance, whole-model correctness,
 speedup, LFortran compatibility, or Metal acceptance. Those gates remain open.
+Keep the core precision/oracle checks mandatory while planning their separation
+from optional IEEE diagnostics; do not make resolving #16342 a gate for
+inference development.
 
 [pipeline]: https://github.com/lfortran/lfortran/blob/c6ad75832664996251c231ffb541f8c33ac899e1/src/libasr/pass/pass_manager.h#L323-L430
 [widths]: https://github.com/lfortran/lfortran/blob/c6ad75832664996251c231ffb541f8c33ac899e1/src/libasr/codegen/gpu_utils.h#L516-L535
