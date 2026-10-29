@@ -1,11 +1,12 @@
 # Portable inference: staged roadmap
 
-**Status: planning complete, baseline not yet measured.**
+**Status: precision precursor integrated; baseline gate under parent review.**
 
 This is an implementation roadmap, not a claim that LFortran currently runs
-this model correctly or at competitive speed. This milestone adds documentation
-only: no inference kernels, compiler fixes, dependency changes, or benchmark
-results. Every implementation milestone below remains unchecked.
+this model correctly or at competitive speed. Only the standalone portable
+precision precursor recorded below is validated. Whole-model, MLX-baseline,
+LFortran, and Metal acceptance are not established by that result; the phase
+exit gates below remain unchecked.
 
 ## Scope and fixed decisions
 
@@ -64,8 +65,9 @@ ceilings separately as the actual access patterns become known.
 Generate a benchmark manifest outside tracked artifacts. It must include:
 
 - Application and compiler repository identities, source commits, dirty-state
-  fingerprints, build flags, Pixi environment/lock identities, pinned MLX and
-  Flang versions, compiler versions, and relevant runtime/Metal versions.
+  fingerprints, build flags, Pixi environment/lock identities, pinned MLX
+  version, exact versions and executable/installation provenance of both
+  approved PATH GFortran and Flang, and relevant runtime/Metal versions.
 - OS/build, machine/chip, GPU core count, memory, power/thermal conditions,
   and whether other work could have contended for the GPU.
 - Model identity/revision, configuration and safetensors index identities and
@@ -199,7 +201,34 @@ with evidence, and an explicit account of whether faster-than-MLX goals were
 met. A measured plateau or unmet goal is a reportable outcome, not permission
 to invent a speedup or weaken correctness.
 
-### Phase 2 — Pure Fortran application, first on pinned Flang
+### Phase 2 — Pure Fortran application, first on PATH GFortran and Flang
+
+**Validated precursor, not phase acceptance:** application commit
+`c2cc7e36483ef331b2ef614ed87155640467230c` on `project/qwen38-dense`
+integrates `src-fortran/precision_formats.f90`, its contract and tests, and
+the optional `fortran-precision` Pixi environment. The module is standalone
+standard Fortran 2018, without C/Python linkage; C is an independent test
+oracle only. The reviewed numerical sources and existing C reference are
+unchanged by integration.
+
+Both receiving-root tasks, `precision-versions` and `precision-test`, passed
+through `pixi run -e fortran-precision`. Each of GFortran 16.1.0
+(`conda-forge gcc 16.1.0-3`) and Flang 24.0.0git
+(`e8e9abb11b3d199d861900858a7b42dcaabe4de3`) passed all 65,536 BF16
+patterns/`DO CONCURRENT` roundtrips, 22,032 C-oracle binary32 inputs,
+256 q8 boundary-byte combinations, and nine controlled rejection cases
+(each exited 1 with its expected diagnostic); IEEE invalid/overflow/underflow
+flags remained clear. Exact PATH selections, versions, Flang installation
+and configuration provenance, and C-oracle compiler identity are recorded
+in `$QWEN_REPO/build/fortran-precision/versions.log`; the full task results
+are in `tests.log` alongside it, with positive/rejection logs under each
+compiler's `checks/` directory. Two known GFortran duplicate-rpath linker
+warnings remain; no Fortran source or Flang/C-oracle warnings occurred.
+
+This validates only BF16 conversion and packed-q8 byte extraction, not
+groupwise q8 arithmetic, whole-model inference, the MLX-baseline gate,
+LFortran compatibility, or Metal offload. No GPU/model runs were performed
+for this integration.
 
 - [ ] Implement inference kernels, driver, configuration, safetensors reader,
   tokenizer, chat rendering, and CLI in `$QWEN_REPO/src-fortran`. No C kernel
@@ -218,8 +247,10 @@ to invent a speedup or weaken correctness.
   correctly initialized temporaries. Keep sequential reductions as the initial
   baseline, and keep token and state recurrences serial. Do not transliterate
   SIMD scheduling into mathematically dependent concurrent iterations.
-- [ ] Pin Flang through Pixi and compare the program against the immutable C
-  oracle, including existing Qwen3.6 support.
+- [ ] Run both user-selected working PATH GFortran and Flang through declared
+  Pixi task entry points, recording exact versions and executable provenance,
+  and compare both programs against the immutable C oracle, including
+  existing Qwen3.6 support. Do not install or substitute a conda Flang package.
 
 **Deliverable / acceptance:** the pure Fortran application passes bit-conversion
 edge cases, per-layer/state numerical checks, CPU context greater than 64,
@@ -233,8 +264,8 @@ end-to-end config/weights/tokenizer/chat/CLI acceptance without C kernels.
 - [ ] Reduce actual failures into MREs and registered standalone integration
   regressions. Fix independent compiler bugs in focused commits and scoped,
   isolated worktrees; verify both the reduction and original application case.
-- [ ] Validate against the frozen oracle and the Flang application under the
-  shared correctness contract.
+- [ ] Validate against the frozen oracle and both the GFortran and Flang
+  applications under the shared correctness contract.
 
 **Deliverable / acceptance:** CPU application correctness with actionable
 reduced tests for compiler failures. These are local-only compiler fixes;
@@ -297,11 +328,30 @@ capability tests before deciding that a compiler change is necessary.
 
 ## Toolchain, regression, and authorship rules
 
-All dependency provisioning, compilers, builds, and tests use Pixi exclusively;
-no system installers or substitute host toolchains. Pin working MLX and Flang
-in the application manifest. For LFortran compiler development, use `llvm11`
-unless a task explicitly requires another environment. All reference tests and
-updates require LLVM 11.
+Use Pixi exclusively for dependency provisioning and declared build/test task
+entry points; no system installers or unapproved substitute toolchains. Keep
+MLX pinned through the application manifest/lock. The approved CPU oracles
+are **both existing working PATH GFortran and Flang**, invoked through Pixi
+tasks with exact versions and executable/installation provenance saved and
+inspected, not compiler packages to install or pin. Preserve the selected
+PATH tools; do not install conda Flang, change global/user toolchains, or
+substitute a host LFortran.
+
+The application's optional `fortran-precision` environment uses
+`no-default-feature = true` and no package dependencies, so precision checks
+do not pull in MLX/Python. From `$QWEN_REPO`, run:
+
+```bash
+mkdir -p build/fortran-precision
+pixi run -e fortran-precision precision-versions > build/fortran-precision/versions.log 2>&1
+pixi run -e fortran-precision precision-test > build/fortran-precision/tests.log 2>&1
+```
+
+Inspect both complete logs. The C test oracle is built/generated before the
+Fortran builds; use separate module/output directories for both compilers
+and at most two CPU compiler jobs. This approval does not change LFortran's
+toolchain policy: compiler builds use Pixi `llvm11` unless a task explicitly
+requires another environment, and all reference tests/updates require LLVM 11.
 
 From the assigned LFortran worktree root, the established entry points are:
 
@@ -314,9 +364,9 @@ pixi run -e llvm11 tests -j8 > reference.log 2>&1
 pixi run -e llvm11 integration_tests -j8 > integration.log 2>&1
 ```
 
-These are future implementation commands, not checks run for this documentation
-milestone. Build once, then rebuild unless generator inputs or configuration
-change; allocate the job budget across workers. Save and inspect logs, verify
+These LFortran commands were not run for this documentation update. Build once,
+then rebuild unless generator inputs or configuration change; allocate the
+job budget across workers. Save and inspect logs, verify
 the selected compiler and LLVM versions, and follow the repository's targeted
 and full-suite requirements for compiler changes before any later authorized
 push. No push is authorized now.
@@ -345,11 +395,10 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Start **phase 0 in the application repository**: audit the existing harness's
-failure detection, pin working MLX with Pixi, and capture hashed model/config/
-index identities plus exact rendered input/token fixtures. Then measure the
-serialized reproducible baseline. No baseline, correctness pass, speedup,
-kernel implementation, or compiler fix is claimed by this planning commit.
+Complete parent review of the **phase 0 baseline gate in the application
+repository** before accepting later model work. The validated precision
+precursor does not establish MLX-baseline acceptance, whole-model correctness,
+speedup, LFortran compatibility, or Metal acceptance. Those gates remain open.
 
 [pipeline]: https://github.com/lfortran/lfortran/blob/c6ad75832664996251c231ffb541f8c33ac899e1/src/libasr/pass/pass_manager.h#L323-L430
 [widths]: https://github.com/lfortran/lfortran/blob/c6ad75832664996251c231ffb541f8c33ac899e1/src/libasr/codegen/gpu_utils.h#L516-L535
