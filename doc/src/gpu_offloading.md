@@ -63,6 +63,16 @@ components are all offloaded, or are an error until the pipeline supports them.
 Adding an entry to the list is a design decision, not a way to make a failing
 loop compile.
 
+### Narrow integer storage
+
+Metal and CUDA preserve `integer(int8)` and `integer(int16)` storage as signed
+one- and two-byte elements (`signed char` and `short`), using the existing
+Fortran integer kinds. Array strides and copy sizes retain those widths.
+Captured scalars use the same types and natural alignment in the host and
+device argument structs, including when mixed with default integers.
+These are integer storage types, not half-precision or BF16 real types;
+support for storage alone does not imply support for bit reinterpretation.
+
 ## The unsupported-construct check
 
 The check decides from the program as written, before any lowering, whether a

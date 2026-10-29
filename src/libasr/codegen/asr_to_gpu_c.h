@@ -748,6 +748,8 @@ public:
         switch (type->type) {
             case ASR::ttypeType::Integer: {
                 int kind = checked_integer_cast<int>(ASR::down_cast<ASR::Integer_t>(type)->m_kind);
+                if (kind == 1) return "signed char";
+                if (kind == 2) return "short";
                 if (kind == 4) return "int";
                 if (kind == 8) return "long";
                 // gpu_scalar_width_supported keeps the launch from handing
