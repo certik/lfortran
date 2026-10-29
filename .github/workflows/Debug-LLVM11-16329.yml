@@ -1,0 +1,74 @@
+name: LLVM 11 first-fault evidence for 16329
+
+on:
+  push:
+    branches:
+      - diagnostic/16329-llvm11-first-fault
+
+permissions:
+  contents: read
+
+jobs:
+  first_fault:
+    name: Exact failing merge LLVM 11
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      MACOSX_DEPLOYMENT_TARGET: 26.0
+      LFORTRAN_TEST_SUITE: smoke
+      LFORTRAN_LLVM11_DIAGNOSTICS: 'yes'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: lfortran/lfortran
+          ref: 7e32c0c4dd83c757aadaa6b4ef4acd5f53584f97
+          fetch-depth: 0
+
+      - name: Declare isolated debugger dependency
+        shell: bash
+        run: |
+          mkdir -p .fix-issue/pr-16329/ci-tools
+          cat > .fix-issue/pr-16329/ci-tools/pixi.toml <<'EOF'
+          [workspace]
+          name = "llvm11-first-fault-tools"
+          channels = ["conda-forge"]
+          platforms = ["linux-64"]
+          [dependencies]
+          gdb = ">=15,<16"
+          [environments]
+          llvm11 = { features = [] }
+          EOF
+
+      - uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          pixi-version: v0.83.0
+          manifest-path: .fix-issue/pr-16329/ci-tools/pixi.toml
+          environments: llvm11
+          activate-environment: false
+          cache: false
+
+      # Expose only GDB, not its environment's compilers or C++ runtimes.
+      - name: Verify debugger without activating its environment
+        shell: bash
+        run: |
+          mkdir -p .fix-issue/pr-16329/ci-tools/bin
+          ln -s ../.pixi/envs/llvm11/bin/gdb .fix-issue/pr-16329/ci-tools/bin/gdb
+          .fix-issue/pr-16329/ci-tools/bin/gdb --version
+          .fix-issue/pr-16329/ci-tools/bin/gdb -nx -q -batch \
+            -ex 'python import gdb, hashlib, os; print("GDB_PYTHON_READY")'
+          echo "$PWD/.fix-issue/pr-16329/ci-tools/bin" >> "$GITHUB_PATH"
+
+      - name: Run unchanged LLVM 11 platform build and tests
+        uses: ./.github/actions/build-platform
+        with:
+          os: ubuntu-latest
+          llvm-version: '11'
+
+      - name: Save first-fault evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm11-exact-merge-first-fault
+          path: .fix-issue/pr-16329/ci-llvm11-unit
+          include-hidden-files: true
+          retention-days: 7
