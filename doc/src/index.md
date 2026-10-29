@@ -153,6 +153,7 @@ progress
 design
 gpu_offloading
 gpu_optimization_passes
+portable_inference
 developer_tutorial
 ast_and_asr
 interactive_cells
