@@ -73,6 +73,17 @@ device argument structs, including when mixed with default integers.
 These are integer storage types, not half-precision or BF16 real types;
 support for storage alone does not imply support for bit reinterpretation.
 
+### Scalar bit reinterpretation
+
+On Metal, scalar `transfer` between `integer(int32)` and `real(real32)`
+uses `as_type`, preserving the integer image, including signed zero, NaN
+payloads, infinities and subnormals. This also permits unpacking BF16 bit
+patterns from `integer(int16)` storage into the high bits of an `int32`
+and reinterpreting that image as `real32`; it does not add a BF16 real kind.
+Array-valued transfers, unequal widths, other scalar representations, and
+scalar transfers on CUDA/CUDA_CPU are diagnosed rather than emitted as
+invalid device source.
+
 ## The unsupported-construct check
 
 The check decides from the program as written, before any lowering, whether a

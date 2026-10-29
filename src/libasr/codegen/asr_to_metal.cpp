@@ -24,6 +24,11 @@ struct MetalDialect {
         return "float";
     }
 
+    std::string bitcast_prefix(const std::string &type,
+            const Location & /*loc*/) const {
+        return "as_type<" + type + ">(";
+    }
+
     void emit_prologue(std::stringstream &src) const {
         src << "#include <metal_stdlib>\n";
         src << "using namespace metal;\n\n";

@@ -5266,6 +5266,31 @@ public:
                 src << ")";
                 break;
             }
+            case ASR::exprType::BitCast: {
+                ASR::BitCast_t *c = ASR::down_cast<ASR::BitCast_t>(expr);
+                ASR::ttype_t *source_type =
+                    ASRUtils::type_get_past_allocatable_pointer(
+                        ASRUtils::expr_type(c->m_source));
+                ASR::ttype_t *result_type =
+                    ASRUtils::type_get_past_allocatable_pointer(c->m_type);
+                auto scalar_image = [](ASR::ttype_t *type) {
+                    return gpu_scalar_width_supported(type)
+                        && (ASR::is_a<ASR::Integer_t>(*type)
+                            || ASR::is_a<ASR::Real_t>(*type))
+                        && ASRUtils::extract_kind_from_ttype_t(type) == 4;
+                };
+                if (c->m_size || !scalar_image(source_type)
+                        || !scalar_image(result_type)) {
+                    throw CodeGenError("gpu offload: transfer requires "
+                        "scalar integer(4) or real(4) source and result "
+                        "of the same width", expr->base.loc);
+                }
+                src << dialect.bitcast_prefix(gpu_type(result_type),
+                    expr->base.loc);
+                visit_expr(c->m_source);
+                src << ")";
+                break;
+            }
             case ASR::exprType::FunctionCall: {
                 ASR::FunctionCall_t *fc = ASR::down_cast<ASR::FunctionCall_t>(expr);
                 std::string fn_name(ASRUtils::symbol_name(

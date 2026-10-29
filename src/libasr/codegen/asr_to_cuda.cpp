@@ -33,6 +33,12 @@ struct CudaDialect {
         return (kind == 8) ? "double" : "float";
     }
 
+    std::string bitcast_prefix(const std::string & /*type*/,
+            const Location &loc) const {
+        throw CodeGenError("gpu offload: scalar transfer is not "
+            "implemented for cuda or cuda_cpu", loc);
+    }
+
     void emit_prologue(std::stringstream &src) const {
         src << "#include <stdint.h>\n";
         if (emulate_cpu) {
