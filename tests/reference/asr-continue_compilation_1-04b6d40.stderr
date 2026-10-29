@@ -1634,6 +1634,48 @@ semantic error: character length must be a constant expression in this context
 3926 |     character(generic_length()) :: t  ! {Error} character length must be a constant expression in this context
      |               ^^^^^^^^^^^^^^^^ 
 
+semantic error: `pos` argument of `ibset` intrinsic must be less than bit_size(i)
+    --> tests/errors/continue_compilation_1.f90:3998:39
+     |
+3998 |     integer(1), parameter :: above8 = ibset(0_1, 8)  ! {Error} `pos` argument of `ibset` intrinsic must be less than bit_size(i)
+     |                                       ^^^^^^^^^^^^^ 
+
+semantic error: `pos` argument of `ibset` intrinsic must be less than bit_size(i)
+    --> tests/errors/continue_compilation_1.f90:3999:40
+     |
+3999 |     integer(2), parameter :: above16 = ibset(0_2, 16)  ! {Error} `pos` argument of `ibset` intrinsic must be less than bit_size(i)
+     |                                        ^^^^^^^^^^^^^^ 
+
+semantic error: `pos` argument of `ibset` intrinsic must be less than bit_size(i)
+    --> tests/errors/continue_compilation_1.f90:4000:40
+     |
+4000 |     integer(4), parameter :: above32 = ibset(0_4, 32)  ! {Error} `pos` argument of `ibset` intrinsic must be less than bit_size(i)
+     |                                        ^^^^^^^^^^^^^^ 
+
+semantic error: `pos` argument of `ibset` intrinsic must be less than bit_size(i)
+    --> tests/errors/continue_compilation_1.f90:4001:40
+     |
+4001 |     integer(8), parameter :: above64 = ibset(0_8, 64_8)  ! {Error} `pos` argument of `ibset` intrinsic must be less than bit_size(i)
+     |                                        ^^^^^^^^^^^^^^^^ 
+
+semantic error: `pos` argument of `ibset` intrinsic must be less than bit_size(i)
+    --> tests/errors/continue_compilation_1.f90:4002:42
+     |
+4002 |     integer(8), parameter :: large_pos = ibset(0_8, 9223372036854775807_8)  ! {Error} `pos` argument of `ibset` intrinsic must be less than bit_size(i)
+     |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: `pos` argument of `ibset` intrinsic must be non-negative
+    --> tests/errors/continue_compilation_1.f90:4003:41
+     |
+4003 |     integer(1), parameter :: negative = ibset(0_1, -1)  ! {Error} `pos` argument of `ibset` intrinsic must be non-negative
+     |                                         ^^^^^^^^^^^^^^ 
+
+semantic error: `pos` argument of `ibset` intrinsic must be non-negative
+    --> tests/errors/continue_compilation_1.f90:4004:43
+     |
+4004 |     integer(8), parameter :: lowest_pos = ibset(0_8, -9223372036854775807_8 - 1_8)  ! {Error} `pos` argument of `ibset` intrinsic must be non-negative
+     |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
 semantic error: Restriction type mismatch with provided function argument
     --> tests/errors/continue_compilation_1.f90:1832:33
      |
