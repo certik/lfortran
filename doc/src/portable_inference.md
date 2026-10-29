@@ -1,12 +1,14 @@
 # Portable inference: staged roadmap
 
-**Status: precision precursor integrated; baseline gate under parent review.**
+**Status: precision precursor and IBSET integrated; staged LFortran CORE
+precision checks pass; baseline gate under parent review.**
 
 This is an implementation roadmap, not a claim that LFortran currently runs
 this model correctly or at competitive speed. Only the standalone portable
-precision precursor recorded below is validated. Whole-model, MLX-baseline,
-LFortran, and Metal acceptance are not established by that result; the phase
-exit gates below remain unchecked.
+precision precursor and staged LFortran CORE checks recorded below are
+validated. Whole-model, MLX-baseline, full-application LFortran, and Metal
+acceptance are not established by those results; the phase exit gates below
+remain unchecked.
 
 ## Scope and fixed decisions
 
@@ -117,7 +119,8 @@ Core BF16/q8 bit-pattern, special-value, binary32-representation, and immutable
 oracle checks remain mandatory. Separate optional IEEE exception-flag and
 procedure-lifecycle conformance tests from those core checks, explicitly
 reporting unsupported or failing IEEE features without hiding them. This test
-separation is a future action, not an already implemented or validated split.
+separation is prepared and validated in a reviewed staged snapshot, including
+LFortran CORE checks below; it is not yet applied to the live application.
 
 ### Performance acceptance
 
@@ -241,8 +244,9 @@ warnings remain; no Fortran source or Flang/C-oracle warnings occurred.
 
 This validates only BF16 conversion and packed-q8 byte extraction, not
 groupwise q8 arithmetic, whole-model inference, the MLX-baseline gate,
-LFortran compatibility, or Metal offload. No GPU/model runs were performed
-for this integration.
+full-application LFortran compatibility, or Metal offload. The subsequent
+staged LFortran CORE result is recorded in Phase 3a. No GPU/model runs were
+performed for these precision checks.
 
 - [ ] Implement inference kernels, driver, configuration, safetensors reader,
   tokenizer, chat rendering, and CLI in `$QWEN_REPO/src-fortran`. No C kernel
@@ -273,9 +277,42 @@ end-to-end config/weights/tokenizer/chat/CLI acceptance without C kernels.
 
 ### Phase 3a — The same Fortran program on LFortran CPU
 
-- [ ] Separate the mandatory core precision/oracle checks from optional IEEE
-  diagnostics before claiming core-only LFortran acceptance. The unchanged
-  precision precursor's results above do not establish that separation.
+**Validated standalone CORE probe, not phase acceptance:** local commits
+`7c56cb05f9` and `4a05e9b0b9` integrate exactly the reviewed IBSET fixes
+`76f72aa530` and `6991e04c5d`, respectively: sign-extension of folded
+integer sign bits and diagnostics for out-of-range constant positions.
+The receiving branch's `src`, `grammar`, `tests`, and `integration_tests`
+trees exactly match accepted HEAD `6991e04c5d`; only documentation/history
+differ. Its final LLVM 11 default suites passed: unit 57/57, reference 2,114
+output checks, integration 5,582/5,582. That source-equivalent suite evidence
+is retained under
+`.fix-issue/qwen38-compiler/worktrees/ibset-signbit/.fix-issue/ibset-signbit/`
+(`final_{unit,reference,integration}.log`); the full suites were not repeated.
+
+The caller's existing `build/llvm11` compiler was rebuilt with four jobs
+through `pixi run -e llvm11 rebuild`; compiler and runtime paths and
+LLVM 11.1.0 were verified. Unchanged staged `precision_formats.f90`,
+`precision_test_cases.f90`, `test_precision.f90`, and `run_checks.sh`
+passed directly with this compiler in normal, `--fast`, and `--std=f23`
+modes, with separate module/output directories. **Each mode** passed all
+65,536 BF16 roundtrips and independent `DO CONCURRENT` outputs, 22,032
+existing C-oracle conversions, 256 q8 boundary combinations, and all nine
+rejections (each exited 1 with its required diagnostic). The oracle was
+read-only and unchanged. These are the reviewed staged CORE files already
+validated with GFortran 16.1.0 and Flang 24.0.0git, not a weakened subset.
+
+Complete local evidence is under `.fix-issue/qwen38-precision-core/`:
+`rebuild.log`, `compiler-identity-final.log`, `source-equivalence.log`,
+`input-identities.log`, `core-results.tsv`, and each of
+`{normal,fast,f23}/{compile.log,checks.log,checks/}`.
+No `IEEE_EXCEPTIONS` imports, flag tests, IEEE implementation commits,
+lifecycle/schema work, GPU/model runs, or application edits were included.
+IEEE remains deferred to #16342. No new compiler blocker was found; this
+does not validate groupwise q8 arithmetic or whole-model inference.
+
+- [ ] Apply the reviewed mandatory-CORE/optional-IEEE test separation to the
+  live application after its active writer releases it. The standalone
+  staged CORE split passes LFortran; the live checkout remains untouched.
 - [ ] Compile the same application with LFortran, without compiler-specific
   application rewrites that conceal incorrect semantics.
 - [ ] Reduce actual failures into MREs and registered standalone integration
