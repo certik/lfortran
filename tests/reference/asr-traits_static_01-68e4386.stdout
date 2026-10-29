@@ -1471,6 +1471,7 @@
                                                     11 __trait_t_get_value
                                                     [])]
                                                     []
+                                                    []
                                                 ),
                                             __trait_member_ivalue_get_value:
                                                 (ExternalSymbol

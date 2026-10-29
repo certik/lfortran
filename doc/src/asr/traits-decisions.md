@@ -6,7 +6,7 @@ chosen, and where the proposal leaves room for more than one reading. Its
 purpose is to improve the proposal, so that independent compiler vendors can
 implement it without having to ask the same questions again.
 
-It is a living document. Last updated: 2026-10-16.
+It is a living document. Last updated: 2026-10-29.
 
 ## About this record
 
@@ -106,6 +106,10 @@ paper:
   keeping the original sources.
 - Several temporary limits are diagnosed rather than implemented (TD-24 to
   TD-27). They are not proposed language rules.
+- Generic bodies rely on declared contracts, including explicit associated
+  same-type requirements, rather than silently acquiring requirements from
+  their statements. The prototype implements named associated equalities;
+  recursive generic inference remains separate (TD-38).
 
 The most important open questions for the proposal are collected in "Open
 questions for the proposal".
@@ -161,6 +165,7 @@ gating are listed separately in "Questions that do not affect the language".
 | 2026-10-14 | Matching an implementation to a message with a receiver | **Require a passed receiver with matching INTENT**; also allow weaker receiver effects or NOPASS implementations, and define adaptation rules | TD-36 |
 | 2026-10-14 | Marking the receiver, since `type(itself)` also declares ordinary same-type arguments | **Always mark the receiver with PASS on its dummy declaration**; infer a unique `type(itself)` dummy, and require PASS when there are several; use `PASS(name)` on the trait method declaration instead | TD-36 |
 | 2026-10-16 | Whether the private components of a generic instance belong to the generic definition's module or, as in the prototype then, to the client scope that owns the generated instance | **Preserve the generic definition's privacy and include this case in the fix (recommended)**; Finish ordinary Fortran checking now; document and defer generic-instance privacy | TD-37 |
+| 2026-10-29 | How a generic observer declares the equality between its subject's associated observer type and its own type | **Explicit constraints first, with independently checked generic bodies**; infer additional requirements from generic bodies. Recursive specialization was discussed separately, not approved by choosing explicit equality. | TD-38 |
 
 ### Instructions given without an option form
 
@@ -178,6 +183,7 @@ gating are listed separately in "Questions that do not affect the language".
 | 2026-10-14 | Asked which uses of `intent(inout)` remained impossible, for a standalone example that the prototype rejects, and what removing every limitation on the receiver's intent would take. | TD-35, TD-36 |
 | 2026-10-14 | Asked how Rust, Swift, Mojo and Go handle receivers, whether `type(ICounter), intent(inout) :: self` would be flawed, and why not `type(itself)`, which corresponds to `Self`. | TD-36 |
 | 2026-10-14 | Confirmed the agreement on explicit receivers and asked to update this record, update all tests and implement it; when in doubt, to stay close to Rust and other explicitly typed languages, or to ask. | TD-36 |
+| 2026-10-29 | After discussing explicit contracts versus body-inferred requirements, and separately the observer's recursive generic pairing: "Ok, do the explicit constraints first. If possible, avoid the acyclic version. Document this decision." | TD-38 |
 
 ## Entries
 
@@ -1282,13 +1288,99 @@ specification action, that is, what the paper should say.
   needs a constant length. For `Vector{U}`, `U` is fixed per instance, so each
   instance binds `Element` to its own type argument. A trait with associated
   types is a generic constraint only.
-- **Implementation status.** Implemented as described. Naming another type's
-  associated type, constraining generic procedures or types by such traits, and
-  generic messages with a dummy argument of an associated type are not
-  implemented yet.
+- **Implementation status.** The original record described constraints by
+  associated-type traits as unimplemented. This branch now has per-binder
+  associated mappings for generic procedures and generic derived types,
+  including associated-type ordinary-message arguments and explicit same-type
+  requirements (TD-38). Naming projections remains pending.
 - **Specification action.** Specify inference, the one-type-per-conformance
   rule, constraints on associated types, and a projection syntax for generic
-  code if needed.
+  code if needed. TD-38 settles explicit same-type contracts for the prototype;
+  its prototype spelling is a new extension, not existing proposal syntax.
+  Recursive generic instantiation remains separate.
+
+#### TD-38: Explicit associated same-type contracts before inference
+
+- **Status:** Approved semantic decision; initial explicit-contract slice
+  implemented in the prototype.
+- **What the paper says.** Generic parameters have trait or trait-combination
+  constraints (`sect:generic_interfaces`); associated types are aliases
+  inferred from implementations (`sect:tats`, TD-20). Constructor arguments
+  can infer generic type arguments (`sect:generic_derived_types`). These do
+  not specify syntax for explicit same-type requirements, additional
+  requirements inferred from generic bodies, or recursive generic aliases.
+- **Why it is not tight.** An observer `Display{ISubject :: U}` cannot derive
+  from that contract alone that U's associated `ObsType` is `Display{U}`.
+  Its initializer needs precisely that equality to register its result with
+  U. Inferring an associated alias from a conformance's method signatures is
+  different from strengthening a generic client's contract from its body.
+- **Options presented (2026-10-29).** Explicit contracts checked
+  independently, or additional requirements inferred from generic bodies.
+  A separate discussion concerned recursive pairing
+  `D = Display{S}`, `S = WeatherData{D}` and an acyclic application rewrite.
+- **Choice.** The maintainer chose explicit constraints first and asked to
+  avoid the acyclic version if possible. Generic bodies are checked using
+  their declared contracts, independently of selected concrete callers.
+  Missing equalities must be declared, not silently added because a body
+  happens to require them.
+- **Consequences.** Explicit same-type requirements are obligations on every
+  instantiation and assumptions available when checking the generic body.
+  Associated mappings inferred from implementations must satisfy them; a
+  call cannot choose a different mapping to make an argument fit. This makes
+  the contract inspectable and keeps body edits from silently changing the
+  generic's admissible arguments. A later inference feature may lower its
+  inferred requirements into the same explicit equality representation, but
+  must preserve the meaning of written contracts and existing overload
+  resolution; it is not authorized by this decision.
+  Recursive pairing remains a separate design obligation: explicit equality
+  does not approve unbounded inference for bare generic families or give an
+  unnamed recursive specialization an identity. Prefer a finite, explicit
+  nominal expression of the pairing that preserves the typed subject
+  backreference and constructor registration. No acyclic rewrite was chosen;
+  demonstrate an unavoidable blocker before proposing that fallback.
+- **Implementation status.** The parser and AST retain named bindings.
+  Each ASR constraint records a canonical associated declaration, RHS type
+  and scoped declaration metadata. Normalized message signatures use the
+  declared RHS instead of an opaque associated placeholder. Semantic checking
+  verifies concrete conformances and forwarded contracts, including unused
+  equalities; copying, module/binary/text serialization and ASR verification
+  preserve the records. Equality uses intrinsic kind/constant character length
+  and nominal derived/generic-instance identity, not component layout.
+  Missing, duplicate, unknown and contradictory requirements are not inferred
+  away. Generic requirements keep their proof signatures during aggregate
+  return lowering; executable specializations are lowered normally.
+- **Prototype spelling (new extension, not existing proposal syntax).**
+  Decorate a trait in a binder list as
+  `Trait(AssociatedType=type-argument, ...) :: U`, for example
+  `Display{ISubject(ObsType=Display{U}) :: U}`. The parentheses restrict the
+  selected conformance; they do not declare a parameterized trait or bind its
+  alias anew. Bare traits and `+` combinations keep their meaning, as do
+  existing intrinsic kind/type-set constraints. RHS types can be scalar
+  intrinsic types, nominal derived types, binders from the same parameter
+  list (including later binders), and the enclosing generic's exact own
+  application, such as `Display{U}`. Concrete generic applications reuse
+  ordinary instantiation. Arbitrary value expressions are not RHS types.
+  General dependent applications such as `Other{U}`, projections and a proof
+  that distinct unknown binders coincide remain outside this slice; repeated
+  dependent bounds should use one shared RHS binder.
+  A concrete
+  nominal WeatherData, whose observer is `Display{WeatherData}`, can anchor
+  the recursive pair without recursive alias syntax; this retains Display's
+  typed subject pointer and constructor registration, but makes this
+  application's WeatherData nongeneric. A reduced finite pair with a subject
+  method accepting `Display{Subject}`, a typed subject backreference and
+  constructor registration is tested (`traits_associated_10`). This does not
+  establish full recursive application support: the adapted observer compiles
+  Display and Vector, then stops at WeatherData's own name used as a nested
+  generic argument in its component declaration. Ordinary nominal types are
+  not yet declared before their components are visited. That separate
+  declaration-order limitation, and the earlier dependent `Vector{U}` limit,
+  are not solved by silently strengthening the contract or by an acyclic
+  rewrite. No implicit recursive inference has been approved or implemented.
+- **Specification action.** Define explicit same-type requirements, their
+  binder scope and independent body checking, equality consistency and
+  instantiation diagnostics. Specify any finite recursive naming mechanism
+  separately from equality syntax and ordinary argument inference.
 
 #### TD-21: Character type arguments
 
@@ -1761,13 +1853,13 @@ names the entries with the details.
 | OQ-04 | Whether a message may modify its receiver, how this is declared, and what generic code and trait objects may assume; pointer, allocatable and `intent(out)` receivers; the INTENTs of trait-object dummy arguments. The prototype's answer for receivers is TD-36: an explicit PASS-marked `type(itself)` receiver with an ordinary INTENT. | TD-10, TD-35, TD-36 |
 | OQ-05 | Initializer requirements and trait objects. Which procedures implement an initializer requirement: `initial ::` procedures and matching standard constructor interfaces are approved for the prototype (TD-33); whether the implicit structure constructor can is open. | TD-13, TD-33 |
 | OQ-06 | Trait objects: conversions and combinations; `SELECT TYPE`, including dynamic conformance queries; arrays of trait objects (homogeneous like `CLASS` arrays or not); pointer components and results. | TD-11, TD-12 |
-| OQ-07 | Associated types: inference, one type per conformance, constraints on associated types, projection syntax, use as generic constraints. | TD-20 |
+| OQ-07 | Associated types: inference, one type per conformance, constraints on associated types, projection syntax, use as generic constraints. Explicit same-type contracts and independent body checking are approved and have an initial prototype implementation; their spelling is a new extension to specify in the proposal. | TD-20, TD-38 |
 | OQ-08 | Type sets: the exact common operations and their result types, mixed-mode operations, intrinsic procedures, identity of inline type sets, composition with `+`. | TD-23 |
 | OQ-09 | The member set of kind wildcards and its processor dependence. | TD-17 |
 | OQ-10 | Name, contents and definitions of the intrinsic `generics` module. | TD-18 |
 | OQ-11 | `IAnyType` and the operations of unconstrained parameters; when unused bindings of generic types are checked; defined input/output in generic code. | TD-19, TD-27 |
 | OQ-12 | Generic methods: whether implementations may have weaker constraints; overloaded generic messages that differ only in their generic parameter lists (a commented-out paragraph of the paper source, lines 1737-1742, would allow them). | TD-23 |
-| OQ-13 | Generic derived types: `implements` headers and conditional conformance, binder scopes, ownership of parameter-dependent procedures, binding of procedures that do not use the parameters, retroactive conformance from other modules, instance identity across program units, extension and overriding, and the accessibility of instance components (decided for the prototype in TD-37). | TD-24, TD-25, TD-37 |
+| OQ-13 | Generic derived types: `implements` headers and conditional conformance, binder scopes, ownership of parameter-dependent procedures, binding of procedures that do not use the parameters, retroactive conformance from other modules, instance identity across program units, extension and overriding, and the accessibility of instance components (decided for the prototype in TD-37). Finite explicit recursive pairing is separate from same-type constraints; implicit recursive bare-family inference is not approved (TD-38). | TD-24, TD-25, TD-37, TD-38 |
 | OQ-14 | Which separate-compilation properties are normative. For example: must adding a conformance for a new type work without recompiling a separately compiled generic provider (the OCP discussion, lines 2686-2699, only says no code needs to be modified), and must a constraint by a child trait forward to a callee constrained by its parent in separately compiled code? Dispatch tables, member entries and other mechanisms should remain processor details. | TD-15, TD-16 |
 | OQ-15 | Scope, lifetime and redeclaration of `:=` declarations, including loops and conditional code. | TD-22 |
 | OQ-16 | Whether kind and length type parameters are part of type arguments, and whether assumed or deferred lengths are allowed. | TD-21 |
