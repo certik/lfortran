@@ -9,7 +9,138 @@ below do not establish LFortran real-model, full text-interface, or complete
 Fortran Metal acceptance. Faster-than-MLX and release claims remain unearned;
 the phase exit gates remain open.
 
-## Verified milestone checkpoint
+## Current status, speeds and next plan
+
+**2026-10-30 summary:** portable Fortran passes the real 27B short/reset check
+with GFortran and Flang. C+Metal now decodes at **4.85 tokens/s**, versus
+**16.54 tokens/s** for native MLX. LFortran CPU is blocked by an undiagnosed
+real-run crash; LFortran GPU executes the tiny application but has open
+numerical/acceptance gates. Neither LFortran path has accepted throughput.
+
+### Implementation status
+
+`F` and `M` below denote the Fortran and Metal application worktrees; `G`
+denotes the experimental combined LFortran GPU worktree. Their application
+features are not yet fully consolidated into the application caller checkout.
+
+| Effort | Verified status | Speed status |
+| --- | --- | --- |
+| Frozen scalar C reference, `37ff651` | Checkpoint adaptation complete for text-only, batch-one, greedy raw IDs; frozen math, oracles and bounds retained. | No comparable CPU benchmark. |
+| Portable Fortran, `F:a70b69ed0a` | GFortran and Flang each pass real-27B 17-ID/full-reset checks, finite and byte-exact to saved C. Portable integer-backed BF16/q8 works; no new native real kinds. | Heavy correctness traces are **not throughput benchmarks**. |
+| LFortran CPU, integrated `91f90a5a16` | Tiny/I/O/header/large-offset proofs pass; real run crashes after all 64 layers/final normalization, before first logits. No predictions or reset acceptance. | No accepted CPU throughput. |
+| LFortran GPU, combined `G:d94db95877` | Tiny whole driver runs on Metal in normal/strict modes; IDs, finiteness and self-reset pass, but exact/cross-C gates fail. Controlled 8192-vocabulary runs are **in progress**, not accepted results. | No 27B run or accepted throughput; compiler performance-pass work has not started. |
+| C+Metal, `M:961b28978d` | RMS-output optimization accepted and locally committed for the short workload; production 17-ID/reset and frozen same-input checks pass. C80 remains failed. | **4.8522 decode / 6.3291 effective-prefill tokens/s**, short scope only. |
+| Native MLX | Working correctness/performance reference; fresh short control and older long-workload baselines available. | See the measured table below. |
+
+The root compiler is still `91f90a5a16`: its **57 / 2114 / 5588** green
+unit/reference/integration evidence does **not** apply to `G:d94db95877`.
+G was rebuilt with LLVM 11.1.0, source tree `7d2e9232d27c5535ea9e709446b2f91020051224`;
+the original `638209ef72` fix branch is preserved. Its connected compiler fixes
+have targeted/review evidence, but latest full suites, stale-GPU-reference
+reconciliation and integration into root remain pending.
+
+### Measured speeds
+
+Rates are tokens/s. Effective prefill means prompt tokens divided by TTFT,
+not isolated kernel throughput. Decode cells show **median (best)**.
+
+| Raw input / generated IDs | Native MLX effective prefill, median | Native MLX decode | C+Metal effective prefill, median | C+Metal decode |
+| --- | ---: | ---: | ---: | ---: |
+| **18 / 65**, short | **63.8088** | **16.5396 (16.5467)** | **6.3291** | **4.8522 (4.8526)** |
+| **2048 / 65**, prefill | 205.519 | 15.339 (15.520) | Not run | Not run |
+| **29 / 1536**, sustained | 101.653 | 6.059 (6.237) | Not run | Not run |
+
+C+Metal is still approximately **3.4x slower in short decode and 10x slower
+in effective prefill** than MLX, not faster. The two longer native rows are
+**older baselines**, not fresh paired C+Metal comparisons; the native
+sustained-decode slowdown remains unexplained. Large RMS operator fixtures
+do not replace those missing whole-application runs.
+
+The fresh short MLX control has three samples: TTFT **0.282093 s**, inference
+wall **4.150924 s**, and best effective prefill **64.6884 tokens/s**.
+Separately measured load **4.134746 s** plus warm inference gives an
+**8.285670 s estimate, not measured fresh-process wall time**; GPU-busy time
+is unknown. Native scheduling executes 67 total/65 cached forwards, including
+one unemitted lookahead, versus Metal's 65/64; both decode numerators are 64.
+No CPU or Fortran GPU tokens/s is inferred from traced correctness runs.
+
+Short-control evidence in `M`:
+`artifacts/perf-rms-output/quiet-aggregate-window/outcome.json`
+(`fresh_native_MLX_control`). Older rows are recorded in `M/PERF.md`, backed
+by `artifacts/baseline-native/results.json`.
+
+### Accepted RMS optimization: what improved
+
+Commit `961b28978dd9859ac963b963b40c2d2dbb38a7eb` preserves reviewed shader
+`208c8fd2…`. Eight valid, counterbalanced **ABBA BAAB** measurements give
+four samples per variant; independent review accepted this **18/65 scope only**.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Decode, median / best tokens/s | 3.7556 / 3.7653 | **4.8522 / 4.8526** |
+| Effective prefill, median tokens/s | 6.1668 | 6.3291 |
+| Startup, s | 4.5425 | 4.5556 |
+| Inference-only TTFT, s | 2.9188 | 2.8441 |
+| Startup-inclusive TTFT, s | 7.4614 | 7.3934 |
+| Inference wall, s | 19.9601 | 16.0374 |
+| Total wall, s | 24.5030 | **20.5832** |
+| Measured GPU intervals, s | 17.8230 | 13.9118 |
+
+Median decode improves **29.20%** and total wall falls **16.00%**. Startup
+increases **0.288%**, judged nonmaterial for this scope; inclusive TTFT is
+lower in all four adjacent pairs. Metrics are summarized independently,
+not added as if their medians described one run. Production 17/reset,
+30,294 baseline-byte-exact traced tensors and 23,972 required plus 5,746 extra
+same-input checks remain passed without changed math, oracles or bounds.
+
+The earlier BBBCCC experiment's **+5.67% startup / +2.52% inclusive TTFT**
+and first counterbalanced A's **5.225665 s startup** remain in the evidence.
+Their cause is not proved; the acceptance is not wholesale noise exoneration
+or a claim that startup can never regress. Raw data in `M`:
+`artifacts/perf-rms-output/counterbalanced/attempt-paused-20261030T105331/outcome.json`;
+independent disposition: session artifact
+`rms-output-wip-review/counterbalanced-review/audit.json`.
+
+### Next priorities
+
+1. **RMS commit is complete locally.** Measure the missing 2K-prefill and
+   sustained workloads and profile all three. Optimize the next measured
+   C+Metal bottleneck, likely q8 projections, then attention/reductions/data
+   movement: one technique per commit, unchanged numerical/token gates and
+   reproducible timing acceptance, not an assumption of further gains.
+2. **In parallel, scale Fortran GPU safely:** finish the active 8192-vocabulary,
+   hidden-64, four-layer, prompt-18 C/normal/strict runs; no result is yet
+   claimed. Proceed to 65,536 and then 248,320 only through review, guards and
+   physical-memory proof, then separately authorize actual 27B 17/reset.
+3. **Resume CPU crash isolation** when diagnosis can proceed, using retained
+   final-output evidence. Projection versus following dump remains unknown;
+   do not assert stack/TRANSFER causation or automatically rerun the model.
+4. **Stabilize the connected compiler fixes**, reconcile LLVM 11 references,
+   run full default unit/reference/integration suites once on stable combined
+   source, review and integrate locally. Root's older green suites are not a
+   substitute; application worktree consolidation also remains necessary.
+5. **Then optimize generic ASR/GPU passes:** coalescing, SIMD reductions, tiled
+   GEMM, residency and scheduling, not model-specific backend hacks. Design
+   native BF16/new kinds only where optimization demonstrates a need; the
+   portable integer representation remains the reference.
+6. **Finish tokenizer/chat/NFC later.** Old Qwen3.6 weights remain unavailable,
+   so no fresh backward whole-model claim is made. All work remains local;
+   no push or PR is authorized.
+
+The scaled controller has 21 CPU readiness checks and an independently audited
+zero-blocker preflight, **not completed scaled-model evidence**. Real-model
+named host storage is estimated at **26.93 GiB**; the **9.68 GiB trace is disk,
+not RSS**. Metal READ staging copies, pools/command lifetimes and private
+physical memory remain unproven, so fit within the **38 GiB budget is not
+established**. No full model before preflight. Frozen C80 remains
+**FAILED: 94/96 positional argmaxes and 16/17 teacher predictions**, under the
+approved continuation policy, with unchanged bounds/oracles and a passing
+short-17 gate.
+
+## Detailed milestone evidence (pinned checkpoints)
+
+The records below retain historical source-specific evidence; the current
+tables and plan above distinguish later combined-branch progress.
 
 - **Pure Fortran raw-ID driver:** tiny-model validation reports 37,997,136
   exact comparisons under both GFortran and Flang. A freshly built LFortran
@@ -90,23 +221,32 @@ the phase exit gates remain open.
   `.fix-issue/metal-precision/math-gpu-check/d732/FINAL_HANDOFF.txt`.
   Two control regressions (`gpu_liveout_15` verifier and
   `gpu_derived_component_03` identifiers) were **introduced by `532f56`
-  renaming**, not upstream waivers; repair is active. Sixteen baseline CPU/
-  emission checks pass, but baseline actual-Metal execution was not done.
+  renaming**, not upstream waivers. At that attribution checkpoint, sixteen
+  baseline CPU/emission checks passed; baseline actual-Metal execution was
+  not done. These introduced regressions have since been fixed locally.
   Attribution evidence in the `ibset-signbit` worktree:
   `.fix-issue/metal-control-attribution/CPU_ATTRIBUTION_HANDOFF.txt`.
-  GPU reference reconciliation, full suites and integration remain pending;
-  tiny/full Fortran GPU drivers are not validated.
-- **Existing C/Metal performance, not Fortran-generated Metal:** last accepted
-  short decode/effective-prefill medians are **3.734683 / 6.438657 tokens/s**
-  versus MLX **16.567978 / 64.690424**: **not faster than MLX**.
-  Matched 2K-prefill and sustained-decode comparisons remain pending.
-  Reviewed, **uncommitted RMS-output WIP** passes tiny and combined same-input
-  checks plus traced/untraced production 17-ID/full-reset checks. Its **30,294
-  complete unique finite traced tensors are byte-exact to the accepted
-  baseline**; untraced endpoints and reset also agree.
-  Quiet before/after timing is still pending; this earns **no new performance
-  gain or commit acceptance**. Metal-worktree evidence:
-  `artifacts/perf-rms-output/production-correctness.json`.
+  GPU reference reconciliation, full suites and root integration remain pending.
+- **Latest tiny whole Fortran GPU driver:** combined
+  `d94db958772e31b95e9f12eca8f1c9c65c0dbe88`, not root `91f90a5a16`, runs the
+  unchanged application in normal and strict modes with genuine 17 IDs,
+  16 decodes, exact self-reset, finite outputs and **8,064 completed Metal
+  dispatches**, without CPU fallback. The original exact adapters/harnesses
+  retain **four failing invocations (exit 1), not four established bugs**.
+  Cross-C reset is not accepted; first `g_0`/`g_1` differences are one FP32
+  ULP, and millions of accumulated differences are **not same-input primitive
+  bounds**. Dynamic all-17-region coverage of the whole application is not
+  proved. No 27B GPU or accepted GPU-throughput claim follows.
+  Evidence in `G`: `.fix-issue/qwen38-combined-gpu-driver/sdk-retry-handoff.json`;
+  independent session artifact: `tiny-fortran-gpu-audit/audit.json`.
+- **C+Metal checkpoint history:** the earlier accepted short medians
+  **3.734683 / 6.438657 tokens/s**, versus that snapshot's native MLX
+  **16.567978 / 64.690424**, remain historical, not the current A/B pair.
+  The RMS production proof remains at
+  `M/artifacts/perf-rms-output/production-correctness.json`: 17/reset,
+  **30,294 complete unique finite traced tensors byte-exact to the accepted
+  baseline**, plus matching untraced endpoints/reset. RMS timing is now
+  accepted and committed as reported above, not still an uncommitted WIP.
 - **Correctness limits remain explicit:** strict C80 stress checks still
   fail at **94/96 and 16/17**. The user authorized continued performance
   work despite those failures, not correctness acceptance or relaxed
@@ -571,15 +711,12 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Diagnose the LFortran CPU failure boundary from the retained evidence in a
-separately authorized reduction; do not automatically rerun the model or assert
-an unproved cause. Repair the introduced GPU control regressions, reconcile
-references and run the feature-branch suites before integration. Distinguish
-qualified same-input math evidence from the still-failing bit-exact fixture
-and unvalidated Fortran GPU drivers. The integrated compiler's green suites do
-not cover this newer work. Preserve frozen bounds and the documented C80
-failure while awaiting quiet RMS-candidate timing and the remaining matched
-MLX/text-interface gates. Optional IEEE work remains deferred.
+Follow the ranked [next priorities](#next-priorities): missing C+Metal workload
+measurements, guarded Fortran GPU scaling and CPU failure isolation are distinct
+tracks. Neither a short-workload speedup nor tiny GPU execution closes the
+remaining numerical, physical-memory, whole-model or combined-suite gates.
+Preserve frozen bounds and the documented C80 failure. Optional IEEE work
+remains deferred.
 
 [pipeline]: https://github.com/lfortran/lfortran/blob/c6ad75832664996251c231ffb541f8c33ac899e1/src/libasr/pass/pass_manager.h#L323-L430
 [widths]: https://github.com/lfortran/lfortran/blob/c6ad75832664996251c231ffb541f8c33ac899e1/src/libasr/codegen/gpu_utils.h#L516-L535
