@@ -1,7 +1,7 @@
 # Portable inference: staged roadmap
 
-**Status: tiny raw-ID Fortran numerics and two inference-essential compiler
-fix groups verified locally; real-model validation remains incomplete.**
+**Status: GFortran real-27B short/reset correctness passed; Flang and
+LFortran real-model acceptance remain pending.**
 
 This is an implementation roadmap, not a claim that LFortran currently runs
 the real model correctly or at competitive speed. The verified milestones
@@ -12,16 +12,25 @@ gates remain open.
 ## Verified milestone checkpoint
 
 - **Pure Fortran raw-ID driver:** tiny-model validation reports 37,997,136
-  exact comparisons under both GFortran and Flang. LFortran's numerical
-  checks also pass with `--fast --no-fast-math --skip-pass=fma`. One
-  invalid-input diagnostic mismatch remains
-  [#15568](https://github.com/lfortran/lfortran/issues/15568); all tested invalid
-  inputs are rejected. This is raw-token-ID validation, not tokenizer, NFC,
-  chat-rendering, or real-27B acceptance.
-- **Real 27B CPU validation: RUNNING, not green.** At the latest checkpoint
-  GFortran's first real invocation is active; Flang has not started.
-  Partial layer agreement is not completion evidence. This integration
-  loaded no model payload.
+  exact comparisons under both GFortran and Flang. A freshly built LFortran
+  CPU driver using the verified `91f90a5a16` compiler also passes 37,997,136
+  tiny comparisons, four resets, 43 scalar-bit checks and actual headers-only
+  model inspection with `--fast --no-fast-math --skip-pass=fma`; real-model
+  forward execution remains **unrun**. The original and supplemental harnesses
+  still exit **1** for the known
+  [#15568](https://github.com/lfortran/lfortran/issues/15568) diagnostic mismatch:
+  all 19 invalid cases are rejected, but this is **not blanket harness green**.
+  Evidence: `.fix-issue/qwen38-lfortran-real-prep/handoff.json`.
+  Raw-ID checks do not establish tokenizer, NFC or chat-rendering acceptance.
+- **Real 27B GFortran: short inference and full reset PASS, exit 0.**
+  All 17 expected greedy IDs match; 16 decode IDs are consumed after the
+  18-token prompt (34 inference tokens, 52 including reset). All **32,310
+  tensors / 2,597,615,616 values** are finite and byte-exact to saved C,
+  including the full reset. The invocation and helpers have exited and
+  full-model memory is released. **Flang has not started**, pending a model
+  slot; overall cross-compiler acceptance remains incomplete. This is
+  correctness evidence, not throughput. Evidence in the Fortran application
+  worktree: `artifacts/fortran-real-short/handoff.json`.
 - **Combined local compiler:** verified source HEAD
   `91f90a5a168a391d32e054fe486377de081f880b` integrates the reviewed Metal
   precision group pinned at `f168f2edf44520f0539659ca4fd8b2bf71cc7ac6` and
@@ -48,12 +57,15 @@ gates remain open.
   64-bit INQUIRE fix for
   [#16353](https://github.com/lfortran/lfortran/issues/16353), not complete
   model offload.
-- **Fortran math Metal probe: BLOCKED, next fix active.** The unchanged
-  complete math module stops during GPU planning on integer(8) positions
-  (`q_offset` in RoPE, `q_abs` in SDPA), including with explicit CPU fallback.
-  Its inventory has 17 concurrent source regions and **zero additional
-  lowered/executed GPU kernels**. A separate focused compiler iteration is
-  active; its advancing branch is not part of the verified compiler above.
+- **Fortran math Metal: original application still has zero GPU launches.**
+  The integrated compiler above stops on integer(8) positions (`q_offset` in
+  RoPE, `q_abs` in SDPA); the inventory has 17 concurrent source regions.
+  New work exists **only on the unintegrated fix branch**: nested-helper
+  rebinding `f42f25f9f8` and scalar LOG identity `db868b797e` have clean reviews
+  and actual tiny-GPU proof; integer(8) power/constant normalization
+  `5740a3184d` remains review-pending. These are not changes to integrated
+  compiler `91f90a5a16` or proof of application offload. Even on that fix branch,
+  the original application remains blocked by keyword/BitCast JIT failures.
 - **First existing-Metal optimization:** application commit
   `0809cebf3865dce0dd37af2563bd31caddcc8a2e` was independently reviewed clean.
   Exact-order, output-parallel q8 work improved cooled three-run, 65-token
@@ -61,6 +73,8 @@ gates remain open.
   from **0.410 to 3.945 tokens/s**. Fresh MLX short-workload medians are
   **16.551 decode / 64.936 prefill tokens/s**: the Metal implementation is
   **not faster than MLX**. These are not Fortran-generated Metal results.
+  Packed-load Metal WIP passes 133 model-free checks and 23,972 / 5,746
+  same-input checks; **no new accepted performance result** is established.
 - **Correctness limits remain explicit:** strict C80 stress checks still
   fail at **94/96 and 16/17**. The user authorized continued performance
   work despite those failures, not correctness acceptance or relaxed
@@ -439,9 +453,9 @@ long-term portability roadmap, not a completion claim for this milestone.
 These are source-assessment findings at
 `c6ad75832664996251c231ffb541f8c33ac899e1`, **not reproduced bugs** or evidence
 that the application works. The historical narrow-integer/scalar-BitCast
-gaps below are superseded by the verified milestones above; integer(8) Metal
-positions remain a separate active blocker. Recheck other candidates with
-capability tests before deciding that a compiler change is necessary.
+gaps below are superseded by the verified milestones above; further Metal
+work remains unintegrated and application offload is blocked. Recheck candidates
+with capability tests before deciding that a compiler change is necessary.
 
 | Assessment | Source evidence and implication |
 | --- | --- |
@@ -525,13 +539,14 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Finish and independently assess the running real-model CPU validation before
-claiming GFortran/Flang acceptance. Continue the separate integer(8) Metal
-offload fix, then rerun the unchanged math-module probe before claiming any
-additional device coverage. Neither task is covered by the combined compiler's
-green suites. Preserve the frozen numerical gates and report the existing
-stress failures while pursuing all three matched MLX workloads and complete
-tokenizer/NFC/chat handling. Optional IEEE work remains deferred.
+Run Flang real-model validation after a fresh model-slot grant; LFortran real
+forward execution also remains pending separate authorization. Review and
+verify the unintegrated GPU work and resolve the unchanged application's
+keyword/BitCast JIT blockers before claiming device coverage. The combined
+compiler's green suites do not cover those pending gates. Preserve the frozen
+numerical checks and existing stress failures while pursuing all three matched
+MLX workloads and complete tokenizer/NFC/chat handling. Optional IEEE work
+remains deferred.
 
 [pipeline]: https://github.com/lfortran/lfortran/blob/c6ad75832664996251c231ffb541f8c33ac899e1/src/libasr/pass/pass_manager.h#L323-L430
 [widths]: https://github.com/lfortran/lfortran/blob/c6ad75832664996251c231ffb541f8c33ac899e1/src/libasr/codegen/gpu_utils.h#L516-L535
