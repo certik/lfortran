@@ -17,6 +17,14 @@ with GFortran and Flang. C+Metal now decodes at **4.85 tokens/s**, versus
 real-run crash; LFortran GPU executes the tiny application but has open
 numerical/acceptance gates. Neither LFortran path has accepted throughput.
 
+**Priority: C+Metal performance is now the critical path.** Match, ideally
+exceed, MLX on **both prefill and decode** before using hand-written Metal as
+the Fortran/compiler performance reference. Today's **4.85 / 6.33 tokens/s**
+is a validated numerical baseline and measured incremental improvement,
+**not an accepted performance blueprint** for Fortran+LFortran. Fortran
+scaling/checks pause at the current safe checkpoint; compiler performance
+optimization waits for a competitive hand-Metal reference.
+
 ### Implementation status
 
 `F` and `M` below denote the Fortran and Metal application worktrees; `G`
@@ -28,7 +36,7 @@ features are not yet fully consolidated into the application caller checkout.
 | Frozen scalar C reference, `37ff651` | Checkpoint adaptation complete for text-only, batch-one, greedy raw IDs; frozen math, oracles and bounds retained. | No comparable CPU benchmark. |
 | Portable Fortran, `F:a70b69ed0a` | GFortran and Flang each pass real-27B 17-ID/full-reset checks, finite and byte-exact to saved C. Portable integer-backed BF16/q8 works; no new native real kinds. | Heavy correctness traces are **not throughput benchmarks**. |
 | LFortran CPU, integrated `91f90a5a16` | Tiny/I/O/header/large-offset proofs pass; real run crashes after all 64 layers/final normalization, before first logits. No predictions or reset acceptance. | No accepted CPU throughput. |
-| LFortran GPU, combined `G:d94db95877` | Tiny whole driver runs on Metal in normal/strict modes; IDs, finiteness and self-reset pass, but exact/cross-C gates fail. Controlled 8192-vocabulary runs are **in progress**, not accepted results. | No 27B run or accepted throughput; compiler performance-pass work has not started. |
+| LFortran GPU, combined `G:d94db95877` | Tiny whole driver runs on Metal in normal/strict modes; IDs, finiteness and self-reset pass, but exact/cross-C gates fail. Scaling/checks are **paused at the current safe checkpoint**; no later-stage result is claimed. | No 27B run or accepted throughput; compiler performance work waits for competitive hand-Metal. |
 | C+Metal, `M:961b28978d` | RMS-output optimization accepted and locally committed for the short workload; production 17-ID/reset and frozen same-input checks pass. C80 remains failed. | **4.8522 decode / 6.3291 effective-prefill tokens/s**, short scope only. |
 | Native MLX | Working correctness/performance reference; fresh short control and older long-workload baselines available. | See the measured table below. |
 
@@ -103,32 +111,36 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **RMS commit is complete locally.** Measure the missing 2K-prefill and
-   sustained workloads and profile all three. Optimize the next measured
-   C+Metal bottleneck, likely q8 projections, then attention/reductions/data
-   movement: one technique per commit, unchanged numerical/token gates and
-   reproducible timing acceptance, not an assumption of further gains.
-2. **In parallel, scale Fortran GPU safely:** finish the active 8192-vocabulary,
-   hidden-64, four-layer, prompt-18 C/normal/strict runs; no result is yet
-   claimed. Proceed to 65,536 and then 248,320 only through review, guards and
-   physical-memory proof, then separately authorize actual 27B 17/reset.
-3. **Resume CPU crash isolation** when diagnosis can proceed, using retained
-   final-output evidence. Projection versus following dump remains unknown;
+1. **Get C+Metal competitive with MLX in both prefill and decode.** RMS is
+   committed, but its current speed is not the Fortran performance target.
+   Measure the missing 2K-prefill and sustained workloads and profile all
+   three. Optimize the next measured bottleneck, likely q8 projections, then
+   attention/reductions/data movement: one technique per commit, unchanged
+   numerical/token gates and reproducible timing acceptance.
+2. **Pause Fortran scaling/checks at the current safe checkpoint.** Preserve
+   all evidence; no result is claimed for the paused 65,536 stage. Revisit
+   scaling after the competitive hand-Metal milestone and explicit grants;
+   larger vocabularies and actual 27B 17/reset still require review, guards
+   and physical-memory proof.
+3. **Keep CPU crash isolation queued**, using retained final-output evidence
+   when diagnosis resumes. Projection versus following dump remains unknown;
    do not assert stack/TRANSFER causation or automatically rerun the model.
-4. **Stabilize the connected compiler fixes**, reconcile LLVM 11 references,
-   run full default unit/reference/integration suites once on stable combined
-   source, review and integrate locally. Root's older green suites are not a
-   substitute; application worktree consolidation also remains necessary.
-5. **Then optimize generic ASR/GPU passes:** coalescing, SIMD reductions, tiled
-   GEMM, residency and scheduling, not model-specific backend hacks. Design
-   native BF16/new kinds only where optimization demonstrates a need; the
-   portable integer representation remains the reference.
+4. **When compiler validation resumes**, stabilize connected fixes, reconcile
+   LLVM 11 references and run full default suites once on stable combined
+   source before review/local integration. Root's older green suites are not
+   a substitute; application worktree consolidation also remains necessary.
+5. **Compiler performance optimization waits for competitive hand-Metal.**
+   Then optimize generic ASR/GPU passes using that reference: coalescing,
+   SIMD reductions, tiled GEMM, residency and scheduling, not model-specific
+   backend hacks. Design native BF16/new kinds only where optimization
+   demonstrates a need; the portable integer representation remains the
+   reference.
 6. **Finish tokenizer/chat/NFC later.** Old Qwen3.6 weights remain unavailable,
    so no fresh backward whole-model claim is made. All work remains local;
    no push or PR is authorized.
 
-The scaled controller has 21 CPU readiness checks and an independently audited
-zero-blocker preflight, **not completed scaled-model evidence**. Real-model
+The controller's 21 CPU readiness checks and independently audited zero-blocker
+preflight are readiness proofs, **not larger-model acceptance**. Real-model
 named host storage is estimated at **26.93 GiB**; the **9.68 GiB trace is disk,
 not RSS**. Metal READ staging copies, pools/command lifetimes and private
 physical memory remain unproven, so fit within the **38 GiB budget is not
@@ -712,9 +724,11 @@ without coauthor or AI-attribution trailers.
 ## Next immediate action
 
 Follow the ranked [next priorities](#next-priorities): missing C+Metal workload
-measurements, guarded Fortran GPU scaling and CPU failure isolation are distinct
-tracks. Neither a short-workload speedup nor tiny GPU execution closes the
-remaining numerical, physical-memory, whole-model or combined-suite gates.
+measurements and competitive prefill/decode performance are the critical path.
+Fortran scaling/checks remain paused; compiler performance optimization waits
+for a competitive hand-Metal reference. Neither the accepted incremental
+speedup nor tiny GPU execution closes the remaining numerical, physical-memory,
+whole-model or combined-suite gates.
 Preserve frozen bounds and the documented C80 failure. Optional IEEE work
 remains deferred.
 
