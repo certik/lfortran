@@ -1,14 +1,84 @@
 # Portable inference: staged roadmap
 
-**Status: precision precursor and IBSET integrated; staged LFortran CORE
-precision checks pass; baseline gate under parent review.**
+**Status: tiny raw-ID Fortran numerics and two inference-essential compiler
+fix groups verified locally; real-model validation remains incomplete.**
 
 This is an implementation roadmap, not a claim that LFortran currently runs
-this model correctly or at competitive speed. Only the standalone portable
-precision precursor and staged LFortran CORE checks recorded below are
-validated. Whole-model, MLX-baseline, full-application LFortran, and Metal
-acceptance are not established by those results; the phase exit gates below
-remain unchecked.
+the real model correctly or at competitive speed. The verified milestones
+below do not establish whole-model, text-interface, or complete Fortran Metal
+acceptance. Faster-than-MLX and release claims remain unearned; the phase exit
+gates remain open.
+
+## Verified milestone checkpoint
+
+- **Pure Fortran raw-ID driver:** tiny-model validation reports 37,997,136
+  exact comparisons under both GFortran and Flang. LFortran's numerical
+  checks also pass with `--fast --no-fast-math --skip-pass=fma`. One
+  invalid-input diagnostic mismatch remains
+  [#15568](https://github.com/lfortran/lfortran/issues/15568); all tested invalid
+  inputs are rejected. This is raw-token-ID validation, not tokenizer, NFC,
+  chat-rendering, or real-27B acceptance.
+- **Real 27B CPU validation: RUNNING, not green.** At the latest checkpoint
+  GFortran's first real invocation is active; Flang has not started.
+  Partial layer agreement is not completion evidence. This integration
+  loaded no model payload.
+- **Combined local compiler:** verified source HEAD
+  `91f90a5a168a391d32e054fe486377de081f880b` integrates the reviewed Metal
+  precision group pinned at `f168f2edf44520f0539659ca4fd8b2bf71cc7ac6` and
+  INQUIRE group pinned at `f3d25c6b97f31eb03b21f8ec681de259cf73288d`.
+  Their six focused commits were cherry-picked individually, in order, with
+  matching patch identities and both groups' tests retained. No IEEE
+  prototype or later advancing-worktree changes were included.
+  The existing Debug Pixi `llvm11` compiler was rebuilt and its selected
+  executable, runtime and embedded LLVM 11.1.0 verified. One default-mode
+  suite pass verified **57/57 unit entries, 2,114 reference output comparisons, and
+  5,588/5,588 LLVM integration tests**. Units were partitioned into 55 CPU
+  entries and two separately leased, serial actual-Metal entries; neither
+  GPU entry was waived. Exact commit mapping, commands, full logs and green
+  SHA evidence are retained in `.fix-issue/qwen38-combined-compiler/`
+  (`commit-mapping.tsv`, `suites-green.json`, `state.md`).
+- **Original compiler failures rechecked:** sparse INQUIRE cases, actual
+  two-thread ownership cases and size boundaries pass; the unchanged
+  headers-only Fortran driver reports **6 shards / 2,180 tensors / 1,847 text
+  tensors / 28,579,478,528 text bytes**, without loading the payload.
+  Actual unchanged precision helpers pass all **65,536 BF16 patterns and
+  24 q8 extractions** on Metal, with exact CPU/GFortran agreement; the
+  original precision programs and 14 targeted Metal regression runs pass.
+  These verify narrow integer storage/ABI, scalar typed BitCast and the
+  64-bit INQUIRE fix for
+  [#16353](https://github.com/lfortran/lfortran/issues/16353), not complete
+  model offload.
+- **Fortran math Metal probe: BLOCKED, next fix active.** The unchanged
+  complete math module stops during GPU planning on integer(8) positions
+  (`q_offset` in RoPE, `q_abs` in SDPA), including with explicit CPU fallback.
+  Its inventory has 17 concurrent source regions and **zero additional
+  lowered/executed GPU kernels**. A separate focused compiler iteration is
+  active; its advancing branch is not part of the verified compiler above.
+- **First existing-Metal optimization:** application commit
+  `0809cebf3865dce0dd37af2563bd31caddcc8a2e` was independently reviewed clean.
+  Exact-order, output-parallel q8 work improved cooled three-run, 65-token
+  decode medians from **0.394171 to 2.810093 tokens/s (7.13x)** and prefill
+  from **0.410 to 3.945 tokens/s**. Fresh MLX short-workload medians are
+  **16.551 decode / 64.936 prefill tokens/s**: the Metal implementation is
+  **not faster than MLX**. These are not Fortran-generated Metal results.
+- **Correctness limits remain explicit:** strict C80 stress checks still
+  fail at **94/96 and 16/17**. The user authorized continued performance
+  work despite those failures, not correctness acceptance or relaxed
+  tolerances. Frozen C, primitive bounds, immutable oracles and the exact
+  17-token short check remain mandatory. Final matched workloads
+  **18/65, 2048/65 and 29/1536** (input/generated tokens), startup and total
+  wall-time measurements remain goals. Older checkpoint weights are
+  unavailable; no new old-checkpoint inference claim is made.
+
+Deferred, unfixed work remains separate:
+IEEE [#16342](https://github.com/lfortran/lfortran/issues/16342),
+read-only OPEN [#16346](https://github.com/lfortran/lfortran/issues/16346),
+array TRANSFER [#16349](https://github.com/lfortran/lfortran/issues/16349),
+Metal toolchain [#16350](https://github.com/lfortran/lfortran/issues/16350),
+internal READ [#15568](https://github.com/lfortran/lfortran/issues/15568),
+conditional OpenMP sentinels
+[#16126](https://github.com/lfortran/lfortran/issues/16126), and BLOCK-local
+PRIVATE [#16364](https://github.com/lfortran/lfortran/issues/16364).
 
 ## Scope and fixed decisions
 
@@ -119,8 +189,8 @@ Core BF16/q8 bit-pattern, special-value, binary32-representation, and immutable
 oracle checks remain mandatory. Separate optional IEEE exception-flag and
 procedure-lifecycle conformance tests from those core checks, explicitly
 reporting unsupported or failing IEEE features without hiding them. This test
-separation is prepared and validated in a reviewed staged snapshot, including
-LFortran CORE checks below; it is not yet applied to the live application.
+separation is validated by the reviewed CORE checks below; their success does
+not imply optional IEEE conformance.
 
 ### Performance acceptance
 
@@ -281,15 +351,16 @@ end-to-end config/weights/tokenizer/chat/CLI acceptance without C kernels.
 `7c56cb05f9` and `4a05e9b0b9` integrate exactly the reviewed IBSET fixes
 `76f72aa530` and `6991e04c5d`, respectively: sign-extension of folded
 integer sign bits and diagnostics for out-of-range constant positions.
-The receiving branch's `src`, `grammar`, `tests`, and `integration_tests`
-trees exactly match accepted HEAD `6991e04c5d`; only documentation/history
-differ. Its final LLVM 11 default suites passed: unit 57/57, reference 2,114
+At that earlier integration checkpoint, the receiving branch's `src`,
+`grammar`, `tests`, and `integration_tests` trees exactly matched accepted
+HEAD `6991e04c5d`; only documentation/history differed. Its final LLVM 11
+default suites passed: unit 57/57, reference 2,114
 output checks, integration 5,582/5,582. That source-equivalent suite evidence
 is retained under
 `.fix-issue/qwen38-compiler/worktrees/ibset-signbit/.fix-issue/ibset-signbit/`
 (`final_{unit,reference,integration}.log`); the full suites were not repeated.
 
-The caller's existing `build/llvm11` compiler was rebuilt with four jobs
+At that milestone, the caller's existing `build/llvm11` compiler was rebuilt with four jobs
 through `pixi run -e llvm11 rebuild`; compiler and runtime paths and
 LLVM 11.1.0 were verified. Unchanged staged `precision_formats.f90`,
 `precision_test_cases.f90`, `test_precision.f90`, and `run_checks.sh`
@@ -310,9 +381,8 @@ lifecycle/schema work, GPU/model runs, or application edits were included.
 IEEE remains deferred to #16342. No new compiler blocker was found; this
 does not validate groupwise q8 arithmetic or whole-model inference.
 
-- [ ] Apply the reviewed mandatory-CORE/optional-IEEE test separation to the
-  live application after its active writer releases it. The standalone
-  staged CORE split passes LFortran; the live checkout remains untouched.
+- [ ] Keep mandatory CORE precision/oracle checks separate from optional IEEE
+  diagnostics in the live application; never waive CORE to accept a compiler.
 - [ ] Compile the same application with LFortran, without compiler-specific
   application rewrites that conceal incorrect semantics.
 - [ ] Reduce actual failures into MREs and registered standalone integration
@@ -368,7 +438,9 @@ long-term portability roadmap, not a completion claim for this milestone.
 
 These are source-assessment findings at
 `c6ad75832664996251c231ffb541f8c33ac899e1`, **not reproduced bugs** or evidence
-that the application works. Recheck them when implementation starts; write
+that the application works. The historical narrow-integer/scalar-BitCast
+gaps below are superseded by the verified milestones above; integer(8) Metal
+positions remain a separate active blocker. Recheck other candidates with
 capability tests before deciding that a compiler change is necessary.
 
 | Assessment | Source evidence and implication |
@@ -421,9 +493,10 @@ pixi run -e llvm11 tests -j8 > reference.log 2>&1
 pixi run -e llvm11 integration_tests -j8 > integration.log 2>&1
 ```
 
-These LFortran commands were not run for this documentation update. Build once,
-then rebuild unless generator inputs or configuration change; allocate the
-job budget across workers. Save and inspect logs, verify
+The verified combined-compiler run above used these Pixi entry points with
+three CPU jobs and separately leased serial GPU units. Build once, then rebuild
+unless generator inputs or configuration change; allocate the job budget
+across workers. Save and inspect logs, verify
 the selected compiler and LLVM versions, and follow the repository's targeted
 and full-suite requirements for compiler changes before any later authorized
 push. No push is authorized now.
@@ -452,13 +525,13 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Complete parent review of the **phase 0 baseline gate in the application
-repository** before accepting later model work. The validated precision
-precursor does not establish MLX-baseline acceptance, whole-model correctness,
-speedup, LFortran compatibility, or Metal acceptance. Those gates remain open.
-Keep the core precision/oracle checks mandatory while planning their separation
-from optional IEEE diagnostics; do not make resolving #16342 a gate for
-inference development.
+Finish and independently assess the running real-model CPU validation before
+claiming GFortran/Flang acceptance. Continue the separate integer(8) Metal
+offload fix, then rerun the unchanged math-module probe before claiming any
+additional device coverage. Neither task is covered by the combined compiler's
+green suites. Preserve the frozen numerical gates and report the existing
+stress failures while pursuing all three matched MLX workloads and complete
+tokenizer/NFC/chat handling. Optional IEEE work remains deferred.
 
 [pipeline]: https://github.com/lfortran/lfortran/blob/c6ad75832664996251c231ffb541f8c33ac899e1/src/libasr/pass/pass_manager.h#L323-L430
 [widths]: https://github.com/lfortran/lfortran/blob/c6ad75832664996251c231ffb541f8c33ac899e1/src/libasr/codegen/gpu_utils.h#L516-L535
