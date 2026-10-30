@@ -1,7 +1,7 @@
 # Portable inference: staged roadmap
 
-**Status: GFortran and Flang real-27B short/reset correctness passed;
-LFortran real forward and complete Fortran Metal validation remain pending.**
+**Status: GFortran/Flang real short/reset passed; LFortran real CPU run crashed.
+Experimental GPU math remains unintegrated, with exactness/regression gates open.**
 
 This is an implementation roadmap, not a claim that LFortran currently runs
 the real model correctly or at competitive speed. The verified milestones
@@ -17,9 +17,9 @@ the phase exit gates remain open.
   tiny comparisons, four resets, 43 scalar-bit checks and actual headers-only
   model inspection with `--fast --no-fast-math --skip-pass=fma`. Bounded typed
   payload reads also pass: **10,496 bytes total**, including BF16 and U32
-  samples beyond 4 GiB. Real-model forward execution remains **unrun**.
-  The original and supplemental harnesses
-  still exit **1** for the known
+  samples beyond 4 GiB. These bounded proofs do not establish real forward
+  acceptance; the failed diagnostic run is recorded below. The tiny-driver
+  harnesses still exit **1** for the known
   [#15568](https://github.com/lfortran/lfortran/issues/15568) diagnostic mismatch:
   all 19 invalid cases are rejected, but this is **not blanket harness green**.
   Evidence: `.fix-issue/qwen38-lfortran-real-prep/handoff.json`.
@@ -33,6 +33,19 @@ the phase exit gates remain open.
   memory is released. This accepts the bounded short/reset correctness check,
   not throughput or all application gates. The final Fortran-worktree evidence
   `artifacts/fortran-real-short/handoff.json` has status `passed`.
+- **LFortran real CPU: FAILED diagnostic run, no full-model acceptance.**
+  The audited run ended with harness exit **2** and model **SIGSEGV (-11)**,
+  with **0/17 predictions**; reset and the 52-position gate remain unverified.
+  Of 1,794/32,310 tensors checked, 1,793 were exact; the sole value difference
+  is the known legal BF16 RoPE result. All 64 layers emitted; the last complete
+  `x_after_final_norm.bin` `[18,5120]` is byte-exact to C, but `logits.bin`
+  is missing/truncated. **Crash location and root cause remain undiagnosed**:
+  projection versus the following dump is unresolved. Earlier exactness proofs
+  and legal-RoPE analysis are preserved; source, binary, math, oracles and
+  bounds are unchanged. No automatic rerun. Peak RSS was 25.60 GiB; cleanup
+  and model-memory release completed.
+  Evidence: `.fix-issue/qwen38-lfortran-real-run/diagnostic-prep/later-run/`
+  (`handoff.json`, `summary.json`).
 - **Combined local compiler:** verified source HEAD
   `91f90a5a168a391d32e054fe486377de081f880b` integrates the reviewed Metal
   precision group pinned at `f168f2edf44520f0539659ca4fd8b2bf71cc7ac6` and
@@ -59,26 +72,41 @@ the phase exit gates remain open.
   64-bit INQUIRE fix for
   [#16353](https://github.com/lfortran/lfortran/issues/16353), not complete
   model offload.
-- **Fortran math Metal: one bounded embedding check passes, not whole math.**
-  The integrated compiler remains `91f90a5a16`; newer GPU work exists **only
-  on the unintegrated feature branch**. Nested-helper, name/`--mangle-all`,
-  LOG and nonfinite-constant (`635b9e9133`) implementations have clean reviews.
-  An unchanged embedding check matches **192 C values on actual Metal in one
-  dispatch**. The full 17-region harness currently stops at a CPU-frontend
-  BLOCK/BOZ context whose scope is being checked; the other **16 regions
-  remain untested**. GPU reference updates, full suites and integration of
-  these feature-branch changes remain pending; tiny proof is not suite green
-  or whole-application GPU acceptance.
-- **First existing-Metal optimization:** application commit
-  `0809cebf3865dce0dd37af2563bd31caddcc8a2e` was independently reviewed clean.
-  Exact-order, output-parallel q8 work improved cooled three-run, 65-token
-  decode medians from **0.394171 to 2.810093 tokens/s (7.13x)** and prefill
-  from **0.410 to 3.945 tokens/s**. Fresh MLX short-workload medians are
-  **16.551 decode / 64.936 prefill tokens/s**: the Metal implementation is
-  **not faster than MLX**. These are not Fortran-generated Metal results.
-  Packed-load candidate correctness checks pass, including 133 model-free and
-  23,972 / 5,746 same-input checks. Timing awaits external activity clearing
-  and a clean retry; **no new accepted performance gain** is established.
+- **Experimental Fortran math Metal, not integrated into `91f90a5a16`:**
+  pinned feature HEAD `d732a688f9b7220093d68f2aeeeb46d13e3ef31a` exercises
+  **17/17 source regions**, 135 primary dispatches and 244 phase completions,
+  without CPU fallback. Two nested RMS regions execute inside enclosing kernels.
+  Math-policy `70db95a4de` and incoming-alias `d732a688f9` targeted checks and
+  independent reviews are clean. Safe/Precise propagation, including cached
+  options, selects fast policy only for `fast && !no_fast_math`.
+  **173 qualified same-input comparisons pass unchanged bounds**, all finite;
+  65,536 BF16 patterns and 24 q8 bytes remain exact. Qualified recurrent-state
+  maximum error is 1.78814e-7; accumulated drift is excluded from that bound.
+  The original **bit-exact fixture still FAILS with 85,665 differences**.
+  Its first difference is strongly localized to a subnormal reciprocal becoming
+  zero; no semantic bug or explanation of all differences is established.
+  Feature-worktree evidence:
+  `.fix-issue/qwen38-compiler/worktrees/metal-precision/`, under
+  `.fix-issue/metal-precision/math-gpu-check/d732/FINAL_HANDOFF.txt`.
+  Two control regressions (`gpu_liveout_15` verifier and
+  `gpu_derived_component_03` identifiers) were **introduced by `532f56`
+  renaming**, not upstream waivers; repair is active. Sixteen baseline CPU/
+  emission checks pass, but baseline actual-Metal execution was not done.
+  Attribution evidence in the `ibset-signbit` worktree:
+  `.fix-issue/metal-control-attribution/CPU_ATTRIBUTION_HANDOFF.txt`.
+  GPU reference reconciliation, full suites and integration remain pending;
+  tiny/full Fortran GPU drivers are not validated.
+- **Existing C/Metal performance, not Fortran-generated Metal:** last accepted
+  short decode/effective-prefill medians are **3.734683 / 6.438657 tokens/s**
+  versus MLX **16.567978 / 64.690424**: **not faster than MLX**.
+  Matched 2K-prefill and sustained-decode comparisons remain pending.
+  Reviewed, **uncommitted RMS-output WIP** passes tiny and combined same-input
+  checks plus traced/untraced production 17-ID/full-reset checks. Its **30,294
+  complete unique finite traced tensors are byte-exact to the accepted
+  baseline**; untraced endpoints and reset also agree.
+  Quiet before/after timing is still pending; this earns **no new performance
+  gain or commit acceptance**. Metal-worktree evidence:
+  `artifacts/perf-rms-output/production-correctness.json`.
 - **Correctness limits remain explicit:** strict C80 stress checks still
   fail at **94/96 and 16/17**. The user authorized continued performance
   work despite those failures, not correctness acceptance or relaxed
@@ -458,8 +486,8 @@ These are source-assessment findings at
 `c6ad75832664996251c231ffb541f8c33ac899e1`, **not reproduced bugs** or evidence
 that the application works. The historical narrow-integer/scalar-BitCast
 gaps below are superseded by the verified milestones above; further Metal
-work remains unintegrated and application offload is blocked. Recheck candidates
-with capability tests before deciding that a compiler change is necessary.
+work remains unintegrated and full-application offload is unvalidated. Recheck
+candidates with capability tests before deciding that a compiler change is necessary.
 
 | Assessment | Source evidence and implication |
 | --- | --- |
@@ -543,14 +571,15 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-LFortran real forward execution remains pending separate authorization.
-Resolve the full GPU harness's CPU-frontend context, then verify the remaining
-regions; finish feature-branch reference updates, full suites and integration
-before upgrading compiler acceptance. The integrated compiler's green suites
-do not cover this newer work. Preserve the frozen numerical checks and existing
-stress failures while awaiting clean packed-candidate timing and pursuing all
-three matched MLX workloads and complete tokenizer/NFC/chat handling.
-Optional IEEE work remains deferred.
+Diagnose the LFortran CPU failure boundary from the retained evidence in a
+separately authorized reduction; do not automatically rerun the model or assert
+an unproved cause. Repair the introduced GPU control regressions, reconcile
+references and run the feature-branch suites before integration. Distinguish
+qualified same-input math evidence from the still-failing bit-exact fixture
+and unvalidated Fortran GPU drivers. The integrated compiler's green suites do
+not cover this newer work. Preserve frozen bounds and the documented C80
+failure while awaiting quiet RMS-candidate timing and the remaining matched
+MLX/text-interface gates. Optional IEEE work remains deferred.
 
 [pipeline]: https://github.com/lfortran/lfortran/blob/c6ad75832664996251c231ffb541f8c33ac899e1/src/libasr/pass/pass_manager.h#L323-L430
 [widths]: https://github.com/lfortran/lfortran/blob/c6ad75832664996251c231ffb541f8c33ac899e1/src/libasr/codegen/gpu_utils.h#L516-L535
