@@ -64,6 +64,30 @@ jobs:
           os: ubuntu-latest
           llvm-version: '11'
 
+      - uses: actions/checkout@v7
+        if: always()
+        with:
+          path: .fix-issue/pr-16329/diagnostic-tools
+          persist-credentials: false
+
+      - name: Trace actual frame registrations and removals
+        if: always()
+        shell: bash -e -l {0}
+        run: |
+          tools="$PWD/.fix-issue/pr-16329/diagnostic-tools/ci"
+          export LFORTRAN_UNIT_DIAGNOSTICS="$PWD/.fix-issue/pr-16329/ci-llvm11-unit"
+          cd lfortran-src/test-bld
+          timeout --kill-after=15s 600s gdb -nx -q -batch \
+            -x "$tools/trace_llvm11_frames.gdb" \
+            --args ./src/lfortran/tests/test_lfortran \
+            > "$LFORTRAN_UNIT_DIAGNOSTICS/frame-trace.log" 2>&1
+
+      - name: Preserve executed ELF and runtime dependencies
+        if: always()
+        shell: bash -e -l {0}
+        run: |
+          python .fix-issue/pr-16329/diagnostic-tools/ci/pack_llvm11_replay.py
+
       - name: Save first-fault evidence
         if: always()
         uses: actions/upload-artifact@v4
