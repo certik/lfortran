@@ -12,15 +12,17 @@ the phase exit gates remain open.
 ## Current status, speeds and next plan
 
 **2026-10-30 summary:** portable Fortran passes the real 27B short/reset check
-with GFortran and Flang. C+Metal now decodes at **4.85 tokens/s**, versus
-**16.54 tokens/s** for native MLX. LFortran CPU is blocked by an undiagnosed
-real-run crash; LFortran GPU executes the tiny application but has open
-numerical/acceptance gates. Neither LFortran path has accepted throughput.
+with GFortran and Flang. Latest accepted C+Metal SG decode is **5.006 tokens/s**;
+archived native MLX short decode is **16.54 tokens/s**. Uncommitted qmv4/MMA
+experiments have unresolved whole-phase acceptance. The first actual MMA
+2048/65 control completed, but its internal correctness remains unknown.
+LFortran CPU's real-run crash is undiagnosed; neither LFortran path has accepted
+throughput, and Fortran work remains paused.
 
 **Priority: C+Metal performance is now the critical path.** Match, ideally
 exceed, MLX on **both prefill and decode** before using hand-written Metal as
-the Fortran/compiler performance reference. Today's **4.85 / 6.33 tokens/s**
-is a validated numerical baseline and measured incremental improvement,
+the Fortran/compiler performance reference. Accepted SG's **5.006 / 6.704
+tokens/s** is a qualified numerical baseline and measured incremental improvement,
 **not an accepted performance blueprint** for Fortran+LFortran. Fortran
 scaling/checks pause at the current safe checkpoint; compiler performance
 optimization waits for a competitive hand-Metal reference.
@@ -37,8 +39,9 @@ features are not yet fully consolidated into the application caller checkout.
 | Portable Fortran, `F:a70b69ed0a` | GFortran and Flang each pass real-27B 17-ID/full-reset checks, finite and byte-exact to saved C. Portable integer-backed BF16/q8 works; no new native real kinds. | Heavy correctness traces are **not throughput benchmarks**. |
 | LFortran CPU, integrated `91f90a5a16` | Tiny/I/O/header/large-offset proofs pass; real run crashes after all 64 layers/final normalization, before first logits. No predictions or reset acceptance. | No accepted CPU throughput. |
 | LFortran GPU, combined `G:d94db95877` | Tiny whole driver runs on Metal in normal/strict modes; IDs, finiteness and self-reset pass, but exact/cross-C gates fail. Scaling/checks are **paused at the current safe checkpoint**; no later-stage result is claimed. | No 27B run or accepted throughput; compiler performance work waits for competitive hand-Metal. |
-| C+Metal, `M:961b28978d` | RMS-output optimization accepted and locally committed for the short workload; production 17-ID/reset and frozen same-input checks pass. C80 remains failed. | **4.8522 decode / 6.3291 effective-prefill tokens/s**, short scope only. |
-| Native MLX | Working correctness/performance reference; fresh short control and older long-workload baselines available. | See the measured table below. |
+| C+Metal accepted baseline, `M:c296c2cef9` | Coalesced SG q8 commit accepted after independent review for 18/65; frozen kernel/token/reset gates pass. Source/routing review covers all 497 decode projection calls. C80/global exactness remain failed. | **5.0060 decode / 6.7041 effective-prefill tokens/s**, accepted short cohort only. |
+| C+Metal experiments | qmv4 is functionally accepted but parked, uncommitted and absent from the current MMA runtime. Isolated MMA is uncommitted; source/evidence review is in progress, not presumed clean. | Battery short cohorts and one experimental long observation below; no accepted candidate rate. |
+| Native MLX | Pinned implementation research completed; archived short controls and older long baselines remain available. Source-inferred routes are not runtime captures. | Context only, not fresh paired comparisons with the new Battery experiments. |
 
 The root compiler is still `91f90a5a16`: its **57 / 2114 / 5588** green
 unit/reference/integration evidence does **not** apply to `G:d94db95877`.
@@ -50,34 +53,111 @@ reconciliation and integration into root remain pending.
 ### Measured speeds
 
 Rates are tokens/s. Effective prefill means prompt tokens divided by TTFT,
-not isolated kernel throughput. Decode cells show **median (best)**.
+not isolated kernel throughput. Decode cells show **median (best)**. The
+C+Metal short row is the accepted **SG N=4, AC** cohort; native rows are
+archived controls. New Battery experiments are kept in a separate table.
 
 | Raw input / generated IDs | Native MLX effective prefill, median | Native MLX decode | C+Metal effective prefill, median | C+Metal decode |
 | --- | ---: | ---: | ---: | ---: |
-| **18 / 65**, short | **63.8088** | **16.5396 (16.5467)** | **6.3291** | **4.8522 (4.8526)** |
-| **2048 / 65**, prefill | 205.519 | 15.339 (15.520) | Not run | Not run |
+| **18 / 65**, short | **63.8088** | **16.5396 (16.5467)** | **6.7041** | **5.0060 (5.0245)** |
+| **2048 / 65**, prefill | 205.519 | 15.339 (15.520) | No accepted series; MMA N=1 below | No accepted series; MMA N=1 below |
 | **29 / 1536**, sustained | 101.653 | 6.059 (6.237) | Not run | Not run |
 
-C+Metal is still approximately **3.4x slower in short decode and 10x slower
-in effective prefill** than MLX, not faster. The two longer native rows are
-**older baselines**, not fresh paired C+Metal comparisons; the native
-sustained-decode slowdown remains unexplained. Large RMS operator fixtures
-do not replace those missing whole-application runs.
+C+Metal remains far below archived MLX throughput, not faster. These rows
+are **not paired Battery/AC parity tests**. The two longer native rows are
+older baselines; native sustained-decode slowdown remains unexplained.
+Operator fixtures do not replace long-workload correctness or benchmark series.
 
-The fresh short MLX control has three samples: TTFT **0.282093 s**, inference
+The archived short MLX control has three samples: warm TTFT **0.282093 s**, inference
 wall **4.150924 s**, and best effective prefill **64.6884 tokens/s**.
 Separately measured load **4.134746 s** plus warm inference gives an
 **8.285670 s estimate, not measured fresh-process wall time**; GPU-busy time
 is unknown. Native scheduling executes 67 total/65 cached forwards, including
 one unemitted lookahead, versus Metal's 65/64; both decode numerators are 64.
 No CPU or Fortran GPU tokens/s is inferred from traced correctness runs.
+Archived first-short TTFT is **0.308596 s**, also much lower than hand-Metal:
+warmup alone does not explain the gap. That one first sample is not a new
+paired benchmark or a complete diagnosis.
 
 Short-control evidence in `M`:
 `artifacts/perf-rms-output/quiet-aggregate-window/outcome.json`
 (`fresh_native_MLX_control`). Older rows are recorded in `M/PERF.md`, backed
 by `artifacts/baseline-native/results.json`.
 
-### Accepted RMS optimization: what improved
+### Latest accepted SG checkpoint
+
+Commit `c296c2cef953a6400718ac2e07aedbc8880e26e2`, parent RMS `961b28978d`,
+is independently accepted for **18/65 only**. Its N=4 decode median is
+**4.852030 -> 5.006035 tokens/s (+3.174%)**; actual child wall is
+**20.956963 -> 20.299531 s (-3.137%)**. Observed effective-prefill medians
+are **6.484670 -> 6.704075 tokens/s**, while prefill GPU intervals are
+effectively unchanged: no matrix-kernel or loader gain is established.
+Host/shader pins are `dc56cb57…` / `781dd18c…`. Evidence in `M`:
+`artifacts/perf-sg-q8/finalization/handoff.json`, accepted SG reports and
+`src-metal/PERF.md`. This is the current accepted baseline, not RMS alone.
+
+### Current experiments: not accepted performance
+
+Both short experiments below are fresh **N=4 Battery-only, power-mode-0**
+cohorts. Do not pool them with each other, accepted AC SG/RMS, archived native
+data, or the separately preserved interrupted qmv4 AB attempt.
+
+| Short 18/65 experiment | Effective prefill tokens/s, before -> after | Decode tokens/s, before -> after | Actual child wall s, before -> after | Disposition |
+| --- | ---: | ---: | ---: | --- |
+| Parked qmv4 | 9.13456 -> 8.78883 | 4.991207 -> 6.012794 | 17.32854 -> 15.07553 | Decode +20.4677%, child -13.0017%; prefill wall +3.9505%, slower in 3/4 pairs. Overall nonregression unresolved; uncommitted. |
+| Current isolated MMA | 8.03037 -> 9.16304 | 4.99435 -> 4.94819 | 17.92679 -> 18.06733 | Prefill +14.1048%, decode -0.9242%, child +0.7840%, startup +11.1461%. Source/evidence review and overall nonregression unresolved; uncommitted. |
+
+qmv4 is **not an accuracy rejection or a proven bad source**: functionality
+and source review passed, but prefill nonregression remains unresolved.
+No noise cause or population non-inferiority is established. Exact source/runtime
+and all archived artifacts are preserved; qmv4 is **not in the MMA runtime**.
+Evidence: `M/artifacts/perf-qmv4/fresh-timing-02/handoff.json` and
+`M/artifacts/perf-mma/qmv4-preservation-proof.json`.
+
+MMA preserves 32x32x32 float-fragment matrix arithmetic with frozen BF16
+weight/partial/fold boundaries, the unchanged M=1 SG path, four 1 MiB partial
+slots and 14,336 threadgroup bytes. Numeric/operator/frozen replay and 17/reset/
+65-ID checks pass, not global exact-C parity. Prefill GPU intervals fall
+**1.14343 -> 0.65857 s (-42.4037%)**. Startup rises
+**2.64209 -> 2.93658 s**; Metal/JIT is approximately 0.02 s in both variants.
+The combined weights/workspaces increase has **no proved cause**.
+Host/shader pins are `fc9460d6…` / `41a179a5…`;
+`M/artifacts/perf-mma/handoff.json` records the frozen review checkpoint.
+
+**First actual full 2048/65 control, MMA N=1:** prefill **17.1111345 tokens/s**
+(119.688148 wall / 118.077135 GPU s), decode **0.495271 tokens/s**
+(129.222146 wall / 128.734081 GPU s), startup **2.605843 s**, actual child
+**251.79177 s**, capacity 2113. All 65 historical native IDs match, but
+**correctness is UNKNOWN**: there is no corresponding C/accepted-Metal long
+oracle, and internal tensor finiteness was **not captured**. This is one
+experimental observation, not an accepted N=3 series or apples-to-apples
+comparison with historical MLX **205.519 / 15.339 tokens/s**. The source's
+**28.774925 GiB budget is not a physical GPU peak**. Sustained 29/1536 remains
+unrun. Completed evidence: `M/artifacts/perf-mma/handoff.json` and its
+`full2048-control/final-observation.json`.
+
+### MLX implementation findings: source-inferred, not runtime-captured
+
+Completed `mlx-performance-trace/{report.md,report.json,source-manifest.json}`
+session artifacts pin MLX 0.31.2 `68cf2fddd8de` and MLX-LM 0.31.3
+`ed1fca4cef15`. Source describes four outputs per SIMD group for decode
+[qmv](https://github.com/ml-explore/mlx/blob/68cf2fddd8de5edd8ab3d926391772b2e2cedad8/mlx/backend/metal/kernels/quantized.h#L750-L814),
+32x32x32/four-SG [qmm](https://github.com/ml-explore/mlx/blob/68cf2fddd8de5edd8ab3d926391772b2e2cedad8/mlx/backend/metal/kernels/quantized.h#L1094-L1216)
+with BF16 weights/partials/folds, and a persistent
+[recurrence time loop](https://github.com/ml-explore/mlx-lm/blob/ed1fca4cef15a824c5f1702c80f70b4cffc8e4dd/mlx_lm/models/gated_delta.py#L13-L123)
+per layer/chunk rather than our per-token launches. Native cache-only prefix
+evaluation prunes the head (`generate.py:427-463`), but copying `[P-1,1]`
+would change frozen M-dependent arithmetic. Native D=256 prefill attention
+uses an unfused fallback; decode uses cooperative vector attention
+(`scaled_dot_product_attention.cpp:618-636`). Hand-Metal's serial-lane SDPA
+is a candidate, **not a measured TOP1 bottleneck**. Source findings guide
+original, frozen-contract-compatible adaptations; they do not establish
+runtime routes, timings or permission to change bounds/oracles.
+
+### Historical accepted RMS optimization: what improved
+
+This earlier RMS cohort is retained as history, not the current SG baseline
+or either Battery experiment.
 
 Commit `961b28978dd9859ac963b963b40c2d2dbb38a7eb` preserves reviewed shader
 `208c8fd2…`. Eight valid, counterbalanced **ABBA BAAB** measurements give
@@ -111,12 +191,16 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Get C+Metal competitive with MLX in both prefill and decode.** RMS is
-   committed, but its current speed is not the Fortran performance target.
-   Measure the missing 2K-prefill and sustained workloads and profile all
-   three. Optimize the next measured bottleneck, likely q8 projections, then
-   attention/reductions/data movement: one technique per commit, unchanged
-   numerical/token gates and reproducible timing acceptance.
+1. **Get C+Metal competitive with MLX in prefill, decode and wall time.**
+   Freeze MMA for the in-progress source/evidence review and **one actual
+   full-2048 KPROF diagnostic**, not throughput measurement. Recorded GPU
+   intervals exceed 98% of both long-phase wall times; identify TOP1 prefill
+   and decode costs before selecting attention, recurrence or kernel-layout
+   work. Do **not** blindly assume recurrence is next. Implement one
+   profile-selected technique at a time with unchanged numerical/token and
+   whole-phase timing gates. Reapply parked qmv4 only after proper whole-phase
+   acceptance. Complete long correctness evidence and all three workload
+   series under fair power, warm/cold and forward-count boundaries.
 2. **Pause Fortran scaling/checks at the current safe checkpoint.** Preserve
    all evidence; no result is claimed for the paused 65,536 stage. Revisit
    scaling after the competitive hand-Metal milestone and explicit grants;
@@ -148,6 +232,10 @@ established**. No full model before preflight. Frozen C80 remains
 **FAILED: 94/96 positional argmaxes and 16/17 teacher predictions**, under the
 approved continuation policy, with unchanged bounds/oracles and a passing
 short-17 gate.
+Retained accumulated-C diagnostics also fail: accepted SG **15,545 nodes**,
+MMA **15,545** and qmv4 **15,432**. Equal counts do **not** establish byte
+identity or causality; short functional success is not global exact-C parity.
+Frozen C `37ff651`, bounds, oracles, IDs and Fortran sources remain unchanged.
 
 ## Detailed milestone evidence (pinned checkpoints)
 
