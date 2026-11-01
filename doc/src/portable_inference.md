@@ -1,7 +1,7 @@
 # Portable inference: staged roadmap
 
 **Status: native-math C+Metal has competitive measured decode/process wall.
-Conventional prefill and independent measurement acceptance remain open.
+The all-three measurement audit is clear; conventional prefill remains open.
 Fortran remains paused; its compiler source is unchanged.**
 
 This is an implementation roadmap, not a claim that LFortran currently runs
@@ -17,8 +17,8 @@ protected workload controls. Fresh paired AC measurements now cover **all
 three workloads**: decode medians are within approximately 1% of MLX, and
 actual process wall is lower. Conventional prefill remains below target;
 setup-inclusive comparisons have different work exclusions. Source/math
-reviews and boundary follow-ups are clear, but the completed-cohort
-measurement audit is **still running**, not presumed accepted.
+reviews, boundary follow-ups and the completed-cohort measurement audit are
+**clear**. Conventional-prefill qualification remains open.
 
 **Priority: C+Metal performance is now the critical path.** Match, ideally
 exceed, MLX on **both prefill and decode** before using hand-written Metal as
@@ -40,7 +40,7 @@ fully consolidated into the application caller checkout.
 | Portable Fortran, `F:a70b69ed0a` | GFortran and Flang each pass real-27B 17-ID/full-reset checks, finite and byte-exact to saved C. Portable integer-backed BF16/q8 works; no new native real kinds. | Heavy correctness traces are **not throughput benchmarks**. |
 | LFortran CPU, integrated `91f90a5a16` | Tiny/I/O/header/large-offset proofs pass; real run crashes after all 64 layers/final normalization, before first logits. No predictions or reset acceptance. | No accepted CPU throughput. |
 | LFortran GPU, combined `G:d94db95877` | Tiny whole driver runs on Metal in normal/strict modes; IDs, finiteness and self-reset pass, but exact/cross-C gates fail. Scaling/checks are **paused at the current safe checkpoint**; no later-stage result is claimed. | No 27B run or accepted throughput; compiler performance work waits for competitive hand-Metal. |
-| Native-math C+Metal, `N:acd78f81` | Math uses unchanged licensed native bodies/typed dispatch; source/math reviews and boundary fixes are clear. Short17/reset and every protected 65/1536 ID pass. Native implementation remains **uncommitted**. | Fresh all-three paired N4 results below; measurement audit and qualification pending. |
+| Native-math C+Metal, `N:acd78f81` | Math uses unchanged licensed native bodies/typed dispatch; source/math reviews and boundary fixes are clear. Short17/reset and every protected 65/1536 ID pass. Native implementation remains **uncommitted**. | Fresh all-three paired N4 measurement audit **CLEAR**; conventional-prefill qualification remains open. |
 | Historical hand-Metal, `M:c296c2cef9` | SG was accepted for its short scope; earlier qmv4/MMA experiments and their unresolved dispositions remain preserved. | Old AC/Battery observations below, **not pooled with N**. |
 | Native MLX | All three fresh paired AC cohorts have complete protected-ID/count/source/power guards. | Conventional and setup-inclusive metrics below; native GPU-busy time remains unknown. |
 
@@ -84,7 +84,11 @@ acceptance. Frozen C `37ff651`, bounds, oracles, IDs and Fortran remain unchange
 24 fresh-process samples, no added warmups or purges.** Full generated-ID,
 forward-count, source, power and quiet guards pass. Earlier interrupted ABB,
 2K A1 and zero-model preflights remain separate, never pooled. The independent
-measurement audit is **running**; these are completed descriptive data.
+measurement audit is **CLEAR**: all 24 samples, 13,328 protected IDs, counts,
+pins, clocks, guards, statistics and pairs validate. C's outer wall is better
+in every adjacent pair; these remain descriptive N4 observations.
+Evidence: session artifact
+`native-math-complete-review/all3-performance/review.md`.
 
 All rates below are tokens/s and all entries are **C / MLX medians**.
 
@@ -266,15 +270,15 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Finish the completed-cohort measurement audit**, then seal qualified
-   reference/code checkpoints. Source/math boundary follow-ups are clear,
-   but the measurement audit is still running. Native source remains frozen
-   and uncommitted; no unqualified performance acceptance is inferred.
-2. **Align native memory/residency/setup and remaining submission behavior.**
-   Resolve the conventional-prefill gap with honest conventional/common-ready/
-   total-wall accounting. Isolate setup, first-use and kernel effects rather
-   than assuming wiring or timer boundaries explain C's remaining costs.
-   Native math is migrated; the allocator/loader/runtime is not fully native.
+1. **Seal the reviewed native-math code baseline.** Source/math boundary
+   follow-ups and the all-three measurement audit are clear; conventional
+   prefill still does not establish unqualified performance parity. No new
+   baseline commit/source/binary identifier is reported here.
+2. **Then run one actual native ResidencySet setup/first-submit-gap causal
+   prototype.** No prototype result is reported yet. Keep honest conventional/
+   common-ready/total-wall accounting: no cost-shifting win claims or assumed
+   wiring cause. Native math is migrated; allocator/loader/residency/submission
+   behavior is not fully native.
 3. **Keep Fortran paused pending coordinator disposition of the C performance
    bar.** Preserve all evidence; no result is claimed for the paused 65,536
    stage. Revisit scaling after the qualified C performance milestone and
@@ -887,10 +891,10 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the ranked [next priorities](#next-priorities): completed-cohort
-measurement auditing and setup-aligned prefill performance are the critical
-path, not missing 2K/1536 executions. Complete the cohort audit and qualify
-reference/code checkpoints; native runtime alignment remains separate work.
+Follow the ranked [next priorities](#next-priorities): seal the reviewed native
+code baseline, then one actual ResidencySet causal prototype. The completed
+cohort audit is clear; conventional-prefill qualification and native runtime
+alignment remain open, not missing 2K/1536 executions.
 Fortran stays paused pending coordinator disposition. Competitive measured
 decode/process wall does not close conventional-prefill, compiler, physical-
 memory or full text-interface gates.
