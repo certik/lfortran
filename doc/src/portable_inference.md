@@ -1,8 +1,8 @@
 # Portable inference: staged roadmap
 
-**Status: the user has resumed CPU-first native Fortran implementation.
-C performance failures remain unchanged; the new branch has no results yet.
-The root compiler source is unchanged.**
+**Status: native Fortran passes real-27B short17/reset under Flang;
+GFortran real-model acceptance is incomplete, and LFortran has bounded CPU
+proofs only. Offload/performance remain ahead; root compiler source is unchanged.**
 
 This is an implementation roadmap, not a claim that LFortran currently runs
 the real model correctly or at competitive speed. The verified milestones
@@ -12,7 +12,16 @@ unearned; the phase exit gates remain open.
 
 ## Current status, speeds and next plan
 
-**2026-11-01 summary:** the native C+Metal baseline is committed and backed up;
+**2026-11-01 CPU milestone:** native Fortran has 140 bounded checks under both
+CPU compilers and a real Flang 27B short17/full-second-request-reset PASS on
+source `98773cd4`; GFortran reached its cap without a result. Current `c077fe02`
+adds only a diagnostic pruned-prefix guard, with independent closure review
+in progress and no real-model rerun. LFortran `G:d94db95877` compiles the new
+modules and passes small/tiny CPU controls; latest-app/supervisor mapping is
+being prepared before a bounded real run. No new LFortran full-model result,
+compiler fix or accepted throughput is claimed.
+
+The native C+Metal baseline is committed and backed up;
 the original two-arm resident measurements are **completed and audited CLEAN**
 at their saved-evidence scope. Short resident gates pass, but 2K prefill
 FAILS and other 2K gates are INCONCLUSIVE; those performance outcomes remain
@@ -37,7 +46,8 @@ no new Fortran throughput is accepted.
 
 ### Implementation status
 
-`F` is the Fortran application worktree, `M` the historical hand-Metal worktree,
+`F` is the original Fortran application worktree, `FN` the isolated native
+Fortran worktree, `M` the historical hand-Metal worktree,
 `N` the native-math C+Metal worktree (`project/qwen38-mlx-native`), and `G` the
 experimental combined LFortran GPU worktree. Application features are not yet
 fully consolidated into the application caller checkout.
@@ -46,8 +56,9 @@ fully consolidated into the application caller checkout.
 | --- | --- | --- |
 | Frozen scalar C reference, `37ff651` | Checkpoint adaptation complete for text-only, batch-one, greedy raw IDs; frozen math, oracles and bounds retained. | No comparable CPU benchmark. |
 | Portable Fortran, `F:a70b69ed0a` | GFortran and Flang each pass real-27B 17-ID/full-reset checks, finite and byte-exact to saved C. Portable integer-backed BF16/q8 works; no new native real kinds. | Heavy correctness traces are **not throughput benchmarks**. |
-| New native Fortran, `project/qwen38-fortran-native` | Isolated application worktree `$QWEN_REPO/artifacts/worktrees/fortran-native` from `a70b69ed0a`; native mathematical families/lazy graph are being implemented in portable `DO CONCURRENT`. Original `F/a70` frozen-C reference is preserved. | No validation results or accepted throughput yet. |
-| LFortran CPU, integrated `91f90a5a16` | Tiny/I/O/header/large-offset proofs pass; real run crashes after all 64 layers/final normalization, before first logits. No predictions or reset acceptance. | No accepted CPU throughput. |
+| Native Fortran, `project/qwen38-fortran-native`, current `c077fe02` | Portable `DO CONCURRENT` reference: 140 bounded checks pass under both compilers; Flang real short17/reset passes on earlier `98773cd4`. GFortran cap leaves real acceptance incomplete. Native internal bytes are not universally exact. Original `F/a70` is preserved. | Flang's 1663.13 s / 26.29 GiB is **correctness cost, not a throughput benchmark**. |
+| Historical LFortran CPU, integrated `91f90a5a16` | Earlier tiny/I/O/header/offset proofs pass; its historical real run crashed before first logits. Cause remains undiagnosed; no new compiler fix. | No accepted CPU throughput. |
+| Native LFortran CPU prep, unchanged `G:d94db95877` / LLVM11.1.0 | App snapshot `9c07860`: all modules compile; 29 primitive comparisons pass (27 exact, two within unchanged bounds), plus tiny P5/G3 schema3/full reset. | No new real-model or throughput acceptance; final `c077` binary/supervisor mapping pending. |
 | LFortran GPU, combined `G:d94db95877` | Prior tiny-driver proof is retained: IDs, finiteness/self-reset pass, exact/cross-C gates fail. Offloading the new native Fortran branch follows CPU validation, not a promotion of this checkpoint. | No 27B run or accepted throughput; optimization follows correct new offload. |
 | Native-math C+Metal baseline, `N:8640d2df` / docs `86fb02f9` | Reviewed source baseline committed; binary/four native libraries match the original benchmark snapshot. Short17/reset and every protected 65/1536 ID pass. User-authorized private backup verified. | Audited 24-sample table below remains the validated performance baseline; conventional-prefill qualification remains open. |
 | Archived residency experiment, `c71595c7` | Local `experiment/qwen38-residency`, not pushed; functional controls pass and old Battery block is preserved. Production `86fb02f9`, binary `42c8930d…` and four libraries were restored clean. | Short65 ABBA N=2/arm screen **LOSS**, not N4/all-workload/formal regression; no runtime mode promoted. |
@@ -62,6 +73,24 @@ G was rebuilt with LLVM 11.1.0, source tree `7d2e9232d27c5535ea9e709446b2f910200
 the original `638209ef72` fix branch is preserved. Its connected compiler fixes
 have targeted/review evidence, but latest full suites, stale-GPU-reference
 reconciliation and integration into root remain pending.
+
+Version-specific CPU evidence: the Flang real control on
+`98773cd4c02bb619573e26166919661627fee382` uses 18 prompt/17 generated tokens:
+**17 exact native IDs, lookahead 48696, 19 forwards / one prefix / 18 heads
+and samplers / 35 logical
+tokens**, complete second-request reset, and finite checked logits/persistent
+FP32 state. GFortran hit **1800.30 s**, returned no result, demonstrated no
+numerical mismatch and was not retried. `c077fe02` is only the stale-z
+pruned-prefix diagnostic guard: focused fail-before/pass-after on both
+compilers, **no real rerun and independent review still pending**.
+Authority: `FN/artifacts/fortran-native/handoff.json`.
+
+The LFortran bounded snapshot uses
+`--fast --std=f23 --no-fast-math --verify-all-passes`, **without an FMA skip**.
+Tiny IDs **[41,77,71]**, lookahead 125 and complete reset pass on source
+`9c07860`, not yet a latest-`c077` real run. Compiler source/executable `G:d94`
+is reused unchanged; evidence:
+`G/.fix-issue/qwen38-native-cpu-prep/optimized/handoff.json`.
 
 ### Completed native-math migration
 
@@ -471,22 +500,22 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Implement the native Fortran reference, CPU first**, in the isolated
-   `project/qwen38-fortran-native` branch from `a70`, using native-math
-   `8640d2df`/PERF `86fb02f9`. Express independent work in portable
-   `DO CONCURRENT`, preserve recurrences/reductions and lazy graph semantics,
-   and leave the original `F/a70` frozen-C implementation intact.
-   Resources are coordinated externally; no new-branch results are reported.
+1. **Close independent review of `c077` and preserve source-specific CPU
+   proofs.** Flang real PASS belongs to `98773cd4`; the diagnostic-only guard
+   has focused CPU proof, not a model rerun. GFortran's capped run remains
+   incomplete, not a demonstrated mismatch or permission for automatic retry.
+   Keep original `F/a70` and selected native-math `8640d2df`/PERF `86fb02f9`.
 2. **Preserve the sealed measured source separately from production.** The
    four C/Make files are committed locally as `9dd05ab27b` on
    `experiment/qwen38-resident-prefill`, byte-identical to measured source.
    Preserve measurement host `7f048673…` and historical `e11429da…` mapping.
    No semantic source change or production push is implied; original
    production `86fb02f9`/`42c8930d…` and four libraries remain untouched.
-3. **Validate Flang/GFortran CPU first:** primitive, tiny and short17/full-reset
-   checks against the selected native mathematical reference, then run the
-   same program on **LFortran CPU**. The prior real-CPU crash remains
-   undiagnosed; no root cause or fix is claimed.
+3. **Finish latest-`c077` LFortran app/supervisor identity mapping before a
+   separately authorized, exclusive bounded real short17/reset run.** Existing
+   `G:d94` optimized primitive/tiny evidence is on `9c07860`; do not transfer
+   it blindly or claim full acceptance. The old root91f crash remains historical
+   and undiagnosed; no compiler source change/full-suite pass is asserted.
 4. **Establish correct offload only after CPU gates pass.** Verify outputs,
    cache/state/reset, coverage and lifetimes; larger cases still need resource
    proof. No old paused 65,536 result or new 27B GPU acceptance is claimed.
@@ -1097,10 +1126,11 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the explicit user-selected [next priorities](#next-priorities): portable
-native Fortran `DO CONCURRENT` reference and Flang/GFortran CPU gates, then
-LFortran CPU, correct offload and generic profile-driven optimization toward
-the validated native Metal baseline. New-branch results/throughput are unverified;
+Follow the [next priorities](#next-priorities): close the `c077` review and
+pin the latest LFortran app plus existing bounded supervisor before exclusive
+real CPU validation. Flang real PASS, GFortran timeout and LFortran small/tiny
+proofs retain their separate sources/scopes; no new LF full-model acceptance.
+Correct offload and profile-driven optimization remain ahead, not completed;
 no further C tuning is selected. Keep historical performance FAIL/outlier,
 original cold cohorts, archived residency
 LOSS and the resource-count INCONCLUSIVE result separate.
