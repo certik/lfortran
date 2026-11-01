@@ -1,8 +1,8 @@
 # Portable inference: staged roadmap
 
-**Status: the original cold audit is clear; QMM64 operator gains do not clear
-audited model-readiness/promotion gates.
-Fortran remains paused; its compiler source is unchanged.**
+**Status: the user has resumed CPU-first native Fortran implementation.
+C performance failures remain unchanged; the new branch has no results yet.
+The root compiler source is unchanged.**
 
 This is an implementation roadmap, not a claim that LFortran currently runs
 the real model correctly or at competitive speed. The verified milestones
@@ -15,22 +15,25 @@ unearned; the phase exit gates remain open.
 **2026-11-01 summary:** the native C+Metal baseline is committed and backed up;
 the original two-arm resident measurements are **completed and audited CLEAN**
 at their saved-evidence scope. Short resident gates pass, but 2K prefill
-FAILS and other 2K gates are INCONCLUSIVE, so **Fortran does not resume**.
+FAILS and other 2K gates are INCONCLUSIVE; those performance outcomes remain
+unchanged.
 QMM64's corrected batched operator screen passes and limited local integration
 passes functional controls, but the new audited three-arm model comparison
 **FAILS readiness and promotion**. The completed unprivileged diagnostic did
 **not reproduce the severe GPU slowdown**; it does not explain or waive the
-historical failure. Next priority awaits user disposition; no new C/Fortran
-work or Fortran transition is authorized.
+historical failure. The user now explicitly chose **Fortran reference on CPU,
+then correct offload, then optimization to match our Metal kernels**.
+No further C tuning is currently selected.
 Original cold results, archived residency LOSS and the
 resource-count INCONCLUSIVE outcome remain unchanged.
 
-**Priority: C+Metal performance is now the critical path.** Match, ideally
-exceed, MLX on **both prefill and decode** before using hand-written Metal as
-the Fortran/compiler performance reference. Practical decode/end-to-end
-competitiveness does **not** establish the strict conventional-prefill target
-or unqualified all-scope parity. **Fortran stays paused pending coordinator
-disposition of the C performance bar**; do not resume from these metrics alone.
+**Selected research reference:** validated native-math source `8640d2df`
+and audited PERF `86fb02f9`, not unpromoted QMM64 `4921bf7b`.
+`9dd05ab` is instrumentation-only, not a different mathematical baseline.
+Resuming Fortran is an **explicit user disposition**, not a waiver of the
+historical C performance FAIL/outlier or a claim of unqualified MLX parity.
+The goal is CPU correctness, correct offload, then comparable Metal speed;
+no new Fortran throughput is accepted.
 
 ### Implementation status
 
@@ -43,11 +46,12 @@ fully consolidated into the application caller checkout.
 | --- | --- | --- |
 | Frozen scalar C reference, `37ff651` | Checkpoint adaptation complete for text-only, batch-one, greedy raw IDs; frozen math, oracles and bounds retained. | No comparable CPU benchmark. |
 | Portable Fortran, `F:a70b69ed0a` | GFortran and Flang each pass real-27B 17-ID/full-reset checks, finite and byte-exact to saved C. Portable integer-backed BF16/q8 works; no new native real kinds. | Heavy correctness traces are **not throughput benchmarks**. |
+| New native Fortran, `project/qwen38-fortran-native` | Isolated application worktree `$QWEN_REPO/artifacts/worktrees/fortran-native` from `a70b69ed0a`; native mathematical families/lazy graph are being implemented in portable `DO CONCURRENT`. Original `F/a70` frozen-C reference is preserved. | No validation results or accepted throughput yet. |
 | LFortran CPU, integrated `91f90a5a16` | Tiny/I/O/header/large-offset proofs pass; real run crashes after all 64 layers/final normalization, before first logits. No predictions or reset acceptance. | No accepted CPU throughput. |
-| LFortran GPU, combined `G:d94db95877` | Tiny whole driver runs on Metal in normal/strict modes; IDs, finiteness and self-reset pass, but exact/cross-C gates fail. Scaling/checks are **paused at the current safe checkpoint**; no later-stage result is claimed. | No 27B run or accepted throughput; compiler performance work waits for competitive hand-Metal. |
+| LFortran GPU, combined `G:d94db95877` | Prior tiny-driver proof is retained: IDs, finiteness/self-reset pass, exact/cross-C gates fail. Offloading the new native Fortran branch follows CPU validation, not a promotion of this checkpoint. | No 27B run or accepted throughput; optimization follows correct new offload. |
 | Native-math C+Metal baseline, `N:8640d2df` / docs `86fb02f9` | Reviewed source baseline committed; binary/four native libraries match the original benchmark snapshot. Short17/reset and every protected 65/1536 ID pass. User-authorized private backup verified. | Audited 24-sample table below remains the validated performance baseline; conventional-prefill qualification remains open. |
 | Archived residency experiment, `c71595c7` | Local `experiment/qwen38-residency`, not pushed; functional controls pass and old Battery block is preserved. Production `86fb02f9`, binary `42c8930d…` and four libraries were restored clean. | Short65 ABBA N=2/arm screen **LOSS**, not N4/all-workload/formal regression; no runtime mode promoted. |
-| Completed resident comparison, measurement host `7f048673…` | 16 fresh children, 32 fully reported requests and 2,080 exact IDs; source/count/clock/AC-auto/resource gates and independent saved-evidence audit pass. Native math/four libraries and original production remain unchanged. | Short gates PASS; 2K prefill FAIL, other 2K gates INCONCLUSIVE; overall frozen 5% readiness **FAIL**. No new warm1536 claim or Fortran resume. |
+| Completed resident comparison, measurement host `7f048673…` | 16 fresh children, 32 fully reported requests and 2,080 exact IDs; source/count/clock/AC-auto/resource gates and independent saved-evidence audit pass. Native math/four libraries and original production remain unchanged. | Historical short PASS / 2K FAIL-INCONCLUSIVE / overall readiness **FAIL** unchanged; no new warm1536 or Fortran acceptance follows. |
 | Limited QMM64 candidate, `4921bf7b` | Local `experiment/qwen38-qmm64`, parent `9dd05ab`; short/2K two-request functional controls pass. Only the exact non-split gate/up shape uses 64; other/decode paths stay 32. | Operator screen PASS, but audited three-arm model readiness/promotion **FAIL**. Not promoted or pushed. |
 | Historical hand-Metal, `M:c296c2cef9` | SG was accepted for its short scope; earlier qmv4/MMA experiments and their unresolved dispositions remain preserved. | Old AC/Battery observations below, **not pooled with N**. |
 | Native MLX | All three fresh paired AC cohorts have complete protected-ID/count/source/power guards. | Conventional and setup-inclusive metrics below; native GPU-busy time remains unknown. |
@@ -269,9 +273,10 @@ including candidate 126/126 counters; the severe slowdown is **NOT REPRODUCED**.
 Public own VM/thermal/QoS state is supported, but GPU frequency/traffic/
 utilization remain **UNKNOWN**. Cold decompression/driver correlation is not
 causality. No root/admin access, optimization, acceptance or promotion;
-historical FAIL/outlier evidence is retained. All compute owners released.
-Authority: `native-unprivileged-state/report.md`. Project priority now awaits
-user disposition; **Fortran remains PAUSED**, with no transition chosen.
+historical FAIL/outlier evidence is retained. Its diagnostic owners were released.
+Authority: `native-unprivileged-state/report.md`. At that checkpoint Fortran
+was paused; the later explicit user disposition above resumes research,
+not retrospective performance acceptance.
 
 ### Archived residency diagnostics and qualified discriminators
 
@@ -466,31 +471,31 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Await user disposition before any new C/Fortran work.** Latest lessons
-   are complete/reviewed/published and public-state diagnosis is complete;
-   severe slowdown was not reproduced, its historical cause remains unknown,
-   and readiness/promotion FAIL is unchanged. No Fortran transition has been
-   explicitly chosen. Do not start a new diagnostic, optimization or cohort.
+1. **Implement the native Fortran reference, CPU first**, in the isolated
+   `project/qwen38-fortran-native` branch from `a70`, using native-math
+   `8640d2df`/PERF `86fb02f9`. Express independent work in portable
+   `DO CONCURRENT`, preserve recurrences/reductions and lazy graph semantics,
+   and leave the original `F/a70` frozen-C implementation intact.
+   Resources are coordinated externally; no new-branch results are reported.
 2. **Preserve the sealed measured source separately from production.** The
    four C/Make files are committed locally as `9dd05ab27b` on
    `experiment/qwen38-resident-prefill`, byte-identical to measured source.
    Preserve measurement host `7f048673…` and historical `e11429da…` mapping.
    No semantic source change or production push is implied; original
    production `86fb02f9`/`42c8930d…` and four libraries remain untouched.
-3. **Keep Fortran paused pending coordinator disposition of the C performance
-   bar.** Preserve all evidence; no result is claimed for the paused 65,536
-   stage. Revisit scaling after the qualified C performance milestone and
-   explicit grants; larger vocabularies and actual 27B 17/reset require review, guards
-   and physical-memory proof.
-4. **Keep CPU crash isolation queued**, using retained final-output evidence
-   when diagnosis resumes. Projection versus following dump remains unknown;
-   do not assert stack/TRANSFER causation or automatically rerun the model.
-5. **When compiler validation resumes**, stabilize connected fixes, reconcile
-   LLVM 11 references and run full default suites once on stable combined
-   source before review/local integration. Root's older green suites are not
-   a substitute; application worktree consolidation also remains necessary.
-6. **Compiler performance optimization waits for a qualified C+Metal reference.**
-   Then optimize generic ASR/GPU passes using that reference: coalescing,
+3. **Validate Flang/GFortran CPU first:** primitive, tiny and short17/full-reset
+   checks against the selected native mathematical reference, then run the
+   same program on **LFortran CPU**. The prior real-CPU crash remains
+   undiagnosed; no root cause or fix is claimed.
+4. **Establish correct offload only after CPU gates pass.** Verify outputs,
+   cache/state/reset, coverage and lifetimes; larger cases still need resource
+   proof. No old paused 65,536 result or new 27B GPU acceptance is claimed.
+5. **When connected compiler fixes stabilize**, reconcile LLVM 11 references,
+   run full default suites once on that source before review/local integration.
+   Root's older green suites are not a substitute; consolidate application
+   worktrees separately.
+6. **Then optimize to match the selected Metal kernels**, with generic,
+   profile-driven ASR/GPU changes: coalescing,
    SIMD reductions, tiled GEMM, residency and scheduling, not model-specific
    backend hacks. Design native BF16/new kinds only where optimization
    demonstrates a need; the portable integer representation remains the
@@ -1092,15 +1097,15 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the [next priorities](#next-priorities): await user disposition.
-Latest lesson coverage and unprivileged diagnosis are complete; no explicit
-Fortran transition or new C work is authorized. Non-reproduction and a better
-2K median do not override readiness/promotion FAIL or explain the retained
-outlier. Keep original cold cohorts, archived residency
+Follow the explicit user-selected [next priorities](#next-priorities): portable
+native Fortran `DO CONCURRENT` reference and Flang/GFortran CPU gates, then
+LFortran CPU, correct offload and generic profile-driven optimization toward
+the validated native Metal baseline. New-branch results/throughput are unverified;
+no further C tuning is selected. Keep historical performance FAIL/outlier,
+original cold cohorts, archived residency
 LOSS and the resource-count INCONCLUSIVE result separate.
-Fortran stays paused pending coordinator disposition. Competitive measured
-decode/process wall does not close conventional-prefill, compiler, physical-
-memory or full text-interface gates.
+This research resumption does not close conventional-prefill, compiler,
+physical-memory or full text-interface gates, nor promote QMM64 `4921bf7b`.
 Preserve frozen bounds and the documented C80 failure. Optional IEEE work
 remains deferred.
 
