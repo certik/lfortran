@@ -12,8 +12,10 @@ unearned; the phase exit gates remain open.
 
 ## Current status, speeds and next plan
 
-**2026-10-31 summary:** the native C+Metal math migration is complete for the
-protected workload controls. Fresh paired AC measurements now cover **all
+**2026-11-01 summary:** the native C+Metal baseline is committed and backed up;
+its actual ResidencySet prototype passes bounded functional controls but has
+not demonstrated a setup-inclusive latency gain. The math migration is complete
+for the protected workload controls. Paired AC measurements cover **all
 three workloads**: decode medians are within approximately 1% of MLX, and
 actual process wall is lower. Conventional prefill remains below target;
 setup-inclusive comparisons have different work exclusions. Source/math
@@ -40,7 +42,8 @@ fully consolidated into the application caller checkout.
 | Portable Fortran, `F:a70b69ed0a` | GFortran and Flang each pass real-27B 17-ID/full-reset checks, finite and byte-exact to saved C. Portable integer-backed BF16/q8 works; no new native real kinds. | Heavy correctness traces are **not throughput benchmarks**. |
 | LFortran CPU, integrated `91f90a5a16` | Tiny/I/O/header/large-offset proofs pass; real run crashes after all 64 layers/final normalization, before first logits. No predictions or reset acceptance. | No accepted CPU throughput. |
 | LFortran GPU, combined `G:d94db95877` | Tiny whole driver runs on Metal in normal/strict modes; IDs, finiteness and self-reset pass, but exact/cross-C gates fail. Scaling/checks are **paused at the current safe checkpoint**; no later-stage result is claimed. | No 27B run or accepted throughput; compiler performance work waits for competitive hand-Metal. |
-| Native-math C+Metal, `N:acd78f81` | Math uses unchanged licensed native bodies/typed dispatch; source/math reviews and boundary fixes are clear. Short17/reset and every protected 65/1536 ID pass. Native implementation remains **uncommitted**. | Fresh all-three paired N4 measurement audit **CLEAR**; conventional-prefill qualification remains open. |
+| Native-math C+Metal baseline, `N:8640d2df` / docs `86fb02f9` | Reviewed source baseline committed; binary/four native libraries match the original benchmark snapshot. Short17/reset and every protected 65/1536 ID pass. User-authorized private backup verified. | Audited 24-sample table below remains the validated performance baseline; conventional-prefill qualification remains open. |
+| ResidencySet experiment | Source review has no significant issues; lifecycle and AC short17/reset, short65 and 2048/65 diagnostics pass. The initial Battery block remains preserved. | N=1 diagnostics only; not production/default or a new N4/1536 performance result. |
 | Historical hand-Metal, `M:c296c2cef9` | SG was accepted for its short scope; earlier qmv4/MMA experiments and their unresolved dispositions remain preserved. | Old AC/Battery observations below, **not pooled with N**. |
 | Native MLX | All three fresh paired AC cohorts have complete protected-ID/count/source/power guards. | Conventional and setup-inclusive metrics below; native GPU-busy time remains unknown. |
 
@@ -53,8 +56,13 @@ reconciliation and integration into root remain pending.
 
 ### Completed native-math migration
 
-`N` remains at `acd78f8188cca76924a1d8d2483ec41b630d0c62` with uncommitted
-native work, frozen binary `42c8930d…65804eb`. Unchanged MIT-licensed
+Reviewed native source is committed as
+`8640d2dfd8404b803b8621ef2b80a78ee0bfc0dc`, with audited PERF documentation
+at `86fb02f9b79fd9640fedea2eae006193a1417908`. The original preregistered
+`acd78f8188cca76924a1d8d2483ec41b630d0c62` remains historical, not rewritten.
+`N/artifacts/native-residency/{baseline-commit-mapping,docs-commit-mapping}.json`
+prove benchmark binary `42c8930d…65804eb` and all four libraries unchanged.
+Unchanged MIT-licensed
 MLX/MLX-LM bodies now own arithmetic and actual native kernel/typed-graph
 dispatch: RNN time loops, 32x32x32 BF16 qmm, prefill matrix and decode/two-pass
 SDPA, RoPE/head-major KV, embedding/pointwise operations, cache sampler and
@@ -77,6 +85,21 @@ Source pins and actual-runtime evidence: session artifact
 `native-math-complete-review/` and its `boundary-followup/`. The earlier
 `5d668140 -> acd78f81` experimental lineage is not original performance
 acceptance. Frozen C `37ff651`, bounds, oracles, IDs and Fortran remain unchanged.
+
+### Saved source and reusable lessons
+
+The user-authorized **private**
+[native-app backup](https://github.com/certik/qwen3.6/tree/project/qwen38-mlx-native)
+was independently verified at `86fb02f9`: source and validation matrix are
+saved. This is not an LFortran push or PR.
+
+Session lessons are incorporated into the installed `optimize-metal` guide
+and three focused native-source/parity, measurement/diagnosis and case-study
+references, including corrected conflicting catalog guidance. Commit
+`dbeead3d64f3d5463c40171cb4afe2462af399f3` is verified on the user-chosen **new
+public** [lessons branch](https://github.com/certik/ai_skills/tree/project/qwen38-metal-lessons);
+remote main remained `404cf8f`. These are reusable methodology/evidence,
+**not measured optimization-time savings**.
 
 ### Fresh all-three paired AC measurements
 
@@ -120,6 +143,28 @@ Completed raw distributions, medians/bests and pairs:
 `N/artifacts/native-benchmark-prep/all3-measurement-report.json`;
 source freeze `776b0224…`, preregistration `48c5e05a…`. No old warm-resident,
 native AC or Battery cohorts are mixed into this series.
+
+### ResidencySet diagnostics: functional, not performance acceptance
+
+The reviewed prototype passes short17/reset, short65 and 2048/65 native
+IDs/counts/lifetimes after AC was restored; the initial Battery **0/3** block
+is retained separately. Prototype binary is `eebdfc7d…`; native
+kernels, MSL/options, barriers and Shared/TRACKED behavior are unchanged.
+
+| N=1 diagnostic | Entry, s | Conventional prefill, s | First submit -> GPU, ms | Ready -> first, s | Actual child, s | Restore, ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 18/65 | 1.528470 | 0.240964 | 4.276459 | 1.769696 | 9.400685 | 0.707042 |
+| 2048/65 | 1.352781 | 9.135456 | 3.312209 | 10.488500 | 18.854176 | 3.850500 |
+
+Historical baseline N4 medians were approximately **955.574 / 1116 ms**
+first-submit gaps, **1.264166 / 9.970321 s** ready-to-first, and
+**7.693968 / 17.2552 s** child wall (short / 2K). This is **not a contemporary
+paired comparison**. Observed submit stalls are shorter, but setup-inclusive
+latency did **not demonstrate a gain**. Restore is tiny; neither a restore/
+teardown diagnosis nor residency causality is established. No cost-shift win,
+all-scope parity, new N4 or 1536 result is claimed. The audited 24-sample table
+is unchanged; the prototype is **not accepted as production/default**.
+Authority: `N/artifacts/native-residency/probe-report.json`.
 
 ### Historical pre-native speed controls
 
@@ -270,15 +315,16 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Seal the reviewed native-math code baseline.** Source/math boundary
-   follow-ups and the all-three measurement audit are clear; conventional
-   prefill still does not establish unqualified performance parity. No new
-   baseline commit/source/binary identifier is reported here.
-2. **Then run one actual native ResidencySet setup/first-submit-gap causal
-   prototype.** No prototype result is reported yet. Keep honest conventional/
-   common-ready/total-wall accounting: no cost-shifting win claims or assumed
-   wiring cause. Native math is migrated; allocator/loader/residency/submission
-   behavior is not fully native.
+1. **Keep production `86fb02f9` and the functional residency experiment
+   separate.** Baseline sealing and authorized backups are complete; archive
+   the experiment without promoting its diagnostic rates to production.
+   The current experimental HEAD/checkpoint has not been reported here.
+2. **Perform bounded offline per-sample startup/entry/exit/spawn-to-first
+   analysis and an exact C/native setup source trace.** Select one supported
+   next technique or a minimal paired screen. No new GPU/cohort is reported
+   yet; do not blame tiny restore/teardown, assume residency causality or
+   claim a cost-shifting win. Keep conventional/common-ready/total-wall
+   accounting and the remaining runtime differences explicit.
 3. **Keep Fortran paused pending coordinator disposition of the C performance
    bar.** Preserve all evidence; no result is claimed for the paused 65,536
    stage. Revisit scaling after the qualified C performance milestone and
@@ -298,8 +344,9 @@ independent disposition: session artifact
    demonstrates a need; the portable integer representation remains the
    reference.
 7. **Finish tokenizer/chat/NFC later.** Old Qwen3.6 weights remain unavailable,
-   so no fresh backward whole-model claim is made. All work remains local;
-   no push or PR is authorized.
+   so no fresh backward whole-model claim is made. User-authorized native-app
+   and lessons backups are complete; no LFortran push/PR or further publication
+   is authorized by this docs update.
 
 The retained Fortran controller's 21 CPU readiness checks and independently
 audited zero-blocker preflight are readiness proofs, **not larger-model acceptance**.
@@ -469,6 +516,8 @@ PRIVATE [#16364](https://github.com/lfortran/lfortran/issues/16364).
   for bounded implementation tasks; coordination does not replace acceptance
   evidence. The explicitly authorized IEEE issue report below does not
   authorize source publication.
+  The separately authorized private native-app backup and new public lessons
+  branch above are completed exceptions, not permission to publish LFortran.
 - Prioritize high-performance Fortran + LFortran inference. IEEE exception-flag
   and procedure-lifecycle diagnostics are not inference prerequisites; defer
   that facility to [#16342](https://github.com/lfortran/lfortran/issues/16342).
@@ -891,10 +940,11 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the ranked [next priorities](#next-priorities): seal the reviewed native
-code baseline, then one actual ResidencySet causal prototype. The completed
-cohort audit is clear; conventional-prefill qualification and native runtime
-alignment remain open, not missing 2K/1536 executions.
+Follow the ranked [next priorities](#next-priorities): preserve sealed production
+and archive the functional residency experiment separately, then bounded
+offline timing analysis and exact setup-source tracing. The cohort audit is
+clear; conventional-prefill qualification and native runtime alignment remain
+open. No new experiment HEAD or GPU/cohort result is inferred.
 Fortran stays paused pending coordinator disposition. Competitive measured
 decode/process wall does not close conventional-prefill, compiler, physical-
 memory or full text-interface gates.
