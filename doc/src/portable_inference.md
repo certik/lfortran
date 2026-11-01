@@ -16,10 +16,10 @@ unearned; the phase exit gates remain open.
 matched resident-prefill measurements are **completed and audited CLEAN**
 at their saved-evidence scope. Short resident gates pass, but 2K prefill
 FAILS and other 2K gates are INCONCLUSIVE, so **Fortran does not resume**.
-Next is bounded per-family GPU attribution of the unchanged 2047-row C prefix,
-not more startup speculation or another benchmark cohort. The first sanity
-attempt blocked before model; gated correction/continuation is now authorized,
-but no valid family attribution is available.
+Completed conditional prefix profiling identifies **QMM/folds at approximately
+94% of isolated GPU time**. Next is one pending model-free 64x64x32 gate/up
+pilot, not startup speculation or a new model/cohort. No pilot result,
+production change or speedup is claimed.
 Original cold results, archived residency LOSS and the
 resource-count INCONCLUSIVE outcome remain unchanged.
 
@@ -167,7 +167,8 @@ Short resident decode is **16.32554 / 16.57053 tokens/s** (C / MLX), within
 readiness is **FAIL**, not statistical non-inferiority or Fortran acceptance.
 Original 29/1536 remains separate audited cold evidence, not newly warm-tested.
 Authority: session `native-resident-prefill/` (`resident-measurement-tables.txt`,
-`report.json`, `readiness.json`, `review/measurement-audit.{md,json}`).
+`resident-measurement-report.json`, `readiness.json`,
+`review/measurement-audit.{md,json}`).
 
 Offline 2K attribution covers **99.71–99.77% of C resident generation-to-first
 with GPU intervals**: reset is approximately 14 ms, uncovered time 30 ms and
@@ -183,13 +184,43 @@ assigned. Evidence: `native-resident-prefill/offline-2k-gap/report.txt`.
 The exact measured source is sealed locally as
 `9dd05ab27b9e169bfbcfdd8d094555b3e97f4e6b`, preserving host `7f048673…`
 and historical `e11429da…` receipts, not rewriting their original build base.
-Profiling then stopped before any native-library load/dispatch/model because
-the artifact sanity fixture selected `native.metal` instead of production
-`kernels.metal`. This is diagnostic setup, **not a production/compiler bug**;
-the failed attempt remains retained. Correction/continuation is now separately
-authorized, with frozen-asset preflight and replacement sanity gating first.
-Evidence: `native-resident-prefix-profile/report.txt` and
-`final-source-seal.json`.
+The initial bad-path attempt is retained separately. Corrected native sanity
+passes 14 actual dispatches, outputs/readonly/lifetimes and isolated clocks;
+one 2K/G65 cold+reset/warm model passes all 130 IDs, full-state reset hash,
+lookahead and count/clock gates. Production/measured math, options and four
+libraries remain unchanged.
+
+| Conditional isolated prefix GPU elapsed | Cold | Reset-warm |
+| --- | ---: | ---: |
+| Total, s / dispatches | 8.229118153 / 2122 | 9.493792028 / 2090 |
+| QMM/folds, s | 7.751454801 (94.20%) | 8.974141306 (94.53%) |
+| Recurrent, s | 0.242 | 0.267 |
+| SDPA, s | 0.132 | 0.149 (~1.6%) |
+
+These **KPROF-isolated** intervals change batching, concurrency, cache and
+frequency behavior: **not normal throughput or new acceptance**. Native GPU
+time remains unknown; no thermal/page-in cause is assigned. Actual names,
+ABI and counts reconcile, with no unsupported dispatched work. A CPU parser
+mistook PSO-name-pointer bins for unique text labels; its failure/logs are
+preserved and full label/count/time/KPROF reconciliation passed **offline,
+without a model rerun**. Invalid empty-wrapper timestamps remain raw,
+archived/excluded, not forged or substituted for parent intervals.
+Authority: `native-resident-prefix-profile/final-report.txt`, `analysis.json`
+and `final-source-seal.json`.
+
+**One pending hypothesis, model-free only:** the 126 gate/up calls
+`M=2047, N=17408, K=5120` cost **4.181087 s** in the isolated warm profile.
+Pilot `BM64/BN64/BK32` by instantiating the unchanged native affine-q8 body,
+keeping WM/WN2x2/TG128: **34,816 -> 8,704 threadgroups**, static staging
+**5,120 -> 10,240 bytes**, unchanged logical FLOPs. Register pressure and
+tails may erase gains; no numerical equivalence or speedup is presumed.
+This is a new source-supported specialization, not a claim pinned MLX selects
+64x64.
+Full same-input native outputs/tails, fixed-C small-scope checks, guards/reuse
+and bounded paired operator timings must precede any production route/model/
+cohort. No pilot results or new optimization HEAD are reported.
+Evidence: `native-resident-prefix-profile/next-optimization.json`;
+pending artifact work: `native-qmm64-pilot/`.
 
 ### Archived residency diagnostics and qualified discriminators
 
@@ -384,13 +415,12 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Use the newly authorized artifact-fixture correction and frozen-asset
-   preflight, then one replacement 14-dispatch sanity (at most 120 s).**
-   Only after that passes, run the original one two-request 2K diagnostic
-   (at most 1200 s), with artifact-local instrumentation only. Select a hot
-   family or precise missing discriminator; no profiler results, new benchmark cohort, optimization or
-   Fortran work are claimed. Do not substitute more startup speculation for
-   the GPU-prefix evidence.
+1. **Finish the one model-free BM64/BN64/BK32 gate/up operator pilot.** The
+   completed diagnostic selects QMM/folds, not recurrent/SDPA, as the dominant
+   conditional family. Require full native same-input/tail results, fixed-C
+   small-scope bounds, guards/readonly/reuse and bounded paired operator
+   timings before any production route, model or cohort. No pilot gain or
+   optimization acceptance is inferred; retain the failed-attempt/parser history.
 2. **Preserve the sealed measured source separately from production.** The
    four C/Make files are committed locally as `9dd05ab27b` on
    `experiment/qwen38-resident-prefill`, byte-identical to measured source.
@@ -1012,10 +1042,11 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the [next priorities](#next-priorities): authorized correction/sanity
-gating, then bounded per-family attribution of the unchanged 2K GPU prefix.
-Measured source is sealed; resident comparison is completed/audited but readiness
-FAILS. No valid profiler attribution is inferred. Keep original cold cohorts, archived residency
+Follow the [next priorities](#next-priorities): one pending, guarded model-free
+64x64x32 gate/up pilot based on completed conditional QMM/fold attribution.
+Measured source is sealed; resident readiness still FAILS. Neither isolated
+profiling nor an uncompleted pilot establishes throughput or optimization
+acceptance. Keep original cold cohorts, archived residency
 LOSS and the resource-count INCONCLUSIVE result separate.
 Fortran stays paused pending coordinator disposition. Competitive measured
 decode/process wall does not close conventional-prefill, compiler, physical-
