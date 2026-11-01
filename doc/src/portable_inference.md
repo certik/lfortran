@@ -1,12 +1,12 @@
 # Portable inference: staged roadmap
 
-**Status: native Fortran passes real-27B short17/reset under Flang;
-GFortran real-model acceptance is incomplete, and LFortran has bounded CPU
-proofs only. Offload/performance remain ahead; root compiler source is unchanged.**
+**Status: native Fortran real-27B short17/reset passes under Flang and LFortran.
+GFortran remains incomplete; correct offload is active but compiler-blocked.
+No throughput acceptance or root compiler integration is claimed.**
 
-This is an implementation roadmap, not a claim that LFortran currently runs
-the real model correctly or at competitive speed. The verified milestones
-below do not establish LFortran real-model, full text-interface, or complete
+This roadmap records bounded real-CPU short/reset correctness, not all-workload
+correctness or competitive LFortran speed. The milestones below do not establish
+full LFortran real-model, text-interface, or complete
 Fortran Metal acceptance. Unqualified MLX parity and release claims remain
 unearned; the phase exit gates remain open.
 
@@ -14,12 +14,12 @@ unearned; the phase exit gates remain open.
 
 **2026-11-01 CPU milestone:** native Fortran has 140 bounded checks under both
 CPU compilers and a real Flang 27B short17/full-second-request-reset PASS on
-source `98773cd4`; GFortran reached its cap without a result. Current `c077fe02`
-adds only a diagnostic pruned-prefix guard, with independent closure review
-in progress and no real-model rerun. LFortran `G:d94db95877` compiles the new
-modules and passes small/tiny CPU controls; latest-app/supervisor mapping is
-being prepared before a bounded real run. No new LFortran full-model result,
-compiler fix or accepted throughput is claimed.
+source `98773cd4`; GFortran reached its cap without a result. The `c077fe02`
+diagnostic review is closed. Unchanged `G:d94db95877` with app `c077` now
+passes real LFortran short17 and complete second-request reset. Current
+`FN:7503676` changes only the shared supervisor; Fortran is frozen. CPU scope
+is complete for Flang/LFortran short/reset, not all intermediates, workloads
+or speed. No compiler fix is credited with this CPU acceptance.
 
 The native C+Metal baseline is committed and backed up;
 the original two-arm resident measurements are **completed and audited CLEAN**
@@ -44,22 +44,30 @@ historical C performance FAIL/outlier or a claim of unqualified MLX parity.
 The goal is CPU correctness, correct offload, then comparable Metal speed;
 no new Fortran throughput is accepted.
 
+**Correctness bring-up policy:** do not change Fortran to work around compiler
+bugs; **fix LFortran bugs in LFortran**. Fortran edits are allowed only for
+performance and must preserve correctness. CPU success is not authorization
+to weaken offload, state/reset, numerical or reference gates.
+
 ### Implementation status
 
 `F` is the original Fortran application worktree, `FN` the isolated native
 Fortran worktree, `M` the historical hand-Metal worktree,
 `N` the native-math C+Metal worktree (`project/qwen38-mlx-native`), and `G` the
-experimental combined LFortran GPU worktree. Application features are not yet
+earlier combined LFortran GPU worktree. `H` is the new isolated compiler
+worktree `.fix-issue/qwen38-compiler/worktrees/native-offload`,
+`project/qwen38-native-offload` from `d94`. Application features are not yet
 fully consolidated into the application caller checkout.
 
 | Effort | Verified status | Speed status |
 | --- | --- | --- |
 | Frozen scalar C reference, `37ff651` | Checkpoint adaptation complete for text-only, batch-one, greedy raw IDs; frozen math, oracles and bounds retained. | No comparable CPU benchmark. |
 | Portable Fortran, `F:a70b69ed0a` | GFortran and Flang each pass real-27B 17-ID/full-reset checks, finite and byte-exact to saved C. Portable integer-backed BF16/q8 works; no new native real kinds. | Heavy correctness traces are **not throughput benchmarks**. |
-| Native Fortran, `project/qwen38-fortran-native`, current `c077fe02` | Portable `DO CONCURRENT` reference: 140 bounded checks pass under both compilers; Flang real short17/reset passes on earlier `98773cd4`. GFortran cap leaves real acceptance incomplete. Native internal bytes are not universally exact. Original `F/a70` is preserved. | Flang's 1663.13 s / 26.29 GiB is **correctness cost, not a throughput benchmark**. |
+| Native Fortran, `project/qwen38-fortran-native`, current supervisor `7503676` | Fortran frozen at `c077`; diagnostic review closed. Flang real PASS remains on `98773cd4`, LFortran real short/reset PASS on `c077`. GFortran cap remains incomplete; original `F/a70` preserved. | Flang 1663.13 s / 26.29 GiB and LF 3231.619 s / 27.004 GiB are **correctness costs, not throughput benchmarks**. |
 | Historical LFortran CPU, integrated `91f90a5a16` | Earlier tiny/I/O/header/offset proofs pass; its historical real run crashed before first logits. Cause remains undiagnosed; no new compiler fix. | No accepted CPU throughput. |
-| Native LFortran CPU prep, unchanged `G:d94db95877` / LLVM11.1.0 | App snapshot `9c07860`: all modules compile; 29 primitive comparisons pass (27 exact, two within unchanged bounds), plus tiny P5/G3 schema3/full reset. | No new real-model or throughput acceptance; final `c077` binary/supervisor mapping pending. |
+| Native LFortran CPU, unchanged `G:d94db95877` / LLVM11.1.0 | Earlier `9c07860` primitive/tiny proofs retained. App `c077` real P18/G17 and complete second-request reset PASS, all 17 native IDs/lookahead/counts. Finite guard scope is logits/recurrent FP32 state, not all intermediates. | Bounded short/reset correctness only; no accepted throughput or compiler-source fix. |
 | LFortran GPU, combined `G:d94db95877` | Prior tiny-driver proof is retained: IDs, finiteness/self-reset pass, exact/cross-C gates fail. Offloading the new native Fortran branch follows CPU validation, not a promotion of this checkpoint. | No 27B run or accepted throughput; optimization follows correct new offload. |
+| Native offload bring-up, `H` from `d94` | Reviewed generic ASR nested-strided gather `05409b4` and host-extent-preserving copied bounds `7b7fe820dd` have registered 595/596 regressions and targeted CPU/small actual-Metal PASS. App still blocked on scalar-integer exponent broadcast in elemental real-array `SUM`; fix belongs in compiler. | No app GPU binary, full-model/offload acceptance or full-suite/root-integration claim. |
 | Native-math C+Metal baseline, `N:8640d2df` / docs `86fb02f9` | Reviewed source baseline committed; binary/four native libraries match the original benchmark snapshot. Short17/reset and every protected 65/1536 ID pass. User-authorized private backup verified. | Audited 24-sample table below remains the validated performance baseline; conventional-prefill qualification remains open. |
 | Archived residency experiment, `c71595c7` | Local `experiment/qwen38-residency`, not pushed; functional controls pass and old Battery block is preserved. Production `86fb02f9`, binary `42c8930d…` and four libraries were restored clean. | Short65 ABBA N=2/arm screen **LOSS**, not N4/all-workload/formal regression; no runtime mode promoted. |
 | Completed resident comparison, measurement host `7f048673…` | 16 fresh children, 32 fully reported requests and 2,080 exact IDs; source/count/clock/AC-auto/resource gates and independent saved-evidence audit pass. Native math/four libraries and original production remain unchanged. | Historical short PASS / 2K FAIL-INCONCLUSIVE / overall readiness **FAIL** unchanged; no new warm1536 or Fortran acceptance follows. |
@@ -72,7 +80,8 @@ unit/reference/integration evidence does **not** apply to `G:d94db95877`.
 G was rebuilt with LLVM 11.1.0, source tree `7d2e9232d27c5535ea9e709446b2f91020051224`;
 the original `638209ef72` fix branch is preserved. Its connected compiler fixes
 have targeted/review evidence, but latest full suites, stale-GPU-reference
-reconciliation and integration into root remain pending.
+reconciliation and integration into root remain pending for both G/H until
+the connected compiler chain is stable.
 
 Version-specific CPU evidence: the Flang real control on
 `98773cd4c02bb619573e26166919661627fee382` uses 18 prompt/17 generated tokens:
@@ -82,15 +91,29 @@ tokens**, complete second-request reset, and finite checked logits/persistent
 FP32 state. GFortran hit **1800.30 s**, returned no result, demonstrated no
 numerical mismatch and was not retried. `c077fe02` is only the stale-z
 pruned-prefix diagnostic guard: focused fail-before/pass-after on both
-compilers, **no real rerun and independent review still pending**.
+compilers; its diagnostic review is now closed. The Flang run was not rerun
+for that guard. Later LFortran acceptance is separately recorded below.
 Authority: `FN/artifacts/fortran-native/handoff.json`.
 
 The LFortran bounded snapshot uses
 `--fast --std=f23 --no-fast-math --verify-all-passes`, **without an FMA skip**.
 Tiny IDs **[41,77,71]**, lookahead 125 and complete reset pass on source
-`9c07860`, not yet a latest-`c077` real run. Compiler source/executable `G:d94`
+`9c07860`, as earlier bounded evidence. Compiler source/executable `G:d94`
 is reused unchanged; evidence:
 `G/.fix-issue/qwen38-native-cpu-prep/optimized/handoff.json`.
+
+**Completed real LFortran CPU control:** unchanged `G:d94` / app `c077`,
+same optimized flags and no FMA skip, passes all 17 native IDs and lookahead
+48696: **19 forwards / one prefix / 18 heads and samplers / 35 tokens**.
+Complete second-request **self-reset** is bit-exact across all caches/state,
+final logits/logprobs and IDs, **38 forwards / 70 tokens total**. Finite guards
+cover recurrent FP32 state/head logits, **not an independent all-intermediate
+scan**. Its **3231.619 s / 27.004 GiB** includes an authorized 5 s own-process
+sample showing active q8 computation: correctness cost, **not a benchmark/TPS**.
+Source/runtime/binary/harness pins and raw paths:
+`G/.fix-issue/qwen38-native-cpu-final/real-cpu-short-handoff.json`.
+The child and CPU resources are released; the old root91f crash remains
+separate historical, undiagnosed evidence.
 
 ### Completed native-math migration
 
@@ -500,10 +523,12 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Close independent review of `c077` and preserve source-specific CPU
-   proofs.** Flang real PASS belongs to `98773cd4`; the diagnostic-only guard
-   has focused CPU proof, not a model rerun. GFortran's capped run remains
-   incomplete, not a demonstrated mismatch or permission for automatic retry.
+1. **Complete correct offload through compiler fixes, with Fortran frozen.**
+   H's reviewed gather/copied-bound fixes pass targeted controls, but scalar
+   integer exponent broadcast in elemental real-array `SUM` still blocks
+   the app. Fix that and subsequent LFortran bugs in LFortran, not application
+   rewrites; no GPU app acceptance yet. Preserve source-specific CPU proofs:
+   Flang `98773cd4`, LF `c077/G:d94`; GFortran's cap is not a mismatch or retry grant.
    Keep original `F/a70` and selected native-math `8640d2df`/PERF `86fb02f9`.
 2. **Preserve the sealed measured source separately from production.** The
    four C/Make files are committed locally as `9dd05ab27b` on
@@ -511,12 +536,11 @@ independent disposition: session artifact
    Preserve measurement host `7f048673…` and historical `e11429da…` mapping.
    No semantic source change or production push is implied; original
    production `86fb02f9`/`42c8930d…` and four libraries remain untouched.
-3. **Finish latest-`c077` LFortran app/supervisor identity mapping before a
-   separately authorized, exclusive bounded real short17/reset run.** Existing
-   `G:d94` optimized primitive/tiny evidence is on `9c07860`; do not transfer
-   it blindly or claim full acceptance. The old root91f crash remains historical
-   and undiagnosed; no compiler source change/full-suite pass is asserted.
-4. **Establish correct offload only after CPU gates pass.** Verify outputs,
+3. **Retain completed CPU acceptance without extending its scope.** The
+   c077 review is closed, supervisor-only `7503676` leaves Fortran unchanged,
+   and real LF short/reset PASS is distinct from old root91f failure. No
+   compiler fix, full-intermediate parity, throughput or all-workload proof follows.
+4. **Verify correct offload once a GPU app binary exists.** Check outputs,
    cache/state/reset, coverage and lifetimes; larger cases still need resource
    proof. No old paused 65,536 result or new 27B GPU acceptance is claimed.
 5. **When connected compiler fixes stabilize**, reconcile LLVM 11 references,
@@ -1126,11 +1150,11 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the [next priorities](#next-priorities): close the `c077` review and
-pin the latest LFortran app plus existing bounded supervisor before exclusive
-real CPU validation. Flang real PASS, GFortran timeout and LFortran small/tiny
-proofs retain their separate sources/scopes; no new LF full-model acceptance.
-Correct offload and profile-driven optimization remain ahead, not completed;
+Follow the [next priorities](#next-priorities): compiler-only correctness fixes
+for native offload's remaining exponent-broadcast/SUM blocker, then GPU
+application gates. Flang/LFortran CPU short/reset scopes pass; GFortran remains
+incomplete. Correct offload/performance is not accepted, and G/H full suites
+wait for a stable connected chain before root integration;
 no further C tuning is selected. Keep historical performance FAIL/outlier,
 original cold cohorts, archived residency
 LOSS and the resource-count INCONCLUSIVE result separate.
