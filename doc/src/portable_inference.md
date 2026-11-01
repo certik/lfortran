@@ -18,9 +18,10 @@ at their saved-evidence scope. Short resident gates pass, but 2K prefill
 FAILS and other 2K gates are INCONCLUSIVE, so **Fortran does not resume**.
 QMM64's corrected batched operator screen passes and limited local integration
 passes functional controls, but the new audited three-arm model comparison
-**FAILS readiness and promotion**. The candidate remains unpromoted; next is
-artifact-only public/own-process GPU/VM/thermal diagnosis without privileged
-telemetry. No diagnostic results or optimization are claimed.
+**FAILS readiness and promotion**. The completed unprivileged diagnostic did
+**not reproduce the severe GPU slowdown**; it does not explain or waive the
+historical failure. Next priority awaits user disposition; no new C/Fortran
+work or Fortran transition is authorized.
 Original cold results, archived residency LOSS and the
 resource-count INCONCLUSIVE outcome remain unchanged.
 
@@ -97,15 +98,15 @@ The user-authorized **private**
 was independently verified at `86fb02f9`: source and validation matrix are
 saved. This is not an LFortran push or PR.
 
-Session lessons are incorporated into the installed `optimize-metal` guide
-and three focused native-source/parity, measurement/diagnosis and case-study
-references, including corrected conflicting catalog guidance. Commit
-`dbeead3d64f3d5463c40171cb4afe2462af399f3` was the initial rewrite; the branch is
-now verified at `4fa787b5e118c8e4700eab1d6bce5a44144815bc`, with residency/clock
-closure in two references, on the user-chosen **new
-public** [lessons branch](https://github.com/certik/ai_skills/tree/project/qwen38-metal-lessons);
-remote main remained `404cf8f`. These are reusable methodology/evidence,
-**not measured optimization-time savings**.
+Latest lesson coverage is **complete, reviewed and published** in the installed
+`optimize-metal` guide and references: all latest 10 items/material phases are
+mapped in session `optimize-metal-upgrade/latest-round/coverage-matrix.md`.
+The seven-document update `05aeabd…` plus wording follow-up
+`0f7eea7709e332c3efd8384216d2a94fc5829feb` are verified on the same public
+[lessons branch](https://github.com/certik/ai_skills/tree/project/qwen38-metal-lessons),
+building on the earlier dbeead3/4fa787b work. Core is 278 lines; remote main
+remained `404cf8f`. Original evaluation outputs are unchanged. This is
+methodology coverage, **not measured hours saved or Fortran authorization**.
 
 ### Fresh all-three paired AC measurements
 
@@ -262,6 +263,15 @@ Metal/JIT labels around 0.02–0.04 s are **not isolated PSO compilation**.
 No thermal/OS/JIT/paging/frequency cause is established, and no eager-PSO
 source change is justified. Evidence:
 `native-qmm64-comparison/offline-cost-breakdown/report.txt`.
+
+The unprivileged diagnostic is **COMPLETE**: two children/260 exact IDs pass,
+including candidate 126/126 counters; the severe slowdown is **NOT REPRODUCED**.
+Public own VM/thermal/QoS state is supported, but GPU frequency/traffic/
+utilization remain **UNKNOWN**. Cold decompression/driver correlation is not
+causality. No root/admin access, optimization, acceptance or promotion;
+historical FAIL/outlier evidence is retained. All compute owners released.
+Authority: `native-unprivileged-state/report.md`. Project priority now awaits
+user disposition; **Fortran remains PAUSED**, with no transition chosen.
 
 ### Archived residency diagnostics and qualified discriminators
 
@@ -456,14 +466,11 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Diagnose the unpromoted QMM64 comparison using public evidence only.**
-   The user chose **“Continue without privileged telemetry.”** `powermetrics`
-   requires root here; that is not a hard toolchain blocker or a cause.
-   Use artifact-only own-process/public numeric GPU/VM/thermal diagnostics,
-   without root/admin/private-access workarounds or settings changes. After
-   support/sanity passes, allow at most two old-C/candidate 2K two-request
-   diagnostics; no KPROF isolation, new acceptance cohort or optimization.
-   No results are reported yet; unavailable counters remain unknown.
+1. **Await user disposition before any new C/Fortran work.** Latest lessons
+   are complete/reviewed/published and public-state diagnosis is complete;
+   severe slowdown was not reproduced, its historical cause remains unknown,
+   and readiness/promotion FAIL is unchanged. No Fortran transition has been
+   explicitly chosen. Do not start a new diagnostic, optimization or cohort.
 2. **Preserve the sealed measured source separately from production.** The
    four C/Make files are committed locally as `9dd05ab27b` on
    `experiment/qwen38-resident-prefill`, byte-identical to measured source.
@@ -1085,11 +1092,11 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the [next priorities](#next-priorities): bounded public/own-process
-diagnosis of the unpromoted QMM64 outcome, without privileged telemetry.
-Operator PASS and a better 2K median do not override readiness/promotion FAIL
-or retained within-block outliers. No diagnostic results or causal attribution
-are inferred. Keep original cold cohorts, archived residency
+Follow the [next priorities](#next-priorities): await user disposition.
+Latest lesson coverage and unprivileged diagnosis are complete; no explicit
+Fortran transition or new C work is authorized. Non-reproduction and a better
+2K median do not override readiness/promotion FAIL or explain the retained
+outlier. Keep original cold cohorts, archived residency
 LOSS and the resource-count INCONCLUSIVE result separate.
 Fortran stays paused pending coordinator disposition. Competitive measured
 decode/process wall does not close conventional-prefill, compiler, physical-
