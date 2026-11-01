@@ -1,7 +1,7 @@
 # Portable inference: staged roadmap
 
-**Status: native-math C+Metal has competitive measured decode/process wall.
-The all-three measurement audit is clear; conventional prefill remains open.
+**Status: the original cold all-three audit is clear; matched resident readiness
+FAILS its frozen 5% bar because of 2K prefill.
 Fortran remains paused; its compiler source is unchanged.**
 
 This is an implementation roadmap, not a claim that LFortran currently runs
@@ -13,17 +13,15 @@ unearned; the phase exit gates remain open.
 ## Current status, speeds and next plan
 
 **2026-11-01 summary:** the native C+Metal baseline is committed and backed up;
-the functional residency experiment is archived after a losing short screen,
-and the model-free resource-count discriminator is inconclusive. The user
-selected **matched resident-prefill measurements, then Fortran readiness
-assessment**; preparation is CPU-only so far, with no model/results yet.
-The math migration is complete
-for the protected workload controls. Paired AC measurements cover **all
-three workloads**: decode medians are within approximately 1% of MLX, and
-actual process wall is lower. Conventional prefill remains below target;
-setup-inclusive comparisons have different work exclusions. Source/math
-reviews, boundary follow-ups and the completed-cohort measurement audit are
-**clear**. Conventional-prefill qualification remains open.
+matched resident-prefill measurements are **completed and audited CLEAN**
+at their saved-evidence scope. Short resident gates pass, but 2K prefill
+FAILS and other 2K gates are INCONCLUSIVE, so **Fortran does not resume**.
+Next is bounded per-family GPU attribution of the unchanged 2047-row C prefix,
+not more startup speculation or another benchmark cohort. The first sanity
+attempt blocked before model; gated correction/continuation is now authorized,
+but no valid family attribution is available.
+Original cold results, archived residency LOSS and the
+resource-count INCONCLUSIVE outcome remain unchanged.
 
 **Priority: C+Metal performance is now the critical path.** Match, ideally
 exceed, MLX on **both prefill and decode** before using hand-written Metal as
@@ -47,7 +45,7 @@ fully consolidated into the application caller checkout.
 | LFortran GPU, combined `G:d94db95877` | Tiny whole driver runs on Metal in normal/strict modes; IDs, finiteness and self-reset pass, but exact/cross-C gates fail. Scaling/checks are **paused at the current safe checkpoint**; no later-stage result is claimed. | No 27B run or accepted throughput; compiler performance work waits for competitive hand-Metal. |
 | Native-math C+Metal baseline, `N:8640d2df` / docs `86fb02f9` | Reviewed source baseline committed; binary/four native libraries match the original benchmark snapshot. Short17/reset and every protected 65/1536 ID pass. User-authorized private backup verified. | Audited 24-sample table below remains the validated performance baseline; conventional-prefill qualification remains open. |
 | Archived residency experiment, `c71595c7` | Local `experiment/qwen38-residency`, not pushed; functional controls pass and old Battery block is preserved. Production `86fb02f9`, binary `42c8930d…` and four libraries were restored clean. | Short65 ABBA N=2/arm screen **LOSS**, not N4/all-workload/formal regression; no runtime mode promoted. |
-| Planned resident-prefill measurements | User-selected short18/65 and 2048/65 protocol is being prepared, CPU-only. Source/protocol review precedes any model run. | No new results or HEAD/binary reported; original 29/1536 remains separate audited evidence. |
+| Completed resident comparison, measurement host `7f048673…` | 16 fresh children, 32 fully reported requests and 2,080 exact IDs; source/count/clock/AC-auto/resource gates and independent saved-evidence audit pass. Native math/four libraries and original production remain unchanged. | Short gates PASS; 2K prefill FAIL, other 2K gates INCONCLUSIVE; overall frozen 5% readiness **FAIL**. No new warm1536 claim or Fortran resume. |
 | Historical hand-Metal, `M:c296c2cef9` | SG was accepted for its short scope; earlier qmv4/MMA experiments and their unresolved dispositions remain preserved. | Old AC/Battery observations below, **not pooled with N**. |
 | Native MLX | All three fresh paired AC cohorts have complete protected-ID/count/source/power guards. | Conventional and setup-inclusive metrics below; native GPU-busy time remains unknown. |
 
@@ -149,6 +147,49 @@ Completed raw distributions, medians/bests and pairs:
 `N/artifacts/native-benchmark-prep/all3-measurement-report.json`;
 source freeze `776b0224…`, preregistration `48c5e05a…`. No old warm-resident,
 native AC or Battery cohorts are mixed into this series.
+
+### Completed resident comparison: scoped readiness FAIL
+
+Separate short18/G65 and 2048/G65 **ABBABAAB N=4/engine** cohorts retain one
+loaded model per fresh child: a fully reported conditioning request followed
+by a fresh-state request. Primary resident request-to-first starts **before
+reset/new cache/input/wiring**; all cold, conditioning, exit and outer costs
+are reported. Resident means same-process model retention, **not physical
+page pinning**. The original 24-sample table is neither retimed nor replaced.
+
+| Resident workload | Median prefill tokens/s, C / MLX | Frozen outcome |
+| --- | ---: | --- |
+| **18 / 65** | **80.066587 / 67.741849** (+18.2%) | All short gates PASS |
+| **2048 / 65** | **181.34 / 196.10** (C -7.5306%) | Prefill FAIL; other three gates INCONCLUSIVE from paired spread |
+
+Short resident decode is **16.32554 / 16.57053 tokens/s** (C / MLX), within
+5%, **not the original cold within-1% claim**. Overall preregistered 5%
+readiness is **FAIL**, not statistical non-inferiority or Fortran acceptance.
+Original 29/1536 remains separate audited cold evidence, not newly warm-tested.
+Authority: session `native-resident-prefill/` (`resident-measurement-tables.txt`,
+`report.json`, `readiness.json`, `review/measurement-audit.{md,json}`).
+
+Offline 2K attribution covers **99.71–99.77% of C resident generation-to-first
+with GPU intervals**: reset is approximately 14 ms, uncovered time 30 ms and
+first submit 2 ms. The 2047-row GPU prefix dominates; in both losing adjacent pairs
+C's GPU union alone exceeds native's **entire request-to-first**. Thus the
+excess is not primarily off-GPU startup/reset. Native GPU time is unknown,
+and GPU elapsed includes stalls, **not pure arithmetic**. Cold/warm C prefix
+capacities 2048/2304 and changed strides are source-derived, with unchanged
+logical GEMMs, **not a proved cause**. Warm/cold changes are mixed, including
+one slow C and one slow native decode sample; no thermal/JIT/paging cause is
+assigned. Evidence: `native-resident-prefill/offline-2k-gap/report.txt`.
+
+The exact measured source is sealed locally as
+`9dd05ab27b9e169bfbcfdd8d094555b3e97f4e6b`, preserving host `7f048673…`
+and historical `e11429da…` receipts, not rewriting their original build base.
+Profiling then stopped before any native-library load/dispatch/model because
+the artifact sanity fixture selected `native.metal` instead of production
+`kernels.metal`. This is diagnostic setup, **not a production/compiler bug**;
+the failed attempt remains retained. Correction/continuation is now separately
+authorized, with frozen-asset preflight and replacement sanity gating first.
+Evidence: `native-resident-prefix-profile/report.txt` and
+`final-source-seal.json`.
 
 ### Archived residency diagnostics and qualified discriminators
 
@@ -343,20 +384,19 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Run matched resident-prefill measurements, then assess Fortran readiness.**
-   Preparation is CPU-only; no model has launched. Plan short18/G65 and
-   2048/G65: one loaded model per fresh child, one full declared conditioning
-   request, then a fresh-state subsequent request. Primary resident
-   request-to-first starts **before reset/new cache/input/wiring**; report all
-   cold, conditioning, exit and actual outer-child costs. No hidden warmup or
-   retiming of the original 24-sample cohort.
-2. **Review protocol/source before planned fresh-process ABBABAAB N=4/engine
-   cohorts for those two workloads.** Native `generate_step`/`wired_limit`
-   and C generation loops remain unchanged; any necessary C `--reset-check`
-   adaptation is limited to added clocks/result serialization on a separate
-   local experiment branch. Its HEAD/binary is not reported yet. No new
-   model/results are claimed; 29/1536 is not newly warm-tested. Keep production
-   separate from archived residency; no consolidation or runtime mode is promoted.
+1. **Use the newly authorized artifact-fixture correction and frozen-asset
+   preflight, then one replacement 14-dispatch sanity (at most 120 s).**
+   Only after that passes, run the original one two-request 2K diagnostic
+   (at most 1200 s), with artifact-local instrumentation only. Select a hot
+   family or precise missing discriminator; no profiler results, new benchmark cohort, optimization or
+   Fortran work are claimed. Do not substitute more startup speculation for
+   the GPU-prefix evidence.
+2. **Preserve the sealed measured source separately from production.** The
+   four C/Make files are committed locally as `9dd05ab27b` on
+   `experiment/qwen38-resident-prefill`, byte-identical to measured source.
+   Preserve measurement host `7f048673…` and historical `e11429da…` mapping.
+   No semantic source change or production push is implied; original
+   production `86fb02f9`/`42c8930d…` and four libraries remain untouched.
 3. **Keep Fortran paused pending coordinator disposition of the C performance
    bar.** Preserve all evidence; no result is claimed for the paused 65,536
    stage. Revisit scaling after the qualified C performance milestone and
@@ -972,11 +1012,11 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the user-selected [next priorities](#next-priorities): prepare and review
-matched resident-prefill measurements, then assess Fortran readiness. Production
-remains separate from the archived losing residency screen and inconclusive
-resource-count discriminator. The original cohort stays unchanged; no resident
-measurement HEAD/binary, model run or result is inferred.
+Follow the [next priorities](#next-priorities): authorized correction/sanity
+gating, then bounded per-family attribution of the unchanged 2K GPU prefix.
+Measured source is sealed; resident comparison is completed/audited but readiness
+FAILS. No valid profiler attribution is inferred. Keep original cold cohorts, archived residency
+LOSS and the resource-count INCONCLUSIVE result separate.
 Fortran stays paused pending coordinator disposition. Competitive measured
 decode/process wall does not close conventional-prefill, compiler, physical-
 memory or full text-interface gates.
