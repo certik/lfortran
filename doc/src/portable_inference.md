@@ -1,7 +1,7 @@
 # Portable inference: staged roadmap
 
-**Status: the original cold all-three audit is clear; matched resident readiness
-FAILS its frozen 5% bar because of 2K prefill.
+**Status: the original cold audit is clear; QMM64 operator gains do not clear
+audited model-readiness/promotion gates.
 Fortran remains paused; its compiler source is unchanged.**
 
 This is an implementation roadmap, not a claim that LFortran currently runs
@@ -13,13 +13,14 @@ unearned; the phase exit gates remain open.
 ## Current status, speeds and next plan
 
 **2026-11-01 summary:** the native C+Metal baseline is committed and backed up;
-matched resident-prefill measurements are **completed and audited CLEAN**
+the original two-arm resident measurements are **completed and audited CLEAN**
 at their saved-evidence scope. Short resident gates pass, but 2K prefill
 FAILS and other 2K gates are INCONCLUSIVE, so **Fortran does not resume**.
-Completed conditional prefix profiling identifies **QMM/folds at approximately
-94% of isolated GPU time**. Next is one pending model-free 64x64x32 gate/up
-pilot, not startup speculation or a new model/cohort. No pilot result,
-production change or speedup is claimed.
+QMM64's corrected batched operator screen passes and limited local integration
+passes functional controls, but the new audited three-arm model comparison
+**FAILS readiness and promotion**. The candidate remains unpromoted; next is
+artifact-only public/own-process GPU/VM/thermal diagnosis without privileged
+telemetry. No diagnostic results or optimization are claimed.
 Original cold results, archived residency LOSS and the
 resource-count INCONCLUSIVE outcome remain unchanged.
 
@@ -46,6 +47,7 @@ fully consolidated into the application caller checkout.
 | Native-math C+Metal baseline, `N:8640d2df` / docs `86fb02f9` | Reviewed source baseline committed; binary/four native libraries match the original benchmark snapshot. Short17/reset and every protected 65/1536 ID pass. User-authorized private backup verified. | Audited 24-sample table below remains the validated performance baseline; conventional-prefill qualification remains open. |
 | Archived residency experiment, `c71595c7` | Local `experiment/qwen38-residency`, not pushed; functional controls pass and old Battery block is preserved. Production `86fb02f9`, binary `42c8930d…` and four libraries were restored clean. | Short65 ABBA N=2/arm screen **LOSS**, not N4/all-workload/formal regression; no runtime mode promoted. |
 | Completed resident comparison, measurement host `7f048673…` | 16 fresh children, 32 fully reported requests and 2,080 exact IDs; source/count/clock/AC-auto/resource gates and independent saved-evidence audit pass. Native math/four libraries and original production remain unchanged. | Short gates PASS; 2K prefill FAIL, other 2K gates INCONCLUSIVE; overall frozen 5% readiness **FAIL**. No new warm1536 claim or Fortran resume. |
+| Limited QMM64 candidate, `4921bf7b` | Local `experiment/qwen38-qmm64`, parent `9dd05ab`; short/2K two-request functional controls pass. Only the exact non-split gate/up shape uses 64; other/decode paths stay 32. | Operator screen PASS, but audited three-arm model readiness/promotion **FAIL**. Not promoted or pushed. |
 | Historical hand-Metal, `M:c296c2cef9` | SG was accepted for its short scope; earlier qmv4/MMA experiments and their unresolved dispositions remain preserved. | Old AC/Battery observations below, **not pooled with N**. |
 | Native MLX | All three fresh paired AC cohorts have complete protected-ID/count/source/power guards. | Conventional and setup-inclusive metrics below; native GPU-busy time remains unknown. |
 
@@ -208,19 +210,58 @@ archived/excluded, not forged or substituted for parent intervals.
 Authority: `native-resident-prefix-profile/final-report.txt`, `analysis.json`
 and `final-source-seal.json`.
 
-**One pending hypothesis, model-free only:** the 126 gate/up calls
+**Completed operator hypothesis, not model acceptance:** the 126 gate/up calls
 `M=2047, N=17408, K=5120` cost **4.181087 s** in the isolated warm profile.
-Pilot `BM64/BN64/BK32` by instantiating the unchanged native affine-q8 body,
+The `BM64/BN64/BK32` pilot instantiates the unchanged native affine-q8 body,
 keeping WM/WN2x2/TG128: **34,816 -> 8,704 threadgroups**, static staging
-**5,120 -> 10,240 bytes**, unchanged logical FLOPs. Register pressure and
-tails may erase gains; no numerical equivalence or speedup is presumed.
+**5,120 -> 10,240 bytes**, unchanged logical FLOPs.
 This is a new source-supported specialization, not a claim pinned MLX selects
-64x64.
-Full same-input native outputs/tails, fixed-C small-scope checks, guards/reuse
-and bounded paired operator timings must precede any production route/model/
-cohort. No pilot results or new optimization HEAD are reported.
-Evidence: `native-resident-prefix-profile/next-optimization.json`;
-pending artifact work: `native-qmm64-pilot/`.
+64x64. Corrected outputs/guards/typed variation and actual PSO/grid/ABI checks
+pass. The predeclared eight batches of 32 serial dispatches (256 total) pass
+the operator screen: paired GPU reductions **6.58 / 7.29 / 10.63 / 9.08%**,
+median **8.19%**, worst **6.58%**. These are operator-only observations;
+the original bias-fixture-bug and corrected eight-single-call experiments remain
+**INCONCLUSIVE**, immutable and unpooled.
+Evidence: `native-qmm64-pilot/final-batch-screen/final-report.txt`.
+
+### Limited QMM64 integration and audited model outcome
+
+Local `experiment/qwen38-qmm64` commit
+`4921bf7b0e327561259c7419e1db5d75c27f7451` changes 13 focused files, with
+frozen binary `b22ab369…`, base `d1610f94…` and unchanged auxiliary libraries.
+Only non-split `M2047/N17408/K5120` routes to 64. Protected short and 2K
+two-request controls each pass 130 IDs/state/lookahead/counts; actual 64 counts
+are **0/0 short and 126/126 2K**. Local review is clear, **not production
+promotion**; original production `86fb02f9`/`42c8930d…` and measurement
+`9dd05ab`/`7f048673…` remain unchanged.
+
+A separate **ABC/CBA/BCA/ACB N=4/arm** comparison has 24 children, 48 requests
+and 3,120 exact IDs under manifest `192eeaf1…`. Saved-evidence audit is
+**CLEAN** for bindings/clocks/counts/guards/statistics; earlier cohorts are
+not pooled. Resident prefill medians, tokens/s:
+
+| Scope | MLX (A) | Old C (B) | Candidate (C) | Overall outcome |
+| --- | ---: | ---: | ---: | --- |
+| 18/65 | 67.419674 | 80.181646 | 80.251395 | Readiness PASS; promotion FAIL |
+| 2048/65 | 185.040938 | 182.843067 | 194.002953 | Readiness FAIL; promotion FAIL |
+
+Candidate 2K median is **+6.1035% versus old C / +4.8433% versus MLX**, but
+**C/A readiness FAILS and C/B promotion FAILS**. The 2K cold spawn-first
+median C/A is **1.053265 >1.05**; C/B cold ratios are **1.078313 short /
+1.217282 long**, and 2K whole-child ratio **1.080581**. Within-block prefill,
+decode and outer violations remain: worst candidate 2K sample 3 retains
+**112.709 prefill / 8.351 decode tokens/s / 58.9925 s child**. Never discard
+it or relabel historical data. Short warm is essentially unchanged from
+old C; other 2K candidate samples vary. Authority: `native-qmm64-comparison/`
+(`measurement-tables.txt`, `measurement-report.json`, `review/measurement-audit.{md,json}`).
+
+Within the worst block, **25.40 s extra child time includes 24.01 s GPU time**,
+in both prefix and **unchanged decode, where 64 dispatch count is 0**. Short
+cold losses mainly vary in read/copy and first-driver gaps. Inclusive
+Metal/JIT labels around 0.02–0.04 s are **not isolated PSO compilation**.
+No thermal/OS/JIT/paging/frequency cause is established, and no eager-PSO
+source change is justified. Evidence:
+`native-qmm64-comparison/offline-cost-breakdown/report.txt`.
 
 ### Archived residency diagnostics and qualified discriminators
 
@@ -415,12 +456,14 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Finish the one model-free BM64/BN64/BK32 gate/up operator pilot.** The
-   completed diagnostic selects QMM/folds, not recurrent/SDPA, as the dominant
-   conditional family. Require full native same-input/tail results, fixed-C
-   small-scope bounds, guards/readonly/reuse and bounded paired operator
-   timings before any production route, model or cohort. No pilot gain or
-   optimization acceptance is inferred; retain the failed-attempt/parser history.
+1. **Diagnose the unpromoted QMM64 comparison using public evidence only.**
+   The user chose **“Continue without privileged telemetry.”** `powermetrics`
+   requires root here; that is not a hard toolchain blocker or a cause.
+   Use artifact-only own-process/public numeric GPU/VM/thermal diagnostics,
+   without root/admin/private-access workarounds or settings changes. After
+   support/sanity passes, allow at most two old-C/candidate 2K two-request
+   diagnostics; no KPROF isolation, new acceptance cohort or optimization.
+   No results are reported yet; unavailable counters remain unknown.
 2. **Preserve the sealed measured source separately from production.** The
    four C/Make files are committed locally as `9dd05ab27b` on
    `experiment/qwen38-resident-prefill`, byte-identical to measured source.
@@ -1042,11 +1085,11 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the [next priorities](#next-priorities): one pending, guarded model-free
-64x64x32 gate/up pilot based on completed conditional QMM/fold attribution.
-Measured source is sealed; resident readiness still FAILS. Neither isolated
-profiling nor an uncompleted pilot establishes throughput or optimization
-acceptance. Keep original cold cohorts, archived residency
+Follow the [next priorities](#next-priorities): bounded public/own-process
+diagnosis of the unpromoted QMM64 outcome, without privileged telemetry.
+Operator PASS and a better 2K median do not override readiness/promotion FAIL
+or retained within-block outliers. No diagnostic results or causal attribution
+are inferred. Keep original cold cohorts, archived residency
 LOSS and the resource-count INCONCLUSIVE result separate.
 Fortran stays paused pending coordinator disposition. Competitive measured
 decode/process wall does not close conventional-prefill, compiler, physical-
