@@ -38,6 +38,7 @@
 #include <libasr/pass/replace_sign_from_value.h>
 #include <libasr/pass/replace_class_constructor.h>
 #include <libasr/pass/unused_functions.h>
+#include <libasr/pass/recursion_analysis.h>
 #include <libasr/pass/inline_function_calls.h>
 #include <libasr/pass/dead_code_removal.h>
 #include <libasr/pass/replace_for_all.h>
@@ -120,6 +121,7 @@ namespace LCompilers {
             {"print_list_tuple", &pass_replace_print_list_tuple},
             {"class_constructor", &pass_replace_class_constructor},
             {"unused_functions", &pass_unused_functions},
+            {"recursion_analysis", &pass_recursion_analysis},
             {"div_to_mul", &pass_replace_div_to_mul},
             {"fma", &pass_replace_fma},
             {"sign_from_value", &pass_replace_sign_from_value},
@@ -369,6 +371,9 @@ namespace LCompilers {
                 "global_init_wire",
                 "transform_optional_argument_functions",
                 "select_case",
+                // Under --fast, proves procedures non-recursive, so that
+                // nested_vars gives their internal procedures one thunk.
+                "recursion_analysis",
                 "nested_vars",
                 "class_constructor",
                 "pass_list_expr",

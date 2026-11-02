@@ -3019,6 +3019,15 @@ filename = "../integration_tests/recursion_03.f90"
 asr = true
 llvm = true
 
+# The recursion analysis (--fast) clears the recursive flag of the
+# procedures it proves non-recursive
+[[test]]
+filename = "../integration_tests/recursion_analysis_01.f90"
+asr = true
+pass_with_llvm = true
+pass = "recursion_analysis"
+fast = true
+
 [[test]]
 filename = "../integration_tests/return_01.f90"
 llvm = true

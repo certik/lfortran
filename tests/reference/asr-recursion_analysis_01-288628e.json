@@ -1,0 +1,13 @@
+{
+    "basename": "asr-recursion_analysis_01-288628e",
+    "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
+    "infile": "tests/../integration_tests/recursion_analysis_01.f90",
+    "infile_hash": "627490833421874b495fa5b97ad3e4384e0a819f9671d9acbe1aa6ff",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "asr-recursion_analysis_01-288628e.stdout",
+    "stdout_hash": "047482bc1fdead98a69b7da1941d893836c88947819b26ce656594ed",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

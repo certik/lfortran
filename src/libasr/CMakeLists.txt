@@ -74,6 +74,7 @@ set(SRC
     pass/print_list_tuple.cpp
     pass/pass_utils.cpp
     pass/unused_functions.cpp
+    pass/recursion_analysis.cpp
     pass/flip_sign.cpp
     pass/div_to_mul.cpp
     pass/replace_symbolic.cpp

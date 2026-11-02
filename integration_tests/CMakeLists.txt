@@ -3679,6 +3679,8 @@ RUN(NAME recursion_07 LABELS gfortran llvm)
 # GFortran 15 has an internal compiler error on recursion_08 (`reduce` with a
 # procedure that enters the host of the internal procedure calling `reduce`)
 RUN(NAME recursion_08 LABELS llvm)
+RUN(NAME recursion_analysis_01 LABELS gfortran llvm)
+RUN(NAME recursion_analysis_02 LABELS gfortran llvm)
 
 RUN(NAME host_assoc_01 LABELS gfortran llvm)
 RUN(NAME host_assoc_02 LABELS gfortran llvm)
