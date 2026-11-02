@@ -3,7 +3,7 @@
 **Status: native Fortran real-27B short17/reset passes under Flang and LFortran.
 Bounded native GPU controls now pass; GFortran remains incomplete.
 GPU memory correctness/Metal parity are the focus; further CPU model inference/
-benchmarks are deferred. Five publication PRs are ready, scalar LOG is draft;
+benchmarks are deferred. Six publication PRs are ready;
 no merge was performed by this workflow and the inventory is not fully processed.**
 
 This roadmap records bounded real-CPU short/reset correctness, not all-workload
@@ -80,7 +80,7 @@ remote `ondrej`. Authority:
 | [#16552](https://github.com/lfortran/lfortran/pull/16552), INQUIRE SIZE, fixes #16353 — **READY** | `9f252ccb60660d9417f9be15c66478aa46f3feca` | Final rework propagates recursive metadata-import/caller failure; all 12 Quick PASS, run `41427088566`, including actual native GCC Release. Earlier partial verification is not pooled. |
 | [#16553](https://github.com/lfortran/lfortran/pull/16553), RESHAPE — **READY** | `051b12e3397f1566c4c01e454edb3d12b55d860d` | Clean review, qualified 59 units / 2128 references / 5668 default integration PASS; Quick 12/12, run `41396318986`. |
 | [#16558](https://github.com/lfortran/lfortran/pull/16558), nested BLOCK helper capture — **READY** | `f1ac9a98d99e3ed6bcec21caf25cdd119277ea8c` | All 12 Quick PASS, run `41409480375`; fresh targeted modes/current review. Previous 59 units / 5668 default integration / 2128 references **CARRIED** across CMake-only rebase, not fresh full suites. |
-| [#16559](https://github.com/lfortran/lfortran/pull/16559), independent scalar LOG — draft | `260125119930abc0f14a349173cdba6598bf2f80` | Fresh review 0/0/0; full 59 units / 5675 default integration / 2128 references PASS (1626 entries, one existing backendless entry); run `41415635813` still awaiting watch. |
+| [#16559](https://github.com/lfortran/lfortran/pull/16559), independent scalar LOG — **READY** | `260125119930abc0f14a349173cdba6598bf2f80` | Fresh review 0/0/0; qualified full 59 units / 5675 default integration / 2128 references PASS (1626 entries, one existing backendless entry). Verified current-head Quick 12/12 SUCCESS, run `41415635813`; 0 comments/reviews/inline comments, MERGEABLE/CLEAN, verified non-draft. |
 
 **Zero feedback at readiness; automated review is not human approval.**
 No merge was performed by this workflow. Qualified local integration used the
@@ -314,9 +314,11 @@ physical-fit proof must precede full-model GPU or profiling.
 **Real-GPU admission remains NO-GO:** original **52 GiB** and candidate
 **48 GiB** profiles both await mechanism review. Independent review found
 four gaps: underestimated precharge, blocking/stale measurement watchdog,
-descendant/PID cleanup, and one-use execution enforcement. The isolated
-controller-v2 worker is correcting these with **synthetic controls only**; v2 is
-not ready and no usable real lease is allowed. `memory_pressure` percentage
+descendant/PID cleanup, and one-use execution enforcement. Controller-v2
+completed **12 synthetic controls**, reports all four mechanisms reworked and
+known children released. Fresh independent review is launching: **not accepted
+as ready**, both profiles remain NO-GO and real-model bindings are **NULL**;
+f5 driver refresh is pending, with no usable real lease. `memory_pressure` percentage
 includes active memory: an indicator, **not unused/allocatable RAM or fit proof**.
 The planned first control, only after admission clears, is **P18/G1 with full
 reset, expected ID 9419 / lookahead 0**. No G17/2K/sustained/benchmark
@@ -749,14 +751,15 @@ independent disposition: session artifact
 3. **Publish existing implemented fixes in parallel via `fix-issue`.** Reuse
    focused commits/MREs, fresh review per fix and owning-reference evidence;
    separate independent PRs, consolidate only genuine dependencies. The 16
-   envelopes remain tentative and incomplete: #16548/#16551/#16552/#16553/#16558
-   are ready (Quick 12/12 each), #16559 draft; no workflow merge.
-   Scalar LOG watch and held-kind/narrow-storage
-   support remain pending. Memory optimization is additional to the inventory.
+   envelopes remain tentative and incomplete: #16548/#16551/#16552/#16553/#16558/#16559
+   are ready (Quick 12/12 each); no workflow merge.
+   Held-kind/narrow-storage support remains pending; memory optimization is
+   additional to the inventory.
    Hold int64/closure for the user's #15895 ping; do not poll or touch that PR.
    Resolve connected regressions without waivers or blocking independent jobs.
 4. **Close controller-v2 admission mechanisms before any real GPU lease.**
-   Both 52/48 GiB profiles remain NO-GO; synthetic controls are not v2 readiness.
+   Both 52/48 GiB profiles remain NO-GO; 12 completed synthetic controls are not
+   v2 readiness. Independent review is launching; real bindings remain NULL.
    Only after clearance consider planned P18/G1/reset; no authorization for
    longer runs or benchmarks. Require memory/physical-fit and full-shape correctness before
    broader real-27B GPU/profiling. Tiny PASS does not close allocation, residency,
@@ -1374,9 +1377,9 @@ without coauthor or AI-attribution trailers.
 ## Next immediate action
 
 Follow the [next priorities](#next-priorities): finish driver bindings/current
-compiler validation and synthetic controller-v2 corrections before any real
+compiler validation and independent controller-v2 review before any real
 GPU lease. Planned scratch is not fit; further rematerialization is unimplemented.
-Publication remains incomplete: five ready/one draft PR, no workflow merge.
+Publication remains incomplete: six ready PRs, no workflow merge.
 Further CPU model inference/benchmarks are deferred; compiler regressions/
 suites remain required. Stable b183 unit/integration PASS does not hide the
 remaining introduced CUDA reference failure or establish suites-green.
