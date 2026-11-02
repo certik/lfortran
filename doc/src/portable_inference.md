@@ -1,8 +1,8 @@
 # Portable inference: staged roadmap
 
 **Status: native Fortran real-27B short17/reset passes under Flang and LFortran.
-GFortran remains incomplete; correct offload is active but compiler-blocked.
-No throughput acceptance or root compiler integration is claimed.**
+Bounded native GPU controls now pass; GFortran remains incomplete.
+Real-scale GPU memory, full suites and speed acceptance remain open.**
 
 This roadmap records bounded real-CPU short/reset correctness, not all-workload
 correctness or competitive LFortran speed. The milestones below do not establish
@@ -20,6 +20,11 @@ passes real LFortran short17 and complete second-request reset. Current
 `FN:7503676` changes only the shared supervisor; Fortran is frozen. CPU scope
 is complete for Flang/LFortran short/reset, not all intermediates, workloads
 or speed. No compiler fix is credited with this CPU acceptance.
+GPU bring-up at `H:b1834f03` now passes saved primitives and tiny P5/G3/
+second-request reset after five reviewed compiler fixes, with Fortran frozen.
+This is **bounded correctness**, not real-27B GPU, physical-fit, universal
+intermediate-bitidentity or speed acceptance. The first stable-chain default
+suite pass is running; no new suites-green/root-integration claim.
 
 The native C+Metal baseline is committed and backed up;
 the original two-arm resident measurements are **completed and audited CLEAN**
@@ -67,7 +72,7 @@ fully consolidated into the application caller checkout.
 | Historical LFortran CPU, integrated `91f90a5a16` | Earlier tiny/I/O/header/offset proofs pass; its historical real run crashed before first logits. Cause remains undiagnosed; no new compiler fix. | No accepted CPU throughput. |
 | Native LFortran CPU, unchanged `G:d94db95877` / LLVM11.1.0 | Earlier `9c07860` primitive/tiny proofs retained. App `c077` real P18/G17 and complete second-request reset PASS, all 17 native IDs/lookahead/counts. Finite guard scope is logits/recurrent FP32 state, not all intermediates. | Bounded short/reset correctness only; no accepted throughput or compiler-source fix. |
 | LFortran GPU, combined `G:d94db95877` | Prior tiny-driver proof is retained: IDs, finiteness/self-reset pass, exact/cross-C gates fail. Offloading the new native Fortran branch follows CPU validation, not a promotion of this checkpoint. | No 27B run or accepted throughput; optimization follows correct new offload. |
-| Native offload bring-up, `H` from `d94` | Reviewed generic ASR nested-strided gather `05409b4` and host-extent-preserving copied bounds `7b7fe820dd` have registered 595/596 regressions and targeted CPU/small actual-Metal PASS. App still blocked on scalar-integer exponent broadcast in elemental real-array `SUM`; fix belongs in compiler. | No app GPU binary, full-model/offload acceptance or full-suite/root-integration claim. |
+| Native offload, `H:b1834f03` from `d94` | Five reviewed/targeted compiler fixes: nested section `054`, bounds `7b`, broadcast `24c`, nested device context `df32`, host RESHAPE result ownership/lifetime `b183` (new ASR result field). Registered GPU595–598 / RESHAPE54 regressions; saved primitives and tiny/schema3/terminal-prefix/self-reset GPU controls PASS. | Bounded GPU correctness only; no actual 27B/physical-fit/speed or full-suite/root-integration acceptance. |
 | Native-math C+Metal baseline, `N:8640d2df` / docs `86fb02f9` | Reviewed source baseline committed; binary/four native libraries match the original benchmark snapshot. Short17/reset and every protected 65/1536 ID pass. User-authorized private backup verified. | Audited 24-sample table below remains the validated performance baseline; conventional-prefill qualification remains open. |
 | Archived residency experiment, `c71595c7` | Local `experiment/qwen38-residency`, not pushed; functional controls pass and old Battery block is preserved. Production `86fb02f9`, binary `42c8930d…` and four libraries were restored clean. | Short65 ABBA N=2/arm screen **LOSS**, not N4/all-workload/formal regression; no runtime mode promoted. |
 | Completed resident comparison, measurement host `7f048673…` | 16 fresh children, 32 fully reported requests and 2,080 exact IDs; source/count/clock/AC-auto/resource gates and independent saved-evidence audit pass. Native math/four libraries and original production remain unchanged. | Historical short PASS / 2K FAIL-INCONCLUSIVE / overall readiness **FAIL** unchanged; no new warm1536 or Fortran acceptance follows. |
@@ -80,8 +85,10 @@ unit/reference/integration evidence does **not** apply to `G:d94db95877`.
 G was rebuilt with LLVM 11.1.0, source tree `7d2e9232d27c5535ea9e709446b2f91020051224`;
 the original `638209ef72` fix branch is preserved. Its connected compiler fixes
 have targeted/review evidence, but latest full suites, stale-GPU-reference
-reconciliation and integration into root remain pending for both G/H until
-the connected compiler chain is stable.
+reconciliation and integration into root remain pending for G/H. The first
+full unit/default integration/LLVM 11 reference pass on stable `H:b183` is now
+running once. ASR-schema references may need **reviewed intentional updates
+only**; suite-green evidence has not yet been established.
 
 Version-specific CPU evidence: the Flang real control on
 `98773cd4c02bb619573e26166919661627fee382` uses 18 prompt/17 generated tokens:
@@ -114,6 +121,28 @@ Source/runtime/binary/harness pins and raw paths:
 `G/.fix-issue/qwen38-native-cpu-final/real-cpu-short-handoff.json`.
 The child and CPU resources are released; the old root91f crash remains
 separate historical, undiagnosed evidence.
+
+**Bounded native GPU checkpoint:** `H:b1834f0349c6b746e8f37667c72f05446401b09c`
+freshly rebuilt nine modules/driver against unchanged `FN:c077` /
+supervisor `7503676`. q8, formerly crashing attention L2112
+(CPU/native/GPU byte-exact), and saved recurrent T1/T17 pass unchanged
+primitive bounds. Tiny P5/G3 IDs **[41,77,71]**, lookahead 125, all schema3
+counts and complete second-request self-reset PASS; terminal cache-prefix
+checks retain required state and absent pruned z. **1,639 dispatches /
+1,256 completed buffers, all 16 outer kernels observed; 27 source DC sites
+mapped, 11 nested**—not all conditional-arm execution.
+Identical-input G0 CPU/GPU maximum difference **5.96e-8** is within the
+unchanged bound. Later terminal FP32-state differences are **accumulated
+trajectory diagnostics, not same-input primitive proof** or universal
+intermediate bitidentity. Authority:
+`H/.fix-issue/native-fortran-gpu-controls/after-reshape-b183/handoff.json`.
+
+Generic lowering still creates large/repeated temporaries. Read-only design
+`native-fortran-memory-design/report.md` proposes **exact ASR section-extent
+normalization, then existing per-thread workspace reuse after a bounded MRE
+proves the path**. Forecasts are not executed real-shape failures, physical
+fit or performance evidence. MRE/memory-fix/operator-scale proof must precede
+any full-model GPU or profiling grant; no further real CPU run is requested.
 
 ### Completed native-math migration
 
@@ -523,12 +552,12 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Complete correct offload through compiler fixes, with Fortran frozen.**
-   H's reviewed gather/copied-bound fixes pass targeted controls, but scalar
-   integer exponent broadcast in elemental real-array `SUM` still blocks
-   the app. Fix that and subsequent LFortran bugs in LFortran, not application
-   rewrites; no GPU app acceptance yet. Preserve source-specific CPU proofs:
-   Flang `98773cd4`, LF `c077/G:d94`; GFortran's cap is not a mismatch or retry grant.
+1. **Finish the running first default suite pass on stable `H:b183`.**
+   Unit/integration/LLVM11 references run once; expected schema-reference
+   reconciliation requires reviewed intentional changes, not blanket updates.
+   No suite-green/root integration yet. Keep Fortran frozen and fix compiler
+   correctness in LFortran. Preserve CPU/GPU source-specific bounded proofs;
+   GFortran's cap is not a mismatch or retry grant.
    Keep original `F/a70` and selected native-math `8640d2df`/PERF `86fb02f9`.
 2. **Preserve the sealed measured source separately from production.** The
    four C/Make files are committed locally as `9dd05ab27b` on
@@ -536,13 +565,14 @@ independent disposition: session artifact
    Preserve measurement host `7f048673…` and historical `e11429da…` mapping.
    No semantic source change or production push is implied; original
    production `86fb02f9`/`42c8930d…` and four libraries remain untouched.
-3. **Retain completed CPU acceptance without extending its scope.** The
-   c077 review is closed, supervisor-only `7503676` leaves Fortran unchanged,
-   and real LF short/reset PASS is distinct from old root91f failure. No
-   compiler fix, full-intermediate parity, throughput or all-workload proof follows.
-4. **Verify correct offload once a GPU app binary exists.** Check outputs,
-   cache/state/reset, coverage and lifetimes; larger cases still need resource
-   proof. No old paused 65,536 result or new 27B GPU acceptance is claimed.
+3. **Then prove the memory hypothesis with a bounded MRE.** Exact section
+   extents should enable existing per-thread workspace reuse without changing
+   arithmetic/ownership. Implement only after the MRE demonstrates the old
+   path, then establish operator-scale allocation/correctness proof.
+4. **Require memory/physical-fit and full-shape correctness before real 27B
+   GPU or profiling.** Tiny PASS does not close allocation, residency,
+   conditional-arm coverage or accumulated-state gates. CPU scopes remain
+   unchanged; no CPU rerun, old paused 65,536 result or GPU speed claim.
 5. **When connected compiler fixes stabilize**, reconcile LLVM 11 references,
    run full default suites once on that source before review/local integration.
    Root's older green suites are not a substitute; consolidate application
@@ -1150,11 +1180,11 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the [next priorities](#next-priorities): compiler-only correctness fixes
-for native offload's remaining exponent-broadcast/SUM blocker, then GPU
-application gates. Flang/LFortran CPU short/reset scopes pass; GFortran remains
-incomplete. Correct offload/performance is not accepted, and G/H full suites
-wait for a stable connected chain before root integration;
+Follow the [next priorities](#next-priorities): complete the running stable
+`b183` default suites/reference reconciliation, then bounded MRE/memory-fix/
+operator-scale proof. CPU short/reset and bounded GPU gates pass, but real 27B
+GPU, physical memory fit and speed remain unaccepted. No new suite-green or
+root integration is inferred;
 no further C tuning is selected. Keep historical performance FAIL/outlier,
 original cold cohorts, archived residency
 LOSS and the resource-count INCONCLUSIVE result separate.
