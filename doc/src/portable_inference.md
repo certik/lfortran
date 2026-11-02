@@ -3,8 +3,8 @@
 **Status: native Fortran real-27B short17/reset passes under Flang and LFortran.
 Bounded native GPU controls now pass; GFortran remains incomplete.
 GPU memory correctness/Metal parity are the focus; further CPU model inference/
-benchmarks are deferred. Three publication PRs are draft; the inventory is
-not fully processed.**
+benchmarks are deferred. One publication PR is ready, three are draft;
+none are merged and the inventory is not fully processed.**
 
 This roadmap records bounded real-CPU short/reset correctness, not all-workload
 correctness or competitive LFortran speed. The milestones below do not establish
@@ -27,8 +27,9 @@ second-request reset after five reviewed compiler fixes, with Fortran frozen.
 This is **bounded correctness**, not real-27B GPU, physical-fit, universal
 intermediate-bitidentity or speed acceptance. The stable-chain suite attempt
 is complete but **not green**: one introduced CUDA reference failure remains.
-Memory review is clean at `H:23296b2c`; conditional inactive-workspace
-allocation is now changing, without real-27B GPU/2K fit or speed acceptance.
+Memory review B1–B3 remains closed at `H:23296b2c`. The new local workspace
+guard candidate `42070928` has bounded tests/clean review, but all seven actual
+q8 workspace plans remain unguarded; no real-27B GPU/2K fit or speed acceptance.
 Further CPU model inference/benchmarks are cancelled/deferred; none were
 active. Small compiler regressions and suites are still required.
 
@@ -69,26 +70,45 @@ Base is `e264d8612ea64b53dd8e38d35a2695af54a8d833`; fork `certik/lfortran`,
 remote `ondrej`. Authority:
 `.fix-issue/qwen38-publish-20261101/{selection,dependency-map,reference-ownership}.json`.
 
-| Published draft | Pinned head | Qualified local evidence |
+| Published PR / status | Pinned head | Qualified evidence |
 | --- | --- | --- |
-| [#16548](https://github.com/lfortran/lfortran/pull/16548), private test paths | `fa9338bbd02fe8444517500627314de601004025` | Path-only test infrastructure change. |
-| [#16551](https://github.com/lfortran/lfortran/pull/16551), IBSET | `45498ebdb37e409d8d141b5fd06bbf555e39f0c8` | Two focused commits; 59 units / 2128 references / 5668 complete default integration tests PASS. |
-| [#16552](https://github.com/lfortran/lfortran/pull/16552), INQUIRE SIZE, fixes #16353 | `8992645180f4e36942a8f670d1b4cfdb885bd3c4` | Three focused commits; 59 units / 2128 references / 5669 complete default integration tests PASS. |
+| [#16548](https://github.com/lfortran/lfortran/pull/16548), private test paths — **READY** | `fa9338bbd02fe8444517500627314de601004025` | Actual Quick 12/12 SUCCESS, run `41388707191`; no feedback, MERGEABLE, **not merged**. |
+| [#16551](https://github.com/lfortran/lfortran/pull/16551), IBSET — draft | `45498ebdb37e409d8d141b5fd06bbf555e39f0c8` | Two focused commits; 59 units / 2128 references / 5668 complete default integration tests PASS; CI running. |
+| [#16552](https://github.com/lfortran/lfortran/pull/16552), INQUIRE SIZE, fixes #16353 — draft | `8992645180f4e36942a8f670d1b4cfdb885bd3c4` | Three focused commits; 59 units / 2128 references / 5669 complete default integration tests PASS; CI running. |
+| [#16553](https://github.com/lfortran/lfortran/pull/16553), RESHAPE — draft | `051b12e3397f1566c4c01e454edb3d12b55d860d` | Independent port from pinned `e264`; clean review, 59 units / 2128 references / 5668 complete default integration tests qualified PASS. |
 
-**No ready/merge:** Quick is ongoing with no current failure at this checkpoint.
-Both integration runs used the exact user-approved #16548 **two-file,
+**No other ready or merged PR.** IBSET/INQUIRE and RESHAPE integration used the
+exact user-approved #16548 **two-file,
 path-only ILP64 overlay**, hash
 `2321fc9ff907572337c5d0c172ccc56f9a3acaadb5151e97aff6c7ae5a97fe2b`,
-then exact reversal. These are qualified overlay runs, not runs of unchanged
-old temporary-path fixtures; **no test skips or partial-run pooling**.
+then exact reversal. RESHAPE's body additionally discloses a
+**synchronization-only private legacy GPU-lock redirect**. These are qualified
+runs, not unchanged old temporary-path fixtures; **no skips or partial-run pooling**.
 
-RESHAPE's independent port from pinned `e264` at `051b12e3397f1566c4c01e454edb3d12b55d860d`
-has targeted PASS and fresh clean review (0 blockers / 0 rework); full suites
-are running, **no PR**. The exact rank-2 derived-result pipeline passes main
-and isolated b183, but fails Gd94 and H identically: it **predates H's
-RESHAPE/memory work**. The likely metal-identifiers group is being ported/
-checked; exact commit attribution is unproved. No regression waiver or
-upstream bug filing.
+The rank-2 identifier regression predates H's RESHAPE/memory work:
+old `532` introduced stale component imports, corrected in the isolated port
+`0d395a8`. References were updated separately at `3df7a8` (24 outputs +
+24 metadata; 24/24 targeted PASS). Fresh source review has no remaining defect,
+but publication is blocked: the original kind(8) fixture's three registered
+Metal/CUDA variants need held support; labels/source are unchanged.
+**No #14625 closure claim**: CUDA_CPU scope is outside that issue's scope.
+
+Safe actual pinned-main `e264` proof under lock reproduces a native unallocated
+result-component failure, duplicate **#14654**; GFortran/host LLVM PASS,
+one dispatch / 768 audited bytes. No issue filed. The earlier unguarded tiny
+`--dump-all-passes` run is explicitly excluded, replaced by this safe proof.
+Another setup submitted BF16/CUDA_CPU commands in parallel in the same worktree;
+no actual time overlap or cross-worker GPU violation is established.
+Affected tiny CUDA controls are being repeated serially; no timing claim.
+
+Nested BLOCK capture at isolated `d28fa81e` supports the default i4/r4
+regression (actual Metal/CUDA_CPU and other targeted checks PASS), clean fresh
+review 0/0/0; full suites running, **no PR**. The original BF16 MRE passes
+capture but later width/TRANSFER JIT is blocked: its original full PASS is
+**composite-lineage only**, not standalone acceptance.
+Nonfinite port `a06cc091` is blocked by cached BitCast before emission;
+source owner `5740a318` plus structural `be04d396` are held with int64/closure.
+No isolated causal proof or final grouping decision.
 Narrow-storage reused commits plus regression `342e7823` remain blocked by
 actual integer-only pipeline failure. A fresh investigator also reproduces
 failure with standalone valid minimal MSL in Apple's AGX pipeline compiler;
@@ -100,6 +120,9 @@ is **held**, with no polling or changes to that PR. The connected 5740 CUDA
 unused-complex-struct case still needs follow-up, **not an upstream waiver or
 a blanket block on independent fixes**. Existing unrelated follow-ups:
 the volatile case duplicates #15732; CLI pass-contract bug #16550 is filed.
+An in-progress H run observed a new 141-line cumulative ASR-graph diagnostic;
+main `e264` is masked earlier by unsupported `partials(d,:)` copy, so attribution
+and #16550 overlap are unproved. Final H rerun is underway; no issue filed.
 
 ### Implementation status
 
@@ -119,7 +142,7 @@ fully consolidated into the application caller checkout.
 | Historical LFortran CPU, integrated `91f90a5a16` | Earlier tiny/I/O/header/offset proofs pass; its historical real run crashed before first logits. Cause remains undiagnosed; no new compiler fix. | No accepted CPU throughput. |
 | Native LFortran CPU, unchanged `G:d94db95877` / LLVM11.1.0 | Earlier `9c07860` primitive/tiny proofs retained. App `c077` real P18/G17 and complete second-request reset PASS, all 17 native IDs/lookahead/counts. Finite guard scope is logits/recurrent FP32 state, not all intermediates. | Bounded short/reset correctness only; no accepted throughput or compiler-source fix. |
 | LFortran GPU, combined `G:d94db95877` | Prior tiny-driver proof is retained: IDs, finiteness/self-reset pass, exact/cross-C gates fail. Offloading the new native Fortran branch follows CPU validation, not a promotion of this checkpoint. | No 27B run or accepted throughput; optimization follows correct new offload. |
-| Native offload, stable `H:b1834f03` / refs `19ba118f`; memory review `23296b2c` | Saved primitive/tiny GPU gates retained. Stable units 55 CPU+2 Metal and default LLVM integration 5620 PASS; references 2122/2123 after 58 reviewed updates, introduced CUDA failure unresolved. Memory review B1–B3 closed clean; projection proof 104448 exact outputs. Conditional inactive-workspace allocation is changing. | **Not suites-green**; cumulative allocation counters are not physical peak; no actual 27B GPU/2K/physical-fit/speed or root-integration acceptance. |
+| Native offload, stable `H:b1834f03` / refs `19ba118f`; local candidate `42070928` | Saved primitive/tiny GPU gates and 104448-output projection proof retained. Stable units 55 CPU+2 Metal / default integration 5620 PASS; references 2122/2123, introduced CUDA failure unresolved. New guard has 333 unit assertions / 816 exact small q8 outputs and clean review; actual q8's seven workspace plans still unguarded. | **Not suites-green**; candidate full suites not run; allocation counters are not physical peak; no head/27B GPU/2K/fit/speed or root-integration acceptance. |
 | Native-math C+Metal baseline, `N:8640d2df` / docs `86fb02f9` | Reviewed source baseline committed; binary/four native libraries match the original benchmark snapshot. Short17/reset and every protected 65/1536 ID pass. User-authorized private backup verified. | Audited 24-sample table below remains the validated performance baseline; conventional-prefill qualification remains open. |
 | Archived residency experiment, `c71595c7` | Local `experiment/qwen38-residency`, not pushed; functional controls pass and old Battery block is preserved. Production `86fb02f9`, binary `42c8930d…` and four libraries were restored clean. | Short65 ABBA N=2/arm screen **LOSS**, not N4/all-workload/formal regression; no runtime mode promoted. |
 | Completed resident comparison, measurement host `7f048673…` | 16 fresh children, 32 fully reported requests and 2,080 exact IDs; source/count/clock/AC-auto/resource gates and independent saved-evidence audit pass. Native math/four libraries and original production remain unchanged. | Historical short PASS / 2K FAIL-INCONCLUSIVE / overall readiness **FAIL** unchanged; no new warm1536 or Fortran acceptance follows. |
@@ -200,9 +223,28 @@ Memory optimization review rounds **B1 use-site attributes, B2 late declaration
 attributes and B3 missing source-tarball fixture are all CLOSED**, clean at
 `H:23296b2c9ce0b16bfc67b042fbb94001f60e0eeb`. Native projection proof retains
 **104,448 exact outputs / 352,166,144 cumulative buffer-allocation bytes**:
-the counter is **not physical peak**. H is actively changing for conditional
-inactive-workspace allocation; no new fix closure or whole-model fit/speed
-is claimed. Fortran remains unchanged, with no default-cap increase.
+the counter is **not physical peak**.
+New local candidate `H:42070928f724e3ae0c6dd4d4bd4ee90a71d1b353` captures an
+explicit ASR workspace guard/logical shape with null-safe pointers. Registered
+controls retain inactive **16 MiB -> 0/nil**, active 16 MiB unchanged, values/
+bounds/mutations/zero extents, **333 unit assertions / 816 byte-exact small q8
+outputs** and fresh review (0 blockers / 0 rework). Actual-app eligibility and
+CUDA/fallback coverage are follow-ups; **full suites not run**, no head/
+real-model/2K GPU or performance acceptance.
+
+Actual unchanged q8 still has **all seven workspace plans unguarded**:
+weights/product each **5,085,593,600 B**, total **15,337,733,120 B**.
+The first gate is array-by-data specialization creating two launch sites,
+disabling the ABI guard; weights also have a synthesized alias/distinct IF
+fences, and product allocation statements are opaque. At M1 only codes/terms
+are needed; weights/product/partials are logically inactive, not yet unallocated.
+Authority: `H/.fix-issue/native-q8-workspace-gap/{handoff.json,report.md}`.
+Next proposed small compiler change reuses existing ASR scalar-actual SUM
+normalization: **projected 15,337,733,120 -> 10,252,139,520 B**, not implemented
+or physical-fit proof. Actual frozen HEAD has **parts=1**; the prior head
+numeric formula already matches one and remains unchanged. Keep the earlier
+**M17/parts=2 operator proof** and its cumulative counter separate.
+Fortran remains unchanged, with no default-cap increase.
 Real-27B GPU and 2K are **not executed/verified**; targeted operator/scale and
 physical-fit proof must precede full-model GPU or profiling.
 
@@ -616,8 +658,10 @@ independent disposition: session artifact
 
 1. **Advance GPU memory correctness and prefill/decode Metal parity.**
    The old-path bounded MRE and native projection proof are retained; memory
-   review B1–B3 is closed at `23296b2c`. Validate the changing conditional
-   inactive-workspace allocation, then targeted operator/scale/physical-fit proof.
+   review B1–B3 is closed at `23296b2c`, with bounded candidate `42070928`.
+   Address actual q8 eligibility using existing scalar-actual SUM normalization,
+   then validate workspace guards/operator scale/physical fit. The projected
+   reduction is not implementation or acceptance; full suites remain required.
    No app rewrite, default heap increase or full-model GPU grant. Keep Fortran
    frozen; CPU model inference/benchmarks remain cancelled/deferred, while
    small compiler regressions/suites continue.
@@ -631,8 +675,9 @@ independent disposition: session artifact
 3. **Publish existing implemented fixes in parallel via `fix-issue`.** Reuse
    focused commits/MREs, fresh review per fix and owning-reference evidence;
    separate independent PRs, consolidate only genuine dependencies. The 16
-   envelopes remain tentative and incomplete: three PRs are draft, Quick
-   ongoing; RESHAPE suites and narrow-storage attribution remain pending.
+   envelopes remain tentative and incomplete: #16548 is ready (Quick 12/12),
+   #16551/#16552/#16553 are draft; none merged. Identifier held-kind support,
+   nested BLOCK full suites and narrow-storage attribution remain pending.
    Hold int64/closure for the user's #15895 ping; do not poll or touch that PR.
    Resolve connected regressions without waivers or blocking independent jobs.
 4. **Require memory/physical-fit and full-shape correctness before real 27B
@@ -1250,9 +1295,10 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the [next priorities](#next-priorities): validate conditional workspace
-allocation and operator/scale/physical fit, while publication of the incomplete
-inventory continues with three draft PRs. No ready/merge is established.
+Follow the [next priorities](#next-priorities): address actual q8 workspace
+eligibility, then validate guards/operator scale/physical fit; the proposed SUM
+normalization and memory reduction are not yet implemented. Publication remains
+incomplete: #16548 ready, three drafts, none merged.
 Further CPU model inference/benchmarks are deferred; compiler regressions/
 suites remain required. Stable b183 unit/integration PASS does not hide the
 remaining introduced CUDA reference failure or establish suites-green.
