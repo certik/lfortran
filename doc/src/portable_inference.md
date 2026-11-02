@@ -2,8 +2,9 @@
 
 **Status: tested upstream `a76f9fb5` accepts the exact original #16603 int16
 GPU reproducer; seven application modules pass, but `dense_kernels` still
-fails, exit 3. #16604/#16606 remain primary blockers; an extent-verifier
-candidate is under compile-only reduction, not yet a new issue. The user's other
+fails, exit 3. Current application compile barriers are #16604/#16606/#16616,
+not an exhaustive correctness-bug list. This reporting round is complete;
+the next meaningful retry awaits upstream blocking fixes. The user's other
 agents own all compiler fixes. Six original PRs were user-merged, not by us.
 The cef-bound synthetic adapter is accepted only at its saved scope;
 production bindings/admission, tiny and real-GPU inference remain unqualified.
@@ -42,9 +43,17 @@ exit 3, dense model/three drivers remain blocked. The **three int16 errors are
 gone**; remaining primary GPU messages are #16604 (integer(8) `q_offset`) and
 #16606 (strided partials copy), now without spans. Two additional ASR messages
 involve symtab-not-found / `__libasr_extent_weights_1` during
-`replace_with_compile_time_values`; **one UNCLASSIFIED candidate** is owned by a
-fresh compile-only reducer. Not a new issue, proved #16614 regression, or
-resurrection of the old BF16 D diagnosis. Tiny/real-model inference and GPU
+`replace_with_compile_time_values`. The completed **19-line core / 58-line
+BF16 reduction confirms the same #16616 host-extent ownership bug**, without
+#16604/#16606 primary errors: LFortran `-c` exits 3 in `gpu_offload`, GFortran
+`-c` exits 0; **no runtime**. The original whole-application terminal failure
+is in `replace_with_compile_time_values`, not the reducer's `gpu_offload`
+stage. This is not evidence of a #16614 regression or the old BF16 D diagnosis.
+Public #16616/#16617 body updates/readbacks are verified; all 23 original
+checkboxes were preserved before the new proposal below.
+Proofs: `C/main-a76f-extent-report-update` and
+`W/.fix-issue/main-a76f-weights-extent-mre/handoff.json`.
+Tiny/real-model inference and GPU
 tokens/s remain **NOT_RUN**.
 
 **Historical completed 7d9 recheck:** worktree
@@ -71,7 +80,7 @@ At that 7d9 checkpoint, the separate remaining-case report-only replay had
 not yet completed; completed nested/identifier handoffs are recorded below.
 
 **Tracking and ownership:** [#16617](https://github.com/lfortran/lfortran/issues/16617)
-tracks **18 reports created here: original 14 + #16618/#16628/#16644/#16646**;
+tracks **19 reports created here: original 14 + #16618/#16628/#16644/#16646/#16649**;
 reused issues are not reports created by this effort.
 The user's other agents fix **all compiler bugs**. This effort owns LLM
 bring-up, faithful MREs/issues and existing-source candidate handoffs,
@@ -95,6 +104,42 @@ pass-after remains untested. Completed handoffs:
 `C/sessionfiles/local-upstream-inventory/{inventory.md,handoff.json}`.
 These preserve qualified historical-source candidates, not current-main
 acceptance or completion of the broader narrow-storage envelope.
+
+**Final source handoffs and memory witnesses:** completed
+`C/sessionfiles/int64-existing-source-handoff/handoff.json` records four
+complete production diffs (`4ee/a4/be04/5740`) now public in #16604/#16617,
+byte-exact **historical/unapplied, not drop-in or PR-ready**. Dependencies are
+guard -> closure -> normalization; literal overlaps #15895/#16532/#16614 and
+wide #16547 remain qualified. Current storage03/closure replays, native/full
+suites are unproved; CUDA d27 remains unresolved.
+
+Memory replay evidence: `W/.fix-issue/main-a76f-memory-witness-replays/handoff.json`.
+A (exact-section c17 witness): GFortran PASS / LFortran exit 3 in
+`device_launch_expand` / `device_call`; qualified #16640 overlap, **no allocation
+comparison**. B (false/true): both GFortran/native PASS, each **one dispatch /
+one completion / 16,797,696 B observed cumulative buffers**; **16,777,216 B
+unconditional workspace is codegen-derived**, not physical peak, wrong results,
+OOM or real-model fit. C (scalar SUM): both GFortran controls pass, GPU is
+masked by #16616, CPU `sum_11` passes. **Only two native runs**, no source fixes.
+
+Optimization proposal **#16649**, “Metal GPU optimization: skip private workspace
+storage when a uniform branch is inactive”, publishes complete **87,663 B**
+byte-exact in four ordered whole-candidate comments: b823 (**6590910049**),
+420 (**6590910560**), f8 (**6590911080**), f5 (**6590911515**). The body exceeded
+65,536 B; the user authorized comments **on this new issue only**, with no
+split/truncated candidate. Only **b823's scoped query API** is a proved
+prerequisite—not whole A or B/C behavioral dependency. A/C remain separately
+blocked/historical, not new confirmed main bugs. Matrix forwarding/M1
+elimination remain unimplemented proposals; public candidate comments are
+**not current patch acceptance, implementation, build/test or PR evidence**.
+Receipts/grouping: `C/sessionfiles/existing-memory-optimization-report/`
+(`publication/`, preparatory handoff and grouping-readiness snapshot).
+#16617 preserves all prior content/23 checkbox states, now **24 total**.
+
+**Round complete:** main remains a76f at the completed metadata check;
+#16640/#16647 and #16604/#16616/#16628 remain open. No ongoing model/build
+services. Await upstream blocking fixes before the next LLM retry; do not
+repeat unchanged checks or refresh the toolchain without changed inputs.
 
 **Historical 2026-11-02 vanilla-main retry:** the user requested latest main and every bug
 reported; many Metal fixes landed, while 64-bit-index work continues.
@@ -298,7 +343,7 @@ fully consolidated into the application caller checkout.
 | Native LFortran CPU, unchanged `G:d94db95877` / LLVM11.1.0 | Earlier `9c07860` primitive/tiny proofs retained. App `c077` real P18/G17 and complete second-request reset PASS, all 17 native IDs/lookahead/counts. Finite guard scope is logits/recurrent FP32 state, not all intermediates. | Bounded short/reset correctness only; no accepted throughput or compiler-source fix. |
 | LFortran GPU, combined `G:d94db95877` | Prior tiny-driver proof is retained: IDs, finiteness/self-reset pass, exact/cross-C gates fail. Offloading the new native Fortran branch follows CPU validation, not a promotion of this checkpoint. | No 27B run or accepted throughput; optimization follows correct new offload. |
 | Historical native offload, `H:b1834f03` / refs `19ba118f`; bounded `f8b5dc0`, warning-only `f5e193c4` | Saved primitive/tiny GPU gates retained. Stable units 55 CPU+2 Metal / default integration 5620 PASS; references 2122/2123, introduced CUDA failure unresolved. f8 has 48/816/104448 exact native outputs and two-entry/transition controls; planned scratch 5,166,049,280 B. | **Not suites-green**; H full suites NOT_RUN, no physical-peak/model-fit/TPS acceptance. These proofs/plan do not apply to vanilla main. |
-| Latest TESTED upstream baseline, `a76f9fb5` | Exact unchanged #16603 minimal/strict compile+link and one native Metal run PASS (1/1/512 B, y=[3,3]); three application int16 errors removed. Seven modules pass, dense kernels exit 3; #16604/#16606 and an unclassified extent-verifier candidate remain. | Exact MRE acceptance only, not the broad narrow-storage group/whole PR/LLM. Tiny/real-model/TPS NOT_RUN; no live-main claim or inherited Safe/Precise. |
+| Latest TESTED upstream baseline, `a76f9fb5` | Exact unchanged #16603 minimal/strict compile+link and one native Metal run PASS (1/1/512 B, y=[3,3]); three application int16 errors removed. Seven modules pass, dense kernels exit 3; #16604/#16606/#16616 are current compile barriers. Standalone extent reduction confirms #16616, no runtime. | Exact MRE acceptance only, not the broad group/whole PR/LLM or an exhaustive remaining-bug list. Tiny/real-model/TPS NOT_RUN; no inherited Safe/Precise. |
 | Native-math C+Metal baseline, `N:8640d2df` / docs `86fb02f9` | Reviewed source baseline committed; binary/four native libraries match the original benchmark snapshot. Short17/reset and every protected 65/1536 ID pass. User-authorized private backup verified. | Audited 24-sample table below remains the validated performance baseline; conventional-prefill qualification remains open. |
 | Archived residency experiment, `c71595c7` | Local `experiment/qwen38-residency`, not pushed; functional controls pass and old Battery block is preserved. Production `86fb02f9`, binary `42c8930d…` and four libraries were restored clean. | Short65 ABBA N=2/arm screen **LOSS**, not N4/all-workload/formal regression; no runtime mode promoted. |
 | Completed resident comparison, measurement host `7f048673…` | 16 fresh children, 32 fully reported requests and 2,080 exact IDs; source/count/clock/AC-auto/resource gates and independent saved-evidence audit pass. Native math/four libraries and original production remain unchanged. | Historical short PASS / 2K FAIL-INCONCLUSIVE / overall readiness **FAIL** unchanged; no new warm1536 or Fortran acceptance follows. |
@@ -897,11 +942,12 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Continue report-only bring-up from tested a76f under tracker #16617.**
-   Exact original #16603 now passes on GPU; do not generalize to its whole
-   envelope. Seven modules pass; #16604/#16606 still block dense kernels/
-   drivers. Keep the reducer-owned extent-verifier candidate unclassified
-   until completed proof; no #16614-regression or old-BF16 inference.
+1. **Await upstream blocking fixes after this completed a76f reporting round.**
+   Exact original #16603 passes on GPU; do not generalize to its whole
+   envelope. Seven modules pass; #16604/#16606/#16616 block current application
+   compilation, not all later correctness gates. The extent reduction is
+   confirmed #16616; no #16614-regression or old-BF16 inference.
+   No ongoing model/build services; no unchanged retries/toolchain refresh.
    Preserve faithful MREs/reports without claiming reused issues as newly filed.
    The user's other agents own all compiler fixes; no competing implementation.
    Hold old H optimization work; its scratch plan/proofs do not certify main.
@@ -920,6 +966,8 @@ independent disposition: session artifact
    not by this workflow. Candidate bodies for #16603/#16606/#16613/#16616/#16628
    are handed off but unverified/non-PR-ready. Do not transfer old-head proofs
    to changed heads, or interpret #16618's opt-in request as a legacy regression.
+   Completed int64/memory handoffs and proposal #16649 are historical source/
+   optimization evidence, not current fixes or proof that all grouped cases depend.
    Memory optimization is additional to the inventory and currently held.
    Hold int64/closure for the user's #15895 ping; do not poll or touch that PR.
    Resolve connected regressions without waivers or blocking independent jobs.
@@ -1544,10 +1592,12 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the [next priorities](#next-priorities): record exact #16603 upstream
-GPU acceptance and remaining #16604/#16606 blockers at tested a76f under #16617.
-The extent-verifier reducer owns the unclassified follow-up; no new issue or
-regression inference yet, and no further crash execution approval. The user's
+This current-main reporting round is complete. Follow the
+[next priorities](#next-priorities): await upstream fixes for current
+#16604/#16606/#16616 application compile barriers before a meaningful retry.
+Original #16603 GPU acceptance persists; the standalone extent reduction is
+the same #16616 bug, not a new regression. No unchanged rechecks, toolchain
+refresh or further crash execution approval. The user's
 other agents own compiler fixes; candidate handoffs are not PR-ready fixes.
 The cef-bound synthetic adapter is accepted only at that scope; production
 role/bootstrap/new bindings/admission and benchmark phase clocks/completion
