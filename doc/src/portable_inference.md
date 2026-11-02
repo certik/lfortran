@@ -1,10 +1,11 @@
 # Portable inference: staged roadmap
 
-**Status: vanilla-main retry `4472fde0` passes seven application modules but
-blocks in `dense_kernels`, before application GPU dispatch. Rebaseline after
-the merged helper fix is pending. Six PRs merged by upstream/user action, not
-this workflow; the inventory remains incomplete. Historical CPU/H proofs are
-retained, CPU model runs stay cancelled, and monitored-trial admission is blocked.**
+**Status: latest TESTED baseline `7d9b6cc1` passes seven modules; `dense_kernels`
+still fails, exit 5. Tracker #16617 owns the bring-up reports; the user's other
+agents own all compiler fixes. Six original PRs were user-merged, not by us.
+The cef-bound synthetic adapter is accepted only at its saved scope;
+production bindings/admission, tiny and real-GPU inference remain unqualified.
+Historical CPU/H proofs are retained; CPU model runs stay cancelled.**
 
 This roadmap records bounded real-CPU short/reset correctness, not all-workload
 correctness or competitive LFortran speed. The milestones below do not establish
@@ -14,7 +15,44 @@ unearned; the phase exit gates remain open.
 
 ## Current status, speeds and next plan
 
-**2026-11-02 vanilla-main retry:** the user requested latest main and every bug
+**Completed latest-tested recheck:** worktree
+`W=.fix-issue/qwen38-compiler/worktrees/main-retry-4472fde0b6df` was updated/built to
+`7d9b6cc16d29d2fad47d6d1260211731ad330263`. Actual ASR/CMake/build0 inputs
+changed, not just version metadata; Debug `-g -O2` / assertions / LLVM11.1.0.
+Compiler SHA-256:
+`b9ec46271ac78ff086b00c912ecc9f30fec561079044828e84ace823a6f8601c`;
+runtime:
+`8397f04d5687dc3dd9f064f3dee138ce9a4c093be5fd6d1b10af0785c638820d`.
+This is the **latest tested snapshot, not a live-main claim**.
+Setup: `W/.fix-issue/latest-main-qwen-retry/update-7d9/`; report-only evidence:
+`W/.fix-issue/main-7d9-llm-recheck/{report.txt,handoff.json}`.
+
+**Seven modules PASS; `dense_kernels` exit 5**, with the same five cef
+diagnostics: int16 `partial_values` three times, int64 `q_offset` and strided
+section copy. `dense_model` plus three drivers are blocked.
+#16603/#16604/#16606 minimal/original compilation exits 5;
+#16616/#16628 exits 3. #16613 compiles/links, but native Metal shader failure
+exits 1 with **zero dispatches/allocations**. No new unrelated bugs;
+tiny, real GPU and throughput **NOT_RUN**. Fortran remains
+`c077fe0263e054dcbdde70808f938c8b71b9f3c5`, all 17 hashes untouched.
+The remaining-case report-only replay is separate and **not yet complete**.
+
+**Tracking and ownership:** [#16617](https://github.com/lfortran/lfortran/issues/16617)
+tracks all **14 originally created reports plus #16618 and #16628**;
+reused issues are not reports created by this effort.
+The user's other agents fix **all compiler bugs**. This effort owns LLM
+bring-up, faithful MREs/issues and existing-source candidate handoffs,
+**not competing fixes**. Bodies actually handed off:
+`6606 -> #16603`, `05409 -> #16606`, `cf5115 -> #16613`,
+`7b7 -> #16616`, `24c -> #16628`—**unverified/non-PR-ready source candidates**,
+not PRs, comments or pushes. #16618 requests **explicit Safe/Precise opt-in**,
+not an unconditional Fortran violation or legacy-flag regression.
+Tracking/proofs: `C=.fix-issue/qwen38-publish-20261101`,
+`C/sessionfiles/llm-tracking-issue` and `C/main-*-bug-report`.
+#16601/#16569 chunking is **CUDA-only**, with no launch reductions and default
+limit >2^31-1: **not a Metal Qwen head-memory reduction or fit claim**.
+
+**Historical 2026-11-02 vanilla-main retry:** the user requested latest main and every bug
 reported; many Metal fixes landed, while 64-bit-index work continues.
 Vanilla `4472fde0b6dfe69fb43a61596e67b911794ee28a` was fetched once at
 **2026-11-02T17:04:47Z**, then freshly built in
@@ -44,13 +82,10 @@ not H's Safe/Precise proof.
 | B: captured int64 offset, `W/mre_gpu_int64_offset.f90` + unique runner, 12 lines / 315 B | LFortran exit 5 / GFortran 0/0; kind(4) control PASS. | Metal `max_integer_kind=4` rejects read-only captured int64; no RoPE/BLOCK/dummy context needed. Overlap with user index work is unproved. |
 
 Saved proofs: `.fix-issue/main-4472-{int16-mre,int64-offset-mre}`.
-C (section copy) and D (verifier) are not isolated; **no new issues filed**.
-Last observed main is `cef824dcdd1b4253736d2e466e562d80f1338876`.
-W is being updated/rebuilt once for the actually needed merged helper fix
-#16558; **new head/build/retest pending, not a cef-compiled claim**.
-Recheck A/B/original module first, then C/verifier; freshly recheck main before
-filing, rather than reporting a possibly fixed cascade. Old H optimization
-work is held until this rebaseline.
+At that checkpoint C (section copy) and D (verifier) were not isolated and
+no new issues had been filed; the update for merged helper #16558 was pending.
+The completed 7d9 recheck/tracker above supersedes that pending status.
+Old H optimization work remains held; historical proofs do not certify main.
 
 **2026-11-01 CPU milestone:** native Fortran has 140 bounded checks under both
 CPU compilers and a real Flang 27B short17/full-second-request-reset PASS on
@@ -103,10 +138,10 @@ bugs; **fix LFortran bugs in LFortran**. Fortran edits are allowed only for
 performance and must preserve correctness. CPU success is not authorization
 to weaken offload, state/reset, numerical or reference gates.
 
-**Parallel publication stream is now authorized through `fix-issue`:**
-reuse all already implemented fixes/commits/proofs, with fresh review per fix.
-Keep independent PRs separate and group only genuine dependencies, preserving
-focused commits; do not redo fixes. Frozen inventory has **26 fixes -> 16
+**Historical publication stream:** existing fixes/commits/proofs were reused
+with fresh per-fix review and genuine dependency grouping, preserving focused
+commits. The six original PRs below were user-merged, not merged by this effort.
+Current compiler fixing belongs to the user's other agents. Frozen inventory has **26 fixes -> 16
 tentative envelopes (11 independent / 5 groups)**, **not fully processed**.
 New memory optimizations are **additional work**, not completed inventory items.
 Frozen inventory base is `e264d8612ea64b53dd8e38d35a2695af54a8d833`; fork `certik/lfortran`,
@@ -214,7 +249,7 @@ fully consolidated into the application caller checkout.
 | Native LFortran CPU, unchanged `G:d94db95877` / LLVM11.1.0 | Earlier `9c07860` primitive/tiny proofs retained. App `c077` real P18/G17 and complete second-request reset PASS, all 17 native IDs/lookahead/counts. Finite guard scope is logits/recurrent FP32 state, not all intermediates. | Bounded short/reset correctness only; no accepted throughput or compiler-source fix. |
 | LFortran GPU, combined `G:d94db95877` | Prior tiny-driver proof is retained: IDs, finiteness/self-reset pass, exact/cross-C gates fail. Offloading the new native Fortran branch follows CPU validation, not a promotion of this checkpoint. | No 27B run or accepted throughput; optimization follows correct new offload. |
 | Historical native offload, `H:b1834f03` / refs `19ba118f`; bounded `f8b5dc0`, warning-only `f5e193c4` | Saved primitive/tiny GPU gates retained. Stable units 55 CPU+2 Metal / default integration 5620 PASS; references 2122/2123, introduced CUDA failure unresolved. f8 has 48/816/104448 exact native outputs and two-entry/transition controls; planned scratch 5,166,049,280 B. | **Not suites-green**; H full suites NOT_RUN, no physical-peak/model-fit/TPS acceptance. These proofs/plan do not apply to vanilla main. |
-| Vanilla-main retry, built `4472fde0`; latest observed `cef824dc` not yet built/retested | FN c077 unchanged; seven modules PASS, dense_kernels exit 3. Dense model/drivers/tiny/operators/current large plans NOT_RUN; rebaseline for merged helper pending. | Zero application GPU dispatches; nil runtime options mean default/unknown math policy, not inherited Safe/Precise. No real-27B GPU/TPS. |
+| Latest TESTED vanilla baseline, `7d9b6cc1` | FN c077/all 17 hashes unchanged; seven modules PASS, dense_kernels exit 5/same five cef diagnostics; dense model + three drivers blocked. Issue-case compile exits 5 or 3; #16613 links then shader-fails before dispatch/allocation. | No tiny/real-GPU/throughput acceptance; no live-main claim. Earlier nil runtime options do not establish inherited Safe/Precise. |
 | Native-math C+Metal baseline, `N:8640d2df` / docs `86fb02f9` | Reviewed source baseline committed; binary/four native libraries match the original benchmark snapshot. Short17/reset and every protected 65/1536 ID pass. User-authorized private backup verified. | Audited 24-sample table below remains the validated performance baseline; conventional-prefill qualification remains open. |
 | Archived residency experiment, `c71595c7` | Local `experiment/qwen38-residency`, not pushed; functional controls pass and old Battery block is preserved. Production `86fb02f9`, binary `42c8930d…` and four libraries were restored clean. | Short65 ABBA N=2/arm screen **LOSS**, not N4/all-workload/formal regression; no runtime mode promoted. |
 | Completed resident comparison, measurement host `7f048673…` | 16 fresh children, 32 fully reported requests and 2,080 exact IDs; source/count/clock/AC-auto/resource gates and independent saved-evidence audit pass. Native math/four libraries and original production remain unchanged. | Historical short PASS / 2K FAIL-INCONCLUSIVE / overall readiness **FAIL** unchanged; no new warm1536 or Fortran acceptance follows. |
@@ -380,13 +415,30 @@ request was observed as **16,859,136 B**, triggering a **post-allocation**
 8 MiB-threshold abort. Review accepted **synthetic-only** 5 s bootstrap/
 500 ms ongoing freshness, metrics, one-use and API preservation, but found
 **one blocker: escaped-descendant ownership is discarded, allowing false
-cleanup release**. A fresh fixer works **only that CPU-control bug**.
-Actual Fortran bindings, production qualification, headroom and lease remain
-pending; no real-27B GPU or tokens/s. The planned first control remains
+cleanup release** at that earlier mechanism-review checkpoint.
+
+**Accepted synthetic Fortran adapter:** fresh review **0/0/0, 78 checks**;
+normal and delayed controls each produce **sum 204 / one completed GPU
+dispatch**, ledger **2/4 versus historical C 8/8**. Authority:
+`C/sessionfiles/model-monitored-trial/fortran-adapter-v1/{review_1.md,review_1.json}`.
+This approval **binds cef, not new 7d9 or Qwen**; do not relabel old approvals
+after a rebuild. Safeguards remain observational, `full_model_memory` is
+**NULL**, and **no real-model lease under this controller has ever been granted**.
+Production role/bootstrap,
+new runtime bindings, headroom and admission remain pending.
+No real-27B GPU or tokens/s. The planned first control remains
 P18/G1/full reset, expected 9419/lookahead 0, conditional on qualification;
 no G17/2K/sustained/benchmark authorization. CPU model runs remain cancelled.
 Disk recovered externally to 69 then 161 GiB; the capacity worker performed
 **no archival/deletion**, leaving protected builds untouched.
+
+**Benchmark-contract audit, not a benchmark:** exact workload/hash/raw-ID/reset/
+counters/pruning/sampler are ready; prefix is **P-1**, decode **G-1 includes
+terminal lookahead**. Application benchmarking still lacks Fortran phase clocks,
+proven GPU completion, runtime bindings and admission. Synchronous Fortran is **not native queued
+timing**; `CPU_time` is not GPU throughput. Authority:
+`C/sessionfiles/fortran-benchmark-contract/{report.md,contract.json}`.
+No new benchmarks; QMM64 remains unpromoted with its adverse sample preserved.
 
 ### Completed native-math migration
 
@@ -796,11 +848,11 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Rebaseline unchanged Fortran on latest vanilla main; report every verified bug.**
-   Complete the one W update/rebuild for merged #16558, then recheck A/B/
-   original module before isolating section-copy/verifier failures. Last
-   observed main is cef; its build/retests remain pending. Deduplicate and
-   freshly recheck main before filing; do not file possibly fixed cascades.
+1. **Continue report-only bring-up from latest TESTED 7d9 under tracker #16617.**
+   Seven modules pass; dense kernels/drivers remain blocked. The separate
+   remaining-case replay is not complete. Preserve faithful MREs/proofs and
+   report verified failures without treating reused issues as newly filed.
+   The user's other agents own all compiler fixes; no competing implementation.
    Hold old H optimization work; its scratch plan/proofs do not certify main.
    No app rewrite, default heap increase or full-model GPU grant. Keep Fortran
    frozen; CPU model inference/benchmarks remain cancelled/deferred, while
@@ -812,28 +864,27 @@ independent disposition: session artifact
    Preserve measurement host `7f048673…` and historical `e11429da…` mapping.
    No semantic source change or production push is implied; original
    production `86fb02f9`/`42c8930d…` and four libraries remain untouched.
-3. **Publish existing implemented fixes in parallel via `fix-issue`.** Reuse
-   focused commits/MREs, fresh review per fix and owning-reference evidence;
-   separate independent PRs, consolidate only genuine dependencies. The 16
+3. **Coordinate existing-source candidates, not competing compiler fixes.** The 16
    envelopes remain tentative and incomplete: six PRs merged upstream/by user,
-   not by this workflow. Recheck old held-kind/narrow-storage/nonfinite cases
-   on the rebaseline; do not transfer historical-head proofs to changed heads.
+   not by this workflow. Candidate bodies for #16603/#16606/#16613/#16616/#16628
+   are handed off but unverified/non-PR-ready. Do not transfer old-head proofs
+   to changed heads, or interpret #16618's opt-in request as a legacy regression.
    Memory optimization is additional to the inventory and currently held.
    Hold int64/closure for the user's #15895 ping; do not poll or touch that PR.
    Resolve connected regressions without waivers or blocking independent jobs.
-4. **Close monitored-trial cleanup ownership before any real GPU lease.**
-   Strict V2/V3 did not qualify and is abandoned for real use. Fix only the
-   escaped-descendant CPU-control blocker, then review synthetic controls and
-   actual bindings/production qualification/headroom. This observational
-   approach has no hard preallocation guarantee.
+4. **Qualify actual Fortran production bindings/admission before any real lease.**
+   Strict V2/V3 did not qualify and is abandoned for real use. The accepted
+   78-check synthetic adapter binds cef only, not 7d9/Qwen. Production role/
+   bootstrap/new bindings/headroom remain pending; full_model_memory is NULL.
+   This observational approach has no hard preallocation guarantee.
    Only after clearance consider planned P18/G1/reset; no authorization for
    longer runs or benchmarks. Require memory/physical-fit and full-shape correctness before
    broader real-27B GPU/profiling. Tiny PASS does not close allocation, residency,
    conditional-arm coverage or accumulated-state gates. CPU scopes remain
    unchanged; no further CPU model run/benchmark, old paused 65,536 result or
    GPU speed claim.
-5. **When connected compiler fixes stabilize**, reconcile LLVM 11 references,
-   run full default suites once on that source before review/local integration.
+5. **When owner-supplied compiler fixes stabilize**, require their LLVM 11
+   reference/default-suite evidence before review/local integration.
    Root's older green suites are not a substitute; consolidate application
    worktrees separately.
 6. **Then optimize to match the selected Metal kernels**, with generic,
@@ -1442,12 +1493,13 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the [next priorities](#next-priorities): finish the vanilla-main helper
-rebaseline/rebuild, recheck A/B/original module, then isolate remaining
-section-copy/verifier failures before filing. No cef-compiled claim yet.
-Close the monitored-trial cleanup blocker and actual production qualification
-before a real lease; no hard preallocation guarantee. H proofs/5.166 GB plan
-are historical, rematerialization unimplemented and optimization held.
+Follow the [next priorities](#next-priorities): continue report-only remaining
+cases from tested 7d9 under #16617; that replay is not complete. The user's
+other agents own compiler fixes; candidate handoffs are not PR-ready fixes.
+The cef-bound synthetic adapter is accepted only at that scope; production
+role/bootstrap/new bindings/admission and benchmark phase clocks/completion
+remain pending. No real lease or new benchmark; no hard preallocation guarantee.
+H proofs/5.166 GB plan remain historical; rematerialization is unimplemented.
 Publication remains incomplete: six PRs merged upstream/by user, not by us.
 Further CPU model inference/benchmarks are deferred; compiler regressions/
 suites remain required. Stable b183 unit/integration PASS does not hide the
