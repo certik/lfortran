@@ -1,16 +1,16 @@
 # Portable inference: staged roadmap
 
-**Status: #16701's #16713 is READY on verified 12/12 Quick success; #14625 draft #16716 has a
-qualified local gate but an observed c7dc-head macOS CI failure. Test-lock support
-#16709 is READY, not merged. The local #14626 candidate passes targeted original
-checks; full suites are in progress. Combined `1b9434d1` compiles 9 modules/
-3 drivers, but its first qwen-raw link fails, exit 10. No new native process,
-GPU launch, loaded runtime, token or reset result; prior tiny reset failed.
-No real-27B Fortran GPU trial or tokens/s. The user's other agents own compiler
-fixes; six original PRs were user-merged, not by us.**
+**Status: combined local `O:2e586115` passes unchanged tiny GPU inference and
+exact full-second-request reset: IDs [41,77,71], lookahead 125, all 16 outer
+kernels observed, 1274 dispatches/completions/commits. This is tiny correctness,
+not real-27B fit or throughput; real admission remains NO-GO. #16713 is merged,
+#16709 was maintainer-closed WONTFIX/unmerged, #16716 rebase CI is pending,
+and draft #16726 has fresh-review blocker/rework with unpublished fixes active.
+The user's other agents own compiler fixes; no numerical Fortran changes.**
 
-The cef-bound synthetic adapter is accepted only at its saved scope;
-production bindings/admission, tiny and real-GPU inference remain unqualified.
+The cef-bound synthetic adapter remains accepted only at its saved scope.
+Retained-program tiny correctness does not qualify the current production
+role/parser/bootstrap/launcher or real-GPU admission.
 Historical CPU/H proofs are retained; slow CPU model reruns stay cancelled.
 
 This roadmap records bounded real-CPU short/reset correctness, not all-workload
@@ -21,29 +21,71 @@ unearned; the phase exit gates remain open.
 
 ## Current status, speeds and next plan
 
-**Overnight fixing milestone (2026-11-03):** independent workers have progressed
-beyond the historical vanilla-93fa compile blocker. These are isolated compiler
-fixes, **not root integration, current-main/model acceptance or a combined gate**.
+Current aliases: `K=.fix-issue/qwen38-compiler/worktrees`,
+`O=K/overnight-combined-metal`, `C=.fix-issue/qwen38-publish-20261101`.
+
+**Verified tiny-GPU milestone (2026-11-03):** local combined source
+`2e586115ce1ac0eae5be61e345a6f2978321a12d` contains the F/G/P repairs.
+Compiler SHA-256:
+`f01094903d3ca2146c98847453c93c0ac3a66eb9c14f98a7df07e599f4f8d8a6`;
+runtime `97587eaa218240802b6c9921418f75dd4280333268afff5f3b51844ad31bf053`.
+**All 9 modules / 3 drivers compile and link**. The unchanged retained tiny
+control, with all FN17 numerical hashes still c077, passes IDs **[41,77,71]**,
+lookahead **125**, requested/produced **3/3**, exact full-second-request reset
+and original finiteness guards. This is not an independent all-intermediate scan.
+All **27 source DC sites** map to **16 outer GPU kernels + 11 nested device
+sites**; **all 16 outer kernels actually executed**, with **1274 dispatches /
+1274 completed command buffers / 1274 commits**. Loaded runtime/shaders match.
+The preserved protocol **does not explicitly include `--all-mangling`**;
+do not infer acceptance of that flag.
+
+Proof: `O/.fix-issue/overnight-combined/interface-correctness/admission-1g/`.
+One of two newly granted native processes was used, remainder **SEALED**;
+the earlier 512 MiB denial/0-of-3 ledger is retained. **1 GiB forecast,
+273,170,432 B sampled Metal, 43,204,608 B sampled host RSS and 2.876 s wall**
+are **tiny observations only**, not physical peaks, real-model fit or 27B
+throughput. O remains **local-only/not PR-pushable**.
+
+**Real-27B remains NOT_RUN / NO-GO:** the current O products, FN17 and all
+**six weight hashes** were verified without a real-model payload run.
+The retained executable has a fixed **1 GiB tiny-only abort guard**;
+real-prefix product heap demand is **2,139,095,040 B cumulative versus
+256 MiB arena capacity**, head workspaces **10,252,139,520 B**, and the full
+live bound is **UNKNOWN**. Normal-pressure 86% is not allocatable RAM.
+Require compiler allocation work, production role/parser/bootstrap/current
+launcher-tiny qualification and fresh locked admission—**not raising the
+guard and running**. Authority:
+`C/sessionfiles/real-fortran-gpu-qualification-2e586/{handoff.json,report.md}`.
+Next selected allocation investigation is **#16703 scalar-SUM product
+materialization**: preflight open/unassigned/no open PR or matching local
+branch at selection; fresh setup based on `000f899` is being prepared,
+**no fix yet**. #16649/#16702 stay open; no chosen remedy/dependency is proved.
+
+**Independent fixing/publication status:** workers have progressed
+beyond the historical vanilla-93fa compile blocker. Isolated PR gates do not
+replace O's separate tiny proof or real qualification; **no root integration
+or whole-model/current-main acceptance is implied**.
 Fixing worktrees below are under `K=.fix-issue/qwen38-compiler/worktrees`.
-The initial CI snapshot was **2026-11-03T13:23Z**, bound to the stated heads.
-#16713 readiness now uses later completed direct checks/readback; other later
-outcomes are not inferred.
+States are head-bound metadata observations; new CI is not green because an
+older head passed. The original source gates retain their qualifications.
 
 | Effort | Pinned source / publication | Qualified current status |
 | --- | --- | --- |
-| Host shape, `K/issue-16701-host-shape` | Compiler `21d20efd7fdfac974c0b55be2f5aedfb50700afa`; portability-only `db36ebaa809b24f864cb42ac5950c36b7d182afc`; [#16713](https://github.com/lfortran/lfortran/pull/16713) **READY**, not merged | Original #16701 fixed; fresh review2 clean 0/0/0. Accepted unit 59/59 with reviewed lock-only overlay; source-equivalent reference 1650 cases/2154 outputs and default integration 5810 PASS retained. Direct current-head Quick 12/12 PASS, run `41634361332` SUCCESS/no failed jobs; zero human/inline feedback, REST mergeable-clean, non-draft/unchanged-head readback verified. |
-| Identifiers, `K/issue-14625-metal-identifiers` | Original name fix `540d357d`, CUDA_CPU closure `9780e662`, reference-only `d9474dd`; draft [#16716](https://github.com/lfortran/lfortran/pull/16716), observed `c7dc84d3fa1a7e9f257214b6715b6fb45ea49a2e` | Prior macOS `gpu_metal_80` host `t`/`x_gpu` regression repaired by canonical host-member capture before BLOCK-alias retarget; new `gpu_identifiers_02`. NEW 59 units/5812 default integration/2154 LLVM11 outputs PASS, one inert entry, no updates/skips; three fresh native processes, total 3 dispatches/completions. Fresh review2 clean 0/0/0, 263 proofs audited. NEW Quick `41640146296` fails macOS job `125931854869`, others pending—not green; dedicated CI fixer owns investigation. Not silently attributed to the prior repaired failure. |
-| Test-lock location, `J=K/gpu-run-lock-location` | [#16709](https://github.com/lfortran/lfortran/pull/16709), `b561092e08ad7f38c98e113bafc893aca99f2acd` | **READY**, not merged; all 12 Quick PASS, run `41629493893`, fresh review2 zero issues, no human/inline feedback; live non-draft/mergeable-clean. Runner source unchanged from reviewed `06cc418…`: default `/tmp` remains; opt-in `LFORTRAN_GPU_LOCK_DIR` changes environment-specific test-lock location only. Not a numerical compiler fix, PATH shim or guard relaxation. |
-| Optional launch, `P=K/issue-14626-optional-launch` | Local clean `0e46434d4dbc92f5ef6044b659455d273b861167`, **unpushed/no PR**; reproduced on vanilla `4768d2a7` too | Original #14626 fully fixed within verified GFortran/CPU/CUDA_CPU/Metal scope. Full default suites in progress: reviewed-overlay unit 59 PASS, reference/integration pending; **not suites-green**. Native CUDA hardware untested; no whole-LLM acceptance. |
+| Host shape, `K/issue-16701-host-shape` | Compiler `21d20efd7fdfac974c0b55be2f5aedfb50700afa`, portability-only `db36ebaa809b24f864cb42ac5950c36b7d182afc`; [#16713](https://github.com/lfortran/lfortran/pull/16713) **MERGED** | User/maintainer merged at **2026-11-03T14:53:06Z**, main commit `000f899bf1510f9eeb6e0ff2440731c1e041ce1c`. Original-case acceptance, review2 0/0/0, qualified 59 units/1650 reference cases/2154 outputs/5810 integration retained; prior 12/12 Quick run `41634361332` remains head-bound evidence. |
+| Identifiers, `K/issue-14625-metal-identifiers` | [#16716](https://github.com/lfortran/lfortran/pull/16716), rebased/pushed `359f5b23bfb16d29c7b6e7d0be167ef7209df38a` onto `000f899` | Requested rebase preserved all five commits; only CMake/reference conflicts, seven compiler files byte-identical to prior ready/green `4d9`. BUILD + 18 integration / 6 native Metal / 56 reference checks PASS; fresh post-rebase review 0/0/0. Full gates **carried**, not rerun: qualified 59 units/5813 integration/2154 outputs, historical J overlay restored. New Quick `41661791507` **PENDING**, mergeable; not new CI-green from old 4d9. |
+| Test-lock location, `J=K/gpu-run-lock-location` | [#16709](https://github.com/lfortran/lfortran/pull/16709), `b561092e` | Maintainer **CLOSED WONTFIX / unmerged**. Respect the decision: no reopening or new source use. Former ready/12-pass run `41629493893` is historical, not a numerical fix or a merge dependency for qualified past gates. |
+| Optional launch, `P=K/issue-14626-optional-launch` | Draft [#16726](https://github.com/lfortran/lfortran/pull/16726), published `ac978b2f205607a6de950c980e88489d68d70c91` | Original #14626 checks accepted; fix2 ASR association/reachability repairs introduced TARGET/interface-link regression. Fresh qualified **59 units/2154 outputs (1650 entries, one inert)/5814 integration PASS**. Published before fresh review: review1 found **one optional-decomposed-root null-dereference blocker + one contiguous-optional host-copy rework**. Unpublished b418 round active; no final-clean claim, **not ready**, current ac978 Quick ongoing. |
 
-**Unit-gate qualification is mandatory:** host-shape/identifier/optional units
-use the exact reviewed J `06cc418…` **lock-assignment-only overlay**, normal
-Pixi CTest, then exact restoration. Host-shape's earlier PATH-adapter 59/59 is
+**Historical unit-gate qualification is mandatory:** host-shape/identifier/optional
+gate runs used J `06cc418…`'s temporary **lock-assignment-only overlay**, normal
+Pixi CTest, then exact restoration. This is **not a dependency on merging the
+maintainer-rejected #16709, nor permission for new source use**. Host-shape's earlier PATH-adapter 59/59 is
 **rejected gate evidence**, never silently substituted. Its reference/default
 integration logs are reused, not rerun after the compiler-unchanged test-only
 portability follow-up; original zero-interception/PATH-exposure qualifications
 remain attached. These are not unmodified default-`/tmp` executions or new
-original-fixture gates. Identifier's current full suites are new, not pooled.
+original-fixture gates. Identifier's pre-rebase full gates are carried, not a
+new unmodified unit rerun; its fresh rebase checks are separately counted.
 Host-shape's watcher **exit 1** receipt is retained, cause unasserted; it is
 **not a CI-failure claim**. Readiness is independently based on direct job/run
 success and non-draft readback, not the watcher status or human sign-off.
@@ -53,9 +95,19 @@ aggregate views using unchanged #16694 conservative alias rules. Fresh original
 body **2/2**, comment **2/2**, presence **3/3** native dispatch/completion checks
 pass. Qualified exact-current proof reuse covers projection **4/4**, regression
 **15/15 each normal/fast/f23**, aggregate **1/1**; not fresh execution of every
-reused row or a native-CUDA claim. Full-suite ownership remains separate.
+reused row or a native-CUDA claim. These accepted original checks do not clear
+#16726's new review findings.
 
-**Combined application, local only:** `O=K/overnight-combined-metal` is
+Reused existing CI follow-ups, **not reports created here**: **#15241** is the
+verified known OpenMP race (`openmp_43`, SUB110 versus30). **#12903** is qualified
+pre-existing evidence: identifier-only EEE/current4d9 variants show the same
+index1-outside-[-1:0] record, responsible code unchanged, GFortran/CPU positive.
+The exact EEE original remains keyword-`class` masked; canonical no-reallocation
+allocation diagnostics also mask it. **No unmasked-original baseline claim**.
+Both are linked in the PR scope; proof:
+`K/issue-14625-metal-identifiers/.fix-issue/14625/followup-ci2/{report.md,handoff.json,metadata-publication/publication.json}`.
+
+**Earlier combined failures, preserved:** `O=K/overnight-combined-metal` is
 **not PR/pushable**. Prior executed `0a273ba778bbe17279fab87bd5956291e602917b`
 compiled unchanged **9/9 modules + 3/3 drivers** and executed tiny, but failed
 reset after **966 dispatches/completions**. First identical-input divergence:
@@ -76,18 +128,18 @@ the **first qwen-raw link FAILED, exit 10**, with an undefined specialized
 are unchanged. Only **27 source DC sites** were counted; fresh 16+11 lowering
 and dynamic coverage are **unverified**.
 Proof: `O/.fix-issue/overnight-combined/optional-correctness/{report.json,binding-manifest.json,result-receipt.json}`.
-A fresh reducer compares the prior working 0a compile/link protocol before
-classifying **compiler regression versus harness mistake**; no issue filed or
-cause assigned. This is separate from G's independent CI2 investigation.
-No fresh tiny/reset PASS, real
-27B Fortran GPU trial or GPU tokens/s. FN numerical c077/all 17 protected hashes
+At that checkpoint a reducer compared prior working 0a compile/link protocol;
+classification/cause was not assigned there. G's CI2 was independent.
+These remain failed versions, **not reclassified by the later 2e586 PASS**.
+FN numerical c077/all 17 protected hashes
 remain unchanged; `750367` is supervisor-only.
 
 Evidence: host-shape `.fix-issue/16701/{state.md,suites.md,suites-summary.json}`;
 identifier `.fix-issue/14625/ci-fix1/{diagnosis.md,publication.json,manifest.json}`;
 optional `.fix-issue/14626/{fix_1.md,check_1.md,original-check/handoff.json,state.md}`
-in their respective K worktrees. No new unrelated compiler bug is established
-by the identifier CI metadata.
+in their respective K worktrees; current rebase evidence:
+`K/issue-14625-metal-identifiers/.fix-issue/14625/rebase-1/`
+(`handoff.md/json`, `review.md/json`).
 
 **Historical completed 93fa readiness milestone:** W remains
 `.fix-issue/qwen38-compiler/worktrees/main-retry-4472fde0b6df`;
@@ -474,7 +526,7 @@ fully consolidated into the application caller checkout.
 | Native LFortran CPU, unchanged `G:d94db95877` / LLVM11.1.0 | Earlier `9c07860` primitive/tiny proofs retained. App `c077` real P18/G17 and complete second-request reset PASS, all 17 native IDs/lookahead/counts. Finite guard scope is logits/recurrent FP32 state, not all intermediates. | Bounded short/reset correctness only; no accepted throughput or compiler-source fix. |
 | LFortran GPU, combined `G:d94db95877` | Prior tiny-driver proof is retained: IDs, finiteness/self-reset pass, exact/cross-C gates fail. Offloading the new native Fortran branch follows CPU validation, not a promotion of this checkpoint. | No 27B run or accepted throughput; optimization follows correct new offload. |
 | Historical native offload, `H:b1834f03` / refs `19ba118f`; bounded `f8b5dc0`, warning-only `f5e193c4` | Saved primitive/tiny GPU gates retained. Stable units 55 CPU+2 Metal / default integration 5620 PASS; references 2122/2123, introduced CUDA failure unresolved. f8 has 48/816/104448 exact native outputs and two-entry/transition controls; planned scratch 5,166,049,280 B. | **Not suites-green**; H full suites NOT_RUN, no physical-peak/model-fit/TPS acceptance. These proofs/plan do not apply to vanilla main. |
-| Overnight local combined, `O:1b9434d1`; prior executed tiny `0a273ba7` | New checker: 9 modules/3 drivers compile, first qwen-raw link FAIL exit 10, undefined specialized linear symbol; native ledger 0/3 sealed. Prior 0a reset FAIL after 966 dispatches/completions remains separate. | Local-only, not PR/pushable; 27 new source DC sites only, new 16+11 lowering/dynamic coverage unverified. No new loaded runtime/GPU/token/reset result; regression versus harness unclassified. |
+| Local combined, `O:2e586115` | All 9 modules/3 drivers compile+link; unchanged tiny GPU PASS [41,77,71], lookahead125, requested/produced3/3, full reset exact/finiteness; 27 sites→16 outer+11 nested, all16 outer executed, 1274 dispatches/completions/commits. | Tiny correctness only, not current-main/real-model fit/TPS. Retained protocol does not explicitly test --all-mangling. Real qualification NO-GO; historical failed versions remain separate. |
 | Latest TESTED upstream baseline, `93fa1ca0` | Original #16604/#16606/#16616/#16613/#16628 compile/link/native PASS, one dispatch/completion each; #16616 new 19/58-line compile-only controls pass. Seven modules pass; dense kernels/model/drivers block on host temporary sizing #16701. | Tiny/real-27B/TPS NOT_RUN; complete 27-site coverage unproved. A/C functional passes have unmeasured GPU counters/physical peaks, not memory savings/fit. 93fa is not a live-tip claim. |
 | Native-math C+Metal baseline, `N:8640d2df` / docs `86fb02f9` | Reviewed source baseline committed; binary/four native libraries match the original benchmark snapshot. Short17/reset and every protected 65/1536 ID pass. User-authorized private backup verified. | Audited 24-sample table below remains the validated performance baseline; conventional-prefill qualification remains open. |
 | Archived residency experiment, `c71595c7` | Local `experiment/qwen38-residency`, not pushed; functional controls pass and old Battery block is preserved. Production `86fb02f9`, binary `42c8930d…` and four libraries were restored clean. | Short65 ABBA N=2/arm screen **LOSS**, not N4/all-workload/formal regression; no runtime mode promoted. |
@@ -647,7 +699,7 @@ cleanup release** at that earlier mechanism-review checkpoint.
 normal and delayed controls each produce **sum 204 / one completed GPU
 dispatch**, ledger **2/4 versus historical C 8/8**. Authority:
 `C/sessionfiles/model-monitored-trial/fortran-adapter-v1/{review_1.md,review_1.json}`.
-This approval **binds cef, not 7d9/a76f/93fa or Qwen**; do not relabel old approvals
+This approval **binds cef, not 7d9/a76f/93fa/O2e586 or real Qwen**; do not relabel old approvals
 after a rebuild. Safeguards remain observational, `full_model_memory` is
 **NULL**, and **no real-model lease under this controller has ever been granted**.
 Production role/bootstrap,
@@ -660,8 +712,9 @@ Disk recovered externally to 69 then 161 GiB; the capacity worker performed
 
 **Benchmark-contract audit, not a benchmark:** exact workload/hash/raw-ID/reset/
 counters/pruning/sampler are ready; prefix is **P-1**, decode **G-1 includes
-terminal lookahead**. Application benchmarking still lacks Fortran phase clocks,
-proven GPU completion, runtime bindings and admission. Synchronous Fortran is **not native queued
+terminal lookahead**. Real-workload benchmarking still lacks Fortran phase clocks,
+phase-bound completion/runtime bindings and admission; tiny completion proof is
+not those timing gates. Synchronous Fortran is **not native queued
 timing**; `CPU_time` is not GPU throughput. Authority:
 `C/sessionfiles/fortran-benchmark-contract/{report.md,contract.json}`.
 No new benchmarks; QMM64 remains unpromoted with its adverse sample preserved.
@@ -1074,14 +1127,13 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Complete independent fixing gates and classify the combined link failure.**
-   #16713 and J/#16709 are ready, not merged; #16716's observed
-   c7dc-head macOS Quick failure needs investigation despite clean review2; #14626 default suites
-   are running. Local targeted success does not
-   close issues, prove combined source/binary identity or accept a model.
-   O P0e464/Gc7dc `1b9434d1` now has a completed link failure, not a pending
-   native gate. Compare prior 0a compile/link protocol before classifying it;
-   no issue/cause assigned or new tiny/reset/token result.
+1. **Preserve verified tiny acceptance; investigate allocation before real inference.**
+   O2e586 passes unchanged tiny/reset, not real27B or performance. #16703 scalar
+   SUM product materialization is the selected next investigation, fresh setup
+   based on 000f899, no fix yet; do not assume #16649/#16702 remedies/dependencies.
+   #16713 is merged; #16709 closed WONTFIX must not be revived. #16716's rebased
+   359f Quick is pending despite old4d9 green; #16726 draft has active unpublished
+   blocker/rework fixes and is not clean/ready. These remain independent gates.
    Original 93fa controls/A/C remain qualified history, not memory savings/fit.
    Preserve faithful MREs/reports without claiming reused issues as newly filed.
    The user's other agents own all compiler fixes; no competing implementation.
@@ -1108,8 +1160,11 @@ independent disposition: session artifact
    Resolve connected regressions without waivers or blocking independent jobs.
 4. **Qualify actual Fortran production bindings/admission before any real lease.**
    Strict V2/V3 did not qualify and is abandoned for real use. The accepted
-   78-check synthetic adapter binds cef only, not O/current fixing heads/Qwen. Production role/
-   bootstrap/new bindings/headroom remain pending; full_model_memory is NULL.
+   78-check synthetic adapter binds cef only; O2e586 program-tiny PASS does not
+   qualify production role/parser/bootstrap/current launcher-tiny/admission.
+   Current real qualification is NO-GO: fixed tiny-only guard, 2.139GB cumulative
+   prefix products versus256MiB capacity, 10.252GB head workspaces/live bound unknown.
+   Require allocation work and fresh locked admission, not raising the guard.
    This observational approach has no hard preallocation guarantee.
    Only after clearance consider planned P18/G1/reset; no authorization for
    longer runs or benchmarks. Require memory/physical-fit and full-shape correctness before
@@ -1727,11 +1782,12 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-Follow the [next priorities](#next-priorities): finish independent PR/local
-suite gates and resolve/classify O1b9434's first-link failure against the prior
-working 0a compile/link protocol. New 9-module/3-driver compilation is not
-native acceptance; old O0a273's 966-dispatch reset failure and older host-shape mapping
-retain their own provenance. No real-27B trial/TPS, unrelated
+Follow the [next priorities](#next-priorities): preserve O2e586's verified tiny
+GPU/reset acceptance while #16703 allocation investigation/setup proceeds and
+the independent #16716/#16726 gates finish. Real27B remains NO-GO: qualify
+allocation bounds and production launcher/admission before any trial, never
+raise the tiny guard as a workaround. Old631/nonfinite, 966/reset and 1b943/link
+failures retain their own versions/provenance. No real-27B trial/TPS, unrelated
 toolchain refresh or further old-crash execution approval. The user's
 other agents own compiler fixes; candidate handoffs are not PR-ready fixes.
 The cef-bound synthetic adapter is accepted only at that scope; production
