@@ -1,10 +1,11 @@
 # Portable inference: staged roadmap
 
-**Status: tested upstream `a76f9fb5` accepts the exact original #16603 int16
-GPU reproducer; seven application modules pass, but `dense_kernels` still
-fails, exit 3. Current application compile barriers are #16604/#16606/#16616,
-not an exhaustive correctness-bug list. This reporting round is complete;
-the next meaningful retry awaits upstream blocking fixes. The user's other
+**Status: latest TESTED `93fa1ca0` passes the original #16604/#16606/#16616/
+#16613/#16628 native checks. Seven application modules pass, but dense kernels
+now block on host temporary sizing, reported as #16701. Tiny/real-27B GPU and
+throughput remain NOT_RUN; complete 27-site coverage is unproved.
+This phase is complete; the whole-LLM retry awaits an identified #16701 fix.
+The user's other
 agents own all compiler fixes. Six original PRs were user-merged, not by us.
 The cef-bound synthetic adapter is accepted only at its saved scope;
 production bindings/admission, tiny and real-GPU inference remain unqualified.
@@ -18,7 +19,61 @@ unearned; the phase exit gates remain open.
 
 ## Current status, speeds and next plan
 
-**Completed upstream-int16 acceptance:** in worktree
+**Completed 93fa readiness milestone:** W remains
+`.fix-issue/qwen38-compiler/worktrees/main-retry-4472fde0b6df`;
+C is `.fix-issue/qwen38-publish-20261101`. The required generator **BUILD** at f4
+was followed by incremental **REBUILD** to include newly merged #16628.
+Latest TESTED source is `93fa1ca0fa1b58607418030183ba446671c14551`,
+LLVM11.1.0 Debug `-g -O2` / assertions / native Metal. Compiler SHA-256:
+`730e45e15c49b5b11c78430594c9632c469c2f7b923d651b99f156b46eb21e50`;
+runtime:
+`20ba972375c9b9fbcff1a7ac905268cf3c13ed9b54779635ea9352fb90d31dfc`.
+Displayed `0.68.0-536-gf4e95` is stale text, not the actual source identity.
+Evidence: `W/.fix-issue/main-93fa-fortran-gpu-readiness/handoff.json`.
+
+Original **#16604/#16606/#16616/#16613/#16628 all compile/link/native PASS**,
+each **one dispatch / one completion**. The newer #16616 19/58-line modules
+also compile-only PASS. FN c077/all 17 hashes are unchanged; seven modules
+pass, but `dense_kernels` lines **545–609** block on host temporary sizing.
+Dense model/three drivers remain blocked, tiny **NOT_RUN**, and complete
+27-site execution/conditional coverage is unproved. The old three barriers
+are no longer current failures of those original inputs.
+
+New report **#16701**, “Metal offload: runtime BLOCK-local row gather cannot
+be sized on the host”, has a **54-line MRE**: strict GFortran `-c` 0 /
+LFortran `-c` 5, only `gpu_kernel_finalize`, on 93fa. Host shape recovery for
+generated `UBOUND(partials,2)` is missing with runtime extent/nested concurrency;
+fast mode is unnecessary. Not a proved #16640 regression, and old A/B/C
+candidates are not demonstrated remedies. A qualified dump-only follow-on
+crash is recorded locally, **not a separate confirmed bug**.
+Proofs: `C/main-93fa-host-workspace-bug-report/` (verified public body/#16617)
+and `W/.fix-issue/main-93fa-host-workspace-mre/handoff.json`.
+
+**Unmasked follow-ups:** A exact-section c17 and C scalar SUM now compile/link
+with passing GFortran controls; old A graph/C #16616 masks are resolved.
+Exact archived E (`dd96e` source prefix) passes minimal/original-strict
+LFortran `-c` and fresh GFortran checks: old verifier failure gone, **E not run**.
+The 128 MiB guard correctly blocked unchanged 256 MiB heap plans; a separate
+bounded **512 MiB total / 2 GiB RSS grant** followed a 320 MiB forecast/normal
+pressure. Only the A/C test programs were recompiled/relinked from unchanged
+inputs/flags/compiler/runtime and freshly hash-bound, **not a compiler rebuild
+or source workaround**.
+
+One A-c17 native run exits 0, `PASS 17 0 0.25 0`; one C run exits 0, `ok`.
+Original assertions pass; pinned runtime and AGX Metal are confirmed.
+**For A/C, actual dispatch/completion counts, allocation bytes and physical
+peaks are UNMEASURED**:
+the unchanged recipe exported no counters. Host-sampled RSS **38.4/46.9 MB
+is not GPU footprint**; the 320 MiB forecast and OS 86% indicator are not
+physical-RAM proof. Heap remains 256 MiB; no observed optimization savings,
+model fit or all-GPU coverage follows. Children/scratch/lock are released;
+earlier proofs/ledgers are preserved.
+Evidence: `W/.fix-issue/main-93fa-unmasked-followups/{handoff.json,completion.json}`
+and `W/.fix-issue/main-93fa-unmasked-followups/native-256m/recreated/{report.txt,handoff.json,completion.json}`.
+These A/C functional passes remain separate from historical #16649 candidate
+handoffs and B's measured cumulative-buffer observations.
+
+**Historical upstream-int16 acceptance:** in worktree
 `W=.fix-issue/qwen38-compiler/worktrees/main-retry-4472fde0b6df`, tested source
 `a76f9fb5b3d547bfffb70b36f7b54c1a0455a45c` contains the user's merged #16614,
 separate from our six original PRs. W used **rebuild only**: no actual generator/
@@ -80,8 +135,10 @@ At that 7d9 checkpoint, the separate remaining-case report-only replay had
 not yet completed; completed nested/identifier handoffs are recorded below.
 
 **Tracking and ownership:** [#16617](https://github.com/lfortran/lfortran/issues/16617)
-tracks **19 reports created here: original 14 + #16618/#16628/#16644/#16646/#16649**;
+tracks **20 reports created here: original 14 + #16618/#16628/#16644/#16646/#16649/#16701**;
 reused issues are not reports created by this effort.
+#16701's verified public body/tracker update preserves prior checkbox states
+and content except its own status paragraph; the tracker has **25 checkboxes**.
 The user's other agents fix **all compiler bugs**. This effort owns LLM
 bring-up, faithful MREs/issues and existing-source candidate handoffs,
 **not competing fixes**. Bodies actually handed off:
@@ -113,7 +170,7 @@ guard -> closure -> normalization; literal overlaps #15895/#16532/#16614 and
 wide #16547 remain qualified. Current storage03/closure replays, native/full
 suites are unproved; CUDA d27 remains unresolved.
 
-Memory replay evidence: `W/.fix-issue/main-a76f-memory-witness-replays/handoff.json`.
+Historical a76f memory replay evidence: `W/.fix-issue/main-a76f-memory-witness-replays/handoff.json`.
 A (exact-section c17 witness): GFortran PASS / LFortran exit 3 in
 `device_launch_expand` / `device_call`; qualified #16640 overlap, **no allocation
 comparison**. B (false/true): both GFortran/native PASS, each **one dispatch /
@@ -128,18 +185,20 @@ byte-exact in four ordered whole-candidate comments: b823 (**6590910049**),
 420 (**6590910560**), f8 (**6590911080**), f5 (**6590911515**). The body exceeded
 65,536 B; the user authorized comments **on this new issue only**, with no
 split/truncated candidate. Only **b823's scoped query API** is a proved
-prerequisite—not whole A or B/C behavioral dependency. A/C remain separately
-blocked/historical, not new confirmed main bugs. Matrix forwarding/M1
+prerequisite—not whole A or B/C behavioral dependency. At that checkpoint A/C
+were separately blocked/historical, not new confirmed main bugs. Matrix forwarding/M1
 elimination remain unimplemented proposals; public candidate comments are
 **not current patch acceptance, implementation, build/test or PR evidence**.
 Receipts/grouping: `C/sessionfiles/existing-memory-optimization-report/`
 (`publication/`, preparatory handoff and grouping-readiness snapshot).
-#16617 preserves all prior content/23 checkbox states, now **24 total**.
+#16617 then preserved all prior content/23 checkbox states, **24 total** before #16701.
 
-**Round complete:** main remains a76f at the completed metadata check;
-#16640/#16647 and #16604/#16616/#16628 remain open. No ongoing model/build
-services. Await upstream blocking fixes before the next LLM retry; do not
-repeat unchanged checks or refresh the toolchain without changed inputs.
+**Round complete:** 93fa is the tested baseline, **not the current tip**.
+Later observed remote `4639d61884e0d198a90acf030c7f873887919ead` is #16700
+host-procedure-frame specialization, not an identified #16701 fix.
+#16701 remains **OPEN/no linked fix PR**; #16694 remains open. No workloads
+from this phase remain active. Await an identified #16701 fix before the whole
+LLM retry; do not refresh solely for an unrelated main advance.
 
 **Historical 2026-11-02 vanilla-main retry:** the user requested latest main and every bug
 reported; many Metal fixes landed, while 64-bit-index work continues.
@@ -343,7 +402,7 @@ fully consolidated into the application caller checkout.
 | Native LFortran CPU, unchanged `G:d94db95877` / LLVM11.1.0 | Earlier `9c07860` primitive/tiny proofs retained. App `c077` real P18/G17 and complete second-request reset PASS, all 17 native IDs/lookahead/counts. Finite guard scope is logits/recurrent FP32 state, not all intermediates. | Bounded short/reset correctness only; no accepted throughput or compiler-source fix. |
 | LFortran GPU, combined `G:d94db95877` | Prior tiny-driver proof is retained: IDs, finiteness/self-reset pass, exact/cross-C gates fail. Offloading the new native Fortran branch follows CPU validation, not a promotion of this checkpoint. | No 27B run or accepted throughput; optimization follows correct new offload. |
 | Historical native offload, `H:b1834f03` / refs `19ba118f`; bounded `f8b5dc0`, warning-only `f5e193c4` | Saved primitive/tiny GPU gates retained. Stable units 55 CPU+2 Metal / default integration 5620 PASS; references 2122/2123, introduced CUDA failure unresolved. f8 has 48/816/104448 exact native outputs and two-entry/transition controls; planned scratch 5,166,049,280 B. | **Not suites-green**; H full suites NOT_RUN, no physical-peak/model-fit/TPS acceptance. These proofs/plan do not apply to vanilla main. |
-| Latest TESTED upstream baseline, `a76f9fb5` | Exact unchanged #16603 minimal/strict compile+link and one native Metal run PASS (1/1/512 B, y=[3,3]); three application int16 errors removed. Seven modules pass, dense kernels exit 3; #16604/#16606/#16616 are current compile barriers. Standalone extent reduction confirms #16616, no runtime. | Exact MRE acceptance only, not the broad group/whole PR/LLM or an exhaustive remaining-bug list. Tiny/real-model/TPS NOT_RUN; no inherited Safe/Precise. |
+| Latest TESTED upstream baseline, `93fa1ca0` | Original #16604/#16606/#16616/#16613/#16628 compile/link/native PASS, one dispatch/completion each; #16616 new 19/58-line compile-only controls pass. Seven modules pass; dense kernels/model/drivers block on host temporary sizing #16701. | Tiny/real-27B/TPS NOT_RUN; complete 27-site coverage unproved. A/C functional passes have unmeasured GPU counters/physical peaks, not memory savings/fit. 93fa is not a live-tip claim. |
 | Native-math C+Metal baseline, `N:8640d2df` / docs `86fb02f9` | Reviewed source baseline committed; binary/four native libraries match the original benchmark snapshot. Short17/reset and every protected 65/1536 ID pass. User-authorized private backup verified. | Audited 24-sample table below remains the validated performance baseline; conventional-prefill qualification remains open. |
 | Archived residency experiment, `c71595c7` | Local `experiment/qwen38-residency`, not pushed; functional controls pass and old Battery block is preserved. Production `86fb02f9`, binary `42c8930d…` and four libraries were restored clean. | Short65 ABBA N=2/arm screen **LOSS**, not N4/all-workload/formal regression; no runtime mode promoted. |
 | Completed resident comparison, measurement host `7f048673…` | 16 fresh children, 32 fully reported requests and 2,080 exact IDs; source/count/clock/AC-auto/resource gates and independent saved-evidence audit pass. Native math/four libraries and original production remain unchanged. | Historical short PASS / 2K FAIL-INCONCLUSIVE / overall readiness **FAIL** unchanged; no new warm1536 or Fortran acceptance follows. |
@@ -515,7 +574,7 @@ cleanup release** at that earlier mechanism-review checkpoint.
 normal and delayed controls each produce **sum 204 / one completed GPU
 dispatch**, ledger **2/4 versus historical C 8/8**. Authority:
 `C/sessionfiles/model-monitored-trial/fortran-adapter-v1/{review_1.md,review_1.json}`.
-This approval **binds cef, not 7d9/a76f or Qwen**; do not relabel old approvals
+This approval **binds cef, not 7d9/a76f/93fa or Qwen**; do not relabel old approvals
 after a rebuild. Safeguards remain observational, `full_model_memory` is
 **NULL**, and **no real-model lease under this controller has ever been granted**.
 Production role/bootstrap,
@@ -942,12 +1001,11 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Await upstream blocking fixes after this completed a76f reporting round.**
-   Exact original #16603 passes on GPU; do not generalize to its whole
-   envelope. Seven modules pass; #16604/#16606/#16616 block current application
-   compilation, not all later correctness gates. The extent reduction is
-   confirmed #16616; no #16614-regression or old-BF16 inference.
-   No ongoing model/build services; no unchanged retries/toolchain refresh.
+1. **Await an identified #16701 fix after this completed 93fa round.**
+   Original #16604/#16606/#16616/#16613/#16628 now pass natively; they are not
+   the old current blockers. Host temporary sizing prevents whole-LLM readiness.
+   A/C pass functionally, not with observed allocation savings/fit; E was not run.
+   No active phase workloads or refresh for unrelated main advances.
    Preserve faithful MREs/reports without claiming reused issues as newly filed.
    The user's other agents own all compiler fixes; no competing implementation.
    Hold old H optimization work; its scratch plan/proofs do not certify main.
@@ -973,7 +1031,7 @@ independent disposition: session artifact
    Resolve connected regressions without waivers or blocking independent jobs.
 4. **Qualify actual Fortran production bindings/admission before any real lease.**
    Strict V2/V3 did not qualify and is abandoned for real use. The accepted
-   78-check synthetic adapter binds cef only, not a76f/Qwen. Production role/
+   78-check synthetic adapter binds cef only, not 93fa/Qwen. Production role/
    bootstrap/new bindings/headroom remain pending; full_model_memory is NULL.
    This observational approach has no hard preallocation guarantee.
    Only after clearance consider planned P18/G1/reset; no authorization for
@@ -1592,12 +1650,11 @@ without coauthor or AI-attribution trailers.
 
 ## Next immediate action
 
-This current-main reporting round is complete. Follow the
-[next priorities](#next-priorities): await upstream fixes for current
-#16604/#16606/#16616 application compile barriers before a meaningful retry.
-Original #16603 GPU acceptance persists; the standalone extent reduction is
-the same #16616 bug, not a new regression. No unchanged rechecks, toolchain
-refresh or further crash execution approval. The user's
+This 93fa reporting round is complete. Follow the
+[next priorities](#next-priorities): await an identified #16701 host-workspace
+fix before the whole-LLM retry. Original #16604/#16606/#16616/#16613/#16628
+now pass; A/C functional passes do not establish allocation savings or fit.
+No refresh for unrelated main advances or further old-crash execution approval. The user's
 other agents own compiler fixes; candidate handoffs are not PR-ready fixes.
 The cef-bound synthetic adapter is accepted only at that scope; production
 role/bootstrap/new bindings/admission and benchmark phase clocks/completion
