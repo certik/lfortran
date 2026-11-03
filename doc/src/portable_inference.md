@@ -1,6 +1,6 @@
 # Portable inference: staged roadmap
 
-**Status: #16701 is locally fixed in draft #16713; #14625 draft #16716 has a
+**Status: #16701's #16713 is READY on verified 12/12 Quick success; #14625 draft #16716 has a
 qualified local gate but an observed c7dc-head macOS CI failure. Test-lock support
 #16709 is READY, not merged. The local #14626 candidate passes targeted original
 checks; full suites are in progress. Combined `1b9434d1` compiles 9 modules/
@@ -25,12 +25,13 @@ unearned; the phase exit gates remain open.
 beyond the historical vanilla-93fa compile blocker. These are isolated compiler
 fixes, **not root integration, current-main/model acceptance or a combined gate**.
 Fixing worktrees below are under `K=.fix-issue/qwen38-compiler/worktrees`.
-CI metadata below was read at **2026-11-03T13:23Z**, bound to the stated heads;
-later outcomes are not inferred.
+The initial CI snapshot was **2026-11-03T13:23Z**, bound to the stated heads.
+#16713 readiness now uses later completed direct checks/readback; other later
+outcomes are not inferred.
 
 | Effort | Pinned source / publication | Qualified current status |
 | --- | --- | --- |
-| Host shape, `K/issue-16701-host-shape` | Compiler `21d20efd7fdfac974c0b55be2f5aedfb50700afa`; portability-only `db36ebaa809b24f864cb42ac5950c36b7d182afc`; draft [#16713](https://github.com/lfortran/lfortran/pull/16713) | Original #16701 fixed; fresh review2 clean 0/0/0. Accepted unit 59/59 with reviewed lock-only overlay; source-equivalent reference 1650 cases/2154 outputs and default integration 5810 PASS retained. Quick `41634361332` pending (11 success, one in progress at live read), not ready/merged. |
+| Host shape, `K/issue-16701-host-shape` | Compiler `21d20efd7fdfac974c0b55be2f5aedfb50700afa`; portability-only `db36ebaa809b24f864cb42ac5950c36b7d182afc`; [#16713](https://github.com/lfortran/lfortran/pull/16713) **READY**, not merged | Original #16701 fixed; fresh review2 clean 0/0/0. Accepted unit 59/59 with reviewed lock-only overlay; source-equivalent reference 1650 cases/2154 outputs and default integration 5810 PASS retained. Direct current-head Quick 12/12 PASS, run `41634361332` SUCCESS/no failed jobs; zero human/inline feedback, REST mergeable-clean, non-draft/unchanged-head readback verified. |
 | Identifiers, `K/issue-14625-metal-identifiers` | Original name fix `540d357d`, CUDA_CPU closure `9780e662`, reference-only `d9474dd`; draft [#16716](https://github.com/lfortran/lfortran/pull/16716), observed `c7dc84d3fa1a7e9f257214b6715b6fb45ea49a2e` | Prior macOS `gpu_metal_80` host `t`/`x_gpu` regression repaired by canonical host-member capture before BLOCK-alias retarget; new `gpu_identifiers_02`. NEW 59 units/5812 default integration/2154 LLVM11 outputs PASS, one inert entry, no updates/skips; three fresh native processes, total 3 dispatches/completions. Fresh review2 clean 0/0/0, 263 proofs audited. NEW Quick `41640146296` fails macOS job `125931854869`, others pending—not green; dedicated CI fixer owns investigation. Not silently attributed to the prior repaired failure. |
 | Test-lock location, `J=K/gpu-run-lock-location` | [#16709](https://github.com/lfortran/lfortran/pull/16709), `b561092e08ad7f38c98e113bafc893aca99f2acd` | **READY**, not merged; all 12 Quick PASS, run `41629493893`, fresh review2 zero issues, no human/inline feedback; live non-draft/mergeable-clean. Runner source unchanged from reviewed `06cc418…`: default `/tmp` remains; opt-in `LFORTRAN_GPU_LOCK_DIR` changes environment-specific test-lock location only. Not a numerical compiler fix, PATH shim or guard relaxation. |
 | Optional launch, `P=K/issue-14626-optional-launch` | Local clean `0e46434d4dbc92f5ef6044b659455d273b861167`, **unpushed/no PR**; reproduced on vanilla `4768d2a7` too | Original #14626 fully fixed within verified GFortran/CPU/CUDA_CPU/Metal scope. Full default suites in progress: reviewed-overlay unit 59 PASS, reference/integration pending; **not suites-green**. Native CUDA hardware untested; no whole-LLM acceptance. |
@@ -43,6 +44,9 @@ integration logs are reused, not rerun after the compiler-unchanged test-only
 portability follow-up; original zero-interception/PATH-exposure qualifications
 remain attached. These are not unmodified default-`/tmp` executions or new
 original-fixture gates. Identifier's current full suites are new, not pooled.
+Host-shape's watcher **exit 1** receipt is retained, cause unasserted; it is
+**not a CI-failure claim**. Readiness is independently based on direct job/run
+success and non-draft readback, not the watcher status or human sign-off.
 
 The optional fix also repairs tightly coupled addressable backing-state for
 aggregate views using unchanged #16694 conservative alias rules. Fresh original
@@ -1070,10 +1074,10 @@ independent disposition: session artifact
 
 ### Next priorities
 
-1. **Complete independent fixing gates and then the pending combined tiny/reset gate.**
-   #16701 has reviewed draft #16713, not a missing candidate; #16716's observed
+1. **Complete independent fixing gates and classify the combined link failure.**
+   #16713 and J/#16709 are ready, not merged; #16716's observed
    c7dc-head macOS Quick failure needs investigation despite clean review2; #14626 default suites
-   are running. J/#16709 is ready, not merged. Local targeted success does not
+   are running. Local targeted success does not
    close issues, prove combined source/binary identity or accept a model.
    O P0e464/Gc7dc `1b9434d1` now has a completed link failure, not a pending
    native gate. Compare prior 0a compile/link protocol before classifying it;
