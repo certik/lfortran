@@ -3,8 +3,9 @@
 **Status: #16701 is locally fixed in draft #16713; #14625 draft #16716 has a
 qualified local gate but an observed c7dc-head macOS CI failure. Test-lock support
 #16709 is READY, not merged. The local #14626 candidate passes targeted original
-checks; full suites are in progress. Combined rebuild `1b9434d1` is bound and
-complete, but its fresh tiny gate is pending; last consumed tiny fails reset.
+checks; full suites are in progress. Combined `1b9434d1` compiles 9 modules/
+3 drivers, but its first qwen-raw link fails, exit 10. No new native process,
+GPU launch, loaded runtime, token or reset result; prior tiny reset failed.
 No real-27B Fortran GPU trial or tokens/s. The user's other agents own compiler
 fixes; six original PRs were user-merged, not by us.**
 
@@ -51,21 +52,29 @@ pass. Qualified exact-current proof reuse covers projection **4/4**, regression
 reused row or a native-CUDA claim. Full-suite ownership remains separate.
 
 **Combined application, local only:** `O=K/overnight-combined-metal` is
-**not PR/pushable**. Last consumed `0a273ba778bbe17279fab87bd5956291e602917b`
+**not PR/pushable**. Prior executed `0a273ba778bbe17279fab87bd5956291e602917b`
 compiled unchanged **9/9 modules + 3/3 drivers** and executed tiny, but failed
 reset after **966 dispatches/completions**. First identical-input divergence:
 prefix000/layer0/QKV, absent optional bias suppresses the needed projection
 (kernel5 ran, kernel6 did not), matching #14626. Older `d276` nonfinite/
 631-dispatch failure is preserved; **same cause is not established**.
-Static mapping is **27 concurrent sites = 16 outer GPU kernels + 11 nested
-device sites**, not all-kernel dynamic coverage or token success.
+The older host-shape-worker static mapping was **27 concurrent sites = 16 outer
+GPU kernels + 11 nested device sites**; it is not new-O lowering/execution proof.
 Composer has released clean **`1b9434d15ebdd87c92141701e17432035b5a8f3a`**:
 P `0e464` then identifiers `c7dc` integrated without conflicts, **REBUILD PASS**.
 Compiler SHA-256 `f008e56a8fb235f3f49f0eb3fb03d55be38766997189d06a2cfb4f7d6b87002c`;
 runtime prefix `97587eaa…`, Metal prefix `bd50f4b49…`, composition pins
 `update-canonical-member`. Old 540 artifacts/four native ledgers/FN17 are
-preserved. Fresh checker is compiling/running a **new unchanged tiny gate,
-result PENDING**; do not inspect/infer its in-progress outputs.
+preserved. The completed checker compiled **9/9 modules + 3/3 drivers**, but
+the **first qwen-raw link FAILED, exit 10**, with an undefined specialized
+`linear_q8_bf16_integer…` symbol. The native ledger is **0/3 sealed**:
+**no GPU launch, loaded runtime, token or reset result**. All FN17/source pins
+are unchanged. Only **27 source DC sites** were counted; fresh 16+11 lowering
+and dynamic coverage are **unverified**.
+Proof: `O/.fix-issue/overnight-combined/optional-correctness/{report.json,binding-manifest.json,result-receipt.json}`.
+A fresh reducer compares the prior working 0a compile/link protocol before
+classifying **compiler regression versus harness mistake**; no issue filed or
+cause assigned. This is separate from G's independent CI2 investigation.
 No fresh tiny/reset PASS, real
 27B Fortran GPU trial or GPU tokens/s. FN numerical c077/all 17 protected hashes
 remain unchanged; `750367` is supervisor-only.
@@ -461,7 +470,7 @@ fully consolidated into the application caller checkout.
 | Native LFortran CPU, unchanged `G:d94db95877` / LLVM11.1.0 | Earlier `9c07860` primitive/tiny proofs retained. App `c077` real P18/G17 and complete second-request reset PASS, all 17 native IDs/lookahead/counts. Finite guard scope is logits/recurrent FP32 state, not all intermediates. | Bounded short/reset correctness only; no accepted throughput or compiler-source fix. |
 | LFortran GPU, combined `G:d94db95877` | Prior tiny-driver proof is retained: IDs, finiteness/self-reset pass, exact/cross-C gates fail. Offloading the new native Fortran branch follows CPU validation, not a promotion of this checkpoint. | No 27B run or accepted throughput; optimization follows correct new offload. |
 | Historical native offload, `H:b1834f03` / refs `19ba118f`; bounded `f8b5dc0`, warning-only `f5e193c4` | Saved primitive/tiny GPU gates retained. Stable units 55 CPU+2 Metal / default integration 5620 PASS; references 2122/2123, introduced CUDA failure unresolved. f8 has 48/816/104448 exact native outputs and two-entry/transition controls; planned scratch 5,166,049,280 B. | **Not suites-green**; H full suites NOT_RUN, no physical-peak/model-fit/TPS acceptance. These proofs/plan do not apply to vanilla main. |
-| Overnight local combined, rebuilt `O:1b9434d1`; consumed tiny `0a273ba7` | P0e464/Gc7dc composition clean, compiler rebuild/bindings complete; fresh unchanged tiny checker pending. Earlier 9 modules/3 drivers compile and tiny reset FAIL after 966 dispatches/completions, optional-projection divergence matching #14626. | Local-only, not PR/pushable; old static 27/16/11 mapping is not dynamic coverage or token success. No fresh tiny/reset or real-27B/TPS acceptance. |
+| Overnight local combined, `O:1b9434d1`; prior executed tiny `0a273ba7` | New checker: 9 modules/3 drivers compile, first qwen-raw link FAIL exit 10, undefined specialized linear symbol; native ledger 0/3 sealed. Prior 0a reset FAIL after 966 dispatches/completions remains separate. | Local-only, not PR/pushable; 27 new source DC sites only, new 16+11 lowering/dynamic coverage unverified. No new loaded runtime/GPU/token/reset result; regression versus harness unclassified. |
 | Latest TESTED upstream baseline, `93fa1ca0` | Original #16604/#16606/#16616/#16613/#16628 compile/link/native PASS, one dispatch/completion each; #16616 new 19/58-line compile-only controls pass. Seven modules pass; dense kernels/model/drivers block on host temporary sizing #16701. | Tiny/real-27B/TPS NOT_RUN; complete 27-site coverage unproved. A/C functional passes have unmeasured GPU counters/physical peaks, not memory savings/fit. 93fa is not a live-tip claim. |
 | Native-math C+Metal baseline, `N:8640d2df` / docs `86fb02f9` | Reviewed source baseline committed; binary/four native libraries match the original benchmark snapshot. Short17/reset and every protected 65/1536 ID pass. User-authorized private backup verified. | Audited 24-sample table below remains the validated performance baseline; conventional-prefill qualification remains open. |
 | Archived residency experiment, `c71595c7` | Local `experiment/qwen38-residency`, not pushed; functional controls pass and old Battery block is preserved. Production `86fb02f9`, binary `42c8930d…` and four libraries were restored clean. | Short65 ABBA N=2/arm screen **LOSS**, not N4/all-workload/formal regression; no runtime mode promoted. |
@@ -1066,8 +1075,9 @@ independent disposition: session artifact
    c7dc-head macOS Quick failure needs investigation despite clean review2; #14626 default suites
    are running. J/#16709 is ready, not merged. Local targeted success does not
    close issues, prove combined source/binary identity or accept a model.
-   O P0e464/Gc7dc composition/rebuild is complete at `1b9434d1`, but the fresh
-   unchanged tiny checker is pending; no new tiny/reset/token PASS.
+   O P0e464/Gc7dc `1b9434d1` now has a completed link failure, not a pending
+   native gate. Compare prior 0a compile/link protocol before classifying it;
+   no issue/cause assigned or new tiny/reset/token result.
    Original 93fa controls/A/C remain qualified history, not memory savings/fit.
    Preserve faithful MREs/reports without claiming reused issues as newly filed.
    The user's other agents own all compiler fixes; no competing implementation.
@@ -1714,9 +1724,10 @@ without coauthor or AI-attribution trailers.
 ## Next immediate action
 
 Follow the [next priorities](#next-priorities): finish independent PR/local
-suite gates and await the fresh unchanged tiny/reset checker on bound rebuilt
-O1b9434. Until then O0a273's 966-dispatch reset failure is the last consumed
-application result—not a token/model PASS. No real-27B trial/TPS, unrelated
+suite gates and resolve/classify O1b9434's first-link failure against the prior
+working 0a compile/link protocol. New 9-module/3-driver compilation is not
+native acceptance; old O0a273's 966-dispatch reset failure and older host-shape mapping
+retain their own provenance. No real-27B trial/TPS, unrelated
 toolchain refresh or further old-crash execution approval. The user's
 other agents own compiler fixes; candidate handoffs are not PR-ready fixes.
 The cef-bound synthetic adapter is accepted only at that scope; production
