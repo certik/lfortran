@@ -31,6 +31,7 @@ program traits_runtime_constructor_component_separate_01
     if (abs(total(h) - 12) > 1e-5) error stop 6
 
     owner = Circle(1.0)
+    ! The function result is finalized after the assignment (F2018 7.5.6.3).
     res = wrap_owner(owner)
     select type (res)
     type is (Holder)
@@ -42,7 +43,7 @@ program traits_runtime_constructor_component_separate_01
     select type (res)
     type is (Holder)
         if (allocated(res%tobj) .or. res%tag /= 2) error stop 9
-        if (finals /= 7) error stop 17
+        if (finals /= 8) error stop 17
     class default
         error stop 10
     end select
@@ -58,6 +59,6 @@ program traits_runtime_constructor_component_separate_01
     if (abs(d%first%area() - 9) > 1e-5 .or. abs(d%named%area() - 36) > 1e-5) error stop 14
     d = Duo(named=sq)
     if (allocated(d%first) .or. d%named%name() /= "sq") error stop 15
-    if (finals /= 17) error stop 18
+    if (finals /= 18) error stop 18
     print '(a)', 'traits_runtime_constructor_component_separate_01 ok'
 end program

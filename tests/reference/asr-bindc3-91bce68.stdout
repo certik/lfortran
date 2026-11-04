@@ -67,6 +67,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -92,6 +93,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -121,6 +123,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -144,6 +147,7 @@
                                     .true.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -184,6 +188,8 @@
                                 ()
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -193,6 +199,7 @@
                     (Associate
                         (Var 2 x)
                         (Var 2 y)
+                        NoPointerBounds
                     )
                     (Print
                         (StringFormat
@@ -230,6 +237,8 @@
                                 ()
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )

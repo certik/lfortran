@@ -57,6 +57,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -88,6 +89,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -113,6 +115,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -150,6 +153,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -183,6 +187,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -200,9 +205,12 @@
                             (Integer 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (IntegerConstant 2 (Integer 4) Decimal)
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -215,9 +223,12 @@
                             (Integer 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (IntegerConstant 3 (Integer 4) Decimal)
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -238,6 +249,7 @@
                             )
                             ()
                         )
+                        NoPointerBounds
                     )
                     (If
                         ()
@@ -491,6 +503,8 @@
                                 ()
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -515,6 +529,8 @@
                                 ()
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -531,6 +547,8 @@
                                 ()
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )

@@ -18,7 +18,8 @@
                     (SymbolRef 1 "base_meth")
                     :Source
                     true
-                    false nil
+                    false
+                    :Public nil
                   )
                 }
               )
@@ -70,6 +71,7 @@
                     nil
                     false
                     false
+                    false
                     :NotMethod
                     nil
                     []
@@ -94,6 +96,7 @@
                     false
                     false
                     nil
+                    false
                     false
                     false
                     :NotMethod
@@ -157,7 +160,8 @@
                     (SymbolRef 1 "derived_meth")
                     :Source
                     false
-                    false nil
+                    false
+                    :Public nil
                   )
                 }
               )
@@ -209,6 +213,7 @@
                     nil
                     false
                     false
+                    false
                     :NotMethod
                     nil
                     []
@@ -235,6 +240,7 @@
                     nil
                     false
                     false
+                    false
                     :NotMethod
                     nil
                     []
@@ -259,6 +265,7 @@
                     false
                     false
                     nil
+                    false
                     false
                     false
                     :NotMethod

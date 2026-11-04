@@ -1,132 +1,140 @@
 #!/usr/bin/env python3
-"""Checks src/libasr/dwarf_convert.py on small `llvm-dwarfdump --debug-line`
-listings.
+"""Exercise the build-time DWARF converter's text and binary outputs."""
 
-An optimized build can place one sequence of a compile unit, such as a `.cold`
-function, after the code of later compile units. The converter must then
-order whole sequences by address, keeping each end_sequence row, and must
-still reject overlapping sequences and rows that go backwards.
-"""
-
-import argparse
-import os
-import pathlib
+from pathlib import Path
 import struct
 import subprocess
 import sys
+import tempfile
+import unittest
 
-HEADER = """lfortran:\tfile format Mach-O arm64
 
-.debug_line contents:
-"""
+CONVERTER = Path(__file__).resolve().parents[2] / "libasr" / "dwarf_convert.py"
 
-ROWS_HEADER = """
+
+def line_table(directory, filename, rows, separator="\n"):
+    return f'''debug_line[0x00000000]
+Line table prologue:
+include_directories[  1] = "{directory}"
+file_names[  1]:
+           name: "{filename}"
+      dir_index: 1
+
 Address            Line   Column File   ISA Discriminator Flags
 ------------------ ------ ------ ------ --- ------------- -------------
-"""
+{rows}
+''' + separator
 
 
-def table(offset, name, rows):
-    text = (f"debug_line[0x{offset:08x}]\n"
-            "Line table prologue:\n"
-            "         version: 5\n"
-            'include_directories[  0] = "/work"\n'
-            "file_names[  0]:\n"
-            f'           name: "{name}"\n'
-            "      dir_index: 0\n")
-    text += ROWS_HEADER
-    for address, line, flags in rows:
-        text += f"0x{address:016x} {line:6d}      0      0   0             0  {flags}\n"
-    return text
+class TestDwarfConvert(unittest.TestCase):
+    def convert(self, directory, tables):
+        raw = directory / "raw.txt"
+        text = directory / "lines.txt"
+        binary = directory / "lines.dat"
+        raw.write_text(".debug_line contents:\n" + "".join(tables))
+        subprocess.run([sys.executable, str(CONVERTER), str(raw), str(text),
+                        str(binary)], check=True)
+        metadata = text.read_text().splitlines()
+        filename_count = int(metadata[0])
+        filenames = metadata[1:filename_count + 1]
+        row_count = int(metadata[filename_count + 1])
+        data = binary.read_bytes()
+        self.assertEqual(len(metadata), filename_count + 2)
+        self.assertEqual(len(data), row_count * struct.calcsize("3Q"))
+        return filenames, list(struct.iter_unpack("3Q", data))
+
+    def test_unordered_tables_and_sequences(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            # Both a later compilation unit and a later sequence start below
+            # earlier rows. Equal addresses must retain their original order.
+            first = line_table(directory / "first", "source.cpp", '''0x120 30 1 1 0 0 is_stmt
+0x130 31 1 1 0 0 end_sequence
+0x110 50 1 1 0 0 is_stmt
+0x110 20 1 1 0 0 is_stmt
+0x115 21 1 1 0 0 end_sequence''')
+            second = line_table(directory / "second", "source.cpp", '''0x100 2 1 1 0 0 is_stmt
+0x105 0 1 1 0 0
+0x120 3 1 1 0 0 is_stmt
+0x140 4 1 1 0 0 end_sequence''')
+            filenames, rows = self.convert(directory, [first, second])
+            self.assertEqual(filenames, [
+                str(directory / "first" / "source.cpp"),
+                str(directory / "second" / "source.cpp"),
+            ])
+            self.assertEqual(rows, [
+                (0x100, 2, 1),
+                (0x110, 50, 0),
+                (0x110, 20, 0),
+                (0x115, 21, 0),
+                (0x120, 30, 0),
+                (0x120, 3, 1),
+                (0x130, 31, 0),
+                (0x140, 4, 1),
+            ])
+
+    def test_ordered_rows_preserve_zero_line_and_end_sequence_handling(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            table = line_table(directory, "source.cpp", '''0x100 2 1 1 0 0 is_stmt
+0x110 0 1 1 0 0
+0x120 3 1 1 0 0 end_sequence
+0x130 0 1 1 0 0 end_sequence''')
+            filenames, rows = self.convert(directory, [table])
+            self.assertEqual(filenames, [str(directory / "source.cpp")])
+            self.assertEqual(rows, [(0x100, 2, 0), (0x120, 3, 0)])
+
+    def test_tables_without_blank_line_separators(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            # llvm-dwarfdump 7 and 8 print no blank line after the rows of a
+            # table, such as a Fortran and a C compilation unit.
+            first = line_table(directory, "main.f90", '''0x100 2 1 1 0 0 is_stmt
+0x110 3 1 1 0 0 end_sequence''', separator="")
+            second = line_table(directory, "helper.c", '''0x110 5 1 1 0 0 is_stmt
+0x120 6 1 1 0 0 end_sequence''', separator="")
+            filenames, rows = self.convert(directory, [first, second])
+            self.assertEqual(filenames, [
+                str(directory / "main.f90"),
+                str(directory / "helper.c"),
+            ])
+            self.assertEqual(rows, [
+                (0x100, 2, 0),
+                (0x110, 3, 0),
+                (0x110, 5, 1),
+                (0x120, 6, 1),
+            ])
 
 
-def convert(work_dir, converter, name, tables):
-    raw = os.path.join(work_dir, name + ".txt")
-    with open(raw, "w") as f:
-        f.write(HEADER + "\n".join(tables))
-    lines_txt = os.path.join(work_dir, name + "_lines.txt")
-    lines_dat = os.path.join(work_dir, name + "_lines.dat")
-    result = subprocess.run([sys.executable, converter, raw, lines_txt, lines_dat],
-        cwd=work_dir, capture_output=True, text=True)
-    if result.returncode != 0:
-        return result, None, None
-    with open(lines_txt) as f:
-        text = f.read().splitlines()
-    with open(lines_dat, "rb") as f:
-        data = f.read()
-    rows = [struct.unpack_from("3Q", data, i) for i in range(0, len(data), 24)]
-    return result, text, rows
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--converter", required=True)
-    parser.add_argument("--work-dir", required=True)
-    args = parser.parse_args()
-    args.converter = os.path.abspath(args.converter)
-    os.makedirs(args.work_dir, exist_ok=True)
-    failures = []
-
-    def check(condition, message):
-        if not condition:
-            failures.append(message)
-
-    # The second sequence of the first table lies after the second table.
-    first = table(0, "/work/a.f90", [
-        (0x1000, 1, "is_stmt"),
-        (0x1010, 2, "is_stmt"),
-        (0x1020, 2, "end_sequence"),
-        (0x3000, 9, "is_stmt"),
-        (0x3008, 9, "is_stmt end_sequence"),
-    ])
-    second = table(0x100, "/work/b.f90", [
-        (0x2000, 5, "is_stmt"),
-        (0x2004, 0, ""),
-        (0x2010, 6, "end_sequence"),
-    ])
-    result, text, rows = convert(args.work_dir, args.converter, "cold", [first, second])
-    check(result.returncode == 0, "out-of-order sequences rejected:\n" + result.stderr)
-    if rows is not None:
-        names = [str(pathlib.Path(name).resolve()) for name in ("/work/a.f90", "/work/b.f90")]
-        check(text == ["2"] + names + ["7"], f"unexpected file list {text}")
-        check(rows == [(0x1000, 1, 0), (0x1010, 2, 0), (0x1020, 2, 0),
-                       (0x2000, 5, 1), (0x2010, 6, 1),
-                       (0x3000, 9, 0), (0x3008, 9, 0)],
-            f"unexpected rows {rows}")
-
-    # A sequence that starts inside another one cannot be ordered.
-    overlapping = table(0x100, "/work/b.f90", [
-        (0x1008, 5, "is_stmt"),
-        (0x1018, 6, "end_sequence"),
-    ])
-    result, _, _ = convert(args.work_dir, args.converter, "overlap", [first, overlapping])
-    check(result.returncode != 0 and "AssertionError" in result.stderr,
-        "overlapping sequences accepted")
-
-    backwards = table(0, "/work/a.f90", [
-        (0x1010, 1, "is_stmt"),
-        (0x1008, 2, "is_stmt"),
-        (0x1020, 2, "end_sequence"),
-    ])
-    result, _, _ = convert(args.work_dir, args.converter, "backwards", [backwards])
-    check(result.returncode != 0 and "AssertionError" in result.stderr,
-        "a decreasing address inside a sequence accepted")
-
-    unterminated = table(0, "/work/a.f90", [
-        (0x1000, 1, "is_stmt"),
-        (0x1010, 2, "end_sequence"),
-        (0x1020, 3, "is_stmt"),
-    ])
-    result, _, _ = convert(args.work_dir, args.converter, "unterminated", [unterminated])
-    check(result.returncode != 0 and "end_sequence" in result.stderr,
-        "a row after the last end_sequence accepted")
-
-    for message in failures:
-        print("FAIL:", message)
-    if failures:
-        sys.exit(1)
-    print("dwarf_convert: all checks passed")
+    def test_sequence_moved_after_later_tables(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            # An optimized build can place one sequence of a compilation
+            # unit, such as a `.cold` function, after the code of later
+            # compilation units.
+            first = line_table(directory, "a.f90", '''0x1000 1 0 1 0 0 is_stmt
+0x1010 2 0 1 0 0 is_stmt
+0x1020 2 0 1 0 0 end_sequence
+0x3000 9 0 1 0 0 is_stmt
+0x3008 9 0 1 0 0 is_stmt end_sequence''')
+            second = line_table(directory, "b.f90", '''0x2000 5 0 1 0 0 is_stmt
+0x2004 0 0 1 0 0
+0x2010 6 0 1 0 0 end_sequence''')
+            filenames, rows = self.convert(directory, [first, second])
+            self.assertEqual(filenames, [
+                str(directory / "a.f90"),
+                str(directory / "b.f90"),
+            ])
+            self.assertEqual(rows, [
+                (0x1000, 1, 0),
+                (0x1010, 2, 0),
+                (0x1020, 2, 0),
+                (0x2000, 5, 1),
+                (0x2010, 6, 1),
+                (0x3000, 9, 0),
+                (0x3008, 9, 0),
+            ])
 
 
 if __name__ == "__main__":
-    main()
+    unittest.main()

@@ -26,6 +26,7 @@
               :contiguous_attr false
               :bindc_name nil
               :is_volatile false
+              :is_asynchronous false
               :is_protected false
               :pass_attr :NotMethod
               :self_argument nil
@@ -113,6 +114,7 @@
               :contiguous_attr false
               :bindc_name nil
               :is_volatile false
+              :is_asynchronous false
               :is_protected false
               :pass_attr :NotMethod
               :self_argument nil
@@ -224,6 +226,7 @@
               :contiguous_attr false
               :bindc_name nil
               :is_volatile false
+              :is_asynchronous false
               :is_protected false
               :pass_attr :NotMethod
               :self_argument nil
@@ -237,7 +240,7 @@
         :body [
           (GpuKernelLaunch
             :kernel (SymbolRef 0 "__lfortran_gpu_kernel_0")
-            :grid_size (IntegerConstant
+            :thread_count (IntegerConstant
               :n 1
               :type (Integer
                 :kind 4
@@ -258,6 +261,15 @@
                 )
               )
             ]
+            :component_fit nil
+            :scratch []
+            :stop_status nil
+            :stop_replay []
+            :overwritten []
+            :overwritten_if []
+            :chunk_dimensions []
+            :chunk_fixed_iterations 0
+            :first_chunk_parameter nil
           )
           (GpuSync)
         ]

@@ -33,7 +33,9 @@ Result<ASR::asr_t*> symbol_table_visitor(Allocator &al, AST::TranslationUnit_t &
         std::map<std::string, std::vector<int>> &entry_function_arguments_mapping,
         std::map<uint32_t, std::vector<ASR::stmt_t*>> &data_structure,
         GenericInstanceCompletions &generic_instance_completions,
-        LCompilers::LocationManager &lm);
+        std::set<ASR::symbol_t*> &getter_functions,
+        LCompilers::LocationManager &lm,
+        const std::map<std::string, ASR::ttype_t*> *interactive_implicit_types);
 
 Result<ASR::TranslationUnit_t*> body_visitor(Allocator &al,
         AST::TranslationUnit_t &ast,
@@ -49,6 +51,7 @@ Result<ASR::TranslationUnit_t*> body_visitor(Allocator &al,
         std::map<std::string, std::vector<int>> &entry_function_arguments_mapping,
         std::map<uint32_t, std::vector<ASR::stmt_t*>> &data_structure,
         GenericInstanceCompletions &generic_instance_completions,
+        std::set<ASR::symbol_t*> &getter_functions,
         LCompilers::LocationManager &lm);
 
 void load_rtlib() {
@@ -59,7 +62,8 @@ void load_rtlib() {
 Result<ASR::TranslationUnit_t*> ast_to_asr(Allocator &al,
     AST::TranslationUnit_t &ast, diag::Diagnostics &diagnostics,
     SymbolTable *symbol_table, bool symtab_only,
-    CompilerOptions &compiler_options, LCompilers::LocationManager &lm)
+    CompilerOptions &compiler_options, LCompilers::LocationManager &lm,
+    std::map<std::string, ASR::ttype_t*> *interactive_implicit_types)
 {
     std::map<uint64_t, std::map<std::string, ASR::ttype_t*>> implicit_mapping;
     std::map<uint64_t, std::vector<std::string>> external_procedures_mapping;
@@ -70,16 +74,24 @@ Result<ASR::TranslationUnit_t*> ast_to_asr(Allocator &al,
     std::map<std::string, std::vector<int>> entry_function_arguments_mapping;
     std::map<uint32_t, std::vector<ASR::stmt_t*>> data_structure;
     GenericInstanceCompletions generic_instance_completions;
+    std::set<ASR::symbol_t*> getter_functions;
     ASR::asr_t *unit;
     auto res = symbol_table_visitor(al, ast, diagnostics, symbol_table,
         compiler_options, implicit_mapping,
         external_procedures_mapping, explicit_intrinsic_procedures_mapping, instantiate_types,
         instantiate_symbols, entry_functions, entry_function_arguments_mapping, data_structure,
-        generic_instance_completions, lm);
+        generic_instance_completions, getter_functions, lm,
+        interactive_implicit_types);
     if (res.ok) {
         unit = res.result;
     } else {
         return res.error;
+    }
+    // Some errors are reported without aborting, so that the rest of the
+    // code is still checked. Without --continue-compilation, any reported
+    // error must still fail the compilation.
+    if (!compiler_options.continue_compilation && diagnostics.has_error()) {
+        return Error();
     }
     ASR::TranslationUnit_t *tu = ASR::down_cast2<ASR::TranslationUnit_t>(unit);
     if (compiler_options.po.dump_all_passes) {
@@ -100,7 +112,8 @@ Result<ASR::TranslationUnit_t*> ast_to_asr(Allocator &al,
     PassUtils::UpdateDependenciesVisitor u(al);
     u.visit_TranslationUnit(*tu);
 #if defined(WITH_LFORTRAN_ASSERT)
-    if (!asr_verify(*tu, true, diagnostics)) {
+    // After a reported error the ASR can hold the bad code, so skip verify.
+    if (!diagnostics.has_error() && !asr_verify(*tu, true, diagnostics)) {
         return Error();
     };
 #endif
@@ -110,12 +123,15 @@ Result<ASR::TranslationUnit_t*> ast_to_asr(Allocator &al,
             implicit_mapping,
             external_procedures_mapping, explicit_intrinsic_procedures_mapping, instantiate_types,
             instantiate_symbols, entry_functions, entry_function_arguments_mapping,
-            data_structure, generic_instance_completions, lm
+            data_structure, generic_instance_completions, getter_functions, lm
         );
         if (res.ok) {
             tu = res.result;
         } else {
             return res.error;
+        }
+        if (!compiler_options.continue_compilation && diagnostics.has_error()) {
+            return Error();
         }
         if (compiler_options.rtlib) load_rtlib();
         if (compiler_options.continue_compilation && diagnostics.has_error()) {
@@ -139,10 +155,13 @@ Result<ASR::TranslationUnit_t*> ast_to_asr(Allocator &al,
             outfile.close();
         }
 #if defined(WITH_LFORTRAN_ASSERT)
-        if (!asr_verify(*tu, true, diagnostics)) {
+        if (!diagnostics.has_error() && !asr_verify(*tu, true, diagnostics)) {
             return Error();
         };
 #endif
+    }
+    if (interactive_implicit_types) {
+        *interactive_implicit_types = implicit_mapping[get_hash(&tu->base.base)];
     }
     return tu;
 }

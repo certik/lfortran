@@ -59,6 +59,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -91,6 +92,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -121,6 +123,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -189,6 +192,8 @@
                                         ()
                                         .false.
                                         .false.
+                                        .false.
+                                        .false.
                                     )]
                                     (Var 8 less)
                                     Public
@@ -219,6 +224,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -253,6 +259,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -283,6 +290,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -357,6 +365,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -380,6 +389,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -413,6 +423,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -436,6 +447,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -492,6 +504,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -530,6 +543,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -555,6 +569,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -578,6 +593,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -681,6 +697,7 @@
                                                 (Integer 4)
                                                 ColMajor
                                                 ()
+                                                .false.
                                             ))
                                             ((ArrayItem
                                                 (Var 6 idx)
@@ -702,6 +719,7 @@
                                                 (Integer 4)
                                                 ColMajor
                                                 ()
+                                                .false.
                                             ))]
                                             ()
                                             .false.
@@ -710,6 +728,8 @@
                                             (Var 6 last)
                                             (Var 6 low)
                                             ()
+                                            .false.
+                                            .false.
                                             .false.
                                             .false.
                                         )
@@ -724,7 +744,7 @@
                                                 ()
                                             )
                                             (Var 6 high)
-                                            ())
+                                            (IntegerConstant 1 (Integer 4) Decimal))
                                             [(If
                                                 ()
                                                 (FunctionCall
@@ -741,6 +761,7 @@
                                                             (Integer 4)
                                                             ColMajor
                                                             ()
+                                                            .false.
                                                         )
                                                         ())]
                                                         (StructType
@@ -753,6 +774,7 @@
                                                         )
                                                         ColMajor
                                                         ()
+                                                        .false.
                                                     ))
                                                     ((ArrayItem
                                                         (Var 6 list)
@@ -765,6 +787,7 @@
                                                             (Integer 4)
                                                             ColMajor
                                                             ()
+                                                            .false.
                                                         )
                                                         ())]
                                                         (StructType
@@ -777,6 +800,7 @@
                                                         )
                                                         ColMajor
                                                         ()
+                                                        .false.
                                                     ))]
                                                     (Logical 4)
                                                     ()
@@ -794,6 +818,8 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
+                                                    .false.
                                                 )
                                                 (SubroutineCall
                                                     2 swap
@@ -806,6 +832,7 @@
                                                         (Integer 4)
                                                         ColMajor
                                                         ()
+                                                        .false.
                                                     ))
                                                     ((ArrayItem
                                                         (Var 6 idx)
@@ -815,6 +842,7 @@
                                                         (Integer 4)
                                                         ColMajor
                                                         ()
+                                                        .false.
                                                     ))]
                                                     ()
                                                     .false.
@@ -834,6 +862,7 @@
                                                 (Integer 4)
                                                 ColMajor
                                                 ()
+                                                .false.
                                             ))
                                             ((ArrayItem
                                                 (Var 6 idx)
@@ -843,6 +872,7 @@
                                                 (Integer 4)
                                                 ColMajor
                                                 ()
+                                                .false.
                                             ))]
                                             ()
                                             .false.
@@ -851,6 +881,8 @@
                                             (Var 6 pivot)
                                             (Var 6 last)
                                             ()
+                                            .false.
+                                            .false.
                                             .false.
                                             .false.
                                         )
@@ -1019,6 +1051,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -1044,6 +1077,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -1067,6 +1101,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -1100,6 +1135,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -1131,6 +1167,33 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    NotMethod
+                                                    ()
+                                                    []
+                                                    ()
+                                                ),
+                                            lfortran_implied_do_i:
+                                                (Variable
+                                                    5
+                                                    lfortran_implied_do_i
+                                                    []
+                                                    Local
+                                                    ()
+                                                    ()
+                                                    Default
+                                                    (Integer 4)
+                                                    ()
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -1171,6 +1234,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -1194,6 +1258,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -1234,6 +1299,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -1318,6 +1384,8 @@
                                         ()
                                         .false.
                                         .false.
+                                        .false.
+                                        .false.
                                     )
                                     (Assignment
                                         (Var 5 high)
@@ -1330,11 +1398,15 @@
                                         ()
                                         .false.
                                         .false.
+                                        .false.
+                                        .false.
                                     )
                                     (Assignment
                                         (Var 5 sorted)
                                         (Var 5 list)
                                         ()
+                                        .false.
+                                        .false.
                                         .false.
                                         .false.
                                     )
@@ -1350,8 +1422,8 @@
                                         ()
                                         (ArrayConstructor
                                             [(ImpliedDoLoop
-                                                [(Var 5 i)]
-                                                (Var 5 i)
+                                                [(Var 5 lfortran_implied_do_i)]
+                                                (Var 5 lfortran_implied_do_i)
                                                 (Var 5 low)
                                                 (Var 5 high)
                                                 ()
@@ -1369,33 +1441,6 @@
                                             ColMajor
                                             ()
                                         )
-                                    )
-                                    (Assignment
-                                        (Var 5 indexarray)
-                                        (ArrayConstructor
-                                            [(ImpliedDoLoop
-                                                [(Var 5 i)]
-                                                (Var 5 i)
-                                                (Var 5 low)
-                                                (Var 5 high)
-                                                ()
-                                                (Integer 4)
-                                                ()
-                                            )]
-                                            (Array
-                                                (Integer 4)
-                                                [((IntegerConstant 1 (Integer 4) Decimal)
-                                                ())]
-                                                DescriptorArray
-                                                Global
-                                            )
-                                            ()
-                                            ColMajor
-                                            ()
-                                        )
-                                        ()
-                                        .false.
-                                        .false.
                                     )
                                     (If
                                         ()
@@ -1434,7 +1479,7 @@
                                         ((Var 5 i)
                                         (Var 5 low)
                                         (Var 5 high)
-                                        ())
+                                        (IntegerConstant 1 (Integer 4) Decimal))
                                         [(Assignment
                                             (ArrayItem
                                                 (Var 5 list)
@@ -1451,6 +1496,7 @@
                                                 )
                                                 ColMajor
                                                 ()
+                                                .false.
                                             )
                                             (ArrayItem
                                                 (Var 5 sorted)
@@ -1463,6 +1509,7 @@
                                                     (Integer 4)
                                                     ColMajor
                                                     ()
+                                                    .false.
                                                 )
                                                 ())]
                                                 (StructType
@@ -1475,8 +1522,11 @@
                                                 )
                                                 ColMajor
                                                 ()
+                                                .false.
                                             )
                                             ()
+                                            .false.
+                                            .false.
                                             .false.
                                             .false.
                                         )]
@@ -1495,6 +1545,8 @@
                                             (Var 5 idx)
                                             (Var 5 indexarray)
                                             ()
+                                            .false.
+                                            .false.
                                             .false.
                                             .false.
                                         )]
@@ -1531,6 +1583,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -1556,6 +1609,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -1579,6 +1633,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -1613,6 +1668,8 @@
                                         ()
                                         .false.
                                         .false.
+                                        .false.
+                                        .false.
                                     )
                                     (Assignment
                                         (Var 7 lhs)
@@ -1620,11 +1677,15 @@
                                         ()
                                         .false.
                                         .false.
+                                        .false.
+                                        .false.
                                     )
                                     (Assignment
                                         (Var 7 rhs)
                                         (Var 7 tmp)
                                         ()
+                                        .false.
+                                        .false.
                                         .false.
                                         .false.
                                     )]
@@ -1659,6 +1720,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod

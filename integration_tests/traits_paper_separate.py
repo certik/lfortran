@@ -116,6 +116,13 @@ def nm_definitions(listing):
     return objects
 
 
+def nm_procedure_definitions(listing):
+    """The code symbols an nm listing of one object defines, local ones too: a
+    procedure contained in a main program has internal linkage."""
+    return [fields[-1] for fields in map(str.split, listing.splitlines())
+            if len(fields) >= 2 and fields[-2] in ("T", "t")]
+
+
 def node_end(text, start):
     """The end of the ASR node whose opening parenthesis is at `start`."""
     depth, quoted, escaped = 0, False, False
@@ -317,8 +324,12 @@ def check_overloading(logs):
     objects = nm_definitions(logs["library-symbols"])
     main_symbols = [name for names in nm_definitions(logs["main-symbols"]).values()
                     for name in names]
-    specializations = [name for name in main_symbols if "__instantiated_" in name]
-    require(len([name for name in specializations if "products" in name]) == 1 and
+    specializations = [name for name in nm_procedure_definitions(logs["main-symbols"])
+                       if "__instantiated_" in name]
+    # With --fast the contained procedures, which have internal linkage, are
+    # inlined into the main program.
+    require(logs["mode"] == "fast" or
+            len([name for name in specializations if "products" in name]) == 1 and
             len([name for name in specializations if "prod" in name and
                  "products" not in name]) == 2,
             f"main.o must define products{{MyType, real}}, prod{{MyType}} and "
@@ -407,7 +418,9 @@ def check_vector(logs):
                   for method in ("init", "append", "printout")]
     # A procedure contained in the program is qualified with its name.
     missing = [name for name in procedures if f"test_vector.{name}" not in definitions]
-    require(not missing, f"test_vector does not define {missing}")
+    # With --fast the contained procedures, which have internal linkage, are
+    # inlined into the main program.
+    require(logs["mode"] == "fast" or not missing, f"test_vector does not define {missing}")
     require(not [name for name in definitions if "trait_witness" in name or
                  "trait_erasure" in name or "trait_lifecycle" in name],
             "test_vector must define no runtime trait evidence")
@@ -417,10 +430,9 @@ def check_vector(logs):
                 f"the archive has no {library}")
         require(not objects.get(library), f"{library} must define no symbols, not "
                                           f"{objects.get(library)}")
-    main_symbols = [name for names in nm_definitions(logs["test_vector-symbols"]).values()
-                    for name in names]
+    main_symbols = nm_procedure_definitions(logs["test_vector-symbols"])
     for name in procedures:
-        require(any(symbol.endswith(name) for symbol in main_symbols),
+        require(logs["mode"] == "fast" or any(symbol.endswith(name) for symbol in main_symbols),
                 f"test_vector.o does not define {name}")
     return ("test_vector owns the instances " + ", ".join(VECTOR_INSTANCES) +
             ", their procedures and their conformances to iappendable, whose append "
@@ -667,9 +679,11 @@ def main():
             directories[program.name])
     run(f"{program.name}-symbols", ["nm", obj])
     run("library-symbols", ["nm", archive])
-    structure = STRUCTURE[name]({log: (work / f"{log}.log").read_text() for log in
-                                 (f"{program.name}-asr", f"{program.name}-llvm",
-                                  f"{program.name}-symbols", "library-symbols")})
+    logs = {log: (work / f"{log}.log").read_text() for log in
+            (f"{program.name}-asr", f"{program.name}-llvm",
+             f"{program.name}-symbols", "library-symbols")}
+    logs["mode"] = args.mode
+    structure = STRUCTURE[name](logs)
     print(f"{name}, {args.mode}: {structure}", flush=True)
     executable = work / name
     run("link", [compiler, *flags, obj, archive, "-o", executable])

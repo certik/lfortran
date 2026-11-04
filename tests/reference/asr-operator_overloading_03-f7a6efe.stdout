@@ -33,6 +33,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -48,6 +49,16 @@
                                     greater_than_inverse
                                     Public
                                 ),
+                            greater_than_inverse@~gt:
+                                (ExternalSymbol
+                                    6
+                                    greater_than_inverse@~gt
+                                    2 greater_than_inverse
+                                    operator_overloading_01_overload_comp_m
+                                    []
+                                    greater_than_inverse
+                                    Private
+                                ),
                             less_than_inverse:
                                 (ExternalSymbol
                                     6
@@ -57,6 +68,16 @@
                                     []
                                     less_than_inverse
                                     Public
+                                ),
+                            less_than_inverse@~lt:
+                                (ExternalSymbol
+                                    6
+                                    less_than_inverse@~lt
+                                    2 less_than_inverse
+                                    operator_overloading_01_overload_comp_m
+                                    []
+                                    less_than_inverse
+                                    Private
                                 ),
                             less_than_overload_use:
                                 (ExternalSymbol
@@ -94,29 +115,24 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
                                     ()
                                 ),
                             ~gt:
-                                (ExternalSymbol
+                                (CustomOperator
                                     6
                                     ~gt
-                                    2 ~gt
-                                    operator_overloading_01_overload_comp_m
-                                    []
-                                    ~gt
+                                    [6 greater_than_inverse@~gt]
                                     Public
                                 ),
                             ~lt:
-                                (ExternalSymbol
+                                (CustomOperator
                                     6
                                     ~lt
-                                    2 ~lt
-                                    operator_overloading_01_overload_comp_m
-                                    []
-                                    ~lt
+                                    [6 less_than_inverse@~lt]
                                     Public
                                 )
                         })
@@ -136,7 +152,7 @@
                                 (Logical 4)
                                 ()
                                 (FunctionCall
-                                    6 greater_than_inverse
+                                    6 greater_than_inverse@~gt
                                     6 ~gt
                                     [((Var 6 t))
                                     ((Var 6 t))]
@@ -146,6 +162,8 @@
                                 )
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -166,7 +184,7 @@
                                 (Logical 4)
                                 ()
                                 (FunctionCall
-                                    6 greater_than_inverse
+                                    6 greater_than_inverse@~gt
                                     6 ~gt
                                     [((Var 6 t))
                                     ((Var 6 f))]
@@ -176,6 +194,8 @@
                                 )
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -196,7 +216,7 @@
                                 (Logical 4)
                                 ()
                                 (FunctionCall
-                                    6 greater_than_inverse
+                                    6 greater_than_inverse@~gt
                                     6 ~gt
                                     [((Var 6 f))
                                     ((Var 6 t))]
@@ -206,6 +226,8 @@
                                 )
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -226,7 +248,7 @@
                                 (Logical 4)
                                 ()
                                 (FunctionCall
-                                    6 greater_than_inverse
+                                    6 greater_than_inverse@~gt
                                     6 ~gt
                                     [((Var 6 f))
                                     ((Var 6 f))]
@@ -236,6 +258,8 @@
                                 )
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -256,7 +280,7 @@
                                 (Logical 4)
                                 ()
                                 (FunctionCall
-                                    6 less_than_inverse
+                                    6 less_than_inverse@~lt
                                     6 ~lt
                                     [((Var 6 t))
                                     ((Var 6 t))]
@@ -266,6 +290,8 @@
                                 )
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -286,7 +312,7 @@
                                 (Logical 4)
                                 ()
                                 (FunctionCall
-                                    6 less_than_inverse
+                                    6 less_than_inverse@~lt
                                     6 ~lt
                                     [((Var 6 t))
                                     ((Var 6 f))]
@@ -296,6 +322,8 @@
                                 )
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -316,7 +344,7 @@
                                 (Logical 4)
                                 ()
                                 (FunctionCall
-                                    6 less_than_inverse
+                                    6 less_than_inverse@~lt
                                     6 ~lt
                                     [((Var 6 f))
                                     ((Var 6 t))]
@@ -326,6 +354,8 @@
                                 )
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -346,7 +376,7 @@
                                 (Logical 4)
                                 ()
                                 (FunctionCall
-                                    6 less_than_inverse
+                                    6 less_than_inverse@~lt
                                     6 ~lt
                                     [((Var 6 f))
                                     ((Var 6 f))]
@@ -356,6 +386,8 @@
                                 )
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -394,6 +426,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -419,6 +452,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -442,6 +476,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -506,6 +541,8 @@
                                             ()
                                             .false.
                                             .false.
+                                            .false.
+                                            .false.
                                         )]
                                         [(Assignment
                                             (Var 3 greater_than_inverse)
@@ -514,6 +551,8 @@
                                                 (Logical 4)
                                             )
                                             ()
+                                            .false.
+                                            .false.
                                             .false.
                                             .false.
                                         )]
@@ -549,6 +588,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -574,6 +614,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -597,6 +638,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -661,6 +703,8 @@
                                             ()
                                             .false.
                                             .false.
+                                            .false.
+                                            .false.
                                         )]
                                         [(Assignment
                                             (Var 4 less_than_inverse)
@@ -669,6 +713,8 @@
                                                 (Logical 4)
                                             )
                                             ()
+                                            .false.
+                                            .false.
                                             .false.
                                             .false.
                                         )]
@@ -704,6 +750,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -729,6 +776,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -752,6 +800,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -799,6 +848,8 @@
                                             )
                                         )
                                         ()
+                                        .false.
+                                        .false.
                                         .false.
                                         .false.
                                     )]

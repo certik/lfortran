@@ -29,9 +29,9 @@
 "type_set_operation.TypeSetLogical" = "metadata"
 
 "stmt.Assign" = "helper:legacy assigned goto"
-"stmt.DoConcurrentLoop" = "lowered:do_loops"
 "stmt.OMPRegion" = "lowered:openmp"
 "stmt.GpuKernelLaunch" = "lowered:device_launch_expand"
+"stmt.GpuDiscard" = "lowered:device_launch_expand"
 "stmt.ForAllSingle" = "lowered:for_all"
 "stmt.ForEach" = "helper:container iteration"
 "stmt.IfArithmetic" = "helper:branch lowering"
@@ -55,6 +55,7 @@
 "expr.TupleContains" = "helper:container runtime"
 "expr.StringContains" = "helper:string runtime"
 "expr.SymbolicCompare" = "lowered:replace_symbolic"
+"expr.FrameAddress" = "lowered:nested_vars"
 "expr.FunctionParam" = "helper:type expression substitution"
 "expr.ArrayTranspose" = "helper:array runtime"
 "expr.ArrayPack" = "helper:array runtime"
@@ -88,6 +89,7 @@
 "ttype.TraitOwnerList" = "helper:LLVM type lowering"
 "ttype.TraitErasedType" = "helper:LLVM type lowering"
 "ttype.TraitDictionaryType" = "helper:LLVM type lowering"
+"ttype.Reference" = "helper:LLVM type lowering"
 
 "attribute.Attribute" = "metadata"
 "tbind.Bind" = "metadata"
@@ -113,3 +115,4 @@
 "omp_clause.OMPDevice" = "lowered:openmp"
 "omp_clause.OMPMap" = "lowered:openmp"
 "omp_clause.OMPCriticalName" = "lowered:openmp"
+"omp_clause.OMPOverwrite" = "lowered:gpu_offload"

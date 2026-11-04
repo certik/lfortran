@@ -1,31 +1,51 @@
-! Regression test: an entity named in a DIMENSION statement before its type
-! declaration belongs to the scope of that statement. A later scope that
-! declared an entity of the same name took over the earlier array: a scalar
-! of another type turned it into an array of that type and failed ASR
-! verification, and a later DIMENSION statement was a duplicate.
-module attr_dim_06_m
+! Arrays of strings whose dimensions are given by a `dimension` statement
+! before their type declaration. Each procedure names its array differently
+! (#15713), and the module has no `implicit none` (#16169).
+module attr_dim_06_mod
 contains
-    real function first(x)
-        dimension :: x(2)
-        real, intent(in) :: x
-        first = x(1) + x(2)
-    end function
-    integer function twice(x)
-        integer, intent(in) :: x
-        twice = 2*x
-    end function
-    integer function last(x)
-        dimension :: x(3)
-        integer, intent(in) :: x
-        last = x(3)
-    end function
+
+subroutine assumed_shape(b1)
+    dimension b1(:)
+    character(len=*) :: b1
+    if (size(b1) /= 3) error stop
+    if (len(b1) /= 2) error stop
+    if (b1(2) /= 'de') error stop
+end subroutine
+
+subroutine explicit_shape(b2, n)
+    integer :: n
+    dimension b2(n)
+    character(len=2) :: b2
+    if (size(b2) /= 3) error stop
+    if (b2(3) /= 'gh') error stop
+end subroutine
+
+subroutine assumed_size(b3)
+    dimension b3(*)
+    character(len=2) :: b3
+    if (b3(1) /= 'ab') error stop
+end subroutine
+
+subroutine automatic(n)
+    integer :: n
+    dimension c(n)
+    character(len=3) :: c
+    c = 'xyz'
+    c(2) = 'uvw'
+    if (size(c) /= n) error stop
+    if (c(1) /= 'xyz' .or. c(2) /= 'uvw') error stop
+end subroutine
+
 end module
 
 program attr_dim_06
-    use attr_dim_06_m
-    implicit none
-    if (abs(first([1.5, 2.5]) - 4.0) > 1e-6) error stop 1
-    if (twice(3) /= 6) error stop 2
-    if (last([4, 5, 6]) /= 6) error stop 3
-    print '(a)', 'attr_dim_06 ok'
+use attr_dim_06_mod
+implicit none
+character(len=2) :: x(3)
+x = ['ab', 'de', 'gh']
+call assumed_shape(x)
+call explicit_shape(x, 3)
+call assumed_size(x)
+call automatic(2)
+print *, x
 end program

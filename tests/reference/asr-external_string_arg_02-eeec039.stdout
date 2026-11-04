@@ -64,6 +64,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -87,6 +88,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -159,6 +161,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -190,6 +193,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -207,12 +211,15 @@
                             (String 1 (IntegerConstant 1 (Integer 4) Decimal) ExpressionLength DescriptorString)
                             ColMajor
                             ()
+                            .true.
                         )
                         (StringConstant
                             "A"
                             (String 1 (IntegerConstant 1 (Integer 4) Decimal) ExpressionLength DescriptorString)
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -225,12 +232,15 @@
                             (String 1 (IntegerConstant 1 (Integer 4) Decimal) ExpressionLength DescriptorString)
                             ColMajor
                             ()
+                            .true.
                         )
                         (StringConstant
                             "B"
                             (String 1 (IntegerConstant 1 (Integer 4) Decimal) ExpressionLength DescriptorString)
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -247,6 +257,7 @@
                                     (String 1 (IntegerConstant 1 (Integer 4) Decimal) ExpressionLength DescriptorString)
                                     ColMajor
                                     ()
+                                    .true.
                                 )]
                                 0
                                 (Integer 4)
@@ -262,12 +273,15 @@
                                     (String 1 (IntegerConstant 1 (Integer 4) Decimal) ExpressionLength DescriptorString)
                                     ColMajor
                                     ()
+                                    .true.
                                 )]
                                 0
                                 (Integer 4)
                                 ()
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -287,6 +301,7 @@
                                     (String 1 (IntegerConstant 1 (Integer 4) Decimal) ExpressionLength DescriptorString)
                                     ColMajor
                                     ()
+                                    .true.
                                 )]
                                 0
                                 (Integer 4)
@@ -315,6 +330,7 @@
                                     (String 1 (IntegerConstant 1 (Integer 4) Decimal) ExpressionLength DescriptorString)
                                     ColMajor
                                     ()
+                                    .true.
                                 )]
                                 0
                                 (Integer 4)
@@ -353,6 +369,7 @@
                             )
                             ()
                         )
+                        NoPointerBounds
                     )
                     (SubroutineCall
                         2 check~fpcast_ptr
@@ -365,6 +382,7 @@
                             (String 1 (IntegerConstant 1 (Integer 4) Decimal) ExpressionLength DescriptorString)
                             ColMajor
                             ()
+                            .true.
                         ))
                         ((ArrayItem
                             (Var 2 x)
@@ -374,6 +392,7 @@
                             (String 1 (IntegerConstant 1 (Integer 4) Decimal) ExpressionLength DescriptorString)
                             ColMajor
                             ()
+                            .true.
                         ))]
                         ()
                         .false.

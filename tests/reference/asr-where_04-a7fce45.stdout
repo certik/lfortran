@@ -32,6 +32,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -61,6 +62,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -104,6 +106,8 @@
                                         ()
                                         .false.
                                         .false.
+                                        .false.
+                                        .false.
                                     )
                                     (Assignment
                                         (Var 3 absdiff)
@@ -112,6 +116,8 @@
                                             (Real 4)
                                         )
                                         ()
+                                        .false.
+                                        .false.
                                         .false.
                                         .false.
                                     )
@@ -242,6 +248,8 @@
                                             ()
                                             .false.
                                             .false.
+                                            .false.
+                                            .false.
                                         )]
                                         []
                                     )
@@ -259,6 +267,7 @@
                                                         (Real 4)
                                                         ColMajor
                                                         ()
+                                                        .true.
                                                     )
                                                     Sub
                                                     (RealConstant
@@ -299,6 +308,7 @@
                                                         (Real 4)
                                                         ColMajor
                                                         ()
+                                                        .true.
                                                     )
                                                     Sub
                                                     (RealConstant
@@ -330,6 +340,8 @@
                                             ()
                                             [(Var 3 reldiff)]
                                             FormatFortran
+                                            []
+                                            ()
                                             (Allocatable
                                                 (String 1 () DeferredLength DescriptorString)
                                             )
@@ -373,6 +385,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -422,6 +435,8 @@
                                             ColMajor
                                         )
                                         ()
+                                        .false.
+                                        .false.
                                         .false.
                                         .false.
                                     )]

@@ -31,6 +31,7 @@
                     nil
                     false
                     false
+                    false
                     :NotMethod
                     nil
                     []
@@ -55,6 +56,7 @@
                     false
                     false
                     nil
+                    false
                     false
                     false
                     :NotMethod
@@ -101,6 +103,8 @@
                     (SymbolRef 7 "arg")
                   )
                   nil
+                  false
+                  false
                   false
                   false
                 )
@@ -155,6 +159,7 @@
               false
               false
               nil
+              false
               false
               false
               :NotMethod

@@ -1,13 +1,122 @@
 #include <tests/doctest.h>
 
+#include <fstream>
+#include <sstream>
+
 #include <libasr/asr_text.h>
 #include <libasr/asr_verify.h>
 #include <libasr/pass/pass_manager.h>
 #include <libasr/pass/gpu_memory_space.h>
+#include <libasr/pass/gpu_loop_utils.h>
 #include <libasr/serialization.h>
 #include <lfortran/fortran_evaluator.h>
+#include <lfortran/parser/source_offset.h>
 
 using namespace LCompilers;
+
+TEST_CASE("Entry inquiries require metadata but not element values") {
+    const std::string source = R"(
+subroutine inquiries(a, n)
+    integer, intent(in) :: a(:), n
+    integer :: local(n), selector
+    integer, pointer :: p(:)
+    integer, allocatable :: allocated(:)
+    character(:), allocatable :: text
+    character(n) :: local_text
+    integer :: pointer_size, pointer_lower, pointer_upper, pointer_shape(1)
+    integer :: allocated_size, deferred_len, section_size
+    integer :: dummy_size, local_size, local_len, local_shape(1)
+    pointer_size = size(p)
+    pointer_lower = lbound(p, 1)
+    pointer_upper = ubound(p, 1)
+    pointer_shape = shape(p)
+    allocated_size = size(allocated)
+    deferred_len = len(text)
+    section_size = size(local(:selector))
+    dummy_size = size(a)
+    local_size = size(local)
+    local_len = len(local_text)
+    local_shape = shape(local)
+end subroutine
+)";
+    CompilerOptions options;
+    FortranEvaluator evaluator(options);
+    LocationManager lm;
+    LocationManager::FileLocations file;
+    file.in_filename = "entry_inquiries.f90";
+    lm.files.push_back(file);
+    lm.file_ends.push_back(LFortran::source_offset(source.size()));
+    diag::Diagnostics diagnostics;
+    auto parsed = evaluator.get_asr2(source, lm, diagnostics);
+    INFO(diagnostics.render2());
+    REQUIRE(parsed.ok);
+    auto* function = ASR::down_cast<ASR::Function_t>(
+        parsed.result->m_symtab->get_symbol("inquiries"));
+    std::map<std::string, std::string> expected = {
+        {"pointer_size", "p"}, {"pointer_lower", "p"},
+        {"pointer_upper", "p"}, {"pointer_shape", "p"},
+        {"allocated_size", "allocated"}, {"deferred_len", "text"},
+        {"section_size", "selector"}, {"dummy_size", ""},
+        {"local_size", ""}, {"local_len", ""}, {"local_shape", ""}
+    };
+    size_t checked = 0;
+    for (size_t i = 0; i < function->n_body; i++) {
+        if (!ASR::is_a<ASR::Assignment_t>(*function->m_body[i])) continue;
+        auto* assignment = ASR::down_cast<ASR::Assignment_t>(function->m_body[i]);
+        std::string name = ASRUtils::symbol_name(
+            ASR::down_cast<ASR::Var_t>(assignment->m_target)->m_v);
+        INFO(name);
+        REQUIRE(expected.count(name) == 1);
+        const auto* unavailable = ASRUtils::undefined_local_on_entry(
+            assignment->m_value, function->m_symtab);
+        CHECK((unavailable ? std::string(unavailable->m_name) : "") == expected.at(name));
+        checked++;
+    }
+    CHECK(checked == expected.size());
+}
+
+TEST_CASE("GPU workspace predicates must be total at the capture point") {
+    const std::string source = R"(
+subroutine predicates(active, maybe, control, divisor)
+    logical, intent(in) :: active
+    logical, optional, intent(in) :: maybe
+    real, allocatable, intent(in) :: control(:)
+    integer, intent(in) :: divisor
+    logical :: result
+    result = active
+    result = maybe
+    result = size(control) > 0
+    result = 10 / divisor > 0
+end subroutine
+)";
+    CompilerOptions options;
+    FortranEvaluator evaluator(options);
+    LocationManager lm;
+    LocationManager::FileLocations file;
+    file.in_filename = "predicates.f90";
+    lm.files.push_back(file);
+    lm.file_ends.push_back(LFortran::source_offset(source.size()));
+    diag::Diagnostics diagnostics;
+    auto parsed = evaluator.get_asr2(source, lm, diagnostics);
+    REQUIRE(parsed.ok);
+    auto *function = ASR::down_cast<ASR::Function_t>(
+        parsed.result->m_symtab->get_symbol("predicates"));
+    std::set<ASR::symbol_t*> arguments;
+    for (size_t i = 0; i < function->n_args; i++) {
+        arguments.insert(ASR::down_cast<ASR::Var_t>(function->m_args[i])->m_v);
+    }
+    REQUIRE(function->n_body == 4);
+    for (size_t i = 0; i < function->n_body; i++) {
+        auto *assignment = ASR::down_cast<ASR::Assignment_t>(function->m_body[i]);
+        CHECK(gpu_uniform_workspace_condition(assignment->m_value, arguments,
+            function->m_symtab) == (i == 0));
+    }
+    auto *active = ASR::down_cast<ASR::Variable_t>(
+        ASR::down_cast<ASR::Var_t>(function->m_args[0])->m_v);
+    active->m_is_volatile = true;
+    CHECK_FALSE(gpu_uniform_workspace_condition(function->m_args[0],
+        arguments, function->m_symtab));
+}
 
 TEST_CASE("Every decline of the GPU offloading pipeline is an error") {
     Allocator allocator(1024 * 1024);
@@ -84,7 +193,7 @@ end program
         LocationManager::FileLocations file;
         file.in_filename = "gpu_unsupported_io.f90";
         lm.files.push_back(file);
-        lm.file_ends.push_back(source.size());
+        lm.file_ends.push_back(LCompilers::LFortran::source_offset(source.size()));
         diag::Diagnostics diagnostics;
         auto parsed = evaluator.get_asr2(source, lm, diagnostics);
         INFO(diagnostics.render2());
@@ -153,7 +262,7 @@ end program
     LocationManager::FileLocations file;
     file.in_filename = "gpu_layout.f90";
     lm.files.push_back(file);
-    lm.file_ends.push_back(source.size());
+    lm.file_ends.push_back(LCompilers::LFortran::source_offset(source.size()));
     diag::Diagnostics diagnostics;
     auto parsed = evaluator.get_asr2(source, lm, diagnostics);
     INFO(diagnostics.render2());
@@ -241,7 +350,9 @@ end program
     dimension.m_parameter = parameter;
 
     ASR::expr_t *extent = dimension.m_extent;
-    ASR::symbol_t *index = kernel->m_symtab->get_symbol("i");
+    // The DO CONCURRENT index-name `i` has construct scope, so semantics
+    // gives it its own variable `i__dc`.
+    ASR::symbol_t *index = kernel->m_symtab->get_symbol("i__dc");
     REQUIRE(index != nullptr);
     dimension.m_extent = ASRUtils::EXPR(
         ASR::make_Var_t(allocator, extent->base.loc, index));
@@ -273,7 +384,7 @@ end subroutine
     LocationManager::FileLocations file;
     file.in_filename = "gpu_interface.f90";
     lm.files.push_back(file);
-    lm.file_ends.push_back(source.size());
+    lm.file_ends.push_back(LCompilers::LFortran::source_offset(source.size()));
     diag::Diagnostics diagnostics;
     auto parsed = evaluator.get_asr2(source, lm, diagnostics);
     INFO(diagnostics.render2());
@@ -297,3 +408,1220 @@ end subroutine
     CHECK(std::string(ASRUtils::get_FunctionType(device)->m_bindc_name) == "abs");
     CHECK(asr_verify(unit, true, diagnostics));
 }
+
+namespace {
+
+class GuardedGpuWork : public ASR::BaseWalkVisitor<GuardedGpuWork> {
+public:
+    std::vector<ASR::expr_t*> guards;
+    std::vector<ASR::GpuKernelLaunch_t*> launches;
+    std::map<ASR::symbol_t*, ASR::expr_t*> assignments;
+    std::map<ASR::symbol_t*, size_t> assignment_counts;
+    size_t guarded_allocations = 0, source_allocations = 0;
+    size_t runtime_launches = 0, runtime_releases = 0;
+    size_t empty_lane_guards = 0;
+
+    void visit_Assignment(const ASR::Assignment_t &x) {
+        if (ASR::is_a<ASR::Var_t>(*x.m_target)) {
+            auto *symbol = ASR::down_cast<ASR::Var_t>(x.m_target)->m_v;
+            assignments[symbol] = x.m_value;
+            assignment_counts[symbol]++;
+        }
+    }
+
+    void visit_If(const ASR::If_t &x) {
+        ASR::expr_t *count = nullptr;
+        if (ASR::is_a<ASR::IntegerCompare_t>(*x.m_test)) {
+            auto &test = *ASR::down_cast<ASR::IntegerCompare_t>(x.m_test);
+            int64_t zero = -1;
+            if (test.m_op == ASR::cmpopType::Gt
+                    && ASRUtils::extract_value(
+                        ASRUtils::expr_value(test.m_right), zero)
+                    && zero == 0) {
+                count = test.m_left;
+            }
+        }
+        if (count && ASR::is_a<ASR::Var_t>(*count)) {
+            auto found = assignments.find(ASR::down_cast<ASR::Var_t>(count)->m_v);
+            if (found != assignments.end()
+                    && ASR::is_a<ASR::IntegerBinOp_t>(*found->second)) {
+                auto &value = *ASR::down_cast<ASR::IntegerBinOp_t>(found->second);
+                int64_t lanes = -1;
+                if (value.m_op == ASR::binopType::Mul
+                        && ASRUtils::extract_value(
+                            ASRUtils::expr_value(value.m_right), lanes)
+                        && lanes == 0) {
+                    empty_lane_guards++;
+                }
+            }
+        }
+        if (count) guards.push_back(count);
+        for (size_t i = 0; i < x.n_body; i++) visit_stmt(*x.m_body[i]);
+        if (count) guards.pop_back();
+        for (size_t i = 0; i < x.n_orelse; i++) visit_stmt(*x.m_orelse[i]);
+    }
+
+    void visit_GpuKernelLaunch(const ASR::GpuKernelLaunch_t &x) {
+        REQUIRE(ASR::is_a<ASR::Var_t>(*x.m_thread_count));
+        CHECK(assignment_counts[
+            ASR::down_cast<ASR::Var_t>(x.m_thread_count)->m_v] == 1);
+        bool guarded = false;
+        for (ASR::expr_t *count : guards) {
+            guarded |= ASR::is_a<ASR::Var_t>(*count)
+                && ASR::down_cast<ASR::Var_t>(count)->m_v
+                    == ASR::down_cast<ASR::Var_t>(x.m_thread_count)->m_v;
+        }
+        CHECK(guarded);
+        launches.push_back(const_cast<ASR::GpuKernelLaunch_t*>(&x));
+    }
+
+    void visit_Allocate(const ASR::Allocate_t &) {
+        if (guards.empty()) source_allocations++;
+        else guarded_allocations++;
+    }
+
+    void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
+        std::string name = ASRUtils::symbol_name(
+            ASRUtils::symbol_get_past_external(x.m_name));
+        if (name == "lfortran_gpu_launch") runtime_launches++;
+        if (name == "lfortran_gpu_release_kernel") runtime_releases++;
+        if (name == "lfortran_gpu_launch"
+                || name == "lfortran_gpu_release_kernel"
+                || name == "lfortran_gpu_set_buffer_arg"
+                || name == "lfortran_gpu_set_scalar_arg"
+                || name == "lfortran_gpu_set_scratch_arg"
+                || name == "lfortran_gpu_read_scratch_arg") {
+            // The logical iteration guard encloses all offload lowering;
+            // expansion also guards the effective thread count with lanes.
+            CHECK(guards.size() >= 2);
+        }
+    }
+};
+
+// Runs the integer assignments the host makes before each launch, as far
+// as they are made of constants and earlier ones, and records each launch's
+// thread count and the value of its argument that selects tiles.
+class GpuLaunchGeometry : public ASR::BaseWalkVisitor<GpuLaunchGeometry> {
+public:
+    std::map<ASR::symbol_t*, int64_t> values;
+    std::vector<std::pair<int64_t, int64_t>> launches;
+
+    bool evaluate(ASR::expr_t *x, int64_t &result) {
+        if (ASRUtils::extract_value(ASRUtils::expr_value(x), result)) {
+            return true;
+        }
+        int64_t left = 0, right = 0;
+        switch (x->type) {
+            case ASR::exprType::Var: {
+                auto found = values.find(ASR::down_cast<ASR::Var_t>(x)->m_v);
+                if (found == values.end()) return false;
+                result = found->second;
+                return true;
+            }
+            case ASR::exprType::Cast: {
+                auto &cast = *ASR::down_cast<ASR::Cast_t>(x);
+                return cast.m_kind == ASR::cast_kindType::IntegerToInteger
+                    && evaluate(cast.m_arg, result);
+            }
+            case ASR::exprType::IntegerBinOp: {
+                auto &op = *ASR::down_cast<ASR::IntegerBinOp_t>(x);
+                if (!evaluate(op.m_left, left)
+                        || !evaluate(op.m_right, right)) return false;
+                switch (op.m_op) {
+                    case ASR::binopType::Add: result = left + right; break;
+                    case ASR::binopType::Sub: result = left - right; break;
+                    case ASR::binopType::Mul: result = left * right; break;
+                    case ASR::binopType::Div:
+                        if (right == 0) return false;
+                        result = left / right;
+                        break;
+                    default: return false;
+                }
+                return true;
+            }
+            case ASR::exprType::IntegerCompare: {
+                auto &compare = *ASR::down_cast<ASR::IntegerCompare_t>(x);
+                if (!evaluate(compare.m_left, left)
+                        || !evaluate(compare.m_right, right)) return false;
+                switch (compare.m_op) {
+                    case ASR::cmpopType::Eq: result = left == right; break;
+                    case ASR::cmpopType::NotEq: result = left != right; break;
+                    case ASR::cmpopType::Lt: result = left < right; break;
+                    case ASR::cmpopType::LtE: result = left <= right; break;
+                    case ASR::cmpopType::Gt: result = left > right; break;
+                    case ASR::cmpopType::GtE: result = left >= right; break;
+                }
+                return true;
+            }
+            case ASR::exprType::LogicalBinOp: {
+                auto &op = *ASR::down_cast<ASR::LogicalBinOp_t>(x);
+                if (!evaluate(op.m_left, left)
+                        || !evaluate(op.m_right, right)) return false;
+                switch (op.m_op) {
+                    case ASR::logicalbinopType::And:
+                        result = left && right;
+                        break;
+                    case ASR::logicalbinopType::Or:
+                        result = left || right;
+                        break;
+                    default: return false;
+                }
+                return true;
+            }
+            case ASR::exprType::IfExp: {
+                auto &choice = *ASR::down_cast<ASR::IfExp_t>(x);
+                int64_t test = 0;
+                return evaluate(choice.m_test, test) && evaluate(
+                    test ? choice.m_body : choice.m_orelse, result);
+            }
+            default: return false;
+        }
+    }
+
+    void visit_Assignment(const ASR::Assignment_t &x) {
+        int64_t value = 0;
+        if (ASR::is_a<ASR::Var_t>(*x.m_target)
+                && ASRUtils::is_integer(*ASRUtils::expr_type(x.m_target))
+                && evaluate(x.m_value, value)) {
+            values[ASR::down_cast<ASR::Var_t>(x.m_target)->m_v] = value;
+        }
+    }
+
+    void visit_GpuKernelLaunch(const ASR::GpuKernelLaunch_t &x) {
+        int64_t count = -1, tiled = -1;
+        CHECK(evaluate(x.m_thread_count, count));
+        for (size_t i = 0; i < x.n_args; i++) {
+            ASR::expr_t *arg = x.m_args[i].m_value;
+            if (arg && ASR::is_a<ASR::Var_t>(*arg)
+                    && startswith(ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(arg)->m_v), "__gpu_tiled")) {
+                CHECK(evaluate(arg, tiled));
+            }
+        }
+        launches.push_back({tiled, count});
+    }
+};
+
+} // namespace
+
+TEST_CASE("GPU zero work guards setup and effective launch geometry") {
+    const std::string source = R"(
+program p
+    implicit none
+    real :: a(32,4), s, g(5,7)
+    real, allocatable :: outside(:)
+    integer :: lo, hi, i, j
+    lo = 1
+    hi = 3
+    allocate(outside(0))
+    a = 0
+    do concurrent (i = lo:hi)
+        a(:,i) = a(:,i) + 1
+    end do
+    do concurrent (j = lo:7, i = 1:hi)
+        g(i,j) = real(i + j)
+    end do
+    lo = 3
+    hi = 1
+    s = 5
+    do concurrent (i = lo:hi) reduce(+:s)
+        s = s + a(1,i)
+    end do
+end program
+)";
+    for (bool metal : {false, true}) {
+        CompilerOptions options;
+        options.gpu_backend = metal ? "metal" : "cuda";
+        options.po.gpu_offload_metal = metal;
+        options.po.gpu_offload_cuda = !metal;
+        options.po.runtime_library_dir = LFORTRAN_BUILD_RUNTIME_DIR;
+        FortranEvaluator evaluator(options);
+        LocationManager lm;
+        LocationManager::FileLocations file;
+        file.in_filename = "gpu_zero_work.f90";
+        lm.files.push_back(file);
+        lm.file_ends.push_back(LFortran::source_offset(source.size()));
+        diag::Diagnostics diagnostics;
+        auto parsed = evaluator.get_asr2(source, lm, diagnostics);
+        INFO(diagnostics.render2());
+        REQUIRE(parsed.ok);
+        ASR::TranslationUnit_t &unit = *parsed.result;
+        Allocator allocator(32 * 1024 * 1024);
+        PassManager passes;
+        std::string pass = "gpu_vector_lanes", skip;
+        passes.parse_pass_arg(pass, skip);
+        options.po.pass_cumulative = true;
+        passes.apply_passes(allocator, &unit, options.po, diagnostics);
+        INFO(diagnostics.render2());
+        REQUIRE_FALSE(diagnostics.has_error());
+        auto *program = ASR::down_cast<ASR::Program_t>(
+            unit.m_symtab->get_symbol("p"));
+        GuardedGpuWork work;
+        for (size_t i = 0; i < program->n_body; i++) {
+            work.visit_stmt(*program->m_body[i]);
+        }
+        REQUIRE(work.launches.size() == 3);
+        CHECK(work.source_allocations == 1);
+        CHECK(work.guarded_allocations >= 1);
+        bool has_lanes = false;
+        size_t wide_counts = 0;
+        for (auto *launch : work.launches) {
+            // The host counts the iterations of a nest, and the whole tiles
+            // CUDA launches a two-dimensional one in, in integer(8) on every
+            // device: the count can exceed the kind of the loop indices. A
+            // Metal kernel still numbers its threads in 32 bits, and runs a
+            // launch of more iterations in chunks.
+            if (ASRUtils::extract_kind_from_ttype_t(
+                    ASRUtils::expr_type(launch->m_thread_count)) == 8) {
+                wide_counts++;
+            }
+            auto *kernel = ASR::down_cast<ASR::Function_t>(launch->m_kernel);
+            if (kernel->m_gpu->m_lanes) {
+                has_lanes = true;
+                // Exercise the expansion contract independently of today's
+                // lane selector, which chooses either one or 32 lanes.
+                launch->m_args[launch->n_args - 1].m_value =
+                    ASRUtils::EXPR(ASR::make_IntegerConstant_t(allocator,
+                        launch->base.base.loc, 0,
+                        ASRUtils::expr_type(
+                            launch->m_args[launch->n_args - 1].m_value),
+                        ASR::integerbozType::Decimal));
+            }
+        }
+        CHECK(has_lanes == metal);
+        CHECK(wide_counts == 3);
+        pass_gpu_launch_sync(allocator, unit, options.po);
+        pass_device_launch_expand(allocator, unit, options.po);
+        REQUIRE(asr_verify(unit, true, diagnostics));
+        GuardedGpuWork expanded;
+        for (size_t i = 0; i < program->n_body; i++) {
+            expanded.visit_stmt(*program->m_body[i]);
+        }
+        CHECK(expanded.launches.empty());
+        // On both devices the three launches may run in chunks
+        // (GpuKernelLaunch.chunk_dimensions): each launches its kernel once
+        // when it fits in a chunk, and once per chunk in a loop otherwise.
+        CHECK(expanded.runtime_launches == 6);
+        CHECK(expanded.runtime_releases == 3);
+        CHECK(expanded.source_allocations == 1);
+        CHECK(expanded.empty_lane_guards == (metal ? 1 : 0));
+    }
+}
+
+namespace {
+
+// Runs the CUDA pipeline on the program `name` in `source`, with launches
+// of more than `chunk_limit` iterations run in chunks, and hands `visit`
+// each statement of its body.
+template <class Visit>
+void visit_cuda_program(const std::string &source,
+        const std::string &filename, const std::string &name, Visit visit,
+        int64_t chunk_limit = 2147483647) {
+    CompilerOptions options;
+    options.gpu_backend = "cuda";
+    options.po.gpu_offload_cuda = true;
+    options.po.gpu_chunk_limit = chunk_limit;
+    options.po.runtime_library_dir = LFORTRAN_BUILD_RUNTIME_DIR;
+    FortranEvaluator evaluator(options);
+    LocationManager lm;
+    LocationManager::FileLocations file;
+    file.in_filename = filename;
+    lm.files.push_back(file);
+    lm.file_ends.push_back(LFortran::source_offset(source.size()));
+    diag::Diagnostics diagnostics;
+    auto parsed = evaluator.get_asr2(source, lm, diagnostics);
+    INFO(diagnostics.render2());
+    REQUIRE(parsed.ok);
+    ASR::TranslationUnit_t &unit = *parsed.result;
+    Allocator allocator(32 * 1024 * 1024);
+    PassManager passes;
+    std::string pass = "gpu_vector_lanes", skip;
+    passes.parse_pass_arg(pass, skip);
+    options.po.pass_cumulative = true;
+    passes.apply_passes(allocator, &unit, options.po, diagnostics);
+    INFO(diagnostics.render2());
+    REQUIRE_FALSE(diagnostics.has_error());
+    auto *program = ASR::down_cast<ASR::Program_t>(
+        unit.m_symtab->get_symbol(name));
+    for (size_t i = 0; i < program->n_body; i++) {
+        visit(*program->m_body[i]);
+    }
+}
+
+// The (tiled, thread count) pair of every CUDA launch of the program
+// `name` in `source`, from the host's launch prelude.
+std::vector<std::pair<int64_t, int64_t>> cuda_launch_geometry(
+        const std::string &source, const std::string &filename,
+        const std::string &name) {
+    GpuLaunchGeometry geometry;
+    visit_cuda_program(source, filename, name,
+        [&](ASR::stmt_t &s) { geometry.visit_stmt(s); });
+    return geometry.launches;
+}
+
+// How many arrays every CUDA launch of the program `name` in `source` says
+// the kernel overwrites (write-discard).
+std::vector<size_t> cuda_launch_overwrites(const std::string &source,
+        const std::string &filename, const std::string &name) {
+    struct Overwrites : public ASR::BaseWalkVisitor<Overwrites> {
+        std::vector<size_t> launches;
+        void visit_GpuKernelLaunch(const ASR::GpuKernelLaunch_t &x) {
+            launches.push_back(x.n_overwritten);
+        }
+    } overwrites;
+    visit_cuda_program(source, filename, name,
+        [&](ASR::stmt_t &s) { overwrites.visit_stmt(s); });
+    return overwrites.launches;
+}
+
+void check_launch_geometry(
+        const std::vector<std::pair<int64_t, int64_t>> &launches,
+        const std::vector<std::pair<int64_t, int64_t>> &expected) {
+    REQUIRE(launches.size() == expected.size());
+    for (size_t i = 0; i < launches.size(); i++) {
+        INFO("launch " << i);
+        CHECK(launches[i].first == expected[i].first);
+        CHECK(launches[i].second == expected[i].second);
+    }
+}
+
+// The WASM test binary runs under node without the source tree, so it
+// cannot read the integration tests.
+#ifndef HAVE_BUILD_TO_WASM
+std::string read_project_file(const std::string &path) {
+    std::ifstream in(std::string(LFORTRAN_PROJECT_SOURCE_DIR) + "/" + path);
+    INFO(path);
+    REQUIRE(in.good());
+    std::stringstream contents;
+    contents << in.rdbuf();
+    return contents.str();
+}
+#endif
+
+} // namespace
+
+// The dimensions every CUDA launch of the program `name` in `source` splits
+// into chunks of at most `chunk_limit` iterations, as the names of their
+// bound parameters, and the iterations of the dimensions it covers whole
+// (GpuKernelLaunch.chunk_dimensions and chunk_fixed_iterations).
+std::vector<std::pair<std::vector<std::string>, int64_t>> cuda_launch_chunks(
+        const std::string &source, const std::string &filename,
+        const std::string &name, int64_t chunk_limit) {
+    struct Chunks : public ASR::BaseWalkVisitor<Chunks> {
+        std::vector<std::pair<std::vector<std::string>, int64_t>> launches;
+        void visit_GpuKernelLaunch(const ASR::GpuKernelLaunch_t &x) {
+            std::vector<std::string> bounds;
+            for (size_t i = 0; i < x.n_chunk_dimensions; i++) {
+                bounds.push_back(ASRUtils::symbol_name(
+                    x.m_chunk_dimensions[i].m_start_parameter));
+                bounds.push_back(ASRUtils::symbol_name(
+                    x.m_chunk_dimensions[i].m_end_parameter));
+            }
+            launches.push_back({bounds, x.m_chunk_fixed_iterations});
+        }
+    } chunks;
+    visit_cuda_program(source, filename, name,
+        [&](ASR::stmt_t &s) { chunks.visit_stmt(s); }, chunk_limit);
+    return chunks.launches;
+}
+
+TEST_CASE("GPU launches split only what can exceed the chunk limit") {
+    // Dimensions with constant extents are covered whole by every chunk,
+    // wherever they are numbered, while their extents fit the limit; a
+    // nest the kinds of its indices and its constant bounds keep within
+    // the limit is never split.
+    const std::string source = R"(
+program p
+    implicit none
+    integer :: n, m, i, j, k, c
+    integer(8) :: n8, l
+    integer :: a(8, 2, 2), x(100), w(0:100), v(100, 3), z(4, 5, 6)
+    integer :: b(10, 10, 10), d(10, 10, 4), y(10)
+    n = 2
+    m = 100
+    n8 = 10
+    do concurrent (i = 1:8, j = 1:n, k = 1:n)
+        a(i, j, k) = i + j + k
+    end do
+    do concurrent (i = 1:m)
+        x(i) = i
+    end do
+    do concurrent (i = 0:m)
+        w(i) = i
+    end do
+    do concurrent (i = 1:m, c = 1:3)
+        v(i, c) = i * c
+    end do
+    do concurrent (i = 1:4, j = 1:5, k = 1:6)
+        z(i, j, k) = i + j + k
+    end do
+    do concurrent (l = 1:n8)
+        y(l) = int(l)
+    end do
+    do concurrent (i = 1:10, j = 1:10, k = 1:10)
+        b(i, j, k) = i + j + k
+    end do
+    do concurrent (i = 1:10, j = 1:10, k = 1:4)
+        d(i, j, k) = i + j + k
+    end do
+    print *, a(1, 1, 1), x(1), w(0), v(1, 1), z(1, 1, 1), y(1), b(1, 1, 1), &
+        d(1, 1, 1)
+end program
+)";
+    using Launches = std::vector<std::pair<std::vector<std::string>,
+        int64_t>>;
+    auto check = [](const Launches &launches, const Launches &expected) {
+        REQUIRE(launches.size() == expected.size());
+        for (size_t i = 0; i < launches.size(); i++) {
+            INFO("launch " << i);
+            CHECK(launches[i].first == expected[i].first);
+            CHECK(launches[i].second == expected[i].second);
+        }
+    };
+    std::vector<std::string> none;
+    std::vector<std::string> first = {"__loop_start_0", "__loop_end_0"};
+    std::vector<std::string> second = {"__loop_start_1", "__loop_end_1"};
+    std::vector<std::string> second_third = {"__loop_start_1",
+        "__loop_end_1", "__loop_start_2", "__loop_end_2"};
+    check(cuda_launch_chunks(source, "gpu_chunks.f90", "p", 2147483647), {
+        // `i` (8 values) is covered whole; `j` and `k` are split.
+        {second_third, 8},
+        // An integer(4) index from 1 takes at most huge(0) values.
+        {none, 0},
+        // From 0 it can take huge(0) + 1.
+        {first, 1},
+        // `c` (3 values), numbered after `i`, is still covered whole.
+        {first, 3},
+        // 120 constant iterations.
+        {none, 0},
+        // An integer(8) index.
+        {first, 1},
+        {none, 0},
+        {none, 0},
+    });
+    check(cuda_launch_chunks(source, "gpu_chunks.f90", "p", 50), {
+        {second_third, 8},
+        {first, 1},
+        {first, 1},
+        {first, 3},
+        // 4 * 5 = 20 iterations fit beside each other, 6 more do not.
+        {{"__loop_start_2", "__loop_end_2"}, 20},
+        {first, 1},
+        // 10 values of `i` fit, and 100 of `i` and `j` do not.
+        {second_third, 10},
+        // The 4 values of `k` fit beside the 10 of `i`; `j` is split.
+        {second, 40},
+    });
+}
+
+TEST_CASE("GPU launches with reductions run in chunks") {
+    // A launch with a reduction is split like any other, and its kernel
+    // then takes the flag that tells it whether it runs the first chunk,
+    // the only one whose threads start the accumulators. A launch that is
+    // never split, or that has no accumulators, takes none.
+    const std::string source = R"(
+program p
+    implicit none
+    integer :: n, lo, i, j, s, x(0:10)
+    real :: t
+    n = 10
+    lo = 0
+    s = 0
+    t = 0
+    do concurrent (i = lo:n) reduce(+:s)
+        s = s + i
+    end do
+    do concurrent (i = 1:n) reduce(+:s)
+        s = s + i
+    end do
+    do concurrent (i = 1:4, j = 1:n) reduce(*:t)
+        t = t * real(i + j)
+    end do
+    do concurrent (i = lo:n)
+        x(i) = i
+    end do
+    print *, s, t, x(0)
+end program
+)";
+    std::vector<std::pair<size_t, std::string>> launches;
+    struct Launches : public ASR::BaseWalkVisitor<Launches> {
+        std::vector<std::pair<size_t, std::string>> &launches;
+        Launches(std::vector<std::pair<size_t, std::string>> &launches)
+            : launches(launches) {}
+        void visit_GpuKernelLaunch(const ASR::GpuKernelLaunch_t &x) {
+            launches.push_back({x.n_chunk_dimensions,
+                x.m_first_chunk_parameter == nullptr ? std::string()
+                    : std::string(ASRUtils::symbol_name(
+                        x.m_first_chunk_parameter))});
+        }
+    } visitor(launches);
+    visit_cuda_program(source, "gpu_chunk_reductions.f90", "p",
+        [&](ASR::stmt_t &s) { visitor.visit_stmt(s); });
+    std::vector<std::pair<size_t, std::string>> expected = {
+        // With a run-time start an integer(4) index can take more than
+        // huge(0) values.
+        {1, "__gpu_first_chunk"},
+        // From 1 it takes at most huge(0).
+        {0, ""},
+        {1, "__gpu_first_chunk"},
+        // No reduction.
+        {1, ""},
+    };
+    REQUIRE(launches.size() == expected.size());
+    for (size_t i = 0; i < launches.size(); i++) {
+        INFO("launch " << i);
+        CHECK(launches[i] == expected[i]);
+    }
+}
+
+TEST_CASE("GPU tiled launches pad a nest by at most a quarter") {
+    // CI has no GPU to time a launch, so pin the geometry the host picks:
+    // whether a nest runs in tiles of 32 by 8, and how many threads.
+    const std::string source = R"(
+program p
+    implicit none
+    real :: a(4096,1), b(3,2,100), c(64,64,1), d(64,64), e(33,64)
+    integer :: i, j, k
+    do concurrent (j = 1:1, i = 1:4096)
+        a(i,j) = 1
+    end do
+    do concurrent (i = 1:3, j = 1:2, k = 1:100)
+        b(i,j,k) = 1
+    end do
+    do concurrent (k = 1:1, j = 1:64, i = 1:64)
+        c(i,j,k) = 1
+    end do
+    do concurrent (j = 2:63, i = 2:63)
+        d(i,j) = 1
+    end do
+    do concurrent (j = 1:64, i = 1:33)
+        e(i,j) = 1
+    end do
+end program
+)";
+    std::vector<std::pair<int64_t, int64_t>> launches =
+        cuda_launch_geometry(source, "gpu_tile_geometry.f90", "p");
+    std::vector<std::pair<int64_t, int64_t>> expected = {
+        // A second dimension of one would pad 8 times: flat.
+        {0, 4096},
+        // Both tiled dimensions short (3 by 2): flat.
+        {0, 600},
+        // The tile's height runs along j, the dimension the store steps
+        // through next, not along k, the next in loop order.
+        {1, 4096},
+        // A stencil whose extents are not whole tiles: 2 by 8 tiles.
+        {1, 4096},
+        // 33 is padded to 64: flat.
+        {0, 33 * 64},
+    };
+    check_launch_geometry(launches, expected);
+}
+
+TEST_CASE("GPU constant nests decide tiles and chunks at compile time") {
+    // A nest whose extents are all constants runs in tiles only where its
+    // whole tiles come to at most the chunk limit; otherwise its kernel
+    // numbers the iterations flat (no tile flag, -1 below), so a nest of at
+    // most the limit iterations runs as one launch, without chunks.
+    const std::string source = R"(
+program p
+    implicit none
+    real, allocatable :: y(:,:)
+    real :: a(64, 7), b(64, 8), c(32, 8), d(64, 64)
+    integer :: i, j
+    allocate(y(64, 33554431))
+    do concurrent (i = 1:64, j = 1:33554431)
+        y(i, j) = 1
+    end do
+    do concurrent (i = 1:64, j = 1:7)
+        a(i, j) = 1
+    end do
+    do concurrent (i = 1:64, j = 1:8)
+        b(i, j) = 1
+    end do
+    do concurrent (i = 1:32, j = 1:8)
+        c(i, j) = 1
+    end do
+    do concurrent (i = 1:64, j = 1:64)
+        d(i, j) = 1
+    end do
+end program
+)";
+    struct Chunks : public ASR::BaseWalkVisitor<Chunks> {
+        std::vector<size_t> dimensions;
+        void visit_GpuKernelLaunch(const ASR::GpuKernelLaunch_t &x) {
+            dimensions.push_back(x.n_chunk_dimensions);
+        }
+    };
+    auto check = [&](int64_t chunk_limit,
+            const std::vector<std::pair<int64_t, int64_t>> &geometry,
+            const std::vector<size_t> &chunk_dimensions) {
+        INFO("chunk limit " << chunk_limit);
+        GpuLaunchGeometry launches;
+        Chunks chunks;
+        visit_cuda_program(source, "gpu_constant_tiles.f90", "p",
+            [&](ASR::stmt_t &s) {
+                launches.visit_stmt(s);
+                chunks.visit_stmt(s);
+            }, chunk_limit);
+        check_launch_geometry(launches.launches, geometry);
+        CHECK(chunks.dimensions == chunk_dimensions);
+    };
+    check(2147483647, {
+        // 2147483584 iterations, at most huge(0); tiles would start 2**31.
+        {-1, int64_t(64) * 33554431},
+        // 64 by 7 is padded to 64 by 8 within a quarter: tiled.
+        {1, 64 * 8},
+        {1, 64 * 8},
+        {1, 32 * 8},
+        {1, 64 * 64},
+    }, {0, 0, 0, 0, 0});
+    check(480, {
+        {-1, int64_t(64) * 33554431},
+        // 448 iterations fit, 512 threads in tiles do not: flat, one launch.
+        {-1, 64 * 7},
+        // 512 iterations do not fit: flat, in chunks of `j`.
+        {-1, 64 * 8},
+        // One whole tile of 256 threads.
+        {1, 32 * 8},
+        {-1, 64 * 64},
+    }, {1, 0, 1, 0, 1});
+    check(512, {
+        {-1, int64_t(64) * 33554431},
+        // Whole tiles of exactly the limit stay tiled, and unsplit.
+        {1, 64 * 8},
+        {1, 64 * 8},
+        {1, 32 * 8},
+        {-1, 64 * 64},
+    }, {1, 0, 0, 0, 1});
+}
+
+TEST_CASE("GPU tiled launches never start more threads than the chunk limit") {
+    // `j` has a run-time end, but its kind and constant start leave it at
+    // most 127 values, so neither nest can have more iterations than a
+    // limit of 4000 and neither runs in chunks. Whole tiles of the first, 30 by at
+    // most 127, start 32 by 128 threads: within the default limit it runs
+    // tiled, past a limit of 4000 it runs flat, one thread per iteration
+    // (gpu_metal_706).
+    const std::string source = R"(
+program p
+    implicit none
+    integer :: a(30, 127), b(31, 64), i, j, n
+    n = huge(0)
+    do concurrent (i = 1:30, j = huge(0) - 126:n)
+        a(i, j - huge(0) + 127) = i
+    end do
+    n = huge(0) - 63
+    do concurrent (i = 1:31, j = huge(0) - 126:n)
+        b(i, j - huge(0) + 127) = i
+    end do
+end program
+)";
+    auto check = [&](int64_t chunk_limit,
+            const std::vector<std::pair<int64_t, int64_t>> &geometry) {
+        INFO("chunk limit " << chunk_limit);
+        GpuLaunchGeometry launches;
+        size_t chunked = 0;
+        visit_cuda_program(source, "gpu_tile_limit.f90", "p",
+            [&](ASR::stmt_t &s) {
+                launches.visit_stmt(s);
+                struct Chunks : public ASR::BaseWalkVisitor<Chunks> {
+                    size_t n = 0;
+                    void visit_GpuKernelLaunch(
+                            const ASR::GpuKernelLaunch_t &x) {
+                        n += x.n_chunk_dimensions;
+                    }
+                } chunks;
+                chunks.visit_stmt(s);
+                chunked += chunks.n;
+            }, chunk_limit);
+        check_launch_geometry(launches.launches, geometry);
+        CHECK(chunked == 0);
+    };
+    check(2147483647, {{1, 32 * 128}, {1, 32 * 64}});
+    // The second nest, 31 by 64, still runs in tiles of 32 by 64 threads.
+    check(4000, {{0, 30 * 127}, {1, 32 * 64}});
+}
+
+#ifndef HAVE_BUILD_TO_WASM
+TEST_CASE("A private map feeds an ordered reduction without a workspace") {
+    std::string source = read_project_file(
+        "integration_tests/gpu_private_reduction_01.f90");
+    for (const std::string transforms : {"all", "none"}) {
+        INFO(transforms);
+        CompilerOptions options;
+        options.gpu_backend = "metal";
+        options.po.gpu_offload_metal = true;
+        options.po.gpu_loop_transforms = transforms;
+        options.po.runtime_library_dir = LFORTRAN_BUILD_RUNTIME_DIR;
+        FortranEvaluator evaluator(options);
+        LocationManager lm;
+        LocationManager::FileLocations file;
+        file.in_filename = "gpu_private_reduction_01.f90";
+        lm.files.push_back(file);
+        lm.file_ends.push_back(LFortran::source_offset(source.size()));
+        diag::Diagnostics diagnostics;
+        auto parsed = evaluator.get_asr2(source, lm, diagnostics);
+        INFO(diagnostics.render2());
+        REQUIRE(parsed.ok);
+        Allocator allocator(32 * 1024 * 1024);
+        PassManager passes;
+        passes.use_default_passes();
+        passes.apply_passes(allocator, parsed.result, options.po, diagnostics);
+        INFO(diagnostics.render2());
+        REQUIRE_FALSE(diagnostics.has_error());
+        REQUIRE(asr_verify(*parsed.result, true, diagnostics));
+        size_t kernels = 0;
+        for (const auto &entry: parsed.result->m_symtab->get_scope()) {
+            if (!ASRUtils::is_device_kernel(entry.second)) continue;
+            auto* kernel = ASR::down_cast<ASR::Function_t>(entry.second);
+            REQUIRE(kernel->m_gpu != nullptr);
+            CHECK(kernel->m_gpu->n_workspaces == (transforms == "all" ? 0 : 1));
+            kernels++;
+        }
+        CHECK(kernels == 1);
+    }
+}
+
+TEST_CASE("Private reduction fusion retains escaping mutated and reused maps") {
+    auto check = [](const std::string &extent, const std::string &consumer,
+            const std::string &attributes = "") {
+        INFO(extent << " / " << consumer << " / " << attributes);
+        std::string source = R"(
+subroutine map(input,x,y,saved)
+    real, contiguous, intent(in) :: input(:,:), x(:)
+    real, contiguous, intent(out) :: y(:,:), saved(:,:)
+    do concurrent (integer :: n = 1:size(y,2))
+        block
+            real)" + attributes + R"( :: codes()" + extent + R"()
+            do concurrent (integer :: d = 1:)" + extent + R"()
+                codes(d) = input(d,n)
+            end do
+            )" + consumer + R"(
+        end block
+    end do
+end subroutine
+)";
+        CompilerOptions options;
+        options.gpu_backend = "metal";
+        options.po.gpu_offload_metal = true;
+        options.po.runtime_library_dir = LFORTRAN_BUILD_RUNTIME_DIR;
+        FortranEvaluator evaluator(options);
+        LocationManager lm;
+        LocationManager::FileLocations file;
+        file.in_filename = "private_reduction_fallback.f90";
+        lm.files.push_back(file);
+        lm.file_ends.push_back(LFortran::source_offset(source.size()));
+        diag::Diagnostics diagnostics;
+        auto parsed = evaluator.get_asr2(source, lm, diagnostics);
+        INFO(diagnostics.render2());
+        REQUIRE(parsed.ok);
+        Allocator allocator(32 * 1024 * 1024);
+        PassManager passes;
+        passes.use_default_passes();
+        passes.apply_passes(allocator, parsed.result, options.po, diagnostics);
+        INFO(diagnostics.render2());
+        REQUIRE_FALSE(diagnostics.has_error());
+        REQUIRE(asr_verify(*parsed.result, true, diagnostics));
+        size_t kernels = 0;
+        for (const auto &entry: parsed.result->m_symtab->get_scope()) {
+            if (!ASRUtils::is_device_kernel(entry.second)) continue;
+            auto* kernel = ASR::down_cast<ASR::Function_t>(entry.second);
+            REQUIRE(kernel->m_gpu != nullptr);
+            CHECK(kernel->m_gpu->n_workspaces == 1);
+            kernels++;
+        }
+        CHECK(kernels == 1);
+    };
+    check("size(x)", "saved(:,n)=codes\ny(1,n)=sum(codes*x)");
+    check("size(x)", "codes(1)=codes(1)+1\ny(1,n)=sum(codes*x)");
+    check("size(x)", "do concurrent(integer :: m=1:2)\ny(m,n)=sum(codes*x)\nend do");
+    check("size(x)+4", "y(1,n)=sum(codes(:size(x))*x)");
+    check("size(x)", "y(1,n)=sum(codes*x)", ", target");
+    check("size(x)", "y(1,n)=sum(codes*x)", ", volatile");
+    check("size(x)", "y(1,n)=sum(codes*x)+sum(codes*x)");
+    check("size(x)", "y(1,n)=sum(codes*x)\nblock\nreal :: shape_user(size(codes))\n"
+        "shape_user=0\ny(2,n)=sum(shape_user)\nend block");
+}
+
+TEST_CASE("Scalar call actual reductions do not reserve a product heap") {
+    std::string source = read_project_file(
+        "integration_tests/gpu_scalar_reduction_actual_01.f90");
+    CompilerOptions options;
+    options.gpu_backend = "metal";
+    options.po.gpu_offload_metal = true;
+    options.po.runtime_library_dir = LFORTRAN_BUILD_RUNTIME_DIR;
+    FortranEvaluator evaluator(options);
+    LocationManager lm;
+    LocationManager::FileLocations file;
+    file.in_filename = "gpu_scalar_reduction_actual_01.f90";
+    lm.files.push_back(file);
+    lm.file_ends.push_back(LFortran::source_offset(source.size()));
+    diag::Diagnostics diagnostics;
+    auto parsed = evaluator.get_asr2(source, lm, diagnostics);
+    INFO(diagnostics.render2());
+    REQUIRE(parsed.ok);
+    Allocator allocator(32 * 1024 * 1024);
+    PassManager passes;
+    passes.use_default_passes();
+    passes.apply_passes(allocator, parsed.result, options.po, diagnostics);
+    INFO(diagnostics.render2());
+    REQUIRE_FALSE(diagnostics.has_error());
+    REQUIRE(asr_verify(*parsed.result, true, diagnostics));
+    struct HeapReservations: ASR::BaseWalkVisitor<HeapReservations> {
+        size_t count = 0;
+        void visit_GpuAtomicFetchAdd(const ASR::GpuAtomicFetchAdd_t&) { count++; }
+    } reservations;
+    reservations.visit_TranslationUnit(*parsed.result);
+    CHECK(reservations.count == 0);
+    size_t kernels = 0;
+    for (const auto &entry: parsed.result->m_symtab->get_scope()) {
+        if (!ASRUtils::is_device_kernel(entry.second)) continue;
+        auto* kernel = ASR::down_cast<ASR::Function_t>(entry.second);
+        REQUIRE(kernel->m_gpu != nullptr);
+        // Codes, weights, terms and partial_values remain distinct workspaces.
+        CHECK(kernel->m_gpu->n_workspaces == 4);
+        kernels++;
+    }
+    CHECK(kernels == 1);
+}
+
+TEST_CASE("Scalar reduction actual normalization respects evaluation domains") {
+    auto check = [](const std::string& attributes,
+            const std::string& statement, bool materialized) {
+        INFO(attributes << " / " << statement);
+        const std::string source = R"(
+module scalar_actual_domains
+contains
+    pure elemental real function f(x) result(r)
+        real, intent(in) :: x
+        r = x
+    end function
+    real function effect(x) result(r)
+        real, intent(inout) :: x
+        x = x + 1
+        r = x
+    end function
+    subroutine test(n,a,out,state)
+        integer, intent(in) :: n
+        real, intent(in))" + attributes + R"( :: a(n,2)
+        real, intent(inout) :: out(2)
+        real, intent(inout) :: state
+        )" + statement + R"(
+    end subroutine
+end module
+)";
+        CompilerOptions options;
+        FortranEvaluator evaluator(options);
+        LocationManager lm;
+        LocationManager::FileLocations file;
+        file.in_filename = "scalar_actual_domains.f90";
+        lm.files.push_back(file);
+        lm.file_ends.push_back(LFortran::source_offset(source.size()));
+        diag::Diagnostics diagnostics;
+        auto parsed = evaluator.get_asr2(source, lm, diagnostics);
+        INFO(diagnostics.render2());
+        REQUIRE(parsed.ok);
+        Allocator allocator(32 * 1024 * 1024);
+        PassManager passes;
+        std::string pass = "array_struct_temporary", skip;
+        passes.parse_pass_arg(pass, skip);
+        passes.apply_passes(allocator, parsed.result, options.po, diagnostics);
+        REQUIRE_FALSE(diagnostics.has_error());
+        REQUIRE(asr_verify(*parsed.result, true, diagnostics));
+        auto* module = ASR::down_cast<ASR::Module_t>(
+            parsed.result->m_symtab->get_symbol("scalar_actual_domains"));
+        auto* function = ASR::down_cast<ASR::Function_t>(
+            module->m_symtab->get_symbol("test"));
+        struct Allocations: ASRUtils::BlockBodyWalkVisitor<Allocations> {
+            size_t count = 0;
+            void visit_Allocate(const ASR::Allocate_t&) { count++; }
+        } allocations;
+        for (size_t i = 0; i < function->n_body; i++) {
+            allocations.visit_stmt(*function->m_body[i]);
+        }
+        CHECK((allocations.count > 0) == materialized);
+    };
+    check("", "out(1)=f(sum(a(:,1)*2))", false);
+    check("", "out(1)=f(sum(a*2))", false);
+    check("", "out(1)=f(sum(a(:0,1)*2,mask=a(:0,1)>0))", false);
+    check(", volatile", "out(1)=f(sum(a(:,1)*2))", true);
+    check(", asynchronous", "out(1)=f(sum(a(:,1)*2))", true);
+    check("", "block\nvolatile :: a\nout(1)=f(sum(a(:,1)*2))\nend block", true);
+    check("", "block\nvolatile :: a\nend block\nout(1)=f(sum(a(:,1)*2))", false);
+    check("", "out(1)=f(sum(a(:,1)*2))+effect(state)", true);
+    check("", "out=f(sum(a*2,dim=1))", true);
+    check("", "where(out>0) out=f(sum(a(:,1)*2))", true);
+}
+
+TEST_CASE("GPU workspace guards preserve shapes and reject private predicates") {
+    bool polarity = false, nested = false;
+    SUBCASE("data, bounds and conservative fallbacks") {}
+    SUBCASE("equivalent predicates with reversed polarity") { polarity = true; }
+    SUBCASE("nested concurrent domains and unguarded data uses") { nested = true; }
+    std::string filename = nested ? "gpu_workspace_guard_03.f90"
+        : polarity ? "gpu_workspace_guard_02.f90" : "gpu_workspace_guard_01.f90";
+    const std::string source = read_project_file("integration_tests/" + filename);
+    CompilerOptions options;
+    options.gpu_backend = "cuda";
+    options.po.gpu_offload_cuda = true;
+    options.po.runtime_library_dir = LFORTRAN_BUILD_RUNTIME_DIR;
+    FortranEvaluator evaluator(options);
+    LocationManager lm;
+    LocationManager::FileLocations file;
+    file.in_filename = filename;
+    lm.files.push_back(file);
+    lm.file_ends.push_back(LFortran::source_offset(source.size()));
+    diag::Diagnostics diagnostics;
+    auto parsed = evaluator.get_asr2(source, lm, diagnostics);
+    INFO(diagnostics.render2());
+    REQUIRE(parsed.ok);
+    Allocator allocator(32 * 1024 * 1024);
+    PassManager passes;
+    passes.use_default_passes();
+    passes.apply_passes(allocator, parsed.result, options.po, diagnostics);
+    INFO(diagnostics.render2());
+    REQUIRE_FALSE(diagnostics.has_error());
+    REQUIRE(asr_verify(*parsed.result, true, diagnostics));
+    size_t workspaces = 0, guarded = 0, negative = 0;
+    for (const auto &entry : parsed.result->m_symtab->get_scope()) {
+        if (!ASRUtils::is_device_kernel(entry.second)) continue;
+        auto *kernel = ASR::down_cast<ASR::Function_t>(entry.second);
+        REQUIRE(kernel->m_gpu != nullptr);
+        for (size_t w = 0; w < kernel->m_gpu->n_workspaces; w++) {
+            auto &workspace = kernel->m_gpu->m_workspaces[w];
+            workspaces++;
+            REQUIRE(workspace.n_dims == 1);
+            CHECK(ASRUtils::extract_kind_from_ttype_t(
+                ASRUtils::expr_type(workspace.m_dims[0].m_extent)) == 4);
+            if (nested) {
+                std::string name = ASRUtils::symbol_name(workspace.m_variable);
+                INFO(name);
+                CHECK((workspace.m_allocation_if != nullptr) ==
+                    (name == "nested_work" || name == "inherited_work"));
+            }
+            if (!workspace.m_allocation_if) continue;
+            guarded++;
+            negative += !workspace.m_allocation_on_true;
+            REQUIRE(workspace.m_allocation_parameter != nullptr);
+            CHECK(ASR::is_a<ASR::Var_t>(*workspace.m_allocation_if));
+            workspace.m_allocation_on_true = !workspace.m_allocation_on_true;
+            diag::Diagnostics invalid;
+            CHECK_FALSE(asr_verify(*parsed.result, true, invalid));
+            REQUIRE_FALSE(invalid.diagnostics.empty());
+            CHECK(invalid.diagnostics.back().code ==
+                "asr.verify.gpu_layout.allocation_dominance");
+            workspace.m_allocation_on_true = !workspace.m_allocation_on_true;
+        }
+    }
+    CHECK(workspaces == (nested ? 5 : polarity ? 1 : 4));
+    CHECK(guarded == (nested ? 2 : polarity ? 1 : 3));
+    CHECK(negative == (nested || polarity ? 1 : 0));
+    for (auto form : {ASRTextForm::Named, ASRTextForm::Positional}) {
+        ASRTextOptions text_options;
+        text_options.form = form;
+        std::string text = asr_to_text(*parsed.result, text_options);
+        Allocator restored_allocator(32 * 1024 * 1024);
+        LocationManager restored_lm;
+        diag::Diagnostics restored_diagnostics;
+        auto restored = asr_from_text(restored_allocator, text, "guards.asr",
+            restored_lm, restored_diagnostics);
+        INFO(restored_diagnostics.render2());
+        REQUIRE(restored.ok);
+        CHECK(asr_verify(*restored.result, true, restored_diagnostics));
+        CHECK(asr_to_text(*restored.result, text_options) == text);
+    }
+}
+
+TEST_CASE("GPU tiled launch tests run tiled nests") {
+    // gpu_metal_485, gpu_metal_490 and gpu_metal_491 check the tiled index
+    // computation only if their nests do tile; pin which ones do, so that a
+    // change of the padding threshold cannot silently move them to flat
+    // numbering.
+    std::vector<std::pair<int64_t, int64_t>> expected = {
+        {1, 64 * 64},           // stencil 62 x 62
+        {0, 3 * 1000},          // b(3, 1000)
+        {1, 64 * 32 * 4},       // c: -3:56, 0:29, 3:6
+        {1, 64 * 32},           // d: 3:64 x 3:33
+        {1, 0},                 // empty nest
+        {0, 300},               // f(300, 1)
+        {0, 600},               // g(300, 2)
+        {0, 40 * 37},           // h(40, 37, 1)
+        {0, 3 * 2 * 500},       // p(3, 2, 500)
+        {1, 64 * 32 * 4},       // contiguous dimension in the middle
+        {1, 64 * 32 * 4},       // stores disagree: k, not j (4), down
+        {1, 32 * 64},           // transposed store
+        {1, 0},                 // empty dimension outside the tile
+    };
+    check_launch_geometry(cuda_launch_geometry(
+        read_project_file("integration_tests/gpu_metal_485.f90"),
+        "gpu_metal_485.f90", "gpu_metal_485"), expected);
+    expected = {
+        {1, 256 * 32},          // integer(8) indices, -5:250 x 1:31
+    };
+    check_launch_geometry(cuda_launch_geometry(
+        read_project_file("integration_tests/gpu_metal_491.f90"),
+        "gpu_metal_491.f90", "gpu_metal_491"), expected);
+    expected = {
+        {1, 64 * 64},           // workspace, 62 x 62
+        {1, 64 * 32 * 3},       // workspace, 60 x 30 x 3
+        {0, 37 * 11},           // workspace, 37 x 11
+    };
+    check_launch_geometry(cuda_launch_geometry(
+        read_project_file("integration_tests/gpu_metal_490.f90"),
+        "gpu_metal_490.f90", "gpu_metal_490"), expected);
+    // Index-set splitting splits the first two nests, whose bodies test
+    // a loop index against its lower bound: each becomes the split nest
+    // and the original nest, which runs when the domain has no interior.
+    // Both must tile.
+    expected = {
+        {1, 64 * 64},           // high lower bound along the tile width
+        {1, 64 * 64},           // the same nest, unsplit
+        {1, 64 * 64},           // high lower bound along the tile height
+        {1, 64 * 64},           // the same nest, unsplit
+        {1, 64 * 32},           // negative lower bounds, partial tiles
+        {0, 33 * 31},           // high lower bound, flat fallback
+    };
+    for (const std::string kind : {"i4", "i8"}) {
+        std::string name = "gpu_tile_high_bounds_" + kind;
+        check_launch_geometry(cuda_launch_geometry(
+            read_project_file("integration_tests/" + name + ".f90"),
+            name + ".f90", name), expected);
+    }
+}
+
+TEST_CASE("Time skewing leaves the procedures parallel loops call") {
+    // `smooth` runs inside the parallel loop of the program, where its own
+    // parallel loops run serially: its time loop is not skewed (the skewed
+    // host loop would call the runtime from device code).
+    const std::string source = R"(
+module skew_callee_m
+implicit none
+contains
+    pure subroutine smooth(u, d, n, nt)
+        integer, intent(in) :: n, nt
+        real, intent(inout) :: u(n), d(n)
+        integer :: it, k
+        do it = 1, nt
+            do concurrent (k = 2:n - 1)
+                d(k) = 0.25 * (u(k - 1) + 2 * u(k) + u(k + 1))
+            end do
+            do concurrent (k = 2:n - 1)
+                u(k) = d(k)
+            end do
+        end do
+    end subroutine
+end module
+
+program skew_callee
+use skew_callee_m, only: smooth
+implicit none
+integer, parameter :: n = 3000, m = 4
+real :: u(n, m), d(n, m)
+integer :: j
+u = 1
+d = 0
+call smooth(u(:, 1), d(:, 1), n, 5)
+do concurrent (j = 1:m)
+    call smooth(u(:, j), d(:, j), n, 5)
+end do
+print *, sum(u)
+end program
+)";
+    CompilerOptions options;
+    options.gpu_backend = "cuda";
+    options.po.gpu_offload_cuda = true;
+    options.po.gpu_cache_bytes = 4096;
+    options.po.runtime_library_dir = LFORTRAN_BUILD_RUNTIME_DIR;
+    FortranEvaluator evaluator(options);
+    LocationManager lm;
+    LocationManager::FileLocations file;
+    file.in_filename = "skew_callee.f90";
+    lm.files.push_back(file);
+    lm.file_ends.push_back(LFortran::source_offset(source.size()));
+    diag::Diagnostics diagnostics;
+    auto parsed = evaluator.get_asr2(source, lm, diagnostics);
+    INFO(diagnostics.render2());
+    REQUIRE(parsed.ok);
+    ASR::TranslationUnit_t &unit = *parsed.result;
+    Allocator allocator(32 * 1024 * 1024);
+    PassManager passes;
+    std::string pass = "gpu_loop_transforms", skip;
+    passes.parse_pass_arg(pass, skip);
+    options.po.pass_cumulative = true;
+    passes.apply_passes(allocator, &unit, options.po, diagnostics);
+    INFO(diagnostics.render2());
+    REQUIRE_FALSE(diagnostics.has_error());
+    auto *module = ASR::down_cast<ASR::Module_t>(
+        unit.m_symtab->get_symbol("skew_callee_m"));
+    auto *smooth = ASR::down_cast<ASR::Function_t>(
+        module->m_symtab->get_symbol("smooth"));
+    for (auto &item : smooth->m_symtab->get_scope()) {
+        INFO(item.first);
+        CHECK_FALSE(startswith(item.first, "__gpu_skew"));
+    }
+}
+
+TEST_CASE("GPU split nests keep the write-discard of the loops they split") {
+    // gpu_metal_527 splits a 1-D stencil (the split nest, then the original
+    // nest for a domain without an interior) and a 2-D one (the jammed
+    // nest, the plain split nest, the original nest). Each overwrites one
+    // array, which every launch must say.
+    std::vector<size_t> expected = {1, 1, 1, 1, 1};
+    std::vector<size_t> launches = cuda_launch_overwrites(
+        read_project_file("integration_tests/gpu_metal_527.f90"),
+        "gpu_metal_527.f90", "gpu_metal_527");
+    REQUIRE(launches.size() == expected.size());
+    for (size_t i = 0; i < launches.size(); i++) {
+        INFO("launch " << i);
+        CHECK(launches[i] == expected[i]);
+    }
+}
+
+TEST_CASE("GPU optional views preserve known contiguity without host copies") {
+    std::string source = read_project_file(
+        "integration_tests/gpu_optional_launch_04.f90");
+    for (bool metal : {false, true}) {
+        CompilerOptions options;
+        options.gpu_backend = metal ? "metal" : "cuda";
+        options.po.gpu_offload_metal = metal;
+        options.po.gpu_offload_cuda = !metal;
+        options.po.runtime_library_dir = LFORTRAN_BUILD_RUNTIME_DIR;
+        FortranEvaluator evaluator(options);
+        LocationManager lm;
+        LocationManager::FileLocations file;
+        file.in_filename = "gpu_optional_launch_04.f90";
+        lm.files.push_back(file);
+        lm.file_ends.push_back(LFortran::source_offset(source.size()));
+        diag::Diagnostics diagnostics;
+        auto parsed = evaluator.get_asr2(source, lm, diagnostics);
+        INFO(diagnostics.render2());
+        REQUIRE(parsed.ok);
+        Allocator allocator(32 * 1024 * 1024);
+        PassManager passes;
+        std::string pass = "device_launch_expand", skip;
+        passes.parse_pass_arg(pass, skip);
+        options.po.pass_cumulative = true;
+        passes.apply_passes(allocator, parsed.result, options.po, diagnostics);
+        INFO(diagnostics.render2());
+        REQUIRE_FALSE(diagnostics.has_error());
+        REQUIRE(asr_verify(*parsed.result, true, diagnostics));
+        auto *module = ASR::down_cast<ASR::Module_t>(
+            parsed.result->m_symtab->get_symbol("gpu_optional_launch_04_m"));
+        for (auto name : {"explicit_input", "contiguous_input", "strided_update"}) {
+            INFO(name);
+            auto *function = ASR::down_cast<ASR::Function_t>(
+                module->m_symtab->get_symbol(name));
+            struct Allocations : public ASR::BaseWalkVisitor<Allocations> {
+                size_t count = 0;
+                void visit_Allocate(const ASR::Allocate_t &x) {
+                    count += x.n_args;
+                }
+            } allocations;
+            for (size_t i = 0; i < function->n_body; i++) {
+                allocations.visit_stmt(*function->m_body[i]);
+            }
+            CHECK(allocations.count == (std::string(name) == "strided_update" ? 1 : 0));
+        }
+    }
+}
+#endif

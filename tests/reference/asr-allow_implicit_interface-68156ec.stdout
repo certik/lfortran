@@ -64,6 +64,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -89,6 +90,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -112,6 +114,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -184,6 +187,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -207,6 +211,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -271,6 +276,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -296,6 +302,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -319,6 +326,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -394,6 +402,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -413,7 +422,7 @@
                                         1.000000
                                         (Real 8)
                                     )
-                                    Default
+                                    Save
                                     (Real 8)
                                     ()
                                     Source
@@ -423,6 +432,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -450,6 +460,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -469,7 +480,7 @@
                                         6.000000
                                         (Real 8)
                                     )
-                                    Default
+                                    Save
                                     (Real 8)
                                     ()
                                     Source
@@ -479,6 +490,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -500,7 +512,7 @@
                                         2.000000
                                         (Real 8)
                                     )
-                                    Default
+                                    Save
                                     (Real 8)
                                     ()
                                     Source
@@ -510,6 +522,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -537,6 +550,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -560,6 +574,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -587,6 +602,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -606,7 +622,7 @@
                                         0.000000
                                         (Real 8)
                                     )
-                                    Default
+                                    Save
                                     (Real 8)
                                     ()
                                     Source
@@ -616,6 +632,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -642,47 +659,7 @@
                     )
                     []
                     []
-                    [(Assignment
-                        (Var 2 zero)
-                        (RealConstant
-                            0.000000
-                            (Real 8)
-                        )
-                        ()
-                        .false.
-                        .false.
-                    )
-                    (Assignment
-                        (Var 2 one)
-                        (RealConstant
-                            1.000000
-                            (Real 8)
-                        )
-                        ()
-                        .false.
-                        .false.
-                    )
-                    (Assignment
-                        (Var 2 two)
-                        (RealConstant
-                            2.000000
-                            (Real 8)
-                        )
-                        ()
-                        .false.
-                        .false.
-                    )
-                    (Assignment
-                        (Var 2 six)
-                        (RealConstant
-                            6.000000
-                            (Real 8)
-                        )
-                        ()
-                        .false.
-                        .false.
-                    )
-                    (Associate
+                    [(Associate
                         (Var 2 alnorm~fpcast_ptr)
                         (FunctionPointerCast
                             (Var 2 alnorm)
@@ -705,6 +682,7 @@
                             )
                             ()
                         )
+                        NoPointerBounds
                     )
                     (Assignment
                         (Var 2 prho)
@@ -753,6 +731,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Associate
                         (Var 2 dgetrf~fpcast_ptr)
@@ -778,6 +758,7 @@
                             )
                             ()
                         )
+                        NoPointerBounds
                     )
                     (SubroutineCall
                         2 dgetrf~fpcast_ptr
@@ -803,6 +784,8 @@
                             ()
                             .false.
                             .false.
+                            .false.
+                            .false.
                         )]
                         []
                     )
@@ -819,6 +802,8 @@
                             (Var 2 prho)
                             (Var 2 one)
                             ()
+                            .false.
+                            .false.
                             .false.
                             .false.
                         )]

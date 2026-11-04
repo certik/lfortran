@@ -68,6 +68,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -93,6 +94,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -110,7 +112,14 @@
                                                                     (Array
                                                                         (Integer 4)
                                                                         [((IntegerConstant 1 (Integer 4) Decimal)
-                                                                        (Var 7 n))]
+                                                                        (IntrinsicElementalFunction
+                                                                            Max
+                                                                            [(IntegerConstant 0 (Integer 4) Decimal)
+                                                                            (Var 7 n)]
+                                                                            0
+                                                                            (Integer 4)
+                                                                            ()
+                                                                        ))]
                                                                         PointerArray
                                                                         Global
                                                                     )
@@ -122,6 +131,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -151,6 +161,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -168,7 +179,14 @@
                                                                     (Array
                                                                         (Integer 4)
                                                                         [((IntegerConstant 1 (Integer 4) Decimal)
-                                                                        (Var 7 n))]
+                                                                        (IntrinsicElementalFunction
+                                                                            Max
+                                                                            [(IntegerConstant 0 (Integer 4) Decimal)
+                                                                            (Var 7 n)]
+                                                                            0
+                                                                            (Integer 4)
+                                                                            ()
+                                                                        ))]
                                                                         PointerArray
                                                                         Global
                                                                     )
@@ -180,6 +198,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -266,6 +285,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -283,7 +303,14 @@
                                                                     (Array
                                                                         (Integer 4)
                                                                         [((IntegerConstant 1 (Integer 4) Decimal)
-                                                                        (Var 8 n))]
+                                                                        (IntrinsicElementalFunction
+                                                                            Max
+                                                                            [(IntegerConstant 0 (Integer 4) Decimal)
+                                                                            (Var 8 n)]
+                                                                            0
+                                                                            (Integer 4)
+                                                                            ()
+                                                                        ))]
                                                                         PointerArray
                                                                         Global
                                                                     )
@@ -295,6 +322,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -322,6 +350,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -429,6 +458,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -459,6 +489,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -484,6 +515,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -501,7 +533,14 @@
                                                                     (Array
                                                                         (Integer 4)
                                                                         [((IntegerConstant 1 (Integer 4) Decimal)
-                                                                        (Var 5 n))]
+                                                                        (IntrinsicElementalFunction
+                                                                            Max
+                                                                            [(IntegerConstant 0 (Integer 4) Decimal)
+                                                                            (Var 5 n)]
+                                                                            0
+                                                                            (Integer 4)
+                                                                            ()
+                                                                        ))]
                                                                         PointerArray
                                                                         Global
                                                                     )
@@ -513,6 +552,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -544,6 +584,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     Pass
                                                                     ()
                                                                     []
@@ -561,7 +602,14 @@
                                                                     (Array
                                                                         (Integer 4)
                                                                         [((IntegerConstant 1 (Integer 4) Decimal)
-                                                                        (Var 5 n))]
+                                                                        (IntrinsicElementalFunction
+                                                                            Max
+                                                                            [(IntegerConstant 0 (Integer 4) Decimal)
+                                                                            (Var 5 n)]
+                                                                            0
+                                                                            (Integer 4)
+                                                                            ()
+                                                                        ))]
                                                                         PointerArray
                                                                         Global
                                                                     )
@@ -573,6 +621,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -661,6 +710,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -678,7 +728,14 @@
                                                                     (Array
                                                                         (Integer 4)
                                                                         [((IntegerConstant 1 (Integer 4) Decimal)
-                                                                        (Var 4 n))]
+                                                                        (IntrinsicElementalFunction
+                                                                            Max
+                                                                            [(IntegerConstant 0 (Integer 4) Decimal)
+                                                                            (Var 4 n)]
+                                                                            0
+                                                                            (Integer 4)
+                                                                            ()
+                                                                        ))]
                                                                         PointerArray
                                                                         Global
                                                                     )
@@ -690,6 +747,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -719,6 +777,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     Pass
@@ -841,6 +900,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -866,6 +926,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -883,7 +944,14 @@
                                                                     (Array
                                                                         (Integer 4)
                                                                         [((IntegerConstant 1 (Integer 4) Decimal)
-                                                                        (Var 11 n))]
+                                                                        (IntrinsicElementalFunction
+                                                                            Max
+                                                                            [(IntegerConstant 0 (Integer 4) Decimal)
+                                                                            (Var 11 n)]
+                                                                            0
+                                                                            (Integer 4)
+                                                                            ()
+                                                                        ))]
                                                                         PointerArray
                                                                         Global
                                                                     )
@@ -895,6 +963,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -926,6 +995,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     Pass
                                                                     ()
                                                                     []
@@ -943,7 +1013,14 @@
                                                                     (Array
                                                                         (Integer 4)
                                                                         [((IntegerConstant 1 (Integer 4) Decimal)
-                                                                        (Var 11 n))]
+                                                                        (IntrinsicElementalFunction
+                                                                            Max
+                                                                            [(IntegerConstant 0 (Integer 4) Decimal)
+                                                                            (Var 11 n)]
+                                                                            0
+                                                                            (Integer 4)
+                                                                            ()
+                                                                        ))]
                                                                         PointerArray
                                                                         Global
                                                                     )
@@ -955,6 +1032,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -1043,6 +1121,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -1060,7 +1139,14 @@
                                                                     (Array
                                                                         (Integer 4)
                                                                         [((IntegerConstant 1 (Integer 4) Decimal)
-                                                                        (Var 12 n))]
+                                                                        (IntrinsicElementalFunction
+                                                                            Max
+                                                                            [(IntegerConstant 0 (Integer 4) Decimal)
+                                                                            (Var 12 n)]
+                                                                            0
+                                                                            (Integer 4)
+                                                                            ()
+                                                                        ))]
                                                                         PointerArray
                                                                         Global
                                                                     )
@@ -1072,6 +1158,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -1101,6 +1188,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     Pass
@@ -1174,6 +1262,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -1202,6 +1291,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -1233,6 +1323,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -1260,6 +1351,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -1294,6 +1386,8 @@
                                                         (Var 10 r)
                                                         (IntegerConstant 0 (Integer 4) Decimal)
                                                         ()
+                                                        .false.
+                                                        .false.
                                                         .false.
                                                         .false.
                                                     )]

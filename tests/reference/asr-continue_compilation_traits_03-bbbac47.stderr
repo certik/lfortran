@@ -150,6 +150,16 @@ semantic error: generic type 'bareself' requires its generic type arguments
 533 |         class(BareSelf), intent(in) :: self
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
+semantic error: Dummy argument 'self' not defined
+   --> tests/errors/continue_compilation_traits_03.f90:532:5 - 535:16
+    |
+532 |        integer function bare(self)
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+    |
+535 |        end function
+    | ...^^^^^^^^^^^^^^^^ 
+
 semantic error: 'bare' must be a module procedure or an external procedure with an explicit interface
    --> tests/errors/continue_compilation_traits_03.f90:529:9
     |

@@ -61,6 +61,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -152,6 +153,7 @@
                                                     Source
                                                     .true.
                                                     .false.
+                                                    Public
                                                     ()
                                                 )
                                         })
@@ -203,13 +205,10 @@
                                     Public
                                 ),
                             new:
-                                (ExternalSymbol
+                                (GenericProcedure
                                     2
                                     new
-                                    4 new
-                                    tomlf_type_array
-                                    []
-                                    new
+                                    [2 new_array@new]
                                     Public
                                 ),
                             new_array:
@@ -221,6 +220,16 @@
                                     []
                                     new_array
                                     Public
+                                ),
+                            new_array@new:
+                                (ExternalSymbol
+                                    2
+                                    new_array@new
+                                    4 new_array
+                                    tomlf_type_array
+                                    []
+                                    new_array
+                                    Private
                                 ),
                             toml_array:
                                 (ExternalSymbol
@@ -345,6 +354,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -406,6 +416,8 @@
                                                 )
                                                 ()
                                             )]
+                                            ()
+                                            ()
                                         )]
                                         []
                                     )
@@ -475,6 +487,8 @@
                                                 )
                                                 ()
                                             )]
+                                            ()
+                                            ()
                                         )]
                                         []
                                     )]
@@ -526,6 +540,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -586,6 +601,7 @@
                                                     Source
                                                     .false.
                                                     .false.
+                                                    Public
                                                     ()
                                                 ),
                                             list:
@@ -613,6 +629,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -719,6 +736,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -772,6 +790,7 @@
                                                     Source
                                                     .true.
                                                     .false.
+                                                    Public
                                                     ()
                                                 ),
                                             key:
@@ -794,6 +813,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod

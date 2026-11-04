@@ -222,11 +222,12 @@ program traits_runtime_constructor_component_01
 
     ! Usage contexts: unlimited polymorphic results, SOURCE=, actual
     ! arguments, array constructors, nested constructors and associations.
+    ! The function result is finalized after the assignment (F2018 7.5.6.3).
     res = as_any(obj)
     select type (res)
     type is (Holder)
         call check(res%tobj%get() == 213, 23)
-        call check(finals == 24, 123)
+        call check(finals == 25, 123)
     class default
         error stop 24
     end select
@@ -234,7 +235,7 @@ program traits_runtime_constructor_component_01
     select type (res)
     type is (Holder)
         call check(.not. allocated(res%tobj), 25)
-        call check(finals == 25, 125)
+        call check(finals == 26, 125)
     class default
         error stop 26
     end select
@@ -243,33 +244,33 @@ program traits_runtime_constructor_component_01
     select type (res)
     type is (Holder)
         call check(res%tobj%get() == 213, 27)
-        call check(finals == 25, 127)
+        call check(finals == 26, 127)
     class default
         error stop 28
     end select
     allocate(z, source=Holder(c))
     call check(z%tobj%get() == 12, 29)
-    call check(finals == 25, 129)
+    call check(finals == 26, 129)
     call check(peek(Holder(obj)) == 213 .and. peek(Holder(none)) == -1, 30)
-    call check(finals == 25, 130)
+    call check(finals == 26, 130)
     call check(peek(Holder(Counter(4))) == 4, 31)
-    call check(finals == 25, 131)
+    call check(finals == 26, 131)
     xs = [Holder :: Holder(obj), Holder(c), Holder(none)]
     call check(xs(1)%tobj%get() == 213 .and. xs(2)%tobj%get() == 12, 32)
-    call check(finals == 25, 132)
+    call check(finals == 26, 132)
     call check(.not. allocated(xs(3)%tobj), 33)
-    call check(finals == 25, 133)
+    call check(finals == 26, 133)
     o = Outer(Holder(obj), 6)
     call check(o%inner%tobj%get() == 213 .and. o%tag == 6, 34)
-    call check(finals == 25, 134)
+    call check(finals == 26, 134)
     ! The associate name is a copy of the value until the construct ends.
     associate (h => Holder(c))
         call check(h%tobj%get() == 12, 35)
-        call check(finals == 25, 135)
+        call check(finals == 26, 135)
     end associate
-    call check(finals == 26, 136)
+    call check(finals == 27, 136)
     deallocate(z)
-    call check(finals == 27, 137)
+    call check(finals == 28, 137)
     print '(a)', 'traits_runtime_constructor_component_01 ok'
 contains
     subroutine bump_twice(h)

@@ -7,6 +7,7 @@
 #include <libasr/pass/array_by_data.h>
 #include <libasr/asr_builder.h>
 
+#include <algorithm>
 #include <vector>
 #include <utility>
 #include <deque>
@@ -102,6 +103,94 @@ static bool names_runtime_trait_storage(const ASR::Function_t &x) {
 }
 
 /*
+A device procedure is transformed in place (see proc2inplace below), so a
+dummy it takes by data is taken that way from every caller, and addressed
+as contiguous. A caller that cannot redirect a call to a copy has no
+other way to hand such a dummy an array whose elements need not be
+adjacent: an array pointer, such as the name an earlier pass binds to a
+section it hands to a routine (`matmul(w(1:n, 1:m, l), x)`), or a dummy
+of a device procedure that keeps its descriptor. Such a dummy keeps its
+descriptor instead, and the device code generators hand it the strides
+of its actual argument. On the host a call with a pointer actual keeps
+calling the procedure that takes descriptors, as can_edit_call decides.
+*/
+class DeviceDescriptorDummies : public ASR::BaseWalkVisitor<DeviceDescriptorDummies>
+{
+    public:
+
+        // A device procedure and the index of an array dummy that keeps
+        // its descriptor.
+        std::set<std::pair<ASR::symbol_t*, size_t>> kept;
+
+        void collect(ASR::TranslationUnit_t &unit) {
+            do {
+                changed = false;
+                visit_TranslationUnit(unit);
+            } while( changed );
+        }
+
+        void visit_SubroutineCall(const ASR::SubroutineCall_t &x) {
+            visit_call(x.m_name, x.m_args, x.n_args);
+            ASR::BaseWalkVisitor<DeviceDescriptorDummies>::visit_SubroutineCall(x);
+        }
+
+        void visit_FunctionCall(const ASR::FunctionCall_t &x) {
+            visit_call(x.m_name, x.m_args, x.n_args);
+            ASR::BaseWalkVisitor<DeviceDescriptorDummies>::visit_FunctionCall(x);
+        }
+
+    private:
+
+        bool changed = false;
+
+        void visit_call(ASR::symbol_t *name, ASR::call_arg_t *args,
+                size_t n_args) {
+            ASR::symbol_t *fn = ASRUtils::symbol_get_past_external(name);
+            if( !ASRUtils::runs_on_device(fn) ) {
+                return;
+            }
+            for( size_t i = 0; i < n_args; i++ ) {
+                if( args[i].m_value && may_be_strided(args[i].m_value) &&
+                    kept.insert({fn, i}).second ) {
+                    changed = true;
+                }
+            }
+        }
+
+        bool may_be_strided(ASR::expr_t *e) {
+            e = ASRUtils::get_past_array_physical_cast(e);
+            if( !ASR::is_a<ASR::Var_t>(*e) ||
+                !ASRUtils::is_array(ASRUtils::expr_type(e)) ) {
+                return false;
+            }
+            ASR::symbol_t *sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(e)->m_v);
+            if( !ASR::is_a<ASR::Variable_t>(*sym) ) {
+                return false;
+            }
+            if( ASRUtils::is_pointer(ASR::down_cast<ASR::Variable_t>(sym)->m_type) ) {
+                return true;
+            }
+            ASR::asr_t *owner = ASRUtils::symbol_parent_symtab(sym)->asr_owner;
+            if( !owner || !ASR::is_a<ASR::symbol_t>(*owner) ) {
+                return false;
+            }
+            ASR::symbol_t *owner_sym = ASR::down_cast<ASR::symbol_t>(owner);
+            if( !ASRUtils::runs_on_device(owner_sym) ) {
+                return false;
+            }
+            ASR::Function_t *owner_fn = ASR::down_cast<ASR::Function_t>(owner_sym);
+            for( size_t i = 0; i < owner_fn->n_args; i++ ) {
+                if( ASR::is_a<ASR::Var_t>(*owner_fn->m_args[i]) &&
+                    ASR::down_cast<ASR::Var_t>(owner_fn->m_args[i])->m_v == sym ) {
+                    return kept.count({owner_sym, i}) > 0;
+                }
+            }
+            return false;
+        }
+};
+
+/*
 The following visitor converts function/subroutines (a.k.a procedures)
 with array arguments having empty dimensions to arrays having dimensional
 information available from function arguments. See example below,
@@ -144,6 +233,9 @@ class PassArrayByDataProcedureVisitor : public PassUtils::PassVisitor<PassArrayB
         // launch statement, and a routine it calls is reachable from nowhere
         // but the device code.
         std::map< ASR::symbol_t*, InPlaceProcedure > proc2inplace;
+        // The array dummies of device procedures that keep their
+        // descriptor (see DeviceDescriptorDummies).
+        std::set<std::pair<ASR::symbol_t*, size_t>> device_descriptor_dummies;
 
         PassArrayByDataProcedureVisitor(Allocator& al_, const LCompilers::PassOptions& pass_options_) :
         PassVisitor(al_, nullptr), node_duplicator(al_), pass_options(pass_options_)
@@ -168,7 +260,10 @@ class PassArrayByDataProcedureVisitor : public PassUtils::PassVisitor<PassArrayB
             }
 
             node_duplicator.allow_procedure_calls = true;
-            SymbolTable* new_symtab = al.make_new<SymbolTable>(current_scope);
+            // The copy is declared beside the original, which is not in the
+            // scope being visited if it is declared in a BLOCK construct.
+            SymbolTable* parent_scope = x->m_symtab->parent;
+            SymbolTable* new_symtab = al.make_new<SymbolTable>(parent_scope);
             ASRUtils::SymbolDuplicator symbol_duplicator(al);
             // first duplicate the external symbols
             // so they can be referenced by derived_type
@@ -247,7 +342,7 @@ class PassArrayByDataProcedureVisitor : public PassUtils::PassVisitor<PassArrayB
             // freshly translated AST will be rewritten by the call-site
             // replacer using existing proc2newproc state populated below
             // for newly inserted procedures only.
-            if (ASR::symbol_t* existing = current_scope->get_symbol(new_name)) {
+            if (ASR::symbol_t* existing = parent_scope->get_symbol(new_name)) {
                 // The specialisation is already there: either an earlier run
                 // of this pass in the same interactive session made it, or an
                 // earlier cell did (and the JIT already holds its definition).
@@ -272,7 +367,7 @@ class PassArrayByDataProcedureVisitor : public PassUtils::PassVisitor<PassArrayB
                     x_func_type->m_restrictions, x_func_type->n_restrictions, false, false, false);
                 new_symbol = ASR::down_cast<ASR::symbol_t>(new_subrout);
             }
-            current_scope->add_symbol(new_name, new_symbol);
+            parent_scope->add_symbol(new_name, new_symbol);
             proc2newproc[(ASR::symbol_t*) x] = std::make_pair(new_symbol, indices);
             newprocs.insert(new_symbol);
             return new_symbol;
@@ -288,7 +383,7 @@ class PassArrayByDataProcedureVisitor : public PassUtils::PassVisitor<PassArrayB
                     indices.end() ) {
                     ASR::Variable_t* arg = ASRUtils::EXPR2VAR(x->m_args[i]);
                     ASR::dimension_t* dims = nullptr;
-                    int n_dims = ASRUtils::extract_dimensions_from_ttype(arg->m_type, dims);
+                    int n_dims = checked_integer_cast<int>(ASRUtils::extract_dimensions_from_ttype(arg->m_type, dims));
 
                     // Check if this is an assumed-size array (UnboundedPointerArray)
                     // If so, don't add dimension variables - keep dimensions as-is
@@ -339,9 +434,10 @@ class PassArrayByDataProcedureVisitor : public PassUtils::PassVisitor<PassArrayB
             std::deque<ASR::Function_t*>& pass_array_by_data_functions) {
             T& xx = const_cast<T&>(x);
             current_scope = xx.m_symtab;
-            for( auto& item: xx.m_symtab->get_scope() ) {
-                if( ASR::is_a<ASR::Function_t>(*item.second) ) {
-                    ASR::Function_t* subrout = ASR::down_cast<ASR::Function_t>(item.second);
+            // Including the procedures declared in the BLOCK constructs
+            ASRUtils::for_each_symbol_in_scope_and_constructs(xx.m_symtab, [&](ASR::symbol_t* sym) {
+                if( ASR::is_a<ASR::Function_t>(*sym) ) {
+                    ASR::Function_t* subrout = ASR::down_cast<ASR::Function_t>(sym);
                     std::vector<size_t> arg_indices;
                     if( ASRUtils::runs_on_device(*subrout) ) {
                         // Device code is emitted as Metal/CUDA source, where
@@ -352,23 +448,30 @@ class PassArrayByDataProcedureVisitor : public PassUtils::PassVisitor<PassArrayB
                         // inside the device code.
                         pass_array_by_data_functions.push_back(subrout);
                         if( ASRUtils::is_pass_array_by_data_possible(subrout, arg_indices) ) {
-                            proc2inplace[item.second] = {arg_indices,
+                            arg_indices.erase(std::remove_if(arg_indices.begin(),
+                                arg_indices.end(), [&](size_t i) {
+                                    return device_descriptor_dummies.count(
+                                        {sym, i}) > 0;
+                                }), arg_indices.end());
+                        }
+                        if( !arg_indices.empty() ) {
+                            proc2inplace[sym] = {arg_indices,
                                 subrout->m_args, subrout->n_args};
                             edit_procedure_args(subrout, arg_indices);
                         }
-                        continue;
+                        return;
                     }
                     pass_array_by_data_functions.push_back(subrout);
                     if( ASRUtils::is_pass_array_by_data_possible(subrout, arg_indices) &&
                             !names_runtime_trait_storage(*subrout) ) {
-                        ASR::symbol_t* sym = insert_new_procedure(subrout, arg_indices);
-                        if( sym != nullptr ) {
-                            ASR::Function_t* new_subrout = ASR::down_cast<ASR::Function_t>(sym);
+                        ASR::symbol_t* new_sym = insert_new_procedure(subrout, arg_indices);
+                        if( new_sym != nullptr ) {
+                            ASR::Function_t* new_subrout = ASR::down_cast<ASR::Function_t>(new_sym);
                             edit_procedure_args(new_subrout, arg_indices);
                         }
                     }
                 }
-            }
+            });
             return pass_array_by_data_functions.size() > 0;
         }
 
@@ -702,6 +805,49 @@ class EditProcedureVisitor: public ASR::CallReplacerOnExpressionsVisitor<EditPro
         ASR::CallReplacerOnExpressionsVisitor<EditProcedureVisitor>::visit_SubroutineCall(x);
     }
 
+    // The copy of a procedure shares the defined output bindings of its
+    // StringFormats with the original, so a binding that names a symbol of
+    // the original's scope is copied and made to name the symbol of the
+    // same name in the copy's scope.
+    void visit_StringFormat(const ASR::StringFormat_t& x) {
+        ASR::StringFormat_t& xx = const_cast<ASR::StringFormat_t&>(x);
+        auto outside = [&](ASR::symbol_t* sym) {
+            if (sym == nullptr) {
+                return false;
+            }
+            SymbolTable* sym_symtab = ASRUtils::symbol_parent_symtab(sym);
+            return sym_symtab->get_counter() != current_scope->get_counter() &&
+                !ASRUtils::is_parent(sym_symtab, current_scope);
+        };
+        auto in_scope = [&](ASR::symbol_t* sym) {
+            if (!outside(sym)) {
+                return sym;
+            }
+            ASR::symbol_t* resolved = current_scope->resolve_symbol(
+                ASRUtils::symbol_name(sym));
+            LCOMPILERS_ASSERT(resolved != nullptr);
+            return resolved;
+        };
+        bool needs_copy = false;
+        for (size_t i = 0; i < xx.n_dtio_bindings; i++) {
+            ASR::dtio_binding_t &b = xx.m_dtio_bindings[i];
+            needs_copy = needs_copy || outside(b.m_type_declaration) ||
+                outside(b.m_procedure) || outside(b.m_callback);
+        }
+        if (needs_copy) {
+            ASR::dtio_binding_t* bindings = v.al.allocate<ASR::dtio_binding_t>(
+                xx.n_dtio_bindings);
+            for (size_t i = 0; i < xx.n_dtio_bindings; i++) {
+                bindings[i] = xx.m_dtio_bindings[i];
+                bindings[i].m_type_declaration = in_scope(bindings[i].m_type_declaration);
+                bindings[i].m_procedure = in_scope(bindings[i].m_procedure);
+                bindings[i].m_callback = in_scope(bindings[i].m_callback);
+            }
+            xx.m_dtio_bindings = bindings;
+        }
+        ASR::CallReplacerOnExpressionsVisitor<EditProcedureVisitor>::visit_StringFormat(x);
+    }
+
     void update_procedure_variable_type_declarations(SymbolTable* symtab) {
         for (auto it: symtab->get_scope()) {
             if ( ASR::is_a<ASR::Variable_t>(*it.second) &&
@@ -764,6 +910,83 @@ class EditProcedureVisitor: public ASR::CallReplacerOnExpressionsVisitor<EditPro
         ASR::CallReplacerOnExpressionsVisitor<EditProcedureVisitor>::visit_Function(x);
     }
 
+};
+
+// Copying an input to contiguous storage must not make its descriptor or
+// address observable. In particular, do not forward such an array to another
+// procedure whose descriptor requirements are not known here.
+class DescriptorWrapperSafety : public ASR::BaseWalkVisitor<DescriptorWrapperSafety> {
+    std::set<ASR::symbol_t*> arrays;
+public:
+    bool safe = true;
+    explicit DescriptorWrapperSafety(const std::set<ASR::symbol_t*>& arrays_)
+        : arrays(arrays_) {}
+
+    void visit_ArrayIsContiguous(const ASR::ArrayIsContiguous_t&) { safe = false; }
+    void visit_CLoc(const ASR::CLoc_t&) { safe = false; }
+    void visit_GetPointer(const ASR::GetPointer_t&) { safe = false; }
+    void visit_PointerToCPtr(const ASR::PointerToCPtr_t&) { safe = false; }
+
+    void visit_BlockCall(const ASR::BlockCall_t& x) {
+        visit_Block(*ASR::down_cast<ASR::Block_t>(x.m_m));
+    }
+
+    bool uses_input(ASR::expr_t* expr) {
+        struct ArrayUse : public ASR::BaseWalkVisitor<ArrayUse> {
+            const std::set<ASR::symbol_t*>& arrays;
+            bool found = false;
+            explicit ArrayUse(const std::set<ASR::symbol_t*>& arrays_)
+                : arrays(arrays_) {}
+            void visit_Var(const ASR::Var_t& x) {
+                found |= arrays.count(x.m_v) != 0;
+            }
+        };
+        ArrayUse use(arrays);
+        use.visit_expr(*expr);
+        return use.found;
+    }
+
+    void visit_Associate(const ASR::Associate_t& x) {
+        if (uses_input(x.m_value)) {
+            if (ASR::is_a<ASR::Var_t>(*x.m_target)) {
+                arrays.insert(ASR::down_cast<ASR::Var_t>(x.m_target)->m_v);
+            } else {
+                safe = false;
+            }
+        }
+        ASR::BaseWalkVisitor<DescriptorWrapperSafety>::visit_Associate(x);
+    }
+
+    void check_args(ASR::call_arg_t* args, size_t n_args) {
+        for (size_t i = 0; i < n_args; i++) {
+            if (args[i].m_value && ASRUtils::is_array(
+                    ASRUtils::expr_type(args[i].m_value))) {
+                safe &= !uses_input(args[i].m_value);
+            }
+        }
+    }
+
+    void check_function(const ASR::Function_t& function) {
+        size_t previous;
+        do {
+            previous = arrays.size();
+            for (auto& item : function.m_symtab->get_scope()) {
+                if (ASR::is_a<ASR::Variable_t>(*item.second)) {
+                    visit_Variable(*ASR::down_cast<ASR::Variable_t>(item.second));
+                }
+            }
+            for (size_t i = 0; i < function.n_body; i++) visit_stmt(*function.m_body[i]);
+        } while (safe && previous != arrays.size());
+    }
+
+    void visit_FunctionCall(const ASR::FunctionCall_t& x) {
+        check_args(x.m_args, x.n_args);
+        ASR::BaseWalkVisitor<DescriptorWrapperSafety>::visit_FunctionCall(x);
+    }
+    void visit_SubroutineCall(const ASR::SubroutineCall_t& x) {
+        check_args(x.m_args, x.n_args);
+        ASR::BaseWalkVisitor<DescriptorWrapperSafety>::visit_SubroutineCall(x);
+    }
 };
 
 /*
@@ -899,8 +1122,18 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
                                         Allocator& al_) {
             int index_kind = get_index_kind();
             ASR::ttype_t* array_type = ASRUtils::expr_type(array);
+            // A physical cast's type is a copy of its argument's declared
+            // type, which earlier passes do not update; for example, its
+            // extent can still be the specification expression `count(x > 0)`.
+            // Take the extents from the argument itself.
+            ASR::ttype_t* storage_type = ASRUtils::expr_type(
+                ASRUtils::get_past_array_physical_cast(array));
+            if( ASRUtils::extract_n_dims_from_ttype(storage_type) ==
+                    ASRUtils::extract_n_dims_from_ttype(array_type) ) {
+                array_type = storage_type;
+            }
             ASR::dimension_t* compile_time_dims = nullptr;
-            int n_dims = ASRUtils::extract_dimensions_from_ttype(array_type, compile_time_dims);
+            int n_dims = checked_integer_cast<int>(ASRUtils::extract_dimensions_from_ttype(array_type, compile_time_dims));
             if( n_dims == 0 ) {
                 ASR::ttype_t* scalar_type = ASRUtils::type_get_past_allocatable_pointer(array_type);
                 if( scalar_type && ASR::is_a<ASR::String_t>(*scalar_type) ) {
@@ -910,8 +1143,15 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
                     return;
                 }
             }
+            ASRUtils::ExprStmtDuplicator length_duplicator(al_);
             for( int i = 0; i < n_dims; i++ ) {
                 ASR::expr_t* length = compile_time_dims[i].m_length;
+                if( length != nullptr ) {
+                    // The argument gets its own copy of the extent: later
+                    // passes rewrite it in place (inlining a call in it, for
+                    // example), and the extent must not change with it.
+                    length = length_duplicator.duplicate_expr(length);
+                }
                 if( length == nullptr ) {
                     if (ASRUtils::is_allocatable(array_type)) {
                         length = ASRUtils::get_size(array, i + 1, al_);
@@ -1150,6 +1390,144 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
             return new_args;
         }
 
+        void wrap_descriptor_entries() {
+            for (auto& entry : v.proc2newproc) {
+                if (!ASR::is_a<ASR::Function_t>(*entry.first)) continue;
+                ASR::Function_t* original = ASR::down_cast<ASR::Function_t>(entry.first);
+                ASR::FunctionType_t* ft = ASRUtils::get_FunctionType(original);
+                if (original->m_symtab->parent->get_symbol(original->m_name) != entry.first ||
+                        original->m_return_var || original->n_body == 0 ||
+                        ft->m_deftype != ASR::deftypeType::Implementation ||
+                        ft->m_abi != ASR::abiType::Source || original->m_gpu ||
+                        ASRUtils::runs_on_device(*original)) continue;
+
+                std::set<ASR::symbol_t*> arguments, arrays;
+                bool eligible = true;
+                for (size_t i = 0; i < original->n_args; i++) {
+                    ASR::Variable_t* arg = ASRUtils::expr_to_variable_or_null(original->m_args[i]);
+                    if (!arg) { eligible = false; break; }
+                    arguments.insert(&arg->base);
+                    if (arg->m_presence != ASR::presenceType::Required ||
+                            ASRUtils::is_allocatable(arg->m_type) ||
+                            ASRUtils::is_pointer(arg->m_type) || arg->m_target_attr ||
+                            arg->m_is_volatile || arg->m_is_asynchronous || arg->n_codims) {
+                        eligible = false;
+                        break;
+                    }
+                    if (!ASRUtils::is_array(arg->m_type)) {
+                        // Optional lowering replaces OPTIONAL with required
+                        // dummies and logical presence flags. Keep those
+                        // entries unchanged by accepting only numeric scalars
+                        // and derived-type receivers.
+                        bool receiver = ASR::is_a<ASR::StructType_t>(*arg->m_type);
+                        if (!(ASRUtils::is_integer(*arg->m_type) ||
+                              ASRUtils::is_real(*arg->m_type) ||
+                              ASRUtils::is_complex(*arg->m_type) ||
+                              receiver) ||
+                                (receiver && arg->m_intent == ASRUtils::intent_out)) eligible = false;
+                        continue;
+                    }
+                    ASR::ttype_t* element = ASRUtils::type_get_past_array(arg->m_type);
+                    ASR::dimension_t* dims;
+                    size_t rank = ASRUtils::extract_dimensions_from_ttype(arg->m_type, dims);
+                    bool assumed_shape = true;
+                    for (size_t j = 0; j < rank; j++) assumed_shape &= !dims[j].m_length;
+                    if (arg->m_intent != ASRUtils::intent_in || !assumed_shape ||
+                            !(ASRUtils::is_integer(*element) || ASRUtils::is_real(*element) ||
+                              ASRUtils::is_complex(*element)) ||
+                            std::find(entry.second.second.begin(), entry.second.second.end(), i)
+                                == entry.second.second.end()) {
+                        eligible = false;
+                        break;
+                    }
+                    arrays.insert(&arg->base);
+                }
+                if (!eligible || arrays.empty()) continue;
+
+                // Saved state and contained procedures belong to this entry;
+                // do not move their ownership to a specialised copy.
+                std::vector<SymbolTable*> scopes{original->m_symtab};
+                for (size_t i = 0; i < scopes.size() && eligible; i++) {
+                    for (auto& item : scopes[i]->get_scope()) {
+                        if (ASR::is_a<ASR::ExternalSymbol_t>(*item.second)) continue;
+                        if (ASR::is_a<ASR::Block_t>(*item.second)) {
+                            scopes.push_back(ASR::down_cast<ASR::Block_t>(
+                                item.second)->m_symtab);
+                            continue;
+                        }
+                        if (!ASR::is_a<ASR::Variable_t>(*item.second)) {
+                            eligible = false;
+                            break;
+                        }
+                        ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(item.second);
+                        if (arguments.count(item.second)) continue;
+                        ASR::ttype_t* element = ASRUtils::type_get_past_array(
+                            ASRUtils::type_get_past_allocatable_pointer(var->m_type));
+                        if (var->m_storage == ASR::storage_typeType::Save ||
+                                var->m_storage == ASR::storage_typeType::Threadprivate ||
+                                var->m_common_block ||
+                                !(ASRUtils::is_integer(*element) || ASRUtils::is_real(*element) ||
+                                  ASRUtils::is_complex(*element) || ASRUtils::is_logical(*element))) {
+                            eligible = false;
+                            break;
+                        }
+                    }
+                }
+                if (!eligible) continue;
+                DescriptorWrapperSafety safety(arrays);
+                safety.check_function(*original);
+                if (!safety.safe) continue;
+
+                struct SignatureSymbols : public ASR::BaseWalkVisitor<SignatureSymbols> {
+                    std::set<ASR::symbol_t*> needed;
+                    bool safe = true;
+                    void visit_Var(const ASR::Var_t& x) {
+                        if (needed.insert(x.m_v).second &&
+                                ASR::is_a<ASR::Variable_t>(*x.m_v)) {
+                            visit_Variable(*ASR::down_cast<ASR::Variable_t>(x.m_v));
+                        }
+                    }
+                    // A specification function must not be evaluated twice.
+                    void visit_FunctionCall(const ASR::FunctionCall_t&) { safe = false; }
+                } signature;
+                for (size_t i = 0; i < original->n_args; i++) {
+                    signature.visit_expr(*original->m_args[i]);
+                }
+                if (!signature.safe) continue;
+
+                current_scope = original->m_symtab;
+                Vec<ASR::call_arg_t> args;
+                args.reserve(al, original->n_args);
+                for (size_t i = 0; i < original->n_args; i++) {
+                    ASR::call_arg_t arg;
+                    arg.loc = original->m_args[i]->base.loc;
+                    arg.m_value = original->m_args[i];
+                    args.push_back(al, arg);
+                }
+                Vec<ASR::call_arg_t> converted = construct_new_args(entry.first,
+                    args.size(), args.p, entry.second.second);
+                Vec<ASR::stmt_t*> body;
+                body.reserve(al, 1);
+                body.push_back(al, ASRUtils::STMT(ASR::make_SubroutineCall_t(al,
+                    original->base.base.loc, entry.second.first, entry.second.first,
+                    converted.p, converted.size(), nullptr, false)));
+                original->m_body = body.p;
+                original->n_body = body.size();
+
+                // The old automatic arrays are owned by the data-ABI body.
+                // Retain only the declarations needed by the original signature,
+                // including the transitive dependencies of its bounds.
+                std::vector<std::string> unused;
+                for (auto& item : current_scope->get_scope()) {
+                    if ((ASR::is_a<ASR::Variable_t>(*item.second) &&
+                            !signature.needed.count(item.second)) ||
+                            ASR::is_a<ASR::Block_t>(*item.second)) unused.push_back(item.first);
+                }
+                for (auto& name : unused) current_scope->erase_symbol(name);
+            }
+            current_scope = nullptr;
+        }
+
         bool can_edit_call(ASR::call_arg_t* args, size_t n_args) {
             for ( size_t i = 0; i < n_args; i++ ) {
                 if( args[i].m_value &&
@@ -1162,6 +1540,19 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
             return true;
         }
         
+        // A dummy procedure that takes arrays by data replaces the one that
+        // took descriptors, so no procedure taking descriptors is left to
+        // call: every call has to go to the replacement.
+        bool replaces_dummy_procedure(ASR::symbol_t* sym) {
+            auto it = v.proc2newproc.find(sym);
+            if( it == v.proc2newproc.end() ) {
+                return false;
+            }
+            ASR::symbol_t* new_sym = ASRUtils::symbol_get_past_external(it->second.first);
+            return ASR::is_a<ASR::Function_t>(*new_sym) &&
+                ASRUtils::is_dummy_procedure(*ASR::down_cast<ASR::Function_t>(new_sym));
+        }
+
         static bool is_struct_method_declaration(ASR::symbol_t* const sym){
             return ASR::is_a<ASR::StructMethodDeclaration_t>(*ASRUtils::symbol_get_past_external(sym));
         }
@@ -1273,7 +1664,8 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
                 return;
             }
             if( !can_edit_call(x.m_args, x.n_args)
-                    && !is_struct_method_declaration(x.m_name) ) {
+                    && !is_struct_method_declaration(x.m_name)
+                    && !replaces_dummy_procedure(subrout_sym) ) {
                 not_to_be_erased.insert(subrout_sym);
                 return ;
             }
@@ -1335,8 +1727,9 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
                     } else {
                         // Name is occupied by an unrelated symbol (possibly in a
                         // parent scope). Create a unique alias for this external
-                        // symbol in the current scope.
-                        new_func_sym_name = current_scope->get_unique_name(new_func_sym_name, false);
+                        // symbol in the scope it is added to.
+                        new_func_sym_name = func_ext_sym->m_parent_symtab->get_unique_name(
+                            new_func_sym_name, false);
                         existing_sym = nullptr;
                     }
                 }
@@ -1486,6 +1879,13 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
             visit_Call(x);
         }
 
+        // A defined output procedure is called by its callback, whose call is
+        // edited like any other. The binding keeps naming the procedure, so
+        // the procedure is kept as well.
+        void visit_dtio_binding(const ASR::dtio_binding_t& x) {
+            not_to_be_erased.insert(ASRUtils::symbol_get_past_external(x.m_procedure));
+        }
+
         void visit_FunctionCall(const ASR::FunctionCall_t& x) {
             prepare_procedure_variable(x.m_name);
             ASR::ASRPassBaseWalkVisitor<EditProcedureCallsVisitor>::visit_FunctionCall(x);
@@ -1535,8 +1935,17 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
                 }
                 std::string new_sym_name = x.m_parent_symtab->get_unique_name(x.m_name);
                 ASR::ttype_t* new_var_type = signature;
-                if (ASR::is_a<ASR::Pointer_t>(*x.m_type)) {
+                // A member of a host frame (see nested_vars) refers to a
+                // procedure variable of the host
+                bool reference = ASRUtils::is_reference(x.m_type);
+                ASR::ttype_t* var_type = reference
+                    ? ASR::down_cast<ASR::Reference_t>(x.m_type)->m_type : x.m_type;
+                if (ASR::is_a<ASR::Pointer_t>(*var_type)) {
                     new_var_type = ASRUtils::TYPE(ASR::make_Pointer_t(v.al, x.base.base.loc, new_var_type));
+                }
+                if (reference) {
+                    new_var_type = ASRUtils::TYPE(ASR::make_Reference_t(v.al,
+                        x.base.base.loc, new_var_type));
                 }
                 ASR::symbol_t* new_func_sym_ = ASR::down_cast<ASR::symbol_t>(
                     ASRUtils::make_Variable_t_util(v.al, x.base.base.loc, x.m_parent_symtab, s2c(v.al, new_sym_name),
@@ -1544,7 +1953,7 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
                         sym_val, m_val, x.m_storage, new_var_type,
                         new_sym, x.m_abi, x.m_access, x.m_presence, x.m_value_attr,
                         x.m_target_attr, x.m_contiguous_attr, x.m_bindc_name,
-                        x.m_is_volatile, x.m_is_protected, x.m_pass_attr, x.m_self_argument));
+                        x.m_is_volatile, x.m_is_asynchronous, x.m_is_protected, x.m_pass_attr, x.m_self_argument));
                 v.proc2newproc[(ASR::symbol_t *) &x] = {new_func_sym_, {}};
                 x.m_parent_symtab->add_symbol(new_sym_name, new_func_sym_);
                 not_to_be_erased.insert(new_func_sym_);
@@ -1580,8 +1989,14 @@ class EditProcedureCallsVisitor : public ASR::ASRPassBaseWalkVisitor<EditProcedu
                 }
                 ASR::StructInstanceMember_t& sim = const_cast<ASR::StructInstanceMember_t&>(x);
                 sim.m_m = new_func_sym_;
-                sim.m_type = ASRUtils::import_trait_type(v.al,
-                    ASRUtils::symbol_type(new_func_sym_), current_scope);
+                sim.m_type = ASRUtils::symbol_type(new_func_sym_);
+                // A member of Reference type designates the variable it
+                // refers to
+                if (ASRUtils::is_reference(sim.m_type)) {
+                    sim.m_type = ASR::down_cast<ASR::Reference_t>(sim.m_type)->m_type;
+                }
+                sim.m_type = ASRUtils::import_trait_type(v.al, sim.m_type,
+                    current_scope);
             }
         }
 
@@ -1967,6 +2382,11 @@ public:
 void pass_array_by_data(Allocator &al, ASR::TranslationUnit_t &unit,
                         const LCompilers::PassOptions& pass_options) {
     PassArrayByDataProcedureVisitor v(al, pass_options);
+    {
+        DeviceDescriptorDummies d;
+        d.collect(unit);
+        v.device_descriptor_dummies = std::move(d.kept);
+    }
     v.visit_TranslationUnit(unit);
     CallbackMismatchCleanup cleanup(v);
     cleanup.visit_TranslationUnit(unit);
@@ -2005,6 +2425,12 @@ void pass_array_by_data(Allocator &al, ASR::TranslationUnit_t &unit,
     RemoveArrayByDescriptorProceduresVisitor x(al, v, not_to_be_erased,
         pass_options.skip_removal_of_unused_procedures_in_pass_array_by_data);
     x.visit_TranslationUnit(unit);
+    // Keep exported descriptor signatures and vtable identities unchanged.
+    // The usual call conversion and later temporary pass provide the same
+    // runtime contiguity checks/copy-in as at an ordinary data-ABI call site.
+    if (pass_options.supports_descriptor_entry_wrappers) {
+        u.wrap_descriptor_entries();
+    }
     PassUtils::UpdateDependenciesVisitor y(al);
     y.visit_TranslationUnit(unit);
 }

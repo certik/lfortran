@@ -33,6 +33,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -63,6 +64,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -86,6 +88,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -142,6 +145,8 @@
                                             ()
                                             .false.
                                             .false.
+                                            .false.
+                                            .false.
                                         )]
                                         [(Assignment
                                             (Var 4 r)
@@ -151,6 +156,8 @@
                                                 ()
                                             )
                                             ()
+                                            .false.
+                                            .false.
                                             .false.
                                             .false.
                                         )]
@@ -179,6 +186,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -217,6 +225,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -242,6 +251,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -265,6 +275,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -318,6 +329,8 @@
                                         ()
                                         .false.
                                         .false.
+                                        .false.
+                                        .false.
                                     )
                                     (DoLoop
                                         ()
@@ -329,7 +342,7 @@
                                             (Integer 4)
                                             ()
                                         )
-                                        ())
+                                        (IntegerConstant 1 (Integer 4) Decimal))
                                         [(Assignment
                                             (Var 3 r)
                                             (RealBinOp
@@ -343,11 +356,14 @@
                                                     (Real 4)
                                                     ColMajor
                                                     ()
+                                                    .false.
                                                 )
                                                 (Real 4)
                                                 ()
                                             )
                                             ()
+                                            .false.
+                                            .false.
                                             .false.
                                             .false.
                                         )]
@@ -371,6 +387,7 @@
                             (Real 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (Cast
                             (IntegerConstant 3 (Integer 4) Decimal)
@@ -385,6 +402,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Assignment
                         (ArrayItem
@@ -395,6 +414,7 @@
                             (Real 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (Cast
                             (IntegerConstant 2 (Integer 4) Decimal)
@@ -409,6 +429,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Assignment
                         (ArrayItem
@@ -419,6 +441,7 @@
                             (Real 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (Cast
                             (IntegerConstant 1 (Integer 4) Decimal)
@@ -431,6 +454,8 @@
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -457,6 +482,8 @@
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )

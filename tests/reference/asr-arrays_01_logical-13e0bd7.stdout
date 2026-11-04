@@ -33,6 +33,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -62,6 +63,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -97,6 +99,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -120,6 +123,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -147,6 +151,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -164,6 +169,7 @@
                             (Logical 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (LogicalConstant
                             .true.
@@ -172,13 +178,15 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (DoLoop
                         ()
                         ((Var 2 i)
                         (IntegerConstant 2 (Integer 4) Decimal)
                         (IntegerConstant 3 (Integer 4) Decimal)
-                        ())
+                        (IntegerConstant 1 (Integer 4) Decimal))
                         [(Assignment
                             (ArrayItem
                                 (Var 2 a)
@@ -188,6 +196,7 @@
                                 (Logical 4)
                                 ColMajor
                                 ()
+                                .false.
                             )
                             (LogicalNot
                                 (ArrayItem
@@ -204,11 +213,14 @@
                                     (Logical 4)
                                     ColMajor
                                     ()
+                                    .false.
                                 )
                                 (Logical 4)
                                 ()
                             )
                             ()
+                            .false.
+                            .false.
                             .false.
                             .false.
                         )]
@@ -225,6 +237,7 @@
                                 (Logical 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             (Logical 4)
                             ()
@@ -244,6 +257,7 @@
                             (Logical 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         [(ErrorStop
                             ()
@@ -261,6 +275,7 @@
                                 (Logical 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             (Logical 4)
                             ()
@@ -279,6 +294,7 @@
                             (Logical 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (LogicalConstant
                             .false.
@@ -287,13 +303,15 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (DoLoop
                         ()
                         ((Var 2 i)
                         (IntegerConstant 12 (Integer 4) Decimal)
                         (IntegerConstant 14 (Integer 4) Decimal)
-                        ())
+                        (IntegerConstant 1 (Integer 4) Decimal))
                         [(Assignment
                             (ArrayItem
                                 (Var 2 b)
@@ -309,6 +327,7 @@
                                 (Logical 4)
                                 ColMajor
                                 ()
+                                .false.
                             )
                             (LogicalNot
                                 (ArrayItem
@@ -331,11 +350,14 @@
                                     (Logical 4)
                                     ColMajor
                                     ()
+                                    .false.
                                 )
                                 (Logical 4)
                                 ()
                             )
                             ()
+                            .false.
+                            .false.
                             .false.
                             .false.
                         )]
@@ -351,6 +373,7 @@
                             (Logical 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         [(ErrorStop
                             ()
@@ -368,6 +391,7 @@
                                 (Logical 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             (Logical 4)
                             ()
@@ -387,6 +411,7 @@
                             (Logical 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         [(ErrorStop
                             ()
@@ -404,6 +429,7 @@
                                 (Logical 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             (Logical 4)
                             ()
@@ -418,7 +444,7 @@
                         ((Var 2 i)
                         (IntegerConstant 1 (Integer 4) Decimal)
                         (IntegerConstant 3 (Integer 4) Decimal)
-                        ())
+                        (IntegerConstant 1 (Integer 4) Decimal))
                         [(Assignment
                             (ArrayItem
                                 (Var 2 b)
@@ -428,6 +454,7 @@
                                 (Logical 4)
                                 ColMajor
                                 ()
+                                .false.
                             )
                             (LogicalBinOp
                                 (ArrayItem
@@ -438,6 +465,7 @@
                                     (Logical 4)
                                     ColMajor
                                     ()
+                                    .false.
                                 )
                                 And
                                 (LogicalConstant
@@ -448,6 +476,8 @@
                                 ()
                             )
                             ()
+                            .false.
+                            .false.
                             .false.
                             .false.
                         )]
@@ -463,6 +493,7 @@
                             (Logical 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         [(ErrorStop
                             ()
@@ -479,6 +510,7 @@
                             (Logical 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         [(ErrorStop
                             ()
@@ -495,6 +527,7 @@
                             (Logical 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         [(ErrorStop
                             ()
@@ -510,6 +543,7 @@
                             (Logical 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (LogicalBinOp
                             (LogicalBinOp
@@ -522,6 +556,7 @@
                                         (Logical 4)
                                         ColMajor
                                         ()
+                                        .true.
                                     )
                                     Or
                                     (ArrayItem
@@ -532,6 +567,7 @@
                                         (Logical 4)
                                         ColMajor
                                         ()
+                                        .true.
                                     )
                                     (Logical 4)
                                     ()
@@ -545,6 +581,7 @@
                                     (Logical 4)
                                     ColMajor
                                     ()
+                                    .true.
                                 )
                                 (Logical 4)
                                 ()
@@ -558,11 +595,14 @@
                                 (Logical 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             (Logical 4)
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -577,6 +617,7 @@
                                 (Logical 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             (Logical 4)
                             ()
@@ -595,6 +636,7 @@
                             (Logical 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (ArrayItem
                             (Var 2 a)
@@ -604,8 +646,11 @@
                             (Logical 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -620,6 +665,7 @@
                                 (Logical 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             (Logical 4)
                             ()
@@ -634,13 +680,13 @@
                         ((Var 2 i)
                         (IntegerConstant 1 (Integer 4) Decimal)
                         (IntegerConstant 2 (Integer 4) Decimal)
-                        ())
+                        (IntegerConstant 1 (Integer 4) Decimal))
                         [(DoLoop
                             ()
                             ((Var 2 j)
                             (IntegerConstant 1 (Integer 4) Decimal)
                             (IntegerConstant 2 (Integer 4) Decimal)
-                            ())
+                            (IntegerConstant 1 (Integer 4) Decimal))
                             [(If
                                 ()
                                 (IntegerCompare
@@ -692,12 +738,15 @@
                                         (Logical 4)
                                         ColMajor
                                         ()
+                                        .false.
                                     )
                                     (LogicalConstant
                                         .true.
                                         (Logical 4)
                                     )
                                     ()
+                                    .false.
+                                    .false.
                                     .false.
                                     .false.
                                 )]
@@ -713,12 +762,15 @@
                                         (Logical 4)
                                         ColMajor
                                         ()
+                                        .false.
                                     )
                                     (LogicalConstant
                                         .false.
                                         (Logical 4)
                                     )
                                     ()
+                                    .false.
+                                    .false.
                                     .false.
                                     .false.
                                 )]
@@ -740,6 +792,7 @@
                             (Logical 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         [(ErrorStop
                             ()
@@ -760,6 +813,7 @@
                                 (Logical 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             (Logical 4)
                             ()
@@ -783,6 +837,7 @@
                                 (Logical 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             (Logical 4)
                             ()
@@ -805,6 +860,7 @@
                             (Logical 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         [(ErrorStop
                             ()

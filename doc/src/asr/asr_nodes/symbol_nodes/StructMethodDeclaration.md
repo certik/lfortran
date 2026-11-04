@@ -9,7 +9,7 @@ A type-bound procedure of a derived type.
 ```text
 StructMethodDeclaration(symbol_table parent_symtab, identifier name,
     identifier? self_argument, identifier proc_name, symbol proc,
-    abi abi, bool is_deferred, bool is_nopass, symbol? dispatch_proc)
+    abi abi, bool is_deferred, bool is_nopass, access access, symbol? dispatch_proc)
 ```
 
 ### Arguments
@@ -24,6 +24,7 @@ StructMethodDeclaration(symbol_table parent_symtab, identifier name,
 | `abi` | the ABI of the procedure. |
 | `is_deferred` | `true` for a `deferred` binding of an abstract type, which has no implementation here. |
 | `is_nopass` | `true` for `nopass`: the object is not passed as an argument. |
+| `access` | `Public` or `Private`, from the binding's access specification; a `Private` binding is accessible only inside the module that defines the type. |
 | `dispatch_proc` | optional typed adapter for the inherited virtual slot of a sealed nonpolymorphic override; `proc` retains the source implementation identity. |
 
 ### Return values
@@ -77,6 +78,7 @@ belongs to a generic binding of its type with the same passed object.
   :abi :Source
   :is_deferred false
   :is_nopass false
+  :access :Public
   :dispatch_proc nil
 )
 ```

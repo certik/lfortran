@@ -1,11 +1,14 @@
 #include <libasr/codegen/asr_to_cuda.h>
 #include <libasr/codegen/asr_to_gpu_c.h>
+#include <libasr/pass/gpu_decline.h>
 
 namespace LCompilers {
 
-// CUDA C++, and the CPU emulation of it that `--gpu=cuda_cpu` compiles as
-// ordinary host code. The spellings the shared device code generator asks a
-// dialect for; everything else it derives from the ASR itself.
+// CUDA C++, the CPU emulation of it that `--gpu=cuda_cpu` compiles as
+// ordinary host code, and HIP (`--gpu=hip`), which spells everything this
+// dialect emits as CUDA C++ does. The spellings the shared device code
+// generator asks a dialect for; everything else it derives from the ASR
+// itself.
 struct CudaDialect {
     // Whether to emit the trailing kernel-registration shim, which is only
     // meaningful to the runtime's lookup-by-name launch path.
@@ -13,9 +16,16 @@ struct CudaDialect {
     // Whether to emit the extra shims the CPU emulation needs. The real CUDA
     // output is left untouched.
     bool emulate_cpu = false;
+    // Whether the source is compiled as HIP for an AMD GPU.
+    bool hip = false;
+    // The integer kind element offsets are computed in
+    // (GpuDeviceCapabilities::offset_kind).
+    int element_offset_kind = 4;
 
-    CudaDialect(bool emit_registrar_, bool emulate_cpu_)
-        : emit_registrar(emit_registrar_), emulate_cpu(emulate_cpu_) {}
+    CudaDialect(bool emit_registrar_, bool emulate_cpu_, bool hip_,
+            int offset_kind_)
+        : emit_registrar(emit_registrar_), emulate_cpu(emulate_cpu_),
+          hip(hip_), element_offset_kind(offset_kind_) {}
 
     // CUDA has one flat address space for global memory, so a pointer into it
     // needs no qualifier at all; only the two special spaces are named.
@@ -33,8 +43,20 @@ struct CudaDialect {
         return (kind == 8) ? "double" : "float";
     }
 
+    // The integer kind an element's offset in an array is computed in:
+    // 8 with --descriptor-index-64, the flag that selects 64-bit array
+    // indexing, and 4 otherwise, which is cheaper to compute in.
+    int offset_kind() const {
+        return element_offset_kind;
+    }
+
     void emit_prologue(std::stringstream &src) const {
         src << "#include <stdint.h>\n";
+        if (hip) {
+            // nvcc includes the CUDA runtime header itself; the HIP driver
+            // needs the HIP one named.
+            src << "#include <hip/hip_runtime.h>\n";
+        }
         if (emulate_cpu) {
             // Turns the CUDA execution space qualifiers and the built-in
             // thread coordinates into plain host C++.
@@ -64,22 +86,48 @@ struct CudaDialect {
         return "";
     }
 
+    // A buffer no other buffer of the launch aliases. nvcc then reads one
+    // the kernel does not store to through the read-only data path, and
+    // keeps a value it loaded across a store to another buffer.
+    std::string noalias_qualifier() const {
+        return "__restrict__ ";
+    }
+
     // The grid position is a built-in rather than a parameter, so the kernel
     // takes none and derives it in its first statement instead.
     void emit_thread_id_param(std::stringstream & /*src*/,
             bool /*has_prev*/) const {}
+
+    // An iteration runs on one thread: the CUDA capabilities give each
+    // iteration one lane (gpu_decline.cpp), so no kernel has lanes here.
+    void emit_lane_thread_params(std::stringstream & /*src*/,
+            bool /*has_prev*/) const {
+        LCOMPILERS_ASSERT(false);
+    }
+    void emit_lane_prologue(std::stringstream & /*src*/,
+            const std::string & /*indent*/,
+            const std::string & /*lanes*/) const {
+        LCOMPILERS_ASSERT(false);
+    }
+    std::string lane_index() const {
+        LCOMPILERS_ASSERT(false);
+        return "0";
+    }
+    std::string lane_broadcast(const std::string &value) const {
+        LCOMPILERS_ASSERT(false);
+        return value;
+    }
+    void emit_lane_barrier(std::stringstream & /*src*/,
+            const std::string & /*indent*/,
+            const std::string & /*lanes*/) const {
+        LCOMPILERS_ASSERT(false);
+    }
 
     // A bare literal is double precision, which would pick the wrong
     // overload of an intrinsic taking single precision arguments.
     std::string real_literal(double value, int kind) const {
         std::string literal = double_to_scientific(value);
         return (kind == 8) ? literal : literal + "f";
-    }
-
-    // A kernel thread halts the launch with a trap: the device raises it,
-    // the launch fails, and nothing after it in the thread runs.
-    std::string abort_stmt() const {
-        return "__trap();";
     }
 
     std::string thread_index() const { return "threadIdx.x"; }
@@ -94,6 +142,26 @@ struct CudaDialect {
 
     std::string uint_type() const {
         return "unsigned int";
+    }
+
+    // The bits of `value` read as a `type` of the same width: a real of
+    // kind `kind` when `to_real`, else an integer of that kind. The CPU
+    // emulation defines these intrinsics in cuda_cpu_device.h.
+    std::string bit_cast(const std::string & /*type*/, bool to_real,
+            int kind, const std::string &value) const {
+        if (kind == 8) {
+            return std::string(to_real ? "__longlong_as_double("
+                : "__double_as_longlong(") + value + ")";
+        }
+        return std::string(to_real ? "__int_as_float(" : "__float_as_int(")
+            + value + ")";
+    }
+
+    // A relaxed atomic add to an `int` in device memory, giving the old
+    // value. The CPU emulation defines atomicAdd in cuda_cpu_device.h.
+    std::string atomic_fetch_add(const std::string &address,
+            const std::string &increment) const {
+        return "atomicAdd(" + address + ", " + increment + ")";
     }
 
     // Every scalar arrives in one struct, passed by value, which is what the
@@ -138,12 +206,13 @@ struct CudaDialect {
         src << "\n// Auto-generated kernel registration\n";
         if (emulate_cpu) {
             if (kernel_names.empty()) return;
-            // The thunks are registered instead of the kernels, and a plain
-            // constructor attribute keeps the file free of any C++ runtime
-            // dependency. Under separate compilation the per-object device
-            // sources are concatenated, so the registrar is named after the
-            // first kernel to keep it unique per translation unit.
-            src << "typedef void (*kernel_func_t)(void **);\n";
+            // The thunks are registered instead of the kernels, with the
+            // type of a kernel, and the emulated cudaLaunchKernel calls them.
+            // A plain constructor attribute keeps the file free of any C++
+            // runtime dependency. Under separate compilation the per-object
+            // device sources are concatenated, so the registrar is named after
+            // the first kernel to keep it unique per translation unit.
+            src << "typedef void (*kernel_func_t)(void);\n";
             src << "extern \"C\" void lfortran_gpu_register_kernel("
                    "const char *name, kernel_func_t func);\n\n";
             src << "__attribute__((constructor)) static void "
@@ -151,14 +220,16 @@ struct CudaDialect {
                 << "(void) {\n";
             for (auto &kname : kernel_names) {
                 src << "    lfortran_gpu_register_kernel(\"" << kname
-                    << "\", __lf_thunk_" << kname << ");\n";
+                    << "\", (kernel_func_t)__lf_thunk_" << kname << ");\n";
             }
             src << "}\n";
             return;
         }
+        if (kernel_names.empty()) return;
         src << "typedef void (*kernel_func_t)(void);\n";
         src << "extern \"C\" void lfortran_gpu_register_kernel("
                "const char *name, kernel_func_t func);\n\n";
+        src << "namespace {\n";
         src << "struct _lfortran_cuda_registrar {\n";
         src << "    _lfortran_cuda_registrar() {\n";
         for (auto &kname : kernel_names) {
@@ -167,6 +238,7 @@ struct CudaDialect {
         }
         src << "    }\n";
         src << "} _lfortran_cuda_reg;\n";
+        src << "}\n";
     }
 };
 
@@ -174,7 +246,8 @@ Result<std::string> asr_to_cuda(Allocator & /*al*/, ASR::TranslationUnit_t &asr,
     diag::Diagnostics &diagnostics, CompilerOptions &co, bool emit_registrar)
 {
     ASRToGpuCVisitor<CudaDialect> v(co,
-        CudaDialect(emit_registrar, co.gpu_cpu_emulation));
+        CudaDialect(emit_registrar, co.gpu_cpu_emulation, co.gpu_hip,
+            gpu_device_capabilities(co.po).offset_kind));
     try {
         v.visit_TranslationUnit(asr);
     } catch (const CodeGenError &e) {

@@ -99,6 +99,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -117,6 +118,8 @@
                             )
                             (Var 13 f_int4)]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -146,6 +149,8 @@
                             )
                             (Var 13 f_int8)]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -181,6 +186,8 @@
                             )
                             (Var 13 f_logical)]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -219,6 +226,8 @@
                             )
                             (Var 13 ptr_f_type_c_ptr)]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -276,6 +285,7 @@
                                     "c_int4"
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -299,6 +309,7 @@
                                     .false.
                                     .false.
                                     "c_int8"
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -326,6 +337,7 @@
                                     "c_logical"
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -351,6 +363,7 @@
                                     .false.
                                     .false.
                                     "c_type_c_ptr"
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod

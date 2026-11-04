@@ -17,6 +17,16 @@
                                     dbl
                                     Public
                                 ),
+                            dbl@~~dbl:
+                                (ExternalSymbol
+                                    4
+                                    dbl@~~dbl
+                                    2 dbl
+                                    conditional_expr_01_mod
+                                    []
+                                    dbl
+                                    Private
+                                ),
                             i:
                                 (Variable
                                     4
@@ -35,6 +45,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -68,6 +79,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -93,19 +105,17 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
                                     ()
                                 ),
                             ~~dbl:
-                                (ExternalSymbol
+                                (CustomOperator
                                     4
                                     ~~dbl
-                                    2 ~~dbl
-                                    conditional_expr_01_mod
-                                    []
-                                    ~~dbl
+                                    [4 dbl@~~dbl]
                                     Public
                                 )
                         })
@@ -124,6 +134,8 @@
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -147,6 +159,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Assignment
                         (Var 4 x)
@@ -180,6 +194,8 @@
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -203,6 +219,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Assignment
                         (Var 4 x)
@@ -236,6 +254,8 @@
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -263,6 +283,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Assignment
                         (Var 4 x)
@@ -296,6 +318,8 @@
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -341,6 +365,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (If
                         ()
@@ -378,6 +404,8 @@
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -422,6 +450,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (If
                         ()
@@ -458,6 +488,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (If
                         ()
@@ -492,6 +524,8 @@
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -532,7 +566,7 @@
                     (Assignment
                         (Var 4 x)
                         (FunctionCall
-                            4 dbl
+                            4 dbl@~~dbl
                             4 ~~dbl
                             [((IfExp
                                 (LogicalConstant
@@ -549,6 +583,8 @@
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -591,6 +627,8 @@
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -640,6 +678,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -663,6 +702,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -699,6 +739,8 @@
                                             ()
                                         )
                                         ()
+                                        .false.
+                                        .false.
                                         .false.
                                         .false.
                                     )]

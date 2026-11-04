@@ -35,35 +35,35 @@ using LCompilers::uint32_to_string;
 TEST_CASE("Integer conversion") {
     uint64_t i;
     i = 1;
-    CHECK(string_to_uint32(uint32_to_string(i)) == i);
+    CHECK(string_to_uint32(uint32_to_string(static_cast<uint32_t>(i))) == i);
     CHECK(string_to_uint64(uint64_to_string(i)) == i);
 
     i = 150;
-    CHECK(string_to_uint32(uint32_to_string(i)) == i);
+    CHECK(string_to_uint32(uint32_to_string(static_cast<uint32_t>(i))) == i);
     CHECK(string_to_uint64(uint64_to_string(i)) == i);
 
     i = 256;
-    CHECK(string_to_uint32(uint32_to_string(i)) == i);
+    CHECK(string_to_uint32(uint32_to_string(static_cast<uint32_t>(i))) == i);
     CHECK(string_to_uint64(uint64_to_string(i)) == i);
 
     i = 65537;
-    CHECK(string_to_uint32(uint32_to_string(i)) == i);
+    CHECK(string_to_uint32(uint32_to_string(static_cast<uint32_t>(i))) == i);
     CHECK(string_to_uint64(uint64_to_string(i)) == i);
 
     i = 16777217;
-    CHECK(string_to_uint32(uint32_to_string(i)) == i);
+    CHECK(string_to_uint32(uint32_to_string(static_cast<uint32_t>(i))) == i);
     CHECK(string_to_uint64(uint64_to_string(i)) == i);
 
     i = 4294967295LU;
-    CHECK(string_to_uint32(uint32_to_string(i)) == i);
+    CHECK(string_to_uint32(uint32_to_string(static_cast<uint32_t>(i))) == i);
     CHECK(string_to_uint64(uint64_to_string(i)) == i);
 
     i = 4294967296LU;
-    CHECK(string_to_uint32(uint32_to_string(i)) != i);
+    CHECK(string_to_uint32(uint32_to_string(static_cast<uint32_t>(i))) != i);
     CHECK(string_to_uint64(uint64_to_string(i)) == i);
 
     i = 18446744073709551615LLU;
-    CHECK(string_to_uint32(uint32_to_string(i)) != i);
+    CHECK(string_to_uint32(uint32_to_string(static_cast<uint32_t>(i))) != i);
     CHECK(string_to_uint64(uint64_to_string(i)) == i);
 }
 
@@ -3676,7 +3676,7 @@ end module
     SUBCASE("retained storage cannot be copied") {
         auto *value = ASRUtils::EXPR(ASR::make_Var_t(al, loc, storage_symbol));
         block->m_body[0] = ASRUtils::STMT(ASR::make_Assignment_t(
-            al, loc, value, value, nullptr, false, false));
+            al, loc, value, value, nullptr, false, false, false, false));
         rejects("asr.verify.trait_results.no_copy");
     }
     SUBCASE("retained storage cannot be nested in a value container") {
@@ -3845,12 +3845,14 @@ end module
     }
     SUBCASE("ordinary assignment cannot duplicate ownership") {
         function->m_body[3] = ASRUtils::STMT(ASR::make_Assignment_t(al,
-            copy->base.base.loc, copy->m_target, borrow->m_owner, nullptr, false, false));
+            copy->base.base.loc, copy->m_target, borrow->m_owner, nullptr, false, false, false,
+            false));
         rejects("asr.verify.trait_owner.value_copy");
     }
     SUBCASE("association cannot duplicate ownership") {
         function->m_body[3] = ASRUtils::STMT(ASR::make_Associate_t(al,
-            copy->base.base.loc, copy->m_target, borrow->m_owner));
+            copy->base.base.loc, copy->m_target, borrow->m_owner,
+            ASR::pointer_bounds_formType::NoPointerBounds));
         rejects("asr.verify.trait_owner.explicit_protocol");
     }
     SUBCASE("ordinary allocation cannot omit lifecycle evidence") {
@@ -10559,7 +10561,7 @@ end program gt_main
         body.reserve(al, method->n_body + 1);
         for (size_t i = 0; i < method->n_body; i++) body.push_back(al, method->m_body[i]);
         body.push_back(al, ASRUtils::STMT(ASR::make_Assignment_t(al, method->base.base.loc,
-            key, key, nullptr, false, false)));
+            key, key, nullptr, false, false, false, false)));
         method->m_body = body.p;
         method->n_body = body.size();
         rejects("asr.verify.trait_witness.program_owner", "runtime witness");
@@ -10612,7 +10614,7 @@ end program gt_main
         body.reserve(al, method->n_body + 1);
         for (size_t i = 0; i < method->n_body; i++) body.push_back(al, method->m_body[i]);
         body.push_back(al, ASRUtils::STMT(ASR::make_Assignment_t(al, method->base.base.loc,
-            key, key, nullptr, false, false)));
+            key, key, nullptr, false, false, false, false)));
         method->m_body = body.p;
         method->n_body = body.size();
         rejects("asr.verify.trait_witness.program_owner", "generic entry");

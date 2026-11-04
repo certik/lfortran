@@ -33,6 +33,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -64,6 +65,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -87,6 +89,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -129,6 +132,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -169,6 +173,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -198,6 +203,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -238,6 +244,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -306,6 +313,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Assignment
                         (Var 2 z)
@@ -323,6 +332,8 @@
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -447,6 +458,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Assignment
                         (Var 2 r)
@@ -463,6 +476,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Assignment
                         (ArrayItem
@@ -473,6 +488,7 @@
                             (Integer 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (IntrinsicElementalFunction
                             Nint
@@ -506,6 +522,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Print
                         (StringFormat
@@ -518,8 +536,11 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -537,6 +558,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 1 (Integer 4) Decimal)
@@ -557,6 +579,7 @@
                             (Integer 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (Cast
                             (RealBinOp
@@ -580,6 +603,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Print
                         (StringFormat
@@ -592,8 +617,11 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -611,6 +639,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 0 (Integer 4) Decimal)

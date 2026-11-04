@@ -43,14 +43,16 @@ Pick the cheapest one that still shows the bug:
 
 | Approach | Build cost | Use when |
 | --- | --- | --- |
-| C++ evaluator test (`FortranEvaluator::evaluate2`) | native build only | Almost always — this is also the form the *fix* has to be tested in. See "Writing a test" below. |
+| C++ evaluator test (`FortranEvaluator::execute` or `evaluate2`) | native build only | Almost always — this is also the form the *fix* has to be tested in. See "Writing a test" below. |
 | Native Jupyter kernel (`-DWITH_XEUS=yes`) + JupyterLab | native build only | You need real notebook behaviour: rich display (`display_data`), streams, cell-by-cell state, error rendering. |
 | Full JupyterLite/WASM build (`pixi run lab`) | ~30–60 min the first time | The bug is WASM-specific, or you want to confirm the fix in exactly the deployed artifact. |
 
 The kernel logic is shared by all three: `src/lfortran/fortran_kernel.cpp`
 drives `FortranEvaluator` (`src/lfortran/fortran_evaluator.cpp`), and each
-notebook cell is one call to `FortranEvaluator::evaluate2()`. Only the transport
-(ZeroMQ vs. `xeus-lite` in a web worker) and the code generator target differ.
+notebook cell is one call to `FortranEvaluator::execute()`, which runs an
+ordinary cell the way `evaluate2()` does (see {doc}`interactive_evaluation`).
+Only the transport (ZeroMQ vs. `xeus-lite` in a web worker) and the code
+generator target differ.
 So a bug that is not about WASM itself will reproduce in the native kernel and,
 usually, in a plain C++ evaluator test.
 
@@ -77,14 +79,15 @@ jupyter lab share/lfortran/nb/Mandelbrot.ipynb
 Open one of the notebooks under `share/lfortran/nb/` — these are the same
 notebooks that ship with the online lab (`Demo1`, `Demo2`, `Variables`,
 `Mandelbrot`, `Rich_Display`) — and run the failing cell. Rich output
-(`use lfortran_display; call display_data(...)`) works here, because the
-`lfortran_display_data` / `lfortran_clear_output` bridge symbols are defined in
-the kernel binary and resolved by the JIT.
+(`use lfortran_display; call display_data(...)`) works here: the
+`lfortran_display_data` / `lfortran_clear_output` functions of the runtime
+library, which the JIT resolves in the kernel process, forward to the kernel
+while it runs the cell.
 
 Note that the command-line REPL (`lfortran` with no arguments) is **not** a
 substitute: it is line-oriented, so a multi-line cell (in particular one
 containing a `module ... end module`) is evaluated as a sequence of separate
-`evaluate2()` calls rather than as one cell, which changes the behaviour.
+cells rather than as one cell, which changes the behaviour.
 
 ## Option B — full JupyterLite build
 
@@ -341,8 +344,11 @@ lfortran mre.f90 && ./a.out
 
 ### Step 2 — write the MRE as an evaluator test
 
-One notebook cell == one `evaluate2()` call. Add a `doctest` `TEST_CASE` to
-`src/lfortran/tests/test_llvm.cpp`, next to the other `FortranEvaluator` cases:
+One notebook cell == one `execute()` call, which for an ordinary cell is one
+`evaluate2()` call. Add a `doctest` `TEST_CASE` to
+`src/lfortran/tests/test_llvm.cpp`, next to the other `FortranEvaluator` cases
+(use `execute()` when the bug involves an inspection cell, the display or the
+rendered diagnostics):
 
 ```cpp
 TEST_CASE("FortranEvaluator module defined in one cell, used in the next") {
@@ -383,6 +389,11 @@ Points to get right:
 * Keep the cell split of the original notebook. Merging cells that the notebook
   kept separate (or splitting a cell the notebook kept together) can make the
   bug disappear — that split *is* the reproducer.
+* Preserve evaluator lifetimes too. To test independent sessions reusing a
+  symbol name, construct multiple `FortranEvaluator` objects in one `TEST_CASE`,
+  including overlapping and destroyed sessions. WASM side modules share a
+  process-wide dynamic-linker namespace: each executor qualifies its definitions
+  and subsequent imports of them, but leaves runtime imports unchanged.
 * Check the value, not only `r.ok`. `EvalResult::type` is one of
   `integer4/integer8/real4/real8/complex4/complex8/boolean/statement/none`; a
   bare expression cell returns the typed value, a statement cell returns
@@ -435,20 +446,38 @@ If a test only makes sense in one of the two worlds, guard it:
 #ifndef __EMSCRIPTEN__     // native-only (e.g. large stack allocations)
 ```
 
+### Native cell output
+
+The native built-in and Xeus kernels stream captured stdout and stderr while
+a cell executes, including partial lines. Compilation and execution run on one
+worker; the calling thread reads bounded chunks from cell-lifetime temporary
+files and owns all frontend callbacks and sockets. Output is drained before
+display, clear-output, input and completion. Each stream preserves byte order;
+two separate capture files do not establish an exact stdout/stderr interleaving.
+The built-in kernel also makes bounded, nonblocking IOPub transport progress
+on each capture-pump turn, even without new output, so queued output resumes
+when a paused subscriber starts reading again.
+UTF-8 characters split between chunks are reassembled at the Jupyter boundary.
+Foreign code or child processes must still flush their own buffered output.
+
+`FortranEvaluator::execute()` remains synchronous and accepts only one active
+cell per process. Other execute requests still wait; this is not interruption
+support or a new slow-consumer policy. The threadless browser/WASM build keeps
+its synchronous output barriers, not native live streaming.
+
 ### A note on rich display (`display_data`)
 
-Bugs of the form "the cell should show an image but shows nothing" cannot be
-asserted end-to-end in an evaluator test: `lfortran_display_data()` is defined
-in the kernel (`src/lfortran/fortran_kernel.cpp`), not in the test binary, so a
-test that actually calls it will not link/resolve. Reduce such a bug to the
-compile/evaluate failure underneath it instead:
+A cell's `display_data` and `clear_output` calls reach the `CellIO` hooks
+passed to `FortranEvaluator::execute()`, so an evaluator test can assert them
+(see `FortranEvaluator execute: display hooks` in `test_llvm.cpp`). For a bug of
+the form "the cell should show an image but shows nothing", first find out
+whether the display or the computation is at fault:
 
 1. In the notebook, replace `call display_data(...)` with
    `print *, len(payload)` (or print a checksum of the payload). If the cell now
    prints nothing or errors, the display bridge is innocent and you have a plain
    evaluator bug — write the test as in step 2.
 2. If the payload is computed correctly and only the display is missing, the bug
-   is in the kernel/display path. Reproduce it with Option A (native kernel),
-   which exercises the same `lfortran_display_data` code path with a debugger
-   attached, and keep a notebook-level reproducer under `share/lfortran/nb/`
-   plus an evaluator test for whatever compile-time part can be asserted.
+   is in the display path. Assert the display data with `execute()` and a
+   `CellIO`, or reproduce it with Option A (native kernel), which exercises the
+   same `lfortran_display_data` code path with a debugger attached.

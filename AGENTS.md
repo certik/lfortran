@@ -45,9 +45,10 @@ Do not install dependencies with `apt`, `apt-get`, Homebrew, Conda, mamba,
 micromamba, pip, or other system/global installers. Do not substitute a host
 compiler or invoke standalone CMake, Ninja, build scripts, or test runners as
 an alternative to the Pixi tasks. Resolve missing project dependencies in
-`pixi.toml` and the selected Pixi environment. If Pixi or a required platform
-SDK is unavailable, report it rather than attempting another installation
-method. Git, Pixi, and the platform SDKs listed below are prerequisites.
+`pixi.toml` and the selected Pixi environment, pinning each package to an
+exact version (zlib and zstd excepted). If Pixi or a required platform SDK is
+unavailable, report it rather than attempting another installation method.
+Git, Pixi, and the platform SDKs listed below are prerequisites.
 
 This policy also applies when consulting older installation or CI recipes:
 `pixi.toml` and its tasks own agent setup. Read-only review and issue triage do
@@ -66,6 +67,13 @@ dependency grouping, additional bug reports, and commit authorship. Explicit
 task limits such as "local only" or "do not push" take precedence. Requests to
 triage, reproduce, review, plan, or discuss an example prompt select their
 corresponding skills rather than starting issue fixes.
+
+## Release Workflow
+
+When the user asks to make, cut, or publish an LFortran release, load and
+follow [make-release](.agents/skills/make-release/SKILL.md). Invoking it
+authorizes the tag, the downstream PRs, and the fix PRs it describes; only
+the green tip of `main` may be released.
 
 ## Project Structure & Module Organization
 - `src/`: core sources
@@ -100,6 +108,7 @@ Available skills:
 | `fix-mre` | Fix the compiler bug behind an MRE and add an integration test |
 | `pr-review` | Review LFortran PRs with architecture, correctness, and maintainer guidance |
 | `fix-issue` | Fix one issue or a filtered batch in isolated worktrees and subagents, publish dependency-aware draft PRs from a fork early, review locally while CI runs, and iterate on review and CI |
+| `make-release` | Release the green tip of `main`: tag with generated notes, verify the tarball, update the conda-forge feedstock (patches upstreamed afterwards) and lfortran-conda-testing, and turn regressions into issues and fix PRs |
 
 `classify-issue` distinguishes invalid-code diagnostics from valid-code bugs,
 enhancements, new features, and maintenance or internal-correctness work.
@@ -197,8 +206,10 @@ MCP tools; see "Git Remotes & Issues"), not a compiler build.
 ## Prerequisites
 - **Required:** Git and [Pixi](https://pixi.sh/). The repository manifest
   supplies build/test dependencies and Linux C/C++ compilers. On macOS, install
-  Xcode Command Line Tools; on Windows, use an initialized MSVC developer shell
-  with Git Bash available. Use Pixi inside WSL for Unix-only test runners.
+  Xcode Command Line Tools; on Windows, use an initialized MSVC developer
+  shell. Pixi supplies the cross-platform `shell` that runs the build scripts,
+  so Bash is not required; builds without Pixi fall back to Bash. Use Pixi
+  inside WSL for Unix-only test runners.
   If a prerequisite is missing, report it; do not provision an alternate toolchain.
 
 ## Build, Test, and Development Commands
@@ -374,6 +385,9 @@ only once, redirect to a log file and then examine the log file.
   Both full-suite compilers also use the platform C/C++ diagnostic/hardening
   flags (including `-Werror`) and `WITH_INTERNAL_ALLOC_CHECK=yes`.
   These modes are not just smoke selections.
+  The native phase of `Build LFortran to WASM` is Quick's GCC Release
+  (`NDEBUG`) build and also uses `-Werror`, matching Exhaustive's
+  `Check Release build`.
   Exhaustive checks add missing configurations without replaying Quick.
   LLVM-WASM, no-LLVM and MLIR belong only to Quick, including on main.
   The LLVM 19 WASM compiler is also a Debug build compiled with `-O2`; its

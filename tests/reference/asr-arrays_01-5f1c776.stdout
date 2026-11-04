@@ -33,6 +33,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -64,6 +65,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -89,6 +91,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -102,7 +105,7 @@
                         ((Var 2 i)
                         (IntegerConstant 1 (Integer 4) Decimal)
                         (IntegerConstant 3 (Integer 4) Decimal)
-                        ())
+                        (IntegerConstant 1 (Integer 4) Decimal))
                         [(Assignment
                             (ArrayItem
                                 (Var 2 a)
@@ -112,6 +115,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .false.
                             )
                             (IntegerBinOp
                                 (Var 2 i)
@@ -121,6 +125,8 @@
                                 ()
                             )
                             ()
+                            .false.
+                            .false.
                             .false.
                             .false.
                         )]
@@ -137,6 +143,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 11 (Integer 4) Decimal)
@@ -159,6 +166,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 12 (Integer 4) Decimal)
@@ -181,6 +189,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 13 (Integer 4) Decimal)
@@ -197,7 +206,7 @@
                         ((Var 2 i)
                         (IntegerConstant 11 (Integer 4) Decimal)
                         (IntegerConstant 14 (Integer 4) Decimal)
-                        ())
+                        (IntegerConstant 1 (Integer 4) Decimal))
                         [(Assignment
                             (ArrayItem
                                 (Var 2 b)
@@ -213,9 +222,12 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .false.
                             )
                             (Var 2 i)
                             ()
+                            .false.
+                            .false.
                             .false.
                             .false.
                         )]
@@ -232,6 +244,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 11 (Integer 4) Decimal)
@@ -254,6 +267,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 12 (Integer 4) Decimal)
@@ -276,6 +290,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 13 (Integer 4) Decimal)
@@ -298,6 +313,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 14 (Integer 4) Decimal)
@@ -314,7 +330,7 @@
                         ((Var 2 i)
                         (IntegerConstant 1 (Integer 4) Decimal)
                         (IntegerConstant 3 (Integer 4) Decimal)
-                        ())
+                        (IntegerConstant 1 (Integer 4) Decimal))
                         [(Assignment
                             (ArrayItem
                                 (Var 2 b)
@@ -324,6 +340,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .false.
                             )
                             (IntegerBinOp
                                 (ArrayItem
@@ -334,6 +351,7 @@
                                     (Integer 4)
                                     ColMajor
                                     ()
+                                    .false.
                                 )
                                 Sub
                                 (IntegerConstant 10 (Integer 4) Decimal)
@@ -341,6 +359,8 @@
                                 ()
                             )
                             ()
+                            .false.
+                            .false.
                             .false.
                             .false.
                         )]
@@ -357,6 +377,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 1 (Integer 4) Decimal)
@@ -379,6 +400,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 2 (Integer 4) Decimal)
@@ -401,6 +423,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 3 (Integer 4) Decimal)
@@ -421,6 +444,7 @@
                             (Integer 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (IntegerBinOp
                             (IntegerBinOp
@@ -433,6 +457,7 @@
                                         (Integer 4)
                                         ColMajor
                                         ()
+                                        .true.
                                     )
                                     Add
                                     (ArrayItem
@@ -443,6 +468,7 @@
                                         (Integer 4)
                                         ColMajor
                                         ()
+                                        .true.
                                     )
                                     (Integer 4)
                                     ()
@@ -456,6 +482,7 @@
                                     (Integer 4)
                                     ColMajor
                                     ()
+                                    .true.
                                 )
                                 (Integer 4)
                                 ()
@@ -469,11 +496,14 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             (Integer 4)
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -488,6 +518,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 17 (Integer 4) Decimal)
@@ -508,6 +539,7 @@
                             (Integer 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (ArrayItem
                             (Var 2 a)
@@ -517,8 +549,11 @@
                             (Integer 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -533,6 +568,7 @@
                                 (Integer 4)
                                 ColMajor
                                 ()
+                                .true.
                             )
                             NotEq
                             (IntegerConstant 11 (Integer 4) Decimal)

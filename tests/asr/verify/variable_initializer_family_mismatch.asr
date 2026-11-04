@@ -37,6 +37,7 @@
               nil
               false
               false
+              false
               :NotMethod
               nil
               []
@@ -63,6 +64,7 @@
               nil
               false
               false
+              false
               :NotMethod
               nil
               []
@@ -81,6 +83,8 @@
               (SymbolRef 1 "k")
             )
             nil
+            false
+            false
             false
             false
           )

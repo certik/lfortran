@@ -64,6 +64,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -130,6 +131,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -160,6 +162,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -210,6 +213,8 @@
                                         ()
                                         .false.
                                         .false.
+                                        .false.
+                                        .false.
                                     )
                                     (SubroutineCall
                                         2 warnwrite_string____1
@@ -226,14 +231,12 @@
                                             (Var 8 littlefile)
                                             DescriptorArray
                                             PointerArray
-                                            (Allocatable
-                                                (Array
-                                                    (String 1 () DeferredLength DescriptorString)
-                                                    [(()
-                                                    ())]
-                                                    PointerArray
-                                                    Global
-                                                )
+                                            (Array
+                                                (String 1 () DeferredLength DescriptorString)
+                                                [(()
+                                                ())]
+                                                PointerArray
+                                                Global
                                             )
                                             ()
                                         ))
@@ -277,6 +280,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -335,6 +339,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -417,6 +422,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -448,6 +454,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -471,6 +478,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod

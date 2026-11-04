@@ -27,6 +27,7 @@
               nil
               false
               false
+              false
               :NotMethod
               nil
               []
@@ -50,6 +51,8 @@
             )
             nil
             true
+            false
+            false
             false
           )
         ]

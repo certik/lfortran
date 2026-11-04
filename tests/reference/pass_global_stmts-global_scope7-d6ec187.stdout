@@ -27,6 +27,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -63,6 +64,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Assignment
                         (Var 1 x)
@@ -74,6 +77,8 @@
                             ()
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )]
@@ -101,6 +106,7 @@
                     .false.
                     .false.
                     ()
+                    .false.
                     .false.
                     .false.
                     NotMethod

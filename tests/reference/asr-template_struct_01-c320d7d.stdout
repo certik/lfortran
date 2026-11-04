@@ -83,6 +83,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -108,8 +109,9 @@
                                                                     6
                                                                     1_tuple_fst
                                                                     5 fst
-                                                                    tuple
-                                                                    []
+                                                                    template_struct_01_m
+                                                                    [struct_t
+                                                                    tuple]
                                                                     fst
                                                                     Public
                                                                 ),
@@ -147,6 +149,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -174,6 +177,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -233,6 +237,8 @@
                                                         ()
                                                         .false.
                                                         .false.
+                                                        .false.
+                                                        .false.
                                                     )]
                                                     (Var 6 r)
                                                     Private
@@ -250,8 +256,9 @@
                                                                     7
                                                                     1_tuple_snd
                                                                     5 snd
-                                                                    tuple
-                                                                    []
+                                                                    template_struct_01_m
+                                                                    [struct_t
+                                                                    tuple]
                                                                     snd
                                                                     Public
                                                                 ),
@@ -289,6 +296,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -316,6 +324,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -375,6 +384,8 @@
                                                         ()
                                                         .false.
                                                         .false.
+                                                        .false.
+                                                        .false.
                                                     )]
                                                     (Var 7 r)
                                                     Private
@@ -404,6 +415,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -440,6 +452,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -467,6 +480,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -526,8 +540,9 @@
                                                     8
                                                     1_int_tuple_fst
                                                     9 fst
-                                                    int_tuple
-                                                    []
+                                                    template_struct_01_m
+                                                    [test_template
+                                                    int_tuple]
                                                     fst
                                                     Public
                                                 ),
@@ -536,8 +551,9 @@
                                                     8
                                                     1_int_tuple_snd
                                                     9 snd
-                                                    int_tuple
-                                                    []
+                                                    template_struct_01_m
+                                                    [test_template
+                                                    int_tuple]
                                                     snd
                                                     Public
                                                 ),
@@ -546,8 +562,9 @@
                                                     8
                                                     1_real_tuple_fst
                                                     12 fst
-                                                    real_tuple
-                                                    []
+                                                    template_struct_01_m
+                                                    [test_template
+                                                    real_tuple]
                                                     fst
                                                     Public
                                                 ),
@@ -556,8 +573,9 @@
                                                     8
                                                     1_real_tuple_snd
                                                     12 snd
-                                                    real_tuple
-                                                    []
+                                                    template_struct_01_m
+                                                    [test_template
+                                                    real_tuple]
                                                     snd
                                                     Public
                                                 ),
@@ -571,8 +589,9 @@
                                                                     10
                                                                     1_int_tuple_fst
                                                                     9 fst
-                                                                    int_tuple
-                                                                    []
+                                                                    template_struct_01_m
+                                                                    [test_template
+                                                                    int_tuple]
                                                                     fst
                                                                     Public
                                                                 ),
@@ -601,6 +620,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -624,6 +644,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -666,6 +687,8 @@
                                                         ()
                                                         .false.
                                                         .false.
+                                                        .false.
+                                                        .false.
                                                     )]
                                                     (Var 10 r)
                                                     Private
@@ -683,8 +706,9 @@
                                                                     11
                                                                     1_int_tuple_snd
                                                                     9 snd
-                                                                    int_tuple
-                                                                    []
+                                                                    template_struct_01_m
+                                                                    [test_template
+                                                                    int_tuple]
                                                                     snd
                                                                     Public
                                                                 ),
@@ -713,6 +737,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -736,6 +761,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -778,6 +804,8 @@
                                                         ()
                                                         .false.
                                                         .false.
+                                                        .false.
+                                                        .false.
                                                     )]
                                                     (Var 11 r)
                                                     Private
@@ -795,8 +823,9 @@
                                                                     13
                                                                     1_real_tuple_fst
                                                                     12 fst
-                                                                    real_tuple
-                                                                    []
+                                                                    template_struct_01_m
+                                                                    [test_template
+                                                                    real_tuple]
                                                                     fst
                                                                     Public
                                                                 ),
@@ -825,6 +854,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -848,6 +878,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -890,6 +921,8 @@
                                                         ()
                                                         .false.
                                                         .false.
+                                                        .false.
+                                                        .false.
                                                     )]
                                                     (Var 13 r)
                                                     Private
@@ -907,8 +940,9 @@
                                                                     14
                                                                     1_real_tuple_snd
                                                                     12 snd
-                                                                    real_tuple
-                                                                    []
+                                                                    template_struct_01_m
+                                                                    [test_template
+                                                                    real_tuple]
                                                                     snd
                                                                     Public
                                                                 ),
@@ -937,6 +971,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -960,6 +995,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -1002,6 +1038,8 @@
                                                         ()
                                                         .false.
                                                         .false.
+                                                        .false.
+                                                        .false.
                                                     )]
                                                     (Var 14 r)
                                                     Private
@@ -1034,6 +1072,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -1057,6 +1096,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -1114,6 +1154,7 @@
                                                                     ()
                                                                     .false.
                                                                     .false.
+                                                                    .false.
                                                                     NotMethod
                                                                     ()
                                                                     []
@@ -1137,6 +1178,7 @@
                                                                     .false.
                                                                     .false.
                                                                     ()
+                                                                    .false.
                                                                     .false.
                                                                     .false.
                                                                     NotMethod
@@ -1194,6 +1236,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -1222,6 +1265,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -1259,6 +1303,8 @@
                                         ()
                                         .false.
                                         .false.
+                                        .false.
+                                        .false.
                                     )
                                     (Print
                                         (StringFormat
@@ -1276,6 +1322,8 @@
                                                 ()
                                             )]
                                             FormatFortran
+                                            []
+                                            ()
                                             (Allocatable
                                                 (String 1 () DeferredLength DescriptorString)
                                             )
@@ -1291,6 +1339,8 @@
                                         )
                                         (IntegerConstant 2 (Integer 4) Decimal)
                                         ()
+                                        .false.
+                                        .false.
                                         .false.
                                         .false.
                                     )
@@ -1310,6 +1360,8 @@
                                                 ()
                                             )]
                                             FormatFortran
+                                            []
+                                            ()
                                             (Allocatable
                                                 (String 1 () DeferredLength DescriptorString)
                                             )
@@ -1330,6 +1382,8 @@
                                         ()
                                         .false.
                                         .false.
+                                        .false.
+                                        .false.
                                     )
                                     (Print
                                         (StringFormat
@@ -1347,6 +1401,8 @@
                                                 ()
                                             )]
                                             FormatFortran
+                                            []
+                                            ()
                                             (Allocatable
                                                 (String 1 () DeferredLength DescriptorString)
                                             )
@@ -1367,6 +1423,8 @@
                                         ()
                                         .false.
                                         .false.
+                                        .false.
+                                        .false.
                                     )
                                     (Print
                                         (StringFormat
@@ -1384,6 +1442,8 @@
                                                 ()
                                             )]
                                             FormatFortran
+                                            []
+                                            ()
                                             (Allocatable
                                                 (String 1 () DeferredLength DescriptorString)
                                             )

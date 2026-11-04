@@ -47,6 +47,15 @@ Array associations follow their argument-local dependencies: a descriptor
 whose bounds read another dummy's elements is constructed after that dummy
 is associated.
 
+There is one exception, the rank(0) view of an assumed-rank array. Inside a
+`rank (0)` block of `select rank` the selector is a scalar, so the cast has
+`old = AssumedRankArray`, `new = DescriptorArray` and a scalar `type`, the
+element type of the array. A scalar has no `physical_type`; the value is read
+through the data pointer of the assumed-rank descriptor. The verifier
+recognizes this case by `old = AssumedRankArray` and a `type` that is not an
+array; only then, instead of comparing `new` with `type`, it requires
+`new = DescriptorArray`.
+
 ## Examples
 
 ```clojure

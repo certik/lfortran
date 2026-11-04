@@ -44,7 +44,6 @@
 #include <llvm/Transforms/Instrumentation/AddressSanitizer.h>
 #include <llvm/Transforms/Instrumentation/ThreadSanitizer.h>
 #endif
-#include <llvm/Transforms/InstCombine/InstCombine.h>
 #include <llvm/ExecutionEngine/ObjectCache.h>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/FileSystem.h>
@@ -61,6 +60,9 @@
 #if LLVM_VERSION_MAJOR >= 17
     // TODO: removed from LLVM 17
     #include <llvm/Passes/PassBuilder.h>
+    #include <llvm/Transforms/Scalar/LICM.h>
+    #include <llvm/Transforms/Scalar/LoopPassManager.h>
+    #include <llvm/Transforms/Scalar/SimpleLoopUnswitch.h>
 #else
 #    include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #endif
@@ -521,6 +523,35 @@ std::vector<std::string> get_arch_features(
         + triple.str() + "'");
 }
 
+#if LLVM_VERSION_MAJOR >= 18
+using CodeGenOptLevel = llvm::CodeGenOptLevel;
+#else
+using CodeGenOptLevel = llvm::CodeGenOpt::Level;
+#endif
+
+bool is_wasm_triple(const llvm::Triple &triple)
+{
+    return triple.getArch() == llvm::Triple::wasm32
+        || triple.getArch() == llvm::Triple::wasm64;
+}
+
+// Machine code generation follows clang and flang: the default mode is -O0,
+// which selects the -O0 instruction selector and the fast register allocator,
+// and `--fast` is -O3. The default mode runs no IR optimizations.
+CodeGenOptLevel codegen_opt_level(const LLVMTargetConfig &config)
+{
+    if (config.fast) {
+        return CodeGenOptLevel::Aggressive;
+    }
+    // At -O0 the WebAssembly backend skips register stackification and
+    // coloring, so every virtual register becomes a separate local, and large
+    // functions exceed the 50000 locals per function that engines accept.
+    if (is_wasm_triple(llvm::Triple(config.triple))) {
+        return CodeGenOptLevel::Default;
+    }
+    return CodeGenOptLevel::None;
+}
+
 std::unique_ptr<llvm::TargetMachine> create_target_machine(
     const LLVMTargetConfig &config)
 {
@@ -533,8 +564,7 @@ std::unique_ptr<llvm::TargetMachine> create_target_machine(
     // the WebAssembly backend lowers a call through a pointer that was just
     // loaded with a function's address as a direct `call` with a GOT
     // relocation, which produces an invalid module.
-    bool is_wasm = triple.getArch() == llvm::Triple::wasm32
-        || triple.getArch() == llvm::Triple::wasm64;
+    bool is_wasm = is_wasm_triple(triple);
     RM_OPTIONAL_TYPE<llvm::Reloc::Model> relocation_model
         = is_wasm ? llvm::Reloc::Model::Static : llvm::Reloc::Model::PIC_;
     RM_OPTIONAL_TYPE<llvm::CodeModel::Model> code_model;
@@ -545,17 +575,19 @@ std::unique_ptr<llvm::TargetMachine> create_target_machine(
         config.triple,
 #endif
         config.cpu, config.features, options, relocation_model, code_model,
-#if LLVM_VERSION_MAJOR >= 18
-        config.fast ? llvm::CodeGenOptLevel::Aggressive
-                    : llvm::CodeGenOptLevel::Default
-#else
-        config.fast ? llvm::CodeGenOpt::Aggressive
-                    : llvm::CodeGenOpt::Default
-#endif
-    );
+        codegen_opt_level(config));
     if (!machine) {
         throw LCompilersException("could not create target machine for '"
             + config.triple + "'");
+    }
+    // At -O0 the AArch64 backend selects GlobalISel (clang uses it too), whose
+    // localizer scans a basic block linearly for each value it moves, so code
+    // generation time is quadratic in the size of large blocks. Select
+    // FastISel instead, as on x86-64; it falls back to SelectionDAG for what
+    // it does not handle.
+    if (machine->getOptLevel() == CodeGenOptLevel::None
+            && triple.isAArch64()) {
+        machine->setGlobalISel(false);
     }
     return std::unique_ptr<llvm::TargetMachine>(machine);
 }
@@ -786,7 +818,8 @@ LLVMEvaluator::LLVMEvaluator(LLVMTargetConfig target_config_)
     TM = create_target_machine(target_config);
 
     // For some reason the JIT requires a different TargetMachine
-    jit = cantFail(llvm::orc::KaleidoscopeJIT::Create());
+    jit = cantFail(llvm::orc::KaleidoscopeJIT::Create(
+        codegen_opt_level(target_config)));
 
     _lfortran_stan(0.5);
 }
@@ -982,6 +1015,25 @@ void LLVMEvaluator::create_empty_object_file(const std::string &filename) {
     save_object_file(*module, filename);
 }
 
+#if LLVM_VERSION_MAJOR < 9
+// IndVarSimplify in LLVM 7 and 8 can mark the increment of a loop counter
+// that starts at -1 (a DO loop starting at 0) as `nuw`. Unrolling an inner
+// loop by the upper bound of its trip count then trusts that flag, assumes at
+// least two iterations and drops the first exit test, so a one-trip loop runs
+// twice. LLVM 9 fixed this. X86 enables upper-bound unrolling for CPUs with a
+// loop buffer, so the miscompile depends on the host CPU under `--fast`.
+static void disable_upper_bound_unrolling() {
+    llvm::StringMap<llvm::cl::Option*> &options
+        = llvm::cl::getRegisteredOptions();
+    auto option = options.find("unroll-max-upperbound");
+    // The option may occur only once per process; opt() runs for every file
+    // and REPL cell.
+    if (option != options.end() && option->second->getNumOccurrences() == 0) {
+        option->second->addOccurrence(0, "unroll-max-upperbound", "0");
+    }
+}
+#endif
+
 void LLVMEvaluator::opt(llvm::Module &m) {
     configure_module(m);
 
@@ -997,9 +1049,18 @@ void LLVMEvaluator::opt(llvm::Module &m) {
     PB.registerLoopAnalyses(LAM);
     PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
     llvm::ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    // Late simplifications expose invariant conditions guarding descriptor loads.
+    llvm::LoopPassManager LPM;
+    LPM.addPass(llvm::SimpleLoopUnswitchPass(/*NonTrivial=*/true));
+    LPM.addPass(llvm::LICMPass(llvm::LICMOptions()));
+    MPM.addPass(llvm::createModuleToFunctionPassAdaptor(
+        llvm::createFunctionToLoopPassAdaptor(std::move(LPM), /*UseMemorySSA=*/true)));
     MPM.run(m, MAM);
 
 #else
+#if LLVM_VERSION_MAJOR < 9
+    disable_upper_bound_unrolling();
+#endif
     llvm::legacy::PassManager mpm;
     mpm.add(new llvm::TargetLibraryInfoWrapperPass(TM->getTargetTriple()));
     mpm.add(llvm::createTargetTransformInfoWrapperPass(TM->getTargetIRAnalysis()));
@@ -1094,8 +1155,7 @@ WasmLFortranExecutor::WasmLFortranExecutor()
         throw LCompilersException("WasmLFortranExecutor: failed to create temp dir");
     TempDir = tmp.str().str();
 
-    // Claim a unique instance ID so that __lfortran_evaluate_N function names
-    // are globally unique across all executor instances in the same process.
+    // Side modules share the process's dynamic-linker namespace.
     static std::atomic<int> s_next_id{0};
     m_id = s_next_id.fetch_add(1);
 }
@@ -1120,41 +1180,22 @@ void WasmLFortranExecutor::add_module(std::unique_ptr<LLVMModule> lm, int eval_c
 {
     std::unique_ptr<llvm::Module> mod = std::move(lm->m_m);
 
-    // Rename __lfortran_evaluate_<eval_count> → __lfortran_evaluate_<m_id>_<eval_count>
-    // so that multiple WasmLFortranExecutor instances in the same process (e.g.
-    // test suite) each own uniquely-named symbols and dlsym(RTLD_DEFAULT) finds
-    // the right one without needing per-handle tracking.
-    const std::string logical_stem = "__lfortran_evaluate_" + std::to_string(eval_count);
-    const std::string unique_stem  = "__lfortran_evaluate_" + std::to_string(m_id)
-                                     + "_" + std::to_string(eval_count);
-    if (llvm::Function *fn = mod->getFunction(logical_stem))
-        fn->setName(unique_stem);
-    // Same for the program unit of this evaluation, if the cell defined one:
-    // get_symbol_address() rewrites every "__lfortran_evaluate_" name, so this
-    // one has to carry the instance id too.
-    if (llvm::Function *fn = mod->getFunction(logical_stem + "_program"))
-        fn->setName(unique_stem + "_program");
-    // And for the set up of the globals it declares.
-    if (llvm::Function *fn = mod->getFunction(logical_stem + "_setup"))
-        fn->setName(unique_stem + "_setup");
+    const std::string instance = "__exec" + std::to_string(m_id) + "_";
+    const std::string unique_stem = instance + std::to_string(eval_count);
 
-    // Symbols qualified by their cell (__cell<N>_...) are named per session,
-    // so two executors in one process emit the same names. The wasm dynamic
-    // linker has one global namespace, so the second definition collides with
-    // the first -- and if their signatures differ, a module importing the name
-    // fails to link. Give each instance its own, the same way the run function
-    // above is made unique. Renaming here covers definitions and the
-    // declarations other modules of this instance import them through, so they
-    // still resolve to each other.
-    {
-        const std::string cell_prefix = "__cell";
-        const std::string instance = "__e" + std::to_string(m_id) + "_";
-        auto qualify = [&](llvm::GlobalValue &g) {
-            std::string n = g.getName().str();
-            if (n.rfind(cell_prefix, 0) == 0) g.setName(instance + n);
-        };
-        for (llvm::Function &f : mod->functions()) qualify(f);
-        for (llvm::GlobalVariable &g : mod->globals()) qualify(g);
+    // Isolate every exported definition, not just cell entry points. Otherwise
+    // a function in one executor can interpose on a variable in another. Record
+    // ownership before renaming so imports from this and later modules agree,
+    // while unresolved runtime imports retain their external ABI names.
+    for (const llvm::GlobalValue &g : mod->global_values()) {
+        if (!g.isDeclaration() && !g.hasLocalLinkage() && !g.hasAppendingLinkage()) {
+            std::string name = g.getName().str();
+            symbols.emplace(name, instance + name);
+        }
+    }
+    for (llvm::GlobalValue &g : mod->global_values()) {
+        auto symbol = symbols.find(g.getName().str());
+        if (symbol != symbols.end()) g.setName(symbol->second);
     }
 
     const std::string triple = "wasm32-unknown-emscripten";
@@ -1216,14 +1257,8 @@ void WasmLFortranExecutor::add_module(std::unique_ptr<LLVMModule> lm, int eval_c
 
 intptr_t WasmLFortranExecutor::get_symbol_address(const std::string &name)
 {
-    // Translate the logical name to the instance-unique name, then look it up
-    // in the global RTLD symbol table.  Within one session there is only ever
-    // one executor, so RTLD_DEFAULT finds the right symbol.  In the test suite
-    // the per-instance prefix prevents collisions across test cases.
-    const std::string prefix = "__lfortran_evaluate_";
-    std::string actual = name;
-    if (name.substr(0, prefix.size()) == prefix)
-        actual = prefix + std::to_string(m_id) + "_" + name.substr(prefix.size());
+    auto symbol = symbols.find(name);
+    const std::string &actual = symbol == symbols.end() ? name : symbol->second;
 
     void *sym = dlsym(RTLD_DEFAULT, actual.c_str());
     if (!sym)

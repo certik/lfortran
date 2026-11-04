@@ -1,0 +1,13 @@
+{
+    "basename": "gpu_cuda_kernel-gpu_derived_component_04-80b2420",
+    "cmd": "lfortran --no-color --gpu=cuda --show-gpu-kernel-source {infile}",
+    "infile": "tests/../integration_tests/gpu_derived_component_04.f90",
+    "infile_hash": "63942002ed9fb3be59cb9ded70f735b01d426df2458f8819157e39ca",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": "gpu_cuda_kernel-gpu_derived_component_04-80b2420.stdout",
+    "stdout_hash": "3158f53fab0deedb9aba8151258278e6690de63c9561c8b104b12d1c",
+    "stderr": null,
+    "stderr_hash": null,
+    "returncode": 0
+}

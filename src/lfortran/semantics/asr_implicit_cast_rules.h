@@ -177,9 +177,14 @@ public:
                 value = ASRUtils::expr_value(*convert_can);
                 if (ASR::is_a<ASR::RealConstant_t>(*value)) {
                     ASR::RealConstant_t *r = ASR::down_cast<ASR::RealConstant_t>(value);
-                    // kind=10 m_r is a pointer to the long double bytes
-                    int64_t i = ASRUtils::extract_kind_from_ttype_t(r->m_type) == 10
-                        ? ASRUtils::real_constant_get_r10(r) : r->m_r;
+                    // kind=10 and kind=16 m_r is a pointer to the value's bytes
+                    int src_kind = ASRUtils::extract_kind_from_ttype_t(r->m_type);
+                    int64_t i = src_kind == 10
+                        ? static_cast<int64_t>(ASRUtils::real_constant_get_r10(r))
+                        : src_kind == 16
+                        ? static_cast<int64_t>(lf_f128_to_double(
+                            ASRUtils::real_constant_get_r16(r)))
+                        : static_cast<int64_t>(r->m_r);
                     value = (ASR::expr_t *)ASR::make_IntegerConstant_t(al, a_loc,
                         i, dest_type2);
                 } else {
@@ -195,9 +200,9 @@ public:
                     int *new_array = al.allocate<int>(array_size);
                     for (size_t i = 0; i < array_size; i++) {
                       if ( kind == 4 ) {
-                        new_array[i] = ((float*) data)[i];
+                        new_array[i] = static_cast<int>(((float*) data)[i]);
                       } else {
-                        new_array[i] = ((double*) data)[i];
+                        new_array[i] = static_cast<int>(((double*) data)[i]);
                       }
                     }
                     new_data = new_array;
@@ -205,9 +210,9 @@ public:
                     int64_t *new_array = al.allocate<int64_t>(array_size);
                     for (size_t i = 0; i < array_size; i++) {
                       if ( kind == 4 ) {
-                        new_array[i] = ((float*) data)[i];
+                        new_array[i] = static_cast<int64_t>(((float*) data)[i]);
                       } else {
-                        new_array[i] = ((double*) data)[i];
+                        new_array[i] = static_cast<int64_t>(((double*) data)[i]);
                       }
                     }
                     new_data = new_array;
@@ -233,12 +238,15 @@ public:
                         // kind=10 m_r is a pointer to the long double bytes
                         value = ASRUtils::make_RealConstant_r10(al, a_loc,
                             static_cast<long double>(i->m_n), dest_type2);
-                    } else if (dest_kind != 16) {
+                    } else if (dest_kind == 16) {
+                        // kind=16 m_r is a pointer to the binary128 bytes;
+                        // every int64 value is exact in binary128.
+                        value = ASRUtils::make_RealConstant_r16(al, a_loc,
+                            lf_f128_from_int64(i->m_n), dest_type2);
+                    } else {
                         double rval = static_cast<double>(i->m_n);
                         value = (ASR::expr_t *)ASR::make_RealConstant_t(al, a_loc,
                                                                     rval, dest_type2);
-                    } else {
-                        value = nullptr;
                     }
                 } else {
                     LCOMPILERS_ASSERT(ASR::is_a<ASR::ArrayConstant_t>(*value));
@@ -305,10 +313,16 @@ public:
                             value = ASRUtils::make_RealConstant_util(al, a_loc,
                                 rval, dest_type2);
                         }
+                    } else if (src_kind == 16) {
+                        // kind=16 m_r is a pointer to the binary128 bytes.
+                        lf_float128 v = ASRUtils::real_constant_get_r16(r);
+                        value = dest_kind == 16
+                            ? ASRUtils::make_RealConstant_r16(al, a_loc, v, dest_type2)
+                            : ASRUtils::make_RealConstant_util(al, a_loc,
+                                lf_f128_to_double(v), dest_type2);
                     } else {
-                        double rval = r->m_r;
-                        value = (ASR::expr_t *)ASR::make_RealConstant_t(al, a_loc,
-                            rval, dest_type2);
+                        value = ASRUtils::make_RealConstant_util(al, a_loc,
+                            r->m_r, dest_type2);
                     }
               } else {
                   LCOMPILERS_ASSERT(ASR::is_a<ASR::ArrayConstant_t>(*value));
@@ -321,7 +335,7 @@ public:
                   if (dest_kind == 4) {
                       float *new_array = al.allocate<float>(array_size);
                       for (size_t i = 0; i < array_size; i++) {
-                        new_array[i] = ((double*) data)[i];
+                        new_array[i] = static_cast<float>(((double*) data)[i]);
                       }
                       new_data = new_array;
                   } else if (dest_kind == 8) {
@@ -346,9 +360,13 @@ public:
                 value = ASRUtils::expr_value(*convert_can);
                 if( ASR::is_a<ASR::RealConstant_t>(*value) ) {
                     ASR::RealConstant_t *r = ASR::down_cast<ASR::RealConstant_t>(value);
-                    // kind=10 m_r is a pointer to the long double bytes
-                    double rval = ASRUtils::extract_kind_from_ttype_t(r->m_type) == 10
-                        ? ASRUtils::real_constant_get_r10(r) : r->m_r;
+                    // kind=10 and kind=16 m_r is a pointer to the value's bytes
+                    int src_kind = ASRUtils::extract_kind_from_ttype_t(r->m_type);
+                    double rval = src_kind == 10
+                        ? ASRUtils::real_constant_get_r10(r)
+                        : src_kind == 16
+                        ? lf_f128_to_double(ASRUtils::real_constant_get_r16(r))
+                        : r->m_r;
                     value = (ASR::expr_t *)ASR::make_ComplexConstant_t(al, a_loc,
                       rval, 0, dest_type2);
                 } else {
@@ -376,7 +394,7 @@ public:
                             if (kind == 4) {
                                 new_array[i] = std::complex<float>(((float*)data)[i], 0);
                             } else if (kind == 8) {
-                                new_array[i] = std::complex<float>(((double*)data)[i], 0);
+                                new_array[i] = std::complex<float>(static_cast<float>(((double*)data)[i]), 0);
                             }
                         }
                         new_data = new_array;
@@ -441,7 +459,7 @@ public:
                         int *new_array = al.allocate<int>(array_size);
                         for (size_t i = 0; i < array_size; i++) {
                           if ( kind == 8 ) {
-                            new_array[i] = ((int64_t*) data)[i];
+                            new_array[i] = static_cast<int>(((int64_t*) data)[i]);
                           } else if ( kind == 2 ) {
                             new_array[i] = ((int16_t*) data)[i];
                           } else if ( kind == 1 ) {
@@ -467,7 +485,7 @@ public:
                           if ( kind == 4) {
                             new_array[i] = ((int*) data)[i];
                           } else if ( kind == 8 ) {
-                            new_array[i] = ((int64_t*) data)[i];
+                            new_array[i] = static_cast<int16_t>(((int64_t*) data)[i]);
                           } else if ( kind == 1 ) {
                             new_array[i] = ((int8_t*) data)[i];
                           }
@@ -479,9 +497,9 @@ public:
                           if ( kind == 4) {
                             new_array[i] = ((int*) data)[i];
                           } else if ( kind == 8 ) {
-                            new_array[i] = ((int64_t*) data)[i];
+                            new_array[i] = static_cast<int8_t>(((int64_t*) data)[i]);
                           } else if ( kind == 2) {
-                            new_array[i] = ((int16_t*) data)[i];
+                            new_array[i] = static_cast<int8_t>(((int16_t*) data)[i]);
                           }
                         }
                         new_data = new_array;
@@ -503,7 +521,7 @@ public:
                     ASR::IntegerConstant_t *i = ASR::down_cast<ASR::IntegerConstant_t>(value);
                     int64_t ival = i->m_n;
                     value = (ASR::expr_t *)ASR::make_ComplexConstant_t(al, a_loc,
-                      ival, 0, dest_type2);
+                      static_cast<double>(ival), 0, dest_type2);
                 } else {
                     LCOMPILERS_ASSERT(ASR::is_a<ASR::ArrayConstant_t>(*value));
                     ASR::ArrayConstant_t* array = ASR::down_cast<ASR::ArrayConstant_t>(value);
@@ -519,7 +537,7 @@ public:
                             if (kind == 4) {
                                 new_array[i] = std::complex<double>(((int*)data)[i], 0);
                             } else if (kind == 8) {
-                                new_array[i] = std::complex<double>(((int64_t*)data)[i], 0);
+                                new_array[i] = std::complex<double>(static_cast<double>(((int64_t*)data)[i]), 0);
                             } else if (kind == 2) {
                                 new_array[i] = std::complex<double>(((int16_t*)data)[i], 0);
                             } else {
@@ -531,9 +549,9 @@ public:
                         std::complex<float> *new_array = al.allocate<std::complex<float>>(array_size);
                         for (size_t i = 0; i < array_size; i++) {
                             if (kind == 4) {
-                                new_array[i] = std::complex<float>(((int*)data)[i], 0);
+                                new_array[i] = std::complex<float>(static_cast<float>(((int*)data)[i]), 0);
                             } else if (kind == 8) {
-                                new_array[i] = std::complex<float>(((int64_t*)data)[i], 0);
+                                new_array[i] = std::complex<float>(static_cast<float>(((int64_t*)data)[i]), 0);
                             } else if (kind == 2) {
                                 new_array[i] = std::complex<float>(((int16_t*)data)[i], 0);
                             } else {
@@ -611,8 +629,6 @@ public:
                     }
                     ASR::ttype_t* new_array_type = ASRUtils::TYPE(ASR::make_Array_t(al, dest_type2->base.loc, dest_type2,
                                                       array_type->m_dims, array_type->n_dims, ASR::array_physical_typeType::FixedSizeArray, ASR::memory_spaceType::Global));
-                    // Logical ArrayConstant_t data is stored packed one byte per element (`sizeof(bool) == 1`)
-                    // regardless of Fortran kind, while m_n_data follows the Fortran kind size convention.
                     value = ASRUtils::EXPR(ASRUtils::make_ArrayConstant_t_util(al, value->base.loc,
                                             new_array, new_array_type, array->m_storage_format));
                 }

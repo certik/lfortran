@@ -100,23 +100,11 @@ semantic error: borrowing a runtime trait array from this expression is not impl
 134 |     n = use_items(items([1, 3]))
     |                   ^^^^^^^^^^^^^ 
 
-semantic error: Type mismatch in assignment, the types must be compatible
-   --> tests/errors/continue_compilation_traits_12.f90:134:5
-    |
-134 |     n = use_items(items([1, 3]))
-    |     ^             ^^^^^^^^^^^^^ type mismatch (integer and item[:])
-
 semantic error: a runtime trait array dummy requires an array actual of the same rank
    --> tests/errors/continue_compilation_traits_12.f90:136:19
     |
 136 |     n = use_items(matrix)
     |                   ^^^^^^ 
-
-semantic error: Type mismatch in assignment, the types must be compatible
-   --> tests/errors/continue_compilation_traits_12.f90:136:5
-    |
-136 |     n = use_items(matrix)
-    |     ^             ^^^^^^ type mismatch (integer and item[:, :])
 
 semantic error: a runtime trait array dummy currently requires a nonpolymorphic derived-type array actual
    --> tests/errors/continue_compilation_traits_12.f90:139:19
@@ -124,23 +112,11 @@ semantic error: a runtime trait array dummy currently requires a nonpolymorphic 
 139 |     n = use_items(poly)
     |                   ^^^^ 
 
-semantic error: Type mismatch in assignment, the types must be compatible
-   --> tests/errors/continue_compilation_traits_12.f90:139:5
-    |
-139 |     n = use_items(poly)
-    |     ^             ^^^^ type mismatch (integer and item[:] allocatable)
-
 semantic error: no visible nominal implementation of trait 'isometrait' for type 'other'
    --> tests/errors/continue_compilation_traits_12.f90:141:19
     |
 141 |     n = use_items(others)
     |                   ^^^^^^ 
-
-semantic error: Type mismatch in assignment, the types must be compatible
-   --> tests/errors/continue_compilation_traits_12.f90:141:5
-    |
-141 |     n = use_items(others)
-    |     ^             ^^^^^^ type mismatch (integer and other[:])
 
 semantic error: an array section with a vector subscript is not definable, so it cannot be the actual argument of the intent(inout) dummy argument 'items'
    --> tests/errors/continue_compilation_traits_12.f90:148:22

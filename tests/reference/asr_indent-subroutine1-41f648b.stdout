@@ -27,6 +27,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -50,6 +51,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -82,13 +84,15 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (DoLoop
                         ()
                         ((Var 2 i)
                         (IntegerConstant 1 (Integer 4) Decimal)
                         (IntegerConstant 10 (Integer 4) Decimal)
-                        ())
+                        (IntegerConstant 1 (Integer 4) Decimal))
                         [(Assignment
                             (Var 2 x)
                             (IntegerBinOp
@@ -99,6 +103,8 @@
                                 ()
                             )
                             ()
+                            .false.
+                            .false.
                             .false.
                             .false.
                         )]
@@ -135,6 +141,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -158,6 +165,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -190,13 +198,15 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (DoLoop
                         ()
                         ((Var 3 i)
                         (IntegerConstant 1 (Integer 4) Decimal)
                         (IntegerConstant 10 (Integer 4) Decimal)
-                        ())
+                        (IntegerConstant 1 (Integer 4) Decimal))
                         [(Assignment
                             (Var 3 x)
                             (IntegerBinOp
@@ -207,6 +217,8 @@
                                 ()
                             )
                             ()
+                            .false.
+                            .false.
                             .false.
                             .false.
                         )]

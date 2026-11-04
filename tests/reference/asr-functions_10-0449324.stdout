@@ -47,6 +47,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -76,6 +77,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -109,6 +111,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -132,6 +135,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -218,6 +222,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -247,6 +252,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -280,6 +286,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -303,6 +310,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -389,6 +397,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -418,6 +427,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -451,6 +461,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -474,6 +485,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -569,6 +581,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -598,6 +611,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -631,6 +645,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -660,6 +675,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -693,6 +709,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -724,40 +741,20 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
                                     ()
                                 ),
                             mergegp:
-                                (ExternalSymbol
+                                (GenericProcedure
                                     6
                                     mergegp
-                                    2 mergegp
-                                    kwarg_gp
-                                    []
-                                    mergegp
+                                    [6 mergei32@mergegp
+                                    6 merger32@mergegp
+                                    6 merger64@mergegp]
                                     Public
-                                ),
-                            mergegp@mergei32:
-                                (ExternalSymbol
-                                    6
-                                    mergegp@mergei32
-                                    2 mergei32
-                                    kwarg_gp
-                                    []
-                                    mergei32
-                                    Private
-                                ),
-                            mergegp@merger32:
-                                (ExternalSymbol
-                                    6
-                                    mergegp@merger32
-                                    2 merger32
-                                    kwarg_gp
-                                    []
-                                    merger32
-                                    Private
                                 ),
                             mergei32:
                                 (ExternalSymbol
@@ -769,6 +766,16 @@
                                     mergei32
                                     Public
                                 ),
+                            mergei32@mergegp:
+                                (ExternalSymbol
+                                    6
+                                    mergei32@mergegp
+                                    2 mergei32
+                                    kwarg_gp
+                                    []
+                                    mergei32
+                                    Private
+                                ),
                             merger32:
                                 (ExternalSymbol
                                     6
@@ -779,6 +786,16 @@
                                     merger32
                                     Public
                                 ),
+                            merger32@mergegp:
+                                (ExternalSymbol
+                                    6
+                                    merger32@mergegp
+                                    2 merger32
+                                    kwarg_gp
+                                    []
+                                    merger32
+                                    Private
+                                ),
                             merger64:
                                 (ExternalSymbol
                                     6
@@ -788,6 +805,16 @@
                                     []
                                     merger64
                                     Public
+                                ),
+                            merger64@mergegp:
+                                (ExternalSymbol
+                                    6
+                                    merger64@mergegp
+                                    2 merger64
+                                    kwarg_gp
+                                    []
+                                    merger64
+                                    Private
                                 )
                         })
                     kwarg_use
@@ -796,7 +823,7 @@
                         (StringFormat
                             ()
                             [(FunctionCall
-                                6 mergegp@mergei32
+                                6 mergei32@mergegp
                                 6 mergegp
                                 [((ArrayPhysicalCast
                                     (Var 6 a1)
@@ -830,6 +857,8 @@
                                 ()
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -840,7 +869,7 @@
                         (StringFormat
                             ()
                             [(FunctionCall
-                                6 mergegp@mergei32
+                                6 mergei32@mergegp
                                 6 mergegp
                                 [((ArrayPhysicalCast
                                     (Var 6 a1)
@@ -886,6 +915,8 @@
                                 ()
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -896,7 +927,7 @@
                         (StringFormat
                             ()
                             [(FunctionCall
-                                6 mergegp@mergei32
+                                6 mergei32@mergegp
                                 6 mergegp
                                 [((ArrayPhysicalCast
                                     (Var 6 a1)
@@ -942,6 +973,8 @@
                                 ()
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -952,7 +985,7 @@
                         (StringFormat
                             ()
                             [(FunctionCall
-                                6 mergegp@merger32
+                                6 merger32@mergegp
                                 6 mergegp
                                 [((ArrayPhysicalCast
                                     (Var 6 a2)
@@ -986,6 +1019,8 @@
                                 ()
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -996,7 +1031,7 @@
                         (StringFormat
                             ()
                             [(FunctionCall
-                                6 mergegp@merger32
+                                6 merger32@mergegp
                                 6 mergegp
                                 [((ArrayPhysicalCast
                                     (Var 6 a2)
@@ -1042,6 +1077,8 @@
                                 ()
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -1052,7 +1089,7 @@
                         (StringFormat
                             ()
                             [(FunctionCall
-                                6 mergegp@merger32
+                                6 merger32@mergegp
                                 6 mergegp
                                 [((ArrayPhysicalCast
                                     (Var 6 a2)
@@ -1098,6 +1135,8 @@
                                 ()
                             )]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )

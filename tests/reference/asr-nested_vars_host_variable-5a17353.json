@@ -1,0 +1,13 @@
+{
+    "basename": "asr-nested_vars_host_variable-5a17353",
+    "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
+    "infile": "tests/asr/verify/nested_vars_host_variable.asr",
+    "infile_hash": "d7b2a30bfbb32d5b53e61a176eb0f7655441fca8277a48708bac9852",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": "asr-nested_vars_host_variable-5a17353.stderr",
+    "stderr_hash": "76fc6f3dfcee9f5b3d7ba2130ec51c92a8e3a61f55f1880c6dd34fa8",
+    "returncode": 2
+}

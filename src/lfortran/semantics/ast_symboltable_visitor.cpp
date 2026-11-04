@@ -17,6 +17,7 @@
 #include <lfortran/semantics/ast_to_asr.h>
 #include <lfortran/semantics/trait_procedures.h>
 #include <lfortran/semantics/generic_types.h>
+#include <lfortran/semantics/elemental_checks.h>
 #include <lfortran/parser/parser_stype.h>
 #include <libasr/string_utils.h>
 #include <lfortran/utils.h>
@@ -39,6 +40,7 @@ public:
     struct ClassProcInfo {
         std::string name;
         Location loc;
+        ASR::accessType access = ASR::accessType::Public;
     };
     // Type bound procedure bindings are collected while the specification part
     // of a program unit is visited and are turned into symbols once that unit
@@ -68,13 +70,40 @@ public:
         SymbolTableVisitor &v;
         std::map<std::string, std::map<std::string,
             std::vector<std::string>>> generic_class_procedures;
+        std::map<std::string, std::map<std::string,
+            ASR::accessType>> generic_class_procedure_access;
 
         GenericClassProcedureScope(SymbolTableVisitor &v_) : v(v_) {
             generic_class_procedures.swap(v.generic_class_procedures);
+            generic_class_procedure_access.swap(
+                v.generic_class_procedure_access);
         }
 
         ~GenericClassProcedureScope() {
             generic_class_procedures.swap(v.generic_class_procedures);
+            generic_class_procedure_access.swap(
+                v.generic_class_procedure_access);
+        }
+    };
+    // The procedures given to procedure pointer components of a host that
+    // cannot be checked yet are checked once the host is complete. A nested
+    // template checks its own once it is complete, so this guard sets the
+    // host's aside for the duration of the template. Afterwards it puts them
+    // back, together with those of the template that still wait for a
+    // procedure or an interface of the host.
+    struct DeferredProcedureComponentValueScope {
+        SymbolTableVisitor &v;
+        std::vector<DeferredProcedureComponentValue> values;
+
+        DeferredProcedureComponentValueScope(SymbolTableVisitor &v_) : v(v_) {
+            values.swap(v.deferred_procedure_component_values);
+        }
+
+        ~DeferredProcedureComponentValueScope() {
+            values.insert(values.end(),
+                v.deferred_procedure_component_values.begin(),
+                v.deferred_procedure_component_values.end());
+            values.swap(v.deferred_procedure_component_values);
         }
     };
     // A statement that declares a deferred argument is only valid in a scoping
@@ -241,8 +270,8 @@ public:
     struct OperatorProcedureScope {
         SymbolTableVisitor &v;
         bool active;
-        std::map<std::string, std::vector<std::pair<std::string, Location>>> overloaded_op_procs;
-        std::map<std::string, std::vector<std::pair<std::string, Location>>> defined_op_procs;
+        std::map<std::string, std::vector<GenericSpecific>> overloaded_op_procs;
+        std::map<std::string, std::vector<GenericSpecific>> defined_op_procs;
 
         OperatorProcedureScope(SymbolTableVisitor &v_, bool active_=true)
                 : v(v_), active(active_) {
@@ -257,11 +286,57 @@ public:
             defined_op_procs.swap(v.defined_op_procs);
         }
     };
+    // Gives a requirement or a template its own state while it is visited: a
+    // new symbol table nested in the current scope, and empty lists of
+    // pending operator (intrinsic and defined) and assignment interfaces. The
+    // enclosing unit's scope, procedure arguments, pending interfaces, default
+    // accessibility and `is_template` are restored on the way out, including
+    // when a diagnostic aborts the visit. Without it a requirement or a
+    // template rejected under --continue-compilation leaves the rest of the
+    // enclosing module to be added to its discarded symbol table, or the
+    // module loses its operator interfaces.
+    struct TemplateLocalStateScope {
+        SymbolTableVisitor &v;
+        SymbolTable *enclosing;
+        std::vector<std::string> enclosing_procedure_args;
+        OperatorProcedureScope operator_procedures;
+        std::vector<std::pair<std::string, Location>>
+            enclosing_assgn_proc_names_locations;
+        ASR::accessType enclosing_dflt_access;
+        bool enclosing_is_template;
+
+        TemplateLocalStateScope(SymbolTableVisitor &v_) : v(v_),
+                enclosing(v_.current_scope),
+                enclosing_procedure_args(v_.current_procedure_args),
+                operator_procedures(v_),
+                enclosing_dflt_access(v_.dflt_access),
+                enclosing_is_template(v_.is_template) {
+            v.current_scope = v.al.make_new<SymbolTable>(enclosing);
+            enclosing_assgn_proc_names_locations.swap(
+                v.assgn_proc_names_locations);
+        }
+
+        ~TemplateLocalStateScope() {
+            v.current_scope = enclosing;
+            v.current_procedure_args.swap(enclosing_procedure_args);
+            v.assgn_proc_names_locations.swap(
+                enclosing_assgn_proc_names_locations);
+            v.dflt_access = enclosing_dflt_access;
+            v.is_template = enclosing_is_template;
+        }
+    };
     SymbolTable *global_scope;
     std::map<std::string, std::map<std::string, std::vector<std::string>>> generic_class_procedures;
-    std::map<std::string, std::vector<std::pair<std::string, Location>>> overloaded_op_procs;
-    std::map<std::string, std::vector<std::pair<std::string, Location>>> defined_op_procs;
+    // The accessibility of the generic bindings named by a generic-name.
+    std::map<std::string, std::map<std::string, ASR::accessType>> generic_class_procedure_access;
+    // The specific procedures of the operator interface blocks, by operator,
+    // with the scope of each block (see GenericSpecific).
+    std::map<std::string, std::vector<GenericSpecific>> overloaded_op_procs;
+    std::map<std::string, std::vector<GenericSpecific>> defined_op_procs;
     std::map<std::string, std::map<std::string, std::map<std::string, ClassProcInfo>>> class_procedures;
+    // The default accessibility of the bindings of the derived type being
+    // visited, changed by a `private` statement in its type-bound part.
+    ASR::accessType binding_dflt_access = ASR::accessType::Public;
     std::map<std::string, std::map<std::string, std::map<std::string, Location>>> class_deferred_procedures;
     std::vector<std::pair<std::string, Location>> assgn_proc_names_locations;
     std::vector<std::pair<std::string,Location>> simd_variables;
@@ -428,11 +503,14 @@ public:
     // until then its name must not be taken to be an intrinsic procedure.
     // Neither is an internal procedure that its host defines later, except
     // in an interface body, which does not access its host. Every other
-    // name that the scoping units being visited do not declare can be.
+    // name that the scoping units being visited do not declare can be. A
+    // name declared only by the placeholder of a procedure interface, see
+    // `pending_proc_placeholders`, is not declared yet either.
     ProcedureDeclaredLater procedure_declared_later(const std::string &name) {
         for (ContainedProcedureScope *procedures = contained_procedure_scope;
                 procedures; procedures = procedures->enclosing) {
-            if (procedures->scope->get_symbol(name)) continue;
+            ASR::symbol_t *declared = procedures->scope->get_symbol(name);
+            if (declared && !is_pending_proc_placeholder(declared)) continue;
             if (procedures->is_module) {
                 if (procedures->find(name) || procedures->has_interface_body(name)) {
                     return ProcedureDeclaredLater::InModule;
@@ -442,6 +520,16 @@ public:
             }
         }
         return ProcedureDeclaredLater::No;
+    }
+
+    bool host_contains_procedure(SymbolTable *scope, const std::string &name) {
+        for (ContainedProcedureScope *procedures = contained_procedure_scope;
+                procedures; procedures = procedures->enclosing) {
+            if (procedures->scope == scope) {
+                return !procedures->is_module && procedures->find(name);
+            }
+        }
+        return false;
     }
 
     struct PendingInstantiationRestriction {
@@ -582,14 +670,14 @@ public:
         std::map<std::string, std::vector<int>> &entry_function_arguments_mapping,
         std::map<uint32_t, std::vector<ASR::stmt_t*>> &data_structure,
         GenericInstanceCompletions &generic_instance_completions,
-        LCompilers::LocationManager &lm)
+        std::set<ASR::symbol_t*> &getter_functions, LCompilers::LocationManager &lm)
       : CommonVisitor(
             al, symbol_table, diagnostics, compiler_options, implicit_mapping,
             external_procedures_mapping,
             explicit_intrinsic_procedures_mapping,
             instantiate_types, instantiate_symbols, entry_functions,
             entry_function_arguments_mapping, data_structure,
-            generic_instance_completions, lm
+            generic_instance_completions, getter_functions, lm
         ) {}
 
     void visit_TranslationUnit(const AST::TranslationUnit_t &x) {
@@ -605,6 +693,14 @@ public:
         // for asr_owner.
         ASR::asr_t *tmp0 = ASR::make_TranslationUnit_t(al, x.base.base.loc,
             current_scope, nullptr, 0, nullptr);
+        if (compiler_options.interactive) {
+            auto &types = implicit_mapping[get_hash(tmp0)];
+            types = implicit_dictionary;
+            if (types.empty()) {
+                Location loc = x.base.base.loc;
+                populate_implicit_dictionary(loc, types);
+            }
+        }
 
         // The declarations of the global scope of interactive evaluation. As
         // in a scoping unit, its EQUIVALENCE statements are visited after
@@ -627,17 +723,32 @@ public:
                 }
             }
             try {
+                // A program unit has no host, so it never starts from the
+                // implicit typing rules of an earlier one (F2018 8.7 p4),
+                // even if an aborted unit left its rules on the stack.
+                implicit_stack.clear();
+                if (compiler_options.interactive) {
+                    implicit_dictionary = implicit_mapping[get_hash(tmp0)];
+                }
                 visit_ast(*x.m_items[i]);
                 if (t == AST::astType::program_unit) {
-                    // An external procedure has no host to build its generic interfaces.
+                    // An external procedure has no host to build its generic
+                    // interfaces, or to define the procedures its procedure
+                    // placeholders stand for.
                     add_generic_procedures();
                     evaluate_postponed_calls_to_genericProcedure();
+                    resolve_proc_pointer_placeholders();
+                    report_unresolved_proc_placeholders();
                 }
             } catch (SemanticAbort &e) {
                 if ( !compiler_options.continue_compilation ) throw e;
                 // Drop what the aborted program unit left pending.
                 generic_procedures.clear();
                 postponed_genericProcedure_calls_vec.clear();
+                // An aborted program unit can leave its scope current.
+                current_scope = global_scope;
+                pending_proc_placeholders.clear();
+                deferred_procedure_component_values.clear();
             }
         }
         if (!global_declarations.empty()) {
@@ -651,7 +762,11 @@ public:
                 }
             }
         }
+        // The operator interfaces of external procedures that are not
+        // followed by a module or a main program.
+        add_overloaded_procedures();
         check_pending_instantiation_restrictions();
+        report_saved_without_declaration();
         global_scope = nullptr;
         tmp = tmp0;
         if (pre_declared_array_dims.size() > 0) {
@@ -674,8 +789,27 @@ public:
         }
     }
 
+    void visit_ImplicitNone(const AST::ImplicitNone_t &x) {
+        for (size_t i = 0; i < x.n_specs; i++) {
+            if (AST::is_a<AST::ImplicitNoneExternal_t>(*x.m_specs[i])) {
+                diag.semantic_error_label(
+                    "implicit none(external) is not supported in interactive cells",
+                    {x.base.base.loc}, "unsupported implicit none specifier");
+                throw SemanticAbort();
+            }
+        }
+        auto &types = implicit_mapping[get_hash(current_scope->asr_owner)];
+        for (char ch = 'a'; ch <= 'z'; ch++) {
+            types[std::string(1, ch)] = nullptr;
+        }
+        implicit_dictionary = types;
+        tmp = nullptr;
+    }
+
+    // A `private` statement in the type-bound procedure part of a derived
+    // type makes its bindings private unless they are declared `public`.
     void visit_Private(const AST::Private_t&) {
-        // To Be Implemented
+        binding_dflt_access = ASR::accessType::Private;
     }
 
     void visit_FinalName(const AST::FinalName_t& x) {
@@ -716,24 +850,60 @@ public:
         }
     }
 
+    // A scoping unit has at most one IMPLICIT NONE statement (F2018 8.7),
+    // whether or not implicit typing is enabled. Every later one is reported.
+    template <typename T>
+    void check_single_implicit_none(const T &x) {
+        bool seen_implicit_none = false;
+        for (size_t i=0; i<x.n_items; i++) {
+            if (!AST::is_a<AST::ImplicitNone_t>(*x.m_items[i])) continue;
+            if (seen_implicit_none) {
+                diag.add(diag::Diagnostic(
+                    "duplicate implicit none statement",
+                    diag::Level::Error, diag::Stage::Semantic, {
+                        diag::Label("", {x.m_items[i]->base.loc})}));
+                if (!compiler_options.continue_compilation) {
+                    throw SemanticAbort();
+                }
+            }
+            seen_implicit_none = true;
+        }
+    }
+
     template <typename T>
     void process_implicit_statements(const T &x, std::map<std::string, ASR::ttype_t*> &implicit_dictionary) {
         size_t n_implicit = AST::count_kind(x.m_items, x.n_items,
             AST::DeclStmtKind::Implicit);
-        if (implicit_stack.size() > 0 && n_implicit == 0) {
-            // We are inside a module and visiting a function / subroutine with no implicit statement
-            if (!is_interface) {
-                implicit_dictionary = implicit_stack.back();
-                return;
-            }
+        size_t n_implicit_none = 0;
+        for (size_t i=0; i<x.n_items; i++) {
+            if (AST::is_a<AST::ImplicitNone_t>(*x.m_items[i])) n_implicit_none++;
+        }
+        if (implicit_stack.size() > 0 && !is_interface) {
+            // A procedure contained in a module, submodule, program or
+            // procedure starts from its host's mapping; its own IMPLICIT
+            // statements, if any, override only the letters they name
+            // (F2018 8.7 p4). Interface bodies start from the default rules.
+            implicit_dictionary = implicit_stack.back();
+            if (n_implicit == 0) return;
         }
         //iterate over all implicit statements
         for (size_t i=0; i<x.n_items; i++) {
             if (!AST::is_kind(*x.m_items[i], AST::DeclStmtKind::Implicit)) continue;
             //check if the implicit statement is of type "none"
             if (AST::is_a<AST::ImplicitNone_t>(*x.m_items[i])) {
+                // `implicit none (external)` alone keeps the implicit typing
+                // rules; only `implicit none` and `implicit none (type)` clear
+                // them and exclude other IMPLICIT statements (F2018 C894).
+                AST::ImplicitNone_t *none = AST::down_cast<AST::ImplicitNone_t>(x.m_items[i]);
+                bool none_type = none->n_specs == 0;
+                for (size_t si = 0; si < none->n_specs; si++) {
+                    if (AST::is_a<AST::ImplicitNoneType_t>(*none->m_specs[si])) {
+                        none_type = true;
+                    }
+                }
+                if (!none_type) continue;
                 //if yes, clear the implicit dictionary i.e. set all characters to nullptr
-                if (n_implicit != 1) {
+                if (n_implicit != n_implicit_none) {
                     diag.add(diag::Diagnostic(
                         "No other implicit statement is allowed when 'implicit none' is used",
                         diag::Level::Error, diag::Stage::Semantic, {
@@ -848,9 +1018,11 @@ public:
         ScopingUnitScope scoping_unit_scope(*this,
             x.class_type == AST::modType::Submodule
                 ? ScopingUnitKind::Submodule : ScopingUnitKind::Module);
+        PendingAttributeScope pending_attribute_scope(*this);
         ImplicitNoneScope implicit_none_scope(*this, x.m_items, x.n_items);
         assgn_proc_names_locations.clear();
         class_procedures.clear();
+        later_module_procedure_bindings.clear();
         // Access assigned by name in an earlier module of the same file must
         // not carry over to a same-named entity of this module.
         assgnd_access.clear();
@@ -870,7 +1042,7 @@ public:
         if( x.class_type == AST::modType::Submodule ) {
             ASR::symbol_t* submod_parent = (ASR::symbol_t*)(ASRUtils::load_module(al, global_scope,
                                                 parent_name, x.base.base.loc, false, loaded_submodules,
-                                                compiler_options.po, true,
+                                                compiler_options.po, !diag.has_error(),
                                                 [&](const std::string &msg, const Location &loc) {
                                                     diag.add(diag::Diagnostic(
                                                         msg, diag::Level::Error, diag::Stage::Semantic, {
@@ -942,6 +1114,7 @@ public:
                 if ( !compiler_options.continue_compilation ) throw e;
             }
         }
+        check_single_implicit_none(x);
         if (compiler_options.implicit_typing) {
             Location a_loc = x.base.base.loc;
             populate_implicit_dictionary(a_loc, implicit_dictionary);
@@ -1021,6 +1194,17 @@ public:
                     // USE statement, and is not exported.
                     es->m_access = dflt_access;
                 }
+            } else if (ASR::is_a<ASR::GenericProcedure_t>(*item.second)) {
+                // A generic imported by a USE statement.
+                ASR::GenericProcedure_t *gp = ASR::down_cast<ASR::GenericProcedure_t>(item.second);
+                if (assgnd_access.count(item.first)) {
+                    gp->m_access = assgnd_access[item.first];
+                } else if (item.first.size() > 1 && item.first[0] == '~'
+                           && assgnd_access.count(item.first.substr(1))) {
+                    gp->m_access = assgnd_access[item.first.substr(1)];
+                } else {
+                    gp->m_access = dflt_access;
+                }
             } else if (ASR::is_a<ASR::CustomOperator_t>(*item.second)) {
                 ASR::CustomOperator_t *co = ASR::down_cast<ASR::CustomOperator_t>(item.second);
                 if (assgnd_access.count(item.first)) {
@@ -1070,12 +1254,19 @@ public:
         for (size_t i=0; i<x.n_contains; i++) {
             bool current_storage_save = default_storage_save;
             default_storage_save = false;
+            SymbolTable *host_scope = current_scope;
             try {
                 visit_program_unit(*x.m_contains[i]);
             } catch (SemanticAbort &e) {
                 if ( !compiler_options.continue_compilation ) throw e;
+                // An abort in the declarations of a procedure leaves its scope
+                // current.
+                current_scope = host_scope;
             }
             default_storage_save = current_storage_save;
+        }
+        if (compiler_options.implicit_typing) {
+            implicit_stack.pop_back();
         }
         external_procedures = saved_external_procedures;
         // While the module is current, as for the bindings of its types.
@@ -1084,6 +1275,7 @@ public:
         add_generic_procedures();
         add_overloaded_procedures();
         add_class_procedures();
+        add_later_module_procedure_bindings();
         complete_trait_implementations();
         if (!resolve_deferred_generic_evidence()) {
             invalid_type_adoption_scopes.insert(current_scope);
@@ -1094,7 +1286,7 @@ public:
         evaluate_postponed_calls_to_genericProcedure();
         try {
             add_assignment_procedures();
-        } catch (SemanticAbort &e) {
+        } catch (SemanticAbort &) {
             if (!compiler_options.continue_compilation) throw;
         }
 
@@ -1125,21 +1317,22 @@ public:
         }
         in_module = true;
         visit_ModuleSubmoduleCommon<AST::Module_t, ASR::Module_t>(x);
-        ASR::symbol_t *t = ASR::down_cast<ASR::symbol_t>(tmp);
-        ASR::Module_t *m = ASR::down_cast<ASR::Module_t>(t);
+        ASR::Module_t *m = ASR::down_cast<ASR::Module_t>(ASR::down_cast<ASR::symbol_t>(tmp));
         // Every undefined procedure pointer component target is reported
         // before compilation stops.
         bool undefined_forward_target = false;
-        for (auto &[name, placeholder_sym] : pending_proc_placeholders) {
-            // Check the module's symbol table
-            ASR::symbol_t *current_sym = m->m_symtab->resolve_symbol(name);
-            if (current_sym == placeholder_sym
-                    && forward_procedure_targets.count(placeholder_sym) > 0) {
+        for (auto &pending : pending_proc_placeholders) {
+            if (proc_placeholder_target(pending) != nullptr) {
+                continue;
+            }
+            const std::string &name = pending.name;
+            ASR::symbol_t *placeholder_sym = pending.placeholder;
+            if (forward_procedure_targets.count(placeholder_sym) > 0) {
                 diag.semantic_error_label("Variable '" + name
                     + "' is not declared", {placeholder_sym->base.loc},
                     "'" + name + "' is undeclared");
                 undefined_forward_target = true;
-            } else if (current_sym == placeholder_sym) {
+            } else {
                 diag.add(diag::Diagnostic(
                     "Interface '" + name + "' is referenced but not defined",
                     diag::Level::Error, diag::Stage::Semantic, {
@@ -1149,11 +1342,8 @@ public:
         }
         pending_proc_placeholders.clear();
         forward_procedure_targets.clear();
-        forward_procedure_target_uses.clear();
+        deferred_procedure_component_values.clear();
         in_module = false;
-        if (compiler_options.implicit_typing) {
-            implicit_stack.pop_back();
-        }
         if (undefined_forward_target && !compiler_options.continue_compilation) {
             throw SemanticAbort();
         }
@@ -1185,6 +1375,8 @@ public:
             parent_name = to_lower(x.m_id);
         }
         visit_ModuleSubmoduleCommon<AST::Submodule_t, ASR::Module_t>(x, parent_name);
+        pending_proc_placeholders.clear();
+        deferred_procedure_component_values.clear();
         in_submodule = false;
     }
 
@@ -1373,6 +1565,40 @@ public:
         return found;
     }
 
+    // Reports each procedure placeholder that no procedure replaced once
+    // the scoping unit that declares it is complete.
+    void report_unresolved_proc_placeholders() {
+        for (auto &pending : pending_proc_placeholders) {
+             if (proc_placeholder_target(pending) == nullptr) {
+                 diag.add(diag::Diagnostic(
+                    "Interface '" + pending.name + "' is referenced but not defined",
+                    diag::Level::Error, diag::Stage::Semantic, {
+                        diag::Label("Referenced here", {pending.placeholder->base.loc})
+                    }));
+             }
+        }
+        pending_proc_placeholders.clear();
+        deferred_procedure_component_values.clear();
+    }
+
+    // Completes the interface blocks and procedure declarations of a
+    // specification part once all of its declarations have been visited: a
+    // generic interface can name a specific procedure declared after it.
+    void finalize_interfaces() {
+        // Build : Functions --> GenericProcedure(Interface) -> funcCall expression to GenericProcedure.
+        add_generic_procedures();
+        add_overloaded_procedures();
+        evaluate_postponed_calls_to_genericProcedure();
+        resolve_proc_pointer_placeholders();
+        resolve_pending_proc_ptr_inits();
+        report_unresolved_proc_placeholders();
+        try {
+            add_class_procedures();
+        } catch (SemanticAbort &e) {
+            if ( !compiler_options.continue_compilation ) throw e;
+        }
+    }
+
     void visit_Program(const AST::Program_t &x) {
         // Check for multiple program units in the same file 
         program_count++;
@@ -1389,9 +1615,11 @@ public:
             return;
         }
         ScopingUnitScope scoping_unit_scope(*this, ScopingUnitKind::Program);
+        PendingAttributeScope pending_attribute_scope(*this);
         ImplicitNoneScope implicit_none_scope(*this, x.m_items, x.n_items);
         SymbolTable *parent_scope = current_scope;
         current_scope = al.make_new<SymbolTable>(parent_scope);
+        record_procedure_references(current_scope, x.m_items, x.n_items);
         ContainedProcedureScope contained_procedures(*this, x.m_contains, x.n_contains);
         ClassProcedureScope class_procedure_scope(*this);
         std::vector<std::string> saved_explicit_intrinsic_procedures = explicit_intrinsic_procedures;
@@ -1418,6 +1646,7 @@ public:
             }
         }
 
+        check_single_implicit_none(x);
         if (compiler_options.implicit_typing) {
             Location a_loc = x.base.base.loc;
             populate_implicit_dictionary(a_loc, implicit_dictionary);
@@ -1444,32 +1673,10 @@ public:
             if (!AST::is_kind(*x.m_items[i], AST::DeclStmtKind::Declaration)) continue;
             if (is_equivalence_declaration(x.m_items[i])) continue;
             if (is_common_declaration(x.m_items[i])) continue;
-            if(AST::is_a<AST::Declaration_t>(*x.m_items[i])) {
-                AST::Declaration_t* decl = AST::down_cast<AST::Declaration_t>(x.m_items[i]);
-                if(decl->m_vartype &&
-                        !AST::is_a<AST::AttrTraitClass_t>(*decl->m_vartype)) {
-
-                    AST::AttrType_t* type = nullptr;
-                    if (AST::is_a<AST::AttrType_t>(*decl->m_vartype)) {
-                        type = AST::down_cast<AST::AttrType_t>(decl->m_vartype);
-                    } else if  (AST::is_a<AST::AttrTypeList_t>(*decl->m_vartype)){
-                        type = AST::down_cast<AST::AttrType_t>(
-                                AST::down_cast<AST::decl_attribute_t>(
-                                    AST::make_AttrType_t(
-                                    al, decl->m_vartype->base.loc, 
-                                    AST::decl_typeType::TypeType,
-                                    nullptr, 0, decl->m_vartype, 
-                                    nullptr, AST::symbolType::None)));
-                        
-                    } 
-
-                    LCOMPILERS_ASSERT(type);
-
-                    if(type && type->m_type == AST::decl_typeType::TypeProcedure) {
-                        procedure_decl_indices.push_back(al, i);
-                        continue;
-                    }
-                }
+            if (has_interface_declared_later(x.m_items, i, x.n_items,
+                    &contained_procedures)) {
+                procedure_decl_indices.push_back(al, i);
+                continue;
             }
             try {
                 visit_decl_stmt(*x.m_items[i]);
@@ -1499,15 +1706,31 @@ public:
         // The assignment(=) blocks of the internal procedures are not the program's.
         std::vector<std::pair<std::string, Location>> program_assgn_proc_names_locations
             = assgn_proc_names_locations;
+        // An internal procedure without an IMPLICIT statement has the
+        // implicit typing rules of the program (F2018 8.7 p4), as a module
+        // procedure has those of its module.
+        if (compiler_options.implicit_typing) {
+            implicit_stack.push_back(implicit_dictionary);
+        }
         for (size_t i=0; i<x.n_contains; i++) {
             bool current_storage_save = default_storage_save;
             default_storage_save = false;
+            // An internal procedure leaves its own implicit typing rules.
+            std::map<std::string, ASR::ttype_t*> implicit_dictionary_copy = implicit_dictionary;
+            SymbolTable *host_scope = current_scope;
             try {
                 visit_program_unit(*x.m_contains[i]);
             } catch (SemanticAbort &e) {
                 if ( !compiler_options.continue_compilation ) throw e;
+                // An abort in the declarations of a procedure leaves its scope
+                // current.
+                current_scope = host_scope;
             }
+            implicit_dictionary = implicit_dictionary_copy;
             default_storage_save = current_storage_save;
+        }
+        if (compiler_options.implicit_typing) {
+            implicit_stack.pop_back();
         }
         assgn_proc_names_locations = program_assgn_proc_names_locations;
         for (size_t i : procedure_decl_indices) {
@@ -1518,7 +1741,7 @@ public:
             }
         }
         process_simd_variables();
-        tmp = ASR::make_Program_t(
+        ASR::asr_t *tmp0 = ASR::make_Program_t(
             al, x.base.base.loc,
             /* a_symtab */ current_scope,
             /* a_name */ s2c(al, to_lower(x.m_name)),
@@ -1534,30 +1757,14 @@ public:
             diag.add(diag::Diagnostic(
                 "Program already defined",
                 diag::Level::Error, diag::Stage::Semantic, {
-                    diag::Label("", {tmp->loc})}));
+                    diag::Label("", {tmp0->loc})}));
             throw SemanticAbort();
         }
         handle_save();
         check_runtime_trait_locals();
         bind_inherent_implements();
-        // Build : Functions --> GenericProcedure(Interface) -> funcCall expression to GenericProcedure.
-        add_generic_procedures();
-        evaluate_postponed_calls_to_genericProcedure();
-        resolve_proc_pointer_placeholders();
-        resolve_pending_proc_ptr_inits();
-        for (auto &[name, placeholder_sym] : pending_proc_placeholders) {
-             ASR::symbol_t *current_sym = current_scope->resolve_symbol(name);
-             if (current_sym == placeholder_sym) {
-                 diag.add(diag::Diagnostic(
-                    "Interface '" + name + "' is referenced but not defined",
-                    diag::Level::Error, diag::Stage::Semantic, {
-                        diag::Label("Referenced here", {placeholder_sym->base.loc})
-                    }));
-             }
-        }
-        pending_proc_placeholders.clear();
+        finalize_interfaces();
         try {
-            add_class_procedures();
             complete_trait_implementations();
             if (!resolve_deferred_generic_evidence()) {
                 invalid_type_adoption_scopes.insert(current_scope);
@@ -1571,6 +1778,7 @@ public:
             if ( !compiler_options.continue_compilation ) throw e;
         }
         in_program = false;
+        tmp = tmp0;
         bool invalid_adoption = invalid_type_adoption_scopes.erase(current_scope) > 0;
         if (!invalid_adoption) {
             parent_scope->add_symbol(sym_name, ASR::down_cast<ASR::symbol_t>(tmp));
@@ -1695,7 +1903,8 @@ public:
     }
 
     void create_template_entry_function(const Location &loc, std::string function_name, std::vector<AST::arg_t> &vector_args,
-                                        bool is_master = false, bool is_function = false, std::string parent_function_name = "") {
+                                        bool is_master = false, const std::vector<std::string> &result_names = {},
+                                        std::string result_name = "") {
         SetChar current_function_dependencies_copy = current_function_dependencies;
         current_function_dependencies.clear(al);
 
@@ -1709,19 +1918,12 @@ public:
         ASRUtils::SymbolDuplicator symbol_duplicator(al);
         std::vector<std::string> copy_external_procedure = external_procedures;
         external_procedures.clear();
-        std::vector<std::string> symbols_to_erase;
         for( auto item: old_scope->get_scope() ) {
             symbol_duplicator.duplicate_symbol(item.second, current_scope);
             bool is_external = check_is_external(item.first, old_scope);
             if (is_external) {
                 external_procedures.push_back(item.first);
-                // remove it from old_scope
-                symbols_to_erase.push_back(item.first);
             }
-        }
-
-        for (auto it: symbols_to_erase) {
-            old_scope->erase_symbol(it);
         }
 
         if (is_master) {
@@ -1812,28 +2014,16 @@ public:
             func_deps.push_back(al, s2c(al, itr));
         }
 
-        ASR::symbol_t* return_var = current_scope->resolve_symbol(function_name);
+        // An entry returns its own result variable; the master takes them all as arguments.
         ASR::expr_t* return_var_expr = nullptr;
-        if (return_var) {
-            if (ASR::is_a<ASR::Variable_t>(*return_var)) {
-                ASR::Variable_t* rv = ASR::down_cast<ASR::Variable_t>(return_var);
-                if (rv->m_intent == ASR::intentType::Local) {
-                    rv->m_intent = ASR::intentType::ReturnVar;
-                }
+        for (auto &name: result_names) {
+            ASR::symbol_t* result = current_scope->get_symbol(name);
+            if (name == result_name) {
+                ASR::down_cast<ASR::Variable_t>(result)->m_intent = ASR::intentType::ReturnVar;
+                return_var_expr = ASRUtils::EXPR(ASR::make_Var_t(al, loc, result));
+            } else if (!is_master) {
+                ASR::down_cast<ASR::Variable_t>(result)->m_intent = ASR::intentType::Local;
             }
-            return_var_expr = ASRUtils::EXPR(ASR::make_Var_t(al, loc, return_var));
-        }
-        if (!return_var && is_function) {
-            // create return variable, with same type as parent function
-            ASR::symbol_t* parent_func_sym = current_scope->resolve_symbol(parent_function_name);
-            ASR::ttype_t* return_type = ASRUtils::symbol_type(parent_func_sym);
-            ASR::symbol_t* return_var_sym = ASR::down_cast<ASR::symbol_t>(ASRUtils::make_Variable_t_util(al,
-                                                loc, current_scope, s2c(al, function_name), nullptr, 0,
-                                                ASR::intentType::ReturnVar, nullptr, nullptr, ASR::storage_typeType::Default,
-                                                return_type, parent_func_sym, ASR::abiType::Source, ASR::accessType::Public, ASR::presenceType::Required,
-                                                false));
-            current_scope->add_symbol(function_name, return_var_sym);
-            return_var_expr = ASRUtils::EXPR(ASR::make_Var_t(al, loc, return_var_sym));
         }
 
         ASR::asr_t* tmp_ = ASRUtils::make_Function_t_util(
@@ -1897,7 +2087,8 @@ public:
     }
 
     template <typename T>
-    std::vector<AST::arg_t> perform_argument_mapping(const T& x, std::string sym_name) {
+    std::vector<AST::arg_t> perform_argument_mapping(const T& x, std::string sym_name,
+            const std::vector<std::string> &result_names = {}) {
         // create master function
         std::vector<std::string> arg_names;
         bool has_alt_returns = false;
@@ -1917,6 +2108,7 @@ public:
                 }
             }
         }
+        arg_names.insert(arg_names.end(), result_names.begin(), result_names.end());
         std::set<std::string> s(arg_names.begin(), arg_names.end());
         std::vector<std::string> arg_names_unique(s.begin(), s.end());
         if (has_alt_returns) {
@@ -1930,7 +2122,7 @@ public:
                 // Map alternate return to __lfortran_alt_ret
                 auto it = std::find(arg_names_unique.begin(), arg_names_unique.end(), std::string("__lfortran_alt_ret"));
                 if (it != arg_names_unique.end()) {
-                    int index = std::distance(arg_names_unique.begin(), it);
+                    int index = static_cast<int>(std::distance(arg_names_unique.begin(), it));
                     if (entry_function_arguments_mapping.find(sym_name) == entry_function_arguments_mapping.end()) {
                         entry_function_arguments_mapping[sym_name] = std::vector<int>();
                     }
@@ -1941,7 +2133,7 @@ public:
             // find index of arg in arg_names_unique
             auto it = std::find(arg_names_unique.begin(), arg_names_unique.end(), std::string(arg.m_arg));
             if (it != arg_names_unique.end()) {
-                int index = std::distance(arg_names_unique.begin(), it);
+                int index = static_cast<int>(std::distance(arg_names_unique.begin(), it));
                 if (entry_function_arguments_mapping.find(sym_name) == entry_function_arguments_mapping.end()) {
                     entry_function_arguments_mapping[sym_name] = std::vector<int>();
                 }
@@ -1954,7 +2146,7 @@ public:
                     // Map alternate return to __lfortran_alt_ret
                     auto it2 = std::find(arg_names_unique.begin(), arg_names_unique.end(), std::string("__lfortran_alt_ret"));
                     if (it2 != arg_names_unique.end()) {
-                        int index = std::distance(arg_names_unique.begin(), it2);
+                        int index = static_cast<int>(std::distance(arg_names_unique.begin(), it2));
                         if (entry_function_arguments_mapping.find(it.first) == entry_function_arguments_mapping.end()) {
                             entry_function_arguments_mapping[it.first] = std::vector<int>();
                         }
@@ -1965,12 +2157,21 @@ public:
                 // find index of arg in arg_names_unique
                 auto it2 = std::find(arg_names_unique.begin(), arg_names_unique.end(), std::string(arg.m_arg));
                 if (it2 != arg_names_unique.end()) {
-                    int index = std::distance(arg_names_unique.begin(), it2);
+                    int index = static_cast<int>(std::distance(arg_names_unique.begin(), it2));
                     if (entry_function_arguments_mapping.find(it.first) == entry_function_arguments_mapping.end()) {
                         entry_function_arguments_mapping[it.first] = std::vector<int>();
                     }
                     entry_function_arguments_mapping[it.first].push_back(index);
                 }
+            }
+        }
+        // Every entry passes all the result variables to the master.
+        for (auto &result: result_names) {
+            int index = static_cast<int>(std::distance(arg_names_unique.begin(),
+                std::find(arg_names_unique.begin(), arg_names_unique.end(), result)));
+            entry_function_arguments_mapping[sym_name].push_back(index);
+            for (auto &it: entry_functions[sym_name]) {
+                entry_function_arguments_mapping[it.first].push_back(index);
             }
         }
         std::vector<AST::arg_t> master_args;
@@ -2020,8 +2221,10 @@ public:
             throw SemanticAbort();
         }
 
+        PendingAttributeScope pending_attribute_scope(*this);
         SymbolTable* parent_scope = current_scope;
         current_scope = al.make_new<SymbolTable>(parent_scope);
+        record_procedure_references(current_scope, x.m_items, x.n_items);
 
         ASRUtils::SymbolDuplicator symbol_duplicator(al);
         ASRUtils::ExprStmtWithScopeDuplicator exprstmt_duplicator(al, current_scope);
@@ -2087,6 +2290,23 @@ public:
                 if ( !compiler_options.continue_compilation ) throw e;
             }
         }
+        check_single_implicit_none(x);
+        if (compiler_options.implicit_typing) {
+            Location a_loc = x.base.base.loc;
+            populate_implicit_dictionary(a_loc, implicit_dictionary);
+            process_implicit_statements(x, implicit_dictionary);
+        } else {
+            for (size_t i=0; i<x.n_items; i++) {
+                if (!AST::is_kind(*x.m_items[i], AST::DeclStmtKind::Implicit)) continue;
+                if (!AST::is_a<AST::ImplicitNone_t>(*x.m_items[i])) {
+                    diag.add(diag::Diagnostic(
+                        "Implicit typing is not allowed, enable it by using --implicit-typing ",
+                        diag::Level::Error, diag::Stage::Semantic, {
+                            diag::Label("", {x.m_items[i]->base.loc})}));
+                    throw SemanticAbort();
+                }
+            }
+        }
         is_Function = true;
         bool old_in_Subroutine = in_Subroutine;
         in_Subroutine = true;
@@ -2102,17 +2322,29 @@ public:
         }
         in_Subroutine = old_in_Subroutine;
         is_Function = false;
+        // The internal procedures start from this procedure's implicit
+        // typing rules (F2018 8.7 p4).
+        if (compiler_options.implicit_typing) {
+            implicit_stack.push_back(implicit_dictionary);
+        }
         for (size_t i=0; i<x.n_contains; i++) {
             bool current_storage_save = default_storage_save;
             default_storage_save = false;
             std::map<std::string, ASR::ttype_t*> implicit_dictionary_copy = implicit_dictionary;
+            SymbolTable *host_scope = current_scope;
             try {
                 visit_program_unit(*x.m_contains[i]);
             } catch (SemanticAbort &e) {
                 if ( !compiler_options.continue_compilation ) throw e;
+                // An abort in the declarations of a procedure leaves its scope
+                // current.
+                current_scope = host_scope;
             }
             implicit_dictionary = implicit_dictionary_copy;
             default_storage_save = current_storage_save;
+        }
+        if (compiler_options.implicit_typing) {
+            implicit_stack.pop_back();
         }
 
         tmp = ASR::make_Function_t(al, x.base.base.loc, current_scope,
@@ -2141,6 +2373,10 @@ public:
         func_type->m_deftype = ASR::deftypeType::Implementation;
         parent_scope->add_or_overwrite_symbol(to_lower(x.m_name), ASR::down_cast<ASR::symbol_t>(tmp));
         current_scope = parent_scope;
+        if (compiler_options.implicit_typing) {
+            implicit_mapping[get_hash(tmp)] = implicit_dictionary;
+            implicit_dictionary.clear();
+        }
     }
 
     // The part of `item`, in the specification part of a templated
@@ -2300,6 +2536,7 @@ public:
 
         SymbolTable *grandparent_scope = current_scope;
         ScopingUnitScope scoping_unit_scope(*this, ScopingUnitKind::Other);
+        PendingAttributeScope pending_attribute_scope(*this);
         ImplicitNoneScope implicit_none_scope(*this, x.m_items, x.n_items);
         SymbolTable *parent_scope = current_scope;
         current_scope = al.make_new<SymbolTable>(parent_scope);
@@ -2383,6 +2620,7 @@ public:
             current_procedure_args.clear();
         }
 
+        record_procedure_references(current_scope, x.m_items, x.n_items);
         ContainedProcedureScope contained_procedures(*this, x.m_contains, x.n_contains);
         bool subroutine_has_alternate_returns = false;
         for (size_t i=0; i<x.n_args; i++) {
@@ -2396,6 +2634,10 @@ public:
         if (subroutine_has_alternate_returns) {
             current_procedure_args.push_back("__lfortran_alt_ret");
         }
+        std::string current_procedure_result_copy = current_procedure_result;
+        SymbolTable *current_procedure_result_scope_copy = current_procedure_result_scope;
+        current_procedure_result.clear();
+        current_procedure_result_scope = nullptr;
         // Restored on exit: the enclosing procedure (the host of an internal
         // procedure or of an interface body) keeps its own ABI.
         ASR::abiType current_procedure_abi_type_copy = current_procedure_abi_type;
@@ -2415,6 +2657,7 @@ public:
                 if ( !compiler_options.continue_compilation ) throw e;
             }
         }
+        check_single_implicit_none(x);
         if (compiler_options.implicit_typing) {
             Location a_loc = x.base.base.loc;
             populate_implicit_dictionary(a_loc, implicit_dictionary);
@@ -2473,7 +2716,8 @@ public:
                     LCOMPILERS_ASSERT(type);
 
                     if(type && type->m_type == AST::decl_typeType::TypeProcedure &&
-                           type->m_name && type->m_name == sym_name) {
+                           type->m_name && to_lower(type->m_name) == sym_name) {
+                        check_self_dependent_interface(decl, sym_name);
                         procedure_decl_indices.push_back(al, i);
                         continue;
                     }
@@ -2518,20 +2762,32 @@ public:
             is_Function = false;
         }
         process_simd_variables();
+        // The internal procedures start from this procedure's implicit
+        // typing rules (F2018 8.7 p4).
+        if (compiler_options.implicit_typing) {
+            implicit_stack.push_back(implicit_dictionary);
+        }
         for (size_t i=0; i<x.n_contains; i++) {
             bool current_storage_save = default_storage_save;
             default_storage_save = false;
             std::map<std::string, ASR::ttype_t*> implicit_dictionary_copy = implicit_dictionary;
             std::vector<std::string> current_procedure_args_copy = current_procedure_args;
             current_procedure_args.clear();
+            SymbolTable *host_scope = current_scope;
             try {
                 visit_program_unit(*x.m_contains[i]);
             } catch (SemanticAbort &e) {
                 if ( !compiler_options.continue_compilation ) throw e;
+                // An abort in the declarations of a procedure leaves its scope
+                // current.
+                current_scope = host_scope;
             }
             implicit_dictionary = implicit_dictionary_copy;
             current_procedure_args = current_procedure_args_copy;
             default_storage_save = current_storage_save;
+        }
+        if (compiler_options.implicit_typing) {
+            implicit_stack.pop_back();
         }
         visit_later_interface_decls(later_interface_decls);
         Vec<ASR::expr_t*> args;
@@ -2604,12 +2860,15 @@ public:
             deftype = ASR::deftypeType::Interface;
         }
         bool is_pure = false, is_module = false, is_elemental = false;
+        bool is_impure = false;
         for( size_t i = 0; i < x.n_attributes; i++ ) {
             switch( x.m_attributes[i]->type ) {
                 case AST::decl_attributeType::SimpleAttribute: {
                     AST::SimpleAttribute_t* simple_attr = AST::down_cast<AST::SimpleAttribute_t>(x.m_attributes[i]);
                     if( simple_attr->m_attr == AST::simple_attributeType::AttrPure ) {
                         is_pure = true;
+                    } else if( simple_attr->m_attr == AST::simple_attributeType::AttrImpure ) {
+                        is_impure = true;
                     } else if( simple_attr->m_attr == AST::simple_attributeType::AttrModule ) {
                         is_module = true;
                     } else if( simple_attr->m_attr == AST::simple_attributeType::AttrElemental ) {
@@ -2623,6 +2882,11 @@ public:
                     break;
                 }
             }
+        }
+        // F2018 15.8.1: an elemental procedure without the IMPURE prefix is
+        // pure.
+        if( is_elemental && !is_impure ) {
+            is_pure = true;
         }
 
         bool update_gp = false;
@@ -2676,7 +2940,7 @@ public:
 
                 for( size_t igp = 0; igp < gp->n_procs; igp++ ) {
                     if( std::string(ASRUtils::symbol_name(gp->m_procs[igp])) == sym_name ) {
-                        gp_index_to_be_updated = igp;
+                        gp_index_to_be_updated = static_cast<int>(igp);
                         break;
                     }
                 }
@@ -2731,6 +2995,10 @@ public:
             }
         }
 
+        if (is_pure) {
+            check_pure_intent_out_polymorphic_args(args, to_lower(x.m_name));
+        }
+
         SetChar func_deps;
         func_deps.reserve(al, current_function_dependencies.size());
         for( auto& itr: current_function_dependencies ) {
@@ -2754,6 +3022,9 @@ public:
             is_elemental, is_pure, is_module, false, false,
             nullptr, 0,
             is_requirement, init_deterministic, init_side_effect_free);
+        ElementalChecks::check_procedure(
+            *ASR::down_cast<ASR::Function_t>(ASR::down_cast<ASR::symbol_t>(tmp)),
+            to_lower(x.m_name), diag, compiler_options);
         tmp = complete_instantiation_procedure(tmp, parent_scope, x.base);
         handle_save();
         procedure_scope_recovery.checking_traits = true;
@@ -2788,11 +3059,11 @@ public:
                 template function for each entry and a master function
             */
             for (auto &entry_function: entry_functions[sym_name]) {
-                create_template_entry_function(x.base.base.loc, entry_function.first, entry_function_args[entry_function.first], false, false, sym_name);
+                create_template_entry_function(x.base.base.loc, entry_function.first, entry_function_args[entry_function.first]);
             }
             std::vector<AST::arg_t> master_args = perform_argument_mapping(x, sym_name);
 
-            create_template_entry_function(x.base.base.loc, sym_name+"_main__lcompilers", master_args, true, false, sym_name);
+            create_template_entry_function(x.base.base.loc, sym_name+"_main__lcompilers", master_args, true);
         }
         entry_function_args.clear();
         try {
@@ -2809,6 +3080,8 @@ public:
            in nested functions, and also in callback.f90 test, but it may not
            matter since we would have already checked the intent */
         current_procedure_args.clear();
+        current_procedure_result = current_procedure_result_copy;
+        current_procedure_result_scope = current_procedure_result_scope_copy;
         current_procedure_abi_type = current_procedure_abi_type_copy;
 
         // print_implicit_dictionary(implicit_dictionary);
@@ -2866,7 +3139,7 @@ public:
                 }
                 case ASR::ttypeType::Real: {
                     // check if it is a double precision
-                    int a_kind = ASR::down_cast<ASR::Real_t>(t)->m_kind;
+                    int64_t a_kind = ASR::down_cast<ASR::Real_t>(t)->m_kind;
                     if (a_kind == 8) {
                         ttype = AST::decl_typeType::TypeDoublePrecision;
                         break;
@@ -2923,6 +3196,10 @@ public:
 
     void visit_Function(const AST::Function_t &x) {
         ProcedureScopeRecovery procedure_scope_recovery(*this);
+        // Restored on exit, as in visit_Subroutine, so that a templated
+        // function does not leave the template context set for the program
+        // units that follow it.
+        bool is_template_copy = is_template;
         in_Subroutine = true;
         SetChar current_function_dependencies_copy = current_function_dependencies;
         current_function_dependencies.clear(al);
@@ -2935,6 +3212,7 @@ public:
 
         SymbolTable *grandparent_scope = current_scope;
         ScopingUnitScope scoping_unit_scope(*this, ScopingUnitKind::Other);
+        PendingAttributeScope pending_attribute_scope(*this);
         ImplicitNoneScope implicit_none_scope(*this, x.m_items, x.n_items);
         SymbolTable *parent_scope = current_scope;
         current_scope = al.make_new<SymbolTable>(parent_scope);
@@ -3019,10 +3297,22 @@ public:
             current_procedure_args.clear();
         }
 
+        record_procedure_references(current_scope, x.m_items, x.n_items);
         ContainedProcedureScope contained_procedures(*this, x.m_contains, x.n_contains);
         for (size_t i=0; i<x.n_args; i++) {
             char *arg=x.m_args[i].m_arg;
             current_procedure_args.push_back(to_lower(arg));
+        }
+        std::string current_procedure_result_copy = current_procedure_result;
+        SymbolTable *current_procedure_result_scope_copy = current_procedure_result_scope;
+        current_procedure_result_scope = current_scope;
+        if (x.m_return_var == nullptr) {
+            current_procedure_result = sym_name;
+        } else if (AST::is_a<AST::Name_t>(*x.m_return_var)) {
+            current_procedure_result = to_lower(
+                AST::down_cast<AST::Name_t>(x.m_return_var)->m_id);
+        } else {
+            current_procedure_result.clear();
         }
 
         // Determine the ABI (Source or BindC for now). Restored on exit: the
@@ -3045,6 +3335,7 @@ public:
                 if ( !compiler_options.continue_compilation ) throw e;
             }
         }
+        check_single_implicit_none(x);
         if (compiler_options.implicit_typing) {
             Location a_loc = x.base.base.loc;
             populate_implicit_dictionary(a_loc, implicit_dictionary);
@@ -3102,7 +3393,8 @@ public:
 
                     LCOMPILERS_ASSERT(type);
                     if(type && type->m_type == AST::decl_typeType::TypeProcedure &&
-                           type->m_name && type->m_name == sym_name) {
+                           type->m_name && to_lower(type->m_name) == sym_name) {
+                        check_self_dependent_interface(decl, sym_name);
                         procedure_decl_indices.push_back(al, i);
                         continue;
                     }
@@ -3117,7 +3409,11 @@ public:
                 continue;
             }
             if (!AST::is_a<AST::Require_t>(*x.m_items[i])) {
-                visit_decl_stmt(*item);
+                try {
+                    visit_decl_stmt(*item);
+                } catch (SemanticAbort &e) {
+                    if ( !compiler_options.continue_compilation ) throw e;
+                }
             }
             is_Function = false;
         }
@@ -3125,7 +3421,11 @@ public:
             if (!AST::is_kind(*x.m_items[i], AST::DeclStmtKind::Declaration)) continue;
             if (!is_common_declaration(x.m_items[i])) continue;
             is_Function = true;
-            visit_decl_stmt(*x.m_items[i]);
+            try {
+                visit_decl_stmt(*x.m_items[i]);
+            } catch (SemanticAbort &e) {
+                if ( !compiler_options.continue_compilation ) throw e;
+            }
             is_Function = false;
         }
         complete_common_blocks(x.m_items, x.n_items);
@@ -3133,7 +3433,11 @@ public:
             if (!AST::is_kind(*x.m_items[i], AST::DeclStmtKind::Declaration)) continue;
             if (!is_equivalence_declaration(x.m_items[i])) continue;
             is_Function = true;
-            visit_decl_stmt(*x.m_items[i]);
+            try {
+                visit_decl_stmt(*x.m_items[i]);
+            } catch (SemanticAbort &e) {
+                if ( !compiler_options.continue_compilation ) throw e;
+            }
             is_Function = false;
         }
         visit_later_interface_decls(later_interface_decls);
@@ -3478,18 +3782,32 @@ public:
         ASR::asr_t *return_var_ref = ASR::make_Var_t(al, x.base.base.loc,
             ASR::down_cast<ASR::symbol_t>(return_var));
 
+        // The internal procedures start from this function's implicit
+        // typing rules (F2018 8.7 p4).
+        if (compiler_options.implicit_typing) {
+            implicit_stack.push_back(implicit_dictionary);
+        }
         for (size_t i=0; i<x.n_contains; i++) {
             bool current_storage_save = default_storage_save;
             default_storage_save = false;
+            std::map<std::string, ASR::ttype_t*> implicit_dictionary_copy = implicit_dictionary;
             std::vector<std::string> current_procedure_args_copy = current_procedure_args;
             current_procedure_args.clear();
+            SymbolTable *host_scope = current_scope;
             try {
                 visit_program_unit(*x.m_contains[i]);
             } catch (SemanticAbort &e) {
                 if ( !compiler_options.continue_compilation ) throw e;
+                // An abort in the declarations of a procedure leaves its scope
+                // current.
+                current_scope = host_scope;
             }
+            implicit_dictionary = implicit_dictionary_copy;
             current_procedure_args = current_procedure_args_copy;
             default_storage_save = current_storage_save;
+        }
+        if (compiler_options.implicit_typing) {
+            implicit_stack.pop_back();
         }
 
         // Create and register the function
@@ -3517,6 +3835,7 @@ public:
         }
 
         bool is_pure = false, is_module = false, is_elemental = false;
+        bool is_impure = false;
         for(size_t i = 0; i < x.n_attributes; i++) {
             switch( x.m_attributes[i]->type ) {
                 case AST::decl_attributeType::SimpleAttribute: {
@@ -3524,6 +3843,8 @@ public:
                         x.m_attributes[i]);
                     if( simple_attr->m_attr == AST::simple_attributeType::AttrPure ) {
                         is_pure = true;
+                    } else if( simple_attr->m_attr == AST::simple_attributeType::AttrImpure ) {
+                        is_impure = true;
                     } else if( simple_attr->m_attr == AST::simple_attributeType::AttrModule ) {
                         is_module = true;
                     } else if( simple_attr->m_attr == AST::simple_attributeType::AttrElemental ) {
@@ -3536,6 +3857,15 @@ public:
                     break;
                 }
             }
+        }
+        // F2018 15.8.1: an elemental procedure without the IMPURE prefix is
+        // pure.
+        if( is_elemental && !is_impure ) {
+            is_pure = true;
+        }
+
+        if (is_pure) {
+            check_pure_intent_out_polymorphic_args(args, to_lower(x.m_name));
         }
 
         SetChar func_deps;
@@ -3569,6 +3899,8 @@ public:
 
         ASR::symbol_t* func_sym = ASR::down_cast<ASR::symbol_t>(tmp);
         ASR::Function_t* func = ASR::down_cast<ASR::Function_t>(func_sym);
+        ElementalChecks::check_procedure(*func, to_lower(x.m_name), diag,
+            compiler_options);
 
         if (parent_scope->get_symbol(sym_name) != nullptr
                 && !is_forward_instantiation_procedure(parent_scope->get_symbol(sym_name))) {
@@ -3577,21 +3909,11 @@ public:
                 if (in_submodule) {
                     parent_scope->erase_symbol(sym_name);
                 } else {
-                    ASR::symbol_t *orig = ASRUtils::symbol_get_past_external(f1);
-                    bool is_private_orig = false;
-                    if (ASR::is_a<ASR::Function_t>(*orig)) {
-                        is_private_orig = ASR::down_cast<ASR::Function_t>(
-                            orig)->m_access == ASR::accessType::Private;
-                    }
-                    if (is_private_orig) {
-                        parent_scope->erase_symbol(sym_name);
-                    } else {
-                        diag.add(diag::Diagnostic(
-                            "Function already defined",
-                            diag::Level::Error, diag::Stage::Semantic, {
-                                diag::Label("", {tmp->loc})}));
-                        throw SemanticAbort();
-                    }
+                    diag.add(diag::Diagnostic(
+                        "Function already defined",
+                        diag::Level::Error, diag::Stage::Semantic, {
+                            diag::Label("", {tmp->loc})}));
+                    throw SemanticAbort();
                 }
             } else if (ASR::is_a<ASR::Function_t>(*f1)) {
                 ASR::Function_t* f2 = ASR::down_cast<ASR::Function_t>(f1);
@@ -3683,12 +4005,36 @@ public:
                 This subroutine contains an entry function, create
                 template function for each entry and a master function
             */
-            for (auto &entry_function: entry_functions[sym_name]) {
-                create_template_entry_function(x.base.base.loc, entry_function.first, entry_function_args[entry_function.first], false, true, sym_name);
+            ASR::Variable_t* result = ASRUtils::EXPR2VAR(func->m_return_var);
+            std::vector<std::string> result_names = {result->m_name};
+            std::map<std::string, std::string> entry_result;
+            for (size_t i = 0; i < x.n_items; i++) {
+                if (!AST::is_a<AST::Entry_t>(*x.m_items[i])) continue;
+                AST::Entry_t* entry = AST::down_cast<AST::Entry_t>(x.m_items[i]);
+                std::string name = to_lower(entry->m_name);
+                if (entry->m_return_var) {
+                    name = to_lower(AST::down_cast<AST::Name_t>(entry->m_return_var)->m_id);
+                }
+                entry_result[to_lower(entry->m_name)] = name;
+                if (std::find(result_names.begin(), result_names.end(), name) == result_names.end()) {
+                    result_names.push_back(name);
+                }
+                if (current_scope->get_symbol(name) == nullptr) {
+                    // an undeclared entry result takes the type of the function result
+                    current_scope->add_symbol(name, ASR::down_cast<ASR::symbol_t>(ASRUtils::make_Variable_t_util(al,
+                        entry->base.base.loc, current_scope, s2c(al, name), nullptr, 0,
+                        ASR::intentType::Local, nullptr, nullptr, ASR::storage_typeType::Default,
+                        ASRUtils::duplicate_type(al, result->m_type), result->m_type_declaration,
+                        ASR::abiType::Source, ASR::accessType::Public, ASR::presenceType::Required, false)));
+                }
             }
-            std::vector<AST::arg_t> master_args = perform_argument_mapping(x, sym_name);
+            for (auto &entry_function: entry_functions[sym_name]) {
+                create_template_entry_function(x.base.base.loc, entry_function.first, entry_function_args[entry_function.first],
+                    false, result_names, entry_result[entry_function.first]);
+            }
+            std::vector<AST::arg_t> master_args = perform_argument_mapping(x, sym_name, result_names);
 
-            create_template_entry_function(x.base.base.loc, sym_name+"_main__lcompilers", master_args, true, true, sym_name);
+            create_template_entry_function(x.base.base.loc, sym_name+"_main__lcompilers", master_args, true, result_names);
         }
         try {
             add_class_procedures();
@@ -3702,6 +4048,8 @@ public:
             current_scope = parent_scope;
         }
         current_procedure_args.clear();
+        current_procedure_result = current_procedure_result_copy;
+        current_procedure_result_scope = current_procedure_result_scope_copy;
         current_procedure_abi_type = current_procedure_abi_type_copy;
         current_symbol = -1;
         // print_implicit_dictionary(implicit_dictionary);
@@ -3715,6 +4063,7 @@ public:
         }
         current_function_dependencies = current_function_dependencies_copy;
         in_Subroutine = false;
+        is_template = is_template_copy;
         is_global_save_enabled = is_global_save_enabled_copy;
         explicit_save_symbols = explicit_save_symbols_copy;
         // A templated function is complete; `parent_scope` is the Template
@@ -3886,6 +4235,7 @@ public:
     void visit_DerivedType(const AST::DerivedType_t &x) {
         const std::string name = to_lower(x.m_name);
         dt_name = name;
+        binding_dflt_access = ASR::accessType::Public;
         std::string deferred_name = name;
         if (current_module_sym) {
             auto *module = ASR::down_cast<ASR::Module_t>(
@@ -3921,8 +4271,10 @@ public:
             restore_entry(generic_class_procedures, name, generics);
             restore_entry(generic_procedures, name, constructors);
             pending_type_initializers.resize(initializers);
+            binding_dflt_access = ASR::accessType::Public;
             throw;
         }
+        binding_dflt_access = ASR::accessType::Public;
     }
 
     void visit_Union(const AST::Union_t&x) {
@@ -4073,6 +4425,7 @@ public:
                 use_sym_name = to_lower(use_sym->m_remote_sym);
             }
             class_procedures[dt_name][use_sym_name]["procedure"] = remote_sym_str;
+            ASR::accessType access = binding_dflt_access;
             for( size_t i = 0; i < x.n_attr; i++ ) {
                 switch( x.m_attr[i]->type ) {
                     case AST::decl_attributeType::AttrPass: {
@@ -4098,6 +4451,10 @@ public:
                         } else if (attr->m_attr == AST::simple_attributeType::AttrNoPass) {
                             LCOMPILERS_ASSERT(cdf[new_dt_name][use_sym_name].find("nopass") == cdf[new_dt_name][use_sym_name].end());
                             cdf[new_dt_name][use_sym_name]["nopass"] = attr->base.base.loc;
+                        } else if (attr->m_attr == AST::simple_attributeType::AttrPrivate) {
+                            access = ASR::accessType::Private;
+                        } else if (attr->m_attr == AST::simple_attributeType::AttrPublic) {
+                            access = ASR::accessType::Public;
                         }
                         break;
                     }
@@ -4106,6 +4463,7 @@ public:
                     }
                 }
             }
+            class_procedures[dt_name][use_sym_name]["procedure"].access = access;
         }
     }
 
@@ -4263,6 +4621,18 @@ public:
                 throw SemanticAbort();
             }
         }
+    }
+
+    // The specific procedures named in the interface block `x`, with the
+    // current scope, which is the scope of the block.
+    std::vector<GenericSpecific> interface_specifics(const AST::Interface_t &x) {
+        std::vector<std::pair<std::string, Location>> proc_names;
+        fill_interface_proc_names_with_loc(x, proc_names);
+        std::vector<GenericSpecific> specifics;
+        for (auto &proc_name : proc_names) {
+            specifics.push_back({proc_name.first, proc_name.second, current_scope});
+        }
+        return specifics;
     }
 
     void fill_interface_proc_names_with_loc(const AST::Interface_t& x,
@@ -6725,26 +7095,14 @@ public:
             }
         } else if (AST::is_a<AST::InterfaceHeaderOperator_t>(*x.m_header)) {
             std::string op = intrinsic2str[AST::down_cast<AST::InterfaceHeaderOperator_t>(x.m_header)->m_op];
-            std::vector<std::pair<std::string, Location>> proc_names;
-            fill_interface_proc_names_with_loc(x, proc_names);
-            // check if the operator is already defined, if yes, then a new defition means it is being overloaded
-            if (overloaded_op_procs.find(op) != overloaded_op_procs.end()) {
-                overloaded_op_procs[op].insert(overloaded_op_procs[op].end(),
-                    proc_names.begin(), proc_names.end());
-            } else {
-                overloaded_op_procs[op] = proc_names;
-            }
+            std::vector<GenericSpecific> specifics = interface_specifics(x);
+            std::vector<GenericSpecific> &procs = overloaded_op_procs[op];
+            procs.insert(procs.end(), specifics.begin(), specifics.end());
         } else if (AST::is_a<AST::InterfaceHeaderDefinedOperator_t>(*x.m_header)) {
             std::string op = to_lower(AST::down_cast<AST::InterfaceHeaderDefinedOperator_t>(x.m_header)->m_operator_name);
-            std::vector<std::pair<std::string, Location>> proc_names;
-            fill_interface_proc_names_with_loc(x, proc_names);
-            // check if the operator is already defined, if yes, then a new defition means it is being overloaded
-            if (defined_op_procs.find(op) != defined_op_procs.end()) {
-                defined_op_procs[op].insert(defined_op_procs[op].end(),
-                    proc_names.begin(), proc_names.end());
-            } else {
-                defined_op_procs[op] = proc_names;
-            }
+            std::vector<GenericSpecific> specifics = interface_specifics(x);
+            std::vector<GenericSpecific> &procs = defined_op_procs[op];
+            procs.insert(procs.end(), specifics.begin(), specifics.end());
         }  else if (AST::is_a<AST::InterfaceHeaderAssignment_t>(*x.m_header)) {
             fill_interface_proc_names_with_loc(x, assgn_proc_names_locations);
         }  else if (AST::is_a<AST::InterfaceHeaderWrite_t>(*x.m_header)) {
@@ -6757,9 +7115,7 @@ public:
                 throw SemanticAbort();
             }
             op_name = "~write_" + op_name;
-            std::vector<std::pair<std::string, Location>> proc_names;
-            fill_interface_proc_names_with_loc(x, proc_names);
-            defined_op_procs[op_name] = proc_names;
+            defined_op_procs[op_name] = interface_specifics(x);
         }  else if (AST::is_a<AST::InterfaceHeaderRead_t>(*x.m_header)) {
             std::string op_name = to_lower(AST::down_cast<AST::InterfaceHeaderRead_t>(x.m_header)->m_id);
             if (op_name != "formatted" && op_name != "unformatted") {
@@ -6770,9 +7126,7 @@ public:
                 throw SemanticAbort();
             }
             op_name = "~read_" + op_name;
-            std::vector<std::pair<std::string, Location>> proc_names;
-            fill_interface_proc_names_with_loc(x, proc_names);
-            defined_op_procs[op_name] = proc_names;
+            defined_op_procs[op_name] = interface_specifics(x);
         }  else {
             diag.add(diag::Diagnostic(
                 "Interface type not imlemented yet",
@@ -6788,6 +7142,7 @@ public:
     // storage that every view of a block shares.
     void visit_BlockData(const AST::BlockData_t& x) {
         ScopingUnitScope scoping_unit_scope(*this, ScopingUnitKind::Other);
+        PendingAttributeScope pending_attribute_scope(*this);
         ImplicitNoneScope implicit_none_scope(*this, x.m_items, x.n_items);
         SymbolTable *parent_scope = current_scope;
         std::string name;
@@ -6836,6 +7191,7 @@ public:
             if (!AST::is_kind(*x.m_items[i], AST::DeclStmtKind::Use)) continue;
             visit_item(*x.m_items[i]);
         }
+        check_single_implicit_none(x);
         if (compiler_options.implicit_typing) {
             Location a_loc = x.base.base.loc;
             populate_implicit_dictionary(a_loc, implicit_dictionary);
@@ -6953,11 +7309,34 @@ public:
                 if (!compiler_options.continue_compilation) throw SemanticAbort();
                 continue;
             }
+            if (!check_specific_explicit_interface(x, pname, loc)) continue;
             symbols.push_back(al, x);
         }
         LCOMPILERS_ASSERT(strlen(generic_name) > 0);
-        append_accessible_custom_operator_procs(
-            current_scope->get_symbol(generic_name), generic_name, symbols);
+        ASR::symbol_t *existing = current_scope->get_symbol(generic_name);
+        append_accessible_custom_operator_procs(existing, symbols);
+        if (existing == nullptr && current_scope->parent != nullptr
+                && current_scope->asr_owner != nullptr
+                && ASR::is_a<ASR::symbol_t>(*current_scope->asr_owner)
+                && ASR::is_a<ASR::Function_t>(
+                    *ASR::down_cast<ASR::symbol_t>(current_scope->asr_owner))) {
+            // An operator interface block in a procedure extends the operator
+            // of its host.
+            ASR::symbol_t *host = current_scope->parent->resolve_symbol(
+                generic_name);
+            if (host != nullptr && ASR::is_a<ASR::CustomOperator_t>(
+                    *ASRUtils::symbol_get_past_external(host))) {
+                ASR::CustomOperator_t *cop = ASR::down_cast<ASR::CustomOperator_t>(
+                    ASRUtils::symbol_get_past_external(host));
+                for (size_t i = 0; i < cop->n_procs; i++) {
+                    ASR::symbol_t *s = accessible_generic_specific(
+                        cop->m_procs[i], new_operator_name, op_loc);
+                    if (s != nullptr) {
+                        symbols.push_back(al, s);
+                    }
+                }
+            }
+        }
         ASR::asr_t *v = ASR::make_CustomOperator_t(al, op_loc, current_scope,
                             generic_name, symbols.p, symbols.size(), access);
         current_scope->add_or_overwrite_symbol(new_operator_name, ASR::down_cast<ASR::symbol_t>(v));
@@ -6966,46 +7345,55 @@ public:
     // If the operator `existing` is already accessible in the scope, include its procedures
     // into the `CustomOperator` symbol that we overwrite it with.
     void append_accessible_custom_operator_procs(ASR::symbol_t *existing,
-            const std::string &generic_name, Vec<ASR::symbol_t*> &symbols) {
-        if (existing == nullptr) {
+            Vec<ASR::symbol_t*> &symbols) {
+        if (existing == nullptr || !ASR::is_a<ASR::CustomOperator_t>(*existing)) {
             return;
         }
-        ASR::CustomOperator_t* cop = nullptr;
-        if (ASR::is_a<ASR::ExternalSymbol_t>(*existing)) {
-            ASR::symbol_t* sym = ASRUtils::symbol_get_past_external(existing);
-            if (ASR::is_a<ASR::CustomOperator_t>(*sym)) {
-                cop = ASR::down_cast<ASR::CustomOperator_t>(sym);
-            }
-        } else if (ASR::is_a<ASR::CustomOperator_t>(*existing)) {
-            cop = ASR::down_cast<ASR::CustomOperator_t>(existing);
-        }
-        if (cop != nullptr) {
-            for (size_t i = 0; i < cop->n_procs; i++) {
-                std::string proc_name = std::string(ASRUtils::symbol_name(cop->m_procs[i])) + "@" + generic_name;
-                ASR::symbol_t* proc_sym = current_scope->resolve_symbol(proc_name);
-                if (proc_sym == nullptr) {
-                    proc_sym = current_scope->resolve_symbol(
-                        ASRUtils::symbol_name(cop->m_procs[i]));
-                }
-                if (proc_sym != nullptr) {
-                    symbols.push_back(al, proc_sym);
-                }
-            }
+        ASR::CustomOperator_t* cop = ASR::down_cast<ASR::CustomOperator_t>(existing);
+        for (size_t i = 0; i < cop->n_procs; i++) {
+            symbols.push_back(al, cop->m_procs[i]);
         }
     }
 
-    void add_overloaded_procedures() {
-        for (auto &proc : overloaded_op_procs) {
-            std::pair<const std::string, std::vector<std::pair<std::string, Location>>>
-                proc_ = {proc.first, proc.second};
-            add_custom_operator(proc_, ASR::accessType::Public);
+    // The specific procedures of one operator, grouped by the scope of the
+    // interface block that names them, in the order the scopes were seen.
+    std::vector<std::pair<SymbolTable*, std::vector<std::pair<std::string, Location>>>>
+            group_specifics_by_scope(const std::vector<GenericSpecific> &specifics) {
+        std::vector<std::pair<SymbolTable*,
+            std::vector<std::pair<std::string, Location>>>> groups;
+        for (auto &specific : specifics) {
+            auto it = std::find_if(groups.begin(), groups.end(),
+                [&](const auto &group) { return group.first == specific.scope; });
+            if (it == groups.end()) {
+                groups.push_back({specific.scope, {}});
+                it = groups.end() - 1;
+            }
+            it->second.push_back({specific.name, specific.loc});
         }
-        overloaded_op_procs.clear();
+        return groups;
+    }
 
-        for (auto &proc : defined_op_procs) {
-            add_custom_operator(proc, ASR::accessType::Public);
+    // Builds the pending operators, both intrinsic (`operator(+)`) and
+    // defined (`operator(.op.)`). They are pending until the end of the
+    // enclosing module, program or template, so this includes the interface
+    // blocks of its procedures. Blocks for the same operator in different scopes declare
+    // different operators, so each operator is built in the scope of its
+    // blocks, where their specific procedures are resolved (such as a
+    // procedure's dummy procedures).
+    void add_overloaded_procedures() {
+        SymbolTable *current_scope_copy = current_scope;
+        for (auto *op_procs : {&overloaded_op_procs, &defined_op_procs}) {
+            for (auto &[op, specifics] : *op_procs) {
+                for (auto &[scope, procs] : group_specifics_by_scope(specifics)) {
+                    current_scope = scope;
+                    std::pair<const std::string,
+                        std::vector<std::pair<std::string, Location>>> scope_procs = {op, procs};
+                    add_custom_operator(scope_procs, ASR::accessType::Public);
+                }
+            }
+            op_procs->clear();
         }
-        defined_op_procs.clear();
+        current_scope = current_scope_copy;
     }
 
     void add_assignment_procedures() {
@@ -7108,6 +7496,26 @@ public:
         for (SymbolTable *t = scope; t != nullptr; t = t->parent) {
             if (t == outer) return true;
         }
+        return false;
+    }
+
+    // An external procedure has no explicit interface outside its own subprogram.
+    bool check_specific_explicit_interface(ASR::symbol_t *specific,
+            const std::string &name, const Location &loc) {
+        if (!ASR::is_a<ASR::Function_t>(*specific)) return true;
+        ASR::Function_t *f = ASR::down_cast<ASR::Function_t>(specific);
+        if (!ASRUtils::is_tu_scope(ASRUtils::symbol_parent_symtab(specific))
+                || is_enclosing_scope(f->m_symtab, current_scope)) {
+            return true;
+        }
+        diag.add(Diagnostic(
+            "external procedure '" + name + "' needs an explicit interface "
+            "to be named in an interface block",
+            Level::Error, Stage::Semantic, {
+                Label("add an interface body for '" + name
+                    + "', or define it in a module", {loc})
+            }));
+        if (!compiler_options.continue_compilation) throw SemanticAbort();
         return false;
     }
 
@@ -7228,6 +7636,10 @@ public:
                     any_error = true;
                     continue;
                 }
+                if (!check_specific_explicit_interface(x, pname.name, pname.loc)) {
+                    any_error = true;
+                    continue;
+                }
                 symbols.push_back(al, x);
             }
             if (any_error) continue;
@@ -7290,11 +7702,13 @@ public:
 
             // Resolve AST node + set it in the holder.
             bool in_subroutine_or_function_copy{in_Subroutine}; in_Subroutine = true;
+            ASR::expr_t* call = nullptr;
             try {
                 visit_expr(*funcCall);
-                *expr_holder = ASRUtils::EXPR(tmp); tmp=nullptr;
+                call = ASRUtils::EXPR(tmp); tmp=nullptr;
+                *expr_holder = call;
                 // Invoke the call to the CheckFunc
-                if( CheckFunc ) CheckFunc(*expr_holder);
+                if( CheckFunc ) CheckFunc(call);
             } catch (SemanticAbort &) {
                 current_scope = current_scope_copy;
                 in_Subroutine = in_subroutine_or_function_copy;
@@ -7339,8 +7753,8 @@ public:
             // expr_holder may resolve to non-FunctionCall nodes (e.g.
             // StructInstanceMember for type-bound member access in dimension
             // expressions), so we guard instead of asserting FunctionCall_t.
-            if (ASR::is_a<ASR::FunctionCall_t>(**expr_holder)) {
-                ASR::FunctionCall_t* func_call = ASR::down_cast<ASR::FunctionCall_t>(*expr_holder);
+            if (ASR::is_a<ASR::FunctionCall_t>(*call)) {
+                ASR::FunctionCall_t* func_call = ASR::down_cast<ASR::FunctionCall_t>(call);
                 if(((ASR::symbol_t*)current_scope->asr_owner) == func_call->m_name){
                     diag.add(diag::Diagnostic(
                         "Variable declaration is calling its function scope recursively",
@@ -7381,6 +7795,34 @@ public:
             curr = ASR::down_cast<ASR::Struct_t>(parent_sym);
         }
         return nullptr;
+    }
+
+    // The binding `proc_name` of `clss`; an inherited one is copied into `clss` for codegen.
+    ASR::symbol_t* resolve_and_copy_type_bound_proc(
+            ASR::Struct_t *clss, const std::string &proc_name) {
+        ASR::symbol_t *proc_sym = resolve_type_bound_proc_in_parent_chain(clss, proc_name);
+        if (proc_sym == nullptr || ASRUtils::symbol_parent_symtab(proc_sym) == clss->m_symtab) {
+            return proc_sym;
+        }
+        LCOMPILERS_ASSERT(ASR::is_a<ASR::StructMethodDeclaration_t>(*proc_sym));
+        ASR::StructMethodDeclaration_t *parent_decl
+            = ASR::down_cast<ASR::StructMethodDeclaration_t>(proc_sym);
+        std::string local_name = ASRUtils::symbol_name(proc_sym);
+        ASR::symbol_t *local_sym = clss->m_symtab->get_symbol(local_name);
+        if (local_sym == nullptr) {
+            ASR::symbol_t *proc = ASRUtils::import_symbol(al, parent_decl->m_proc,
+                clss->m_symtab->parent, ASR::accessType::Private, "1_");
+            ASRUtils::insert_module_dependency(proc, al, current_module_dependencies);
+            local_sym = ASR::down_cast<ASR::symbol_t>(ASR::make_StructMethodDeclaration_t(
+                al, proc_sym->base.loc, clss->m_symtab,
+                parent_decl->m_name, parent_decl->m_self_argument,
+                parent_decl->m_proc_name, proc,
+                parent_decl->m_abi, parent_decl->m_is_deferred,
+                parent_decl->m_is_nopass, parent_decl->m_access,
+                parent_decl->m_dispatch_proc));
+            clss->m_symtab->add_symbol(local_name, local_sym);
+        }
+        return local_sym;
     }
 
     void sync_pdt_specialization_symbols(ASR::Struct_t* template_struct,
@@ -7430,31 +7872,8 @@ public:
                 Vec<ASR::symbol_t*> cand_procs;
                 cand_procs.reserve(al, pname.second.size());
                 for( std::string &cand_proc: pname.second ) {
-                    ASR::symbol_t *cand_proc_sym
-                        = resolve_type_bound_proc_in_parent_chain(clss, cand_proc);
+                    ASR::symbol_t *cand_proc_sym = resolve_and_copy_type_bound_proc(clss, cand_proc);
                     if (cand_proc_sym != nullptr) {
-                        if (ASRUtils::symbol_parent_symtab(cand_proc_sym) != clss->m_symtab) {
-                            // Inherited binding lives in a parent type's scope.
-                            // Copy the StructMethodDeclaration into the child's
-                            // symtab so that codegen never sees an ExternalSymbol
-                            // where it expects a StructMethodDeclaration.
-                            LCOMPILERS_ASSERT(ASR::is_a<ASR::StructMethodDeclaration_t>(*cand_proc_sym));
-                            ASR::StructMethodDeclaration_t *parent_decl
-                                = ASR::down_cast<ASR::StructMethodDeclaration_t>(cand_proc_sym);
-                            std::string cand_proc_name = ASRUtils::symbol_name(cand_proc_sym);
-                            ASR::symbol_t *local_proc_sym = clss->m_symtab->get_symbol(cand_proc_name);
-                            if (local_proc_sym == nullptr) {
-                                ASR::asr_t *new_decl = ASR::make_StructMethodDeclaration_t(
-                                    al, cand_proc_sym->base.loc, clss->m_symtab,
-                                    parent_decl->m_name, parent_decl->m_self_argument,
-                                    parent_decl->m_proc_name, parent_decl->m_proc,
-                                    parent_decl->m_abi, parent_decl->m_is_deferred,
-                                    parent_decl->m_is_nopass, parent_decl->m_dispatch_proc);
-                                local_proc_sym = ASR::down_cast<ASR::symbol_t>(new_decl);
-                                clss->m_symtab->add_symbol(cand_proc_name, local_proc_sym);
-                            }
-                            cand_proc_sym = local_proc_sym;
-                        }
                         cand_procs.push_back(al, cand_proc_sym);
                     } else {
                         diag.add(diag::Diagnostic(
@@ -7489,9 +7908,15 @@ public:
                         ASR::accessType::Public);
                 } else {
                     LCOMPILERS_ASSERT(strlen(generic_name) > 0);
+                    ASR::accessType access = ASR::accessType::Public;
+                    auto dt_access = generic_class_procedure_access.find(proc.first);
+                    if (dt_access != generic_class_procedure_access.end()
+                            && dt_access->second.count(pname.first)) {
+                        access = dt_access->second[pname.first];
+                    }
                     v = ASR::make_GenericProcedure_t(al, loc,
                         clss->m_symtab, generic_name,
-                        cand_procs.p, cand_procs.size(), ASR::accessType::Public); // Update the access as per the input Fortran code
+                        cand_procs.p, cand_procs.size(), access);
                 }
                 ASR::symbol_t *cls_proc_sym = ASR::down_cast<ASR::symbol_t>(v);
                 clss->m_symtab->add_symbol(pname.first, cls_proc_sym);
@@ -7499,6 +7924,86 @@ public:
             }
         }
         generic_class_procedures.clear();
+        generic_class_procedure_access.clear();
+        std::set<ASR::Struct_t*> done;
+        for (auto &item : current_scope->get_scope()) {
+            if (ASR::is_a<ASR::Struct_t>(*item.second)) {
+                inherit_generic_class_procedures(
+                    ASR::down_cast<ASR::Struct_t>(item.second), done);
+            }
+        }
+    }
+
+    // Merges the parent's generic bindings into `clss`, with each specific binding taken from `clss`.
+    void inherit_generic_class_procedures(ASR::Struct_t *clss,
+            std::set<ASR::Struct_t*> &done) {
+        if (clss->m_parent == nullptr || !done.insert(clss).second) {
+            return;
+        }
+        ASR::Struct_t *parent = ASR::down_cast<ASR::Struct_t>(
+            ASRUtils::symbol_get_past_external(clss->m_parent));
+        if (parent->m_symtab->parent == current_scope) {
+            inherit_generic_class_procedures(parent, done);
+        }
+        auto generic_procs = [](ASR::symbol_t *generic) {
+            if (ASR::is_a<ASR::CustomOperator_t>(*generic)) {
+                ASR::CustomOperator_t *op = ASR::down_cast<ASR::CustomOperator_t>(generic);
+                return std::make_pair(op->m_procs, op->n_procs);
+            }
+            ASR::GenericProcedure_t *gp = ASR::down_cast<ASR::GenericProcedure_t>(generic);
+            return std::make_pair(gp->m_procs, gp->n_procs);
+        };
+        for (auto &item : parent->m_symtab->get_scope()) {
+            ASR::symbol_t *parent_generic = item.second;
+            if (!ASR::is_a<ASR::CustomOperator_t>(*parent_generic) &&
+                    !ASR::is_a<ASR::GenericProcedure_t>(*parent_generic)) {
+                continue;
+            }
+            ASR::symbol_t *own_generic = clss->m_symtab->get_symbol(item.first);
+            if (own_generic != nullptr && own_generic->type != parent_generic->type) {
+                continue;
+            }
+            Vec<ASR::symbol_t*> procs;
+            procs.reserve(al, generic_procs(parent_generic).second);
+            std::set<std::string> proc_names;
+            for (ASR::symbol_t *generic : {parent_generic, own_generic}) {
+                if (generic == nullptr) {
+                    continue;
+                }
+                auto [m_procs, n_procs] = generic_procs(generic);
+                for (size_t i = 0; i < n_procs; i++) {
+                    std::string proc_name = ASRUtils::symbol_name(m_procs[i]);
+                    if (!proc_names.insert(proc_name).second) {
+                        continue;
+                    }
+                    ASR::symbol_t *proc = resolve_and_copy_type_bound_proc(clss, proc_name);
+                    procs.push_back(al, proc && ASR::is_a<ASR::StructMethodDeclaration_t>(*proc)
+                        ? proc : m_procs[i]);
+                }
+            }
+            if (own_generic == nullptr) {
+                ASR::asr_t *v;
+                if (ASR::is_a<ASR::CustomOperator_t>(*parent_generic)) {
+                    v = ASR::make_CustomOperator_t(al, parent_generic->base.loc,
+                        clss->m_symtab, s2c(al, item.first), procs.p, procs.size(),
+                        ASR::down_cast<ASR::CustomOperator_t>(parent_generic)->m_access);
+                } else {
+                    v = ASR::make_GenericProcedure_t(al, parent_generic->base.loc,
+                        clss->m_symtab, s2c(al, item.first), procs.p, procs.size(),
+                        ASR::down_cast<ASR::GenericProcedure_t>(parent_generic)->m_access);
+                }
+                clss->m_symtab->add_symbol(item.first, ASR::down_cast<ASR::symbol_t>(v));
+            } else if (ASR::is_a<ASR::CustomOperator_t>(*own_generic)) {
+                ASR::CustomOperator_t *op = ASR::down_cast<ASR::CustomOperator_t>(own_generic);
+                op->m_procs = procs.p;
+                op->n_procs = procs.size();
+            } else {
+                ASR::GenericProcedure_t *gp = ASR::down_cast<ASR::GenericProcedure_t>(own_generic);
+                gp->m_procs = procs.p;
+                gp->n_procs = procs.size();
+            }
+        }
+        sync_pdt_specialization_symbols(clss, current_scope);
     }
 
     bool is_pdt_instantiation_of(ASR::symbol_t* candidate_sym, ASR::symbol_t* template_sym) {
@@ -7606,15 +8111,21 @@ public:
         }
     }
 
+    // The key of the derived type `dt_name` in class_deferred_procedures.
+    // visit_DerivedTypeProc qualifies it with the module being visited, which
+    // is also the module of a type declared in one of its procedures.
+    static std::string class_deferred_procedures_key(const std::string &dt_name,
+            ASR::Struct_t *clss) {
+        ASR::Module_t *mod = ASRUtils::get_sym_module0(&clss->base);
+        if (mod) {
+            return std::string(mod->m_name) + "_" + dt_name;
+        }
+        return dt_name;
+    }
+
     bool check_is_deferred(const std::string& pname, ASR::Struct_t* clss) {
         auto& cdf = class_deferred_procedures;
-        std::string proc = clss->m_name;
-        // Use module-qualified name
-        ASR::symbol_t* owner_sym = ASRUtils::get_asr_owner(&clss->base);
-        if (owner_sym && ASR::is_a<ASR::Module_t>(*owner_sym)) {
-            ASR::Module_t* mod = ASR::down_cast<ASR::Module_t>(owner_sym);
-            proc = std::string(mod->m_name) + "_" + proc;
-        }
+        std::string proc = class_deferred_procedures_key(clss->m_name, clss);
         if(cdf.count(proc) && cdf[proc].count(pname) && cdf[proc][pname].count("deferred")) {
             return true;
         }
@@ -7656,14 +8167,385 @@ public:
         }
     };
 
-    // A procedure pointer `null()` in an initializer, such as a constructor
-    // argument or a component default filled into a constructor, refers to
-    // the interface of its component. If the interface is a procedure
-    // defined later, that is the placeholder, so refer to the procedure in
-    // the initializers of `scope` and its nested scopes instead. All
-    // placeholders are replaced in a single walk.
-    void replace_placeholder_in_initializers(SymbolTable *scope,
-            PlaceholderVarReplacer &replacer) {
+    // The procedure pointers, dummy procedures and procedures of the scopes
+    // in which placeholders are replaced, see
+    // `complete_procedure_interfaces()`.
+    struct ProcedureInterfaceCompletion {
+        const std::map<ASR::symbol_t*, ASR::symbol_t*> &placeholder_to_real;
+        // In the order of the walk of the scopes.
+        std::vector<ASR::Variable_t*> declarations;
+        std::vector<ASR::Function_t*> procedures;
+        // The declarations whose interface, and the procedures whose
+        // signature, includes the interface of a replaced placeholder,
+        // directly or through the interface of a dummy procedure or result.
+        std::set<ASR::Variable_t*> stale_declarations;
+        std::set<ASR::Function_t*> stale_procedures;
+        std::set<ASR::Variable_t*> completed_declarations;
+        std::set<ASR::Function_t*> completed_procedures;
+        // The procedures whose signature is being completed, and the
+        // declarations whose interface is, innermost last.
+        std::set<ASR::Function_t*> procedures_in_progress;
+        std::vector<ASR::Variable_t*> declarations_in_progress;
+        // Whether a declaration has an interface that depends on its own
+        // characteristics, which is reported.
+        bool cyclic_interface = false;
+
+        ProcedureInterfaceCompletion(
+                const std::map<ASR::symbol_t*, ASR::symbol_t*> &placeholder_to_real_)
+            : placeholder_to_real(placeholder_to_real_) {}
+
+        // The procedure whose interface `var` is declared with, if it is a
+        // procedure pointer or dummy procedure.
+        ASR::Function_t *interface_of(ASR::Variable_t *var) const {
+            ASR::symbol_t *iface = var->m_type_declaration;
+            if (iface == nullptr || !ASR::is_a<ASR::FunctionType_t>(
+                    *ASRUtils::type_get_past_pointer(var->m_type))) {
+                return nullptr;
+            }
+            auto it = placeholder_to_real.find(iface);
+            if (it != placeholder_to_real.end()) iface = it->second;
+            iface = ASRUtils::symbol_get_past_external(iface);
+            return iface && ASR::is_a<ASR::Function_t>(*iface)
+                ? ASR::down_cast<ASR::Function_t>(iface) : nullptr;
+        }
+
+        // The dummy arguments and result of `func` that its signature has
+        // the types of, with their positions; the result has position
+        // `func->n_args`.
+        static std::vector<std::pair<size_t, ASR::Variable_t*>>
+                signature_variables(ASR::Function_t *func) {
+            std::vector<std::pair<size_t, ASR::Variable_t*>> vars;
+            for (size_t i = 0; i < func->n_args; i++) {
+                if (ASR::Variable_t *arg = ASRUtils::expr_to_variable_or_null(
+                        func->m_args[i])) {
+                    vars.push_back({i, arg});
+                }
+            }
+            if (func->m_return_var) {
+                if (ASR::Variable_t *result = ASRUtils::expr_to_variable_or_null(
+                        func->m_return_var)) {
+                    vars.push_back({func->n_args, result});
+                }
+            }
+            return vars;
+        }
+
+        void find_stale() {
+            for (ASR::Variable_t *var : declarations) {
+                if (placeholder_to_real.count(var->m_type_declaration) > 0) {
+                    stale_declarations.insert(var);
+                }
+            }
+            bool changed = true;
+            while (changed) {
+                changed = false;
+                for (ASR::Function_t *func : procedures) {
+                    if (stale_procedures.count(func) > 0) continue;
+                    for (auto &item : signature_variables(func)) {
+                        if (stale_declarations.count(item.second) > 0) {
+                            stale_procedures.insert(func);
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+                for (ASR::Variable_t *var : declarations) {
+                    if (stale_declarations.count(var) == 0
+                            && stale_procedures.count(interface_of(var)) > 0) {
+                        stale_declarations.insert(var);
+                        changed = true;
+                    }
+                }
+            }
+        }
+    };
+
+    // Describes `name`, a dummy procedure or the procedure pointer result
+    // of a procedure, in a diagnostic.
+    static std::string signature_entity(const std::string &name,
+            bool is_result) {
+        return (is_result ? "procedure pointer result '"
+            : "dummy procedure '") + name + "'";
+    }
+
+    // Describes `var`, a dummy procedure or procedure pointer result.
+    static std::string signature_entity(ASR::Variable_t *var) {
+        ASR::Function_t *owner = ASR::down_cast<ASR::Function_t>(
+            ASR::down_cast<ASR::symbol_t>(var->m_parent_symtab->asr_owner));
+        return signature_entity(var->m_name, owner->m_return_var != nullptr
+            && ASRUtils::expr_to_variable_or_null(owner->m_return_var) == var);
+    }
+
+    // Reports the dummy procedures and procedure pointer result of the
+    // procedure `proc_name` that `decl`, a procedure declaration statement
+    // naming the procedure as their interface, declares: the interface
+    // depends on their own characteristics (Fortran 2023 15.4.3.6).
+    void check_self_dependent_interface(const AST::Declaration_t &decl,
+            const std::string &proc_name) {
+        bool reported = false;
+        for (size_t i = 0; i < decl.n_syms; i++) {
+            if (decl.m_syms[i].m_name == nullptr) continue;
+            std::string name = to_lower(decl.m_syms[i].m_name);
+            bool is_result = name == current_procedure_result;
+            if (!is_result && std::find(current_procedure_args.begin(),
+                    current_procedure_args.end(), name)
+                    == current_procedure_args.end()) {
+                continue;
+            }
+            std::string entity = signature_entity(name, is_result);
+            report_self_dependent_interface(proc_name, entity, name,
+                "'" + proc_name + "' has " + entity, decl.m_syms[i].loc);
+            reported = true;
+        }
+        if (reported) {
+            throw SemanticAbort();
+        }
+    }
+
+    // Reports that the interface `iface` of `entity`, a dummy procedure or
+    // procedure pointer result named `name`, depends on the characteristics
+    // of `name` (Fortran 2023 15.4.3.6), as `cycle` tells.
+    void report_self_dependent_interface(const std::string &iface,
+            const std::string &entity, const std::string &name,
+            const std::string &cycle, const Location &loc) {
+        diag.add(diag::Diagnostic("interface '" + iface + "' of " + entity
+            + " depends on the characteristics of '" + name + "'",
+            diag::Level::Error, diag::Stage::Semantic,
+            {diag::Label(cycle, {loc})}));
+    }
+
+    // Reports `var`, a dummy procedure or procedure pointer result whose
+    // interface `iface` is reached again while the signature of `iface` is
+    // being completed: through the declarations in progress since then,
+    // which `var` ends, the interface depends on the characteristics of
+    // `var`.
+    void report_cyclic_interface(ASR::Variable_t *var, ASR::Function_t *iface,
+            ProcedureInterfaceCompletion &c) {
+        std::string cycle;
+        for (ASR::Variable_t *decl : c.declarations_in_progress) {
+            if (cycle.empty()
+                    && decl->m_parent_symtab->asr_owner != &iface->base.base) {
+                continue;
+            }
+            cycle += (cycle.empty() ? "'" + std::string(iface->m_name)
+                + "' has " : ", which has ") + signature_entity(decl)
+                + " with interface '" + std::string(
+                    c.interface_of(decl)->m_name) + "'";
+        }
+        cycle += (cycle.empty() ? "'" + std::string(iface->m_name)
+            + "' has " : ", which has ") + signature_entity(var);
+        report_self_dependent_interface(iface->m_name, signature_entity(var),
+            var->m_name, cycle, var->base.base.loc);
+        c.cyclic_interface = true;
+    }
+
+    // Returns whether `type` refers to other entities, such as dummies of
+    // the procedure declaring an entity of that type.
+    bool type_has_dependencies(ASR::ttype_t *type) {
+        SetChar dependencies;
+        dependencies.reserve(al, 1);
+        ASRUtils::collect_variable_dependencies(al, dependencies, type);
+        return dependencies.size() > 0;
+    }
+
+    // Declares in `scope` the result of `iface`, a procedure whose interface
+    // depends on its own characteristics, and returns it, or returns null
+    // if `iface` is a subroutine or its result cannot be declared without
+    // `iface`. A procedure pointer result, whose interface can lead back to
+    // `iface`, points to an interface without dummy arguments or result. A
+    // result whose array bounds or character length depend on other
+    // entities, such as dummies of `iface`, is declared allocatable, with
+    // deferred bounds and length, and a result whose other type parameters
+    // do is not declared.
+    ASR::expr_t *declare_result_of_cyclic_interface(ASR::Function_t *iface,
+            SymbolTable *scope) {
+        ASR::Variable_t *result = ASRUtils::expr_to_variable_or_null(
+            iface->m_return_var);
+        if (result == nullptr) {
+            return nullptr;
+        }
+        const Location &loc = result->base.base.loc;
+        ASR::ttype_t *type;
+        ASR::symbol_t *type_declaration;
+        if (ASR::is_a<ASR::FunctionType_t>(
+                *ASRUtils::extract_type(result->m_type))) {
+            if (!ASR::is_a<ASR::Pointer_t>(*result->m_type)) {
+                return nullptr;
+            }
+            type_declaration = declare_unknown_interface(iface, scope, false);
+            type = ASRUtils::TYPE(ASR::make_Pointer_t(al, loc,
+                ASR::down_cast<ASR::Function_t>(
+                    type_declaration)->m_function_signature));
+        } else {
+            type = ASRUtils::ExprStmtDuplicator(al).duplicate_ttype(
+                result->m_type);
+            if (type_has_dependencies(type)) {
+                ASR::ttype_t *element = ASRUtils::type_get_past_array(type);
+                if (ASR::is_a<ASR::String_t>(*element)
+                        && type_has_dependencies(element)) {
+                    ASR::String_t *str = ASR::down_cast<ASR::String_t>(
+                        element);
+                    element = ASRUtils::TYPE(ASR::make_String_t(al, loc,
+                        str->m_kind, nullptr,
+                        ASR::string_length_kindType::DeferredLength,
+                        str->m_physical_type));
+                    if (ASR::is_a<ASR::Array_t>(*type)) {
+                        ASR::down_cast<ASR::Array_t>(type)->m_type = element;
+                    } else {
+                        type = element;
+                    }
+                }
+                if (type_has_dependencies(ASRUtils::type_get_past_array(
+                        type))) {
+                    return nullptr;
+                }
+                type = ASRUtils::TYPE(ASRUtils::make_Allocatable_t_util(al,
+                    loc, type));
+            }
+            type_declaration = ASRUtils::import_type_declaration(al,
+                result->m_type_declaration, scope);
+            if (type_declaration != nullptr
+                    && !ASRUtils::is_named_from(type_declaration, scope)) {
+                return nullptr;
+            }
+        }
+        ASR::symbol_t *declared = ASR::down_cast<ASR::symbol_t>(
+            ASRUtils::make_Variable_t_util(al, loc, scope, result->m_name,
+                nullptr, 0, ASR::intentType::ReturnVar, nullptr, nullptr,
+                result->m_storage, type, type_declaration, result->m_abi,
+                result->m_access, result->m_presence, result->m_value_attr));
+        scope->add_symbol(result->m_name, declared);
+        return ASRUtils::EXPR(ASR::make_Var_t(al, loc, declared));
+    }
+
+    // Declares in `scope` an interface without dummy arguments standing for
+    // `iface`, a procedure whose interface depends on its own
+    // characteristics, and returns it. With `keep_result`, it keeps the
+    // result of `iface` where possible, see
+    // `declare_result_of_cyclic_interface()`.
+    ASR::symbol_t *declare_unknown_interface(ASR::Function_t *iface,
+            SymbolTable *scope, bool keep_result) {
+        SymbolTable *iface_scope = al.make_new<SymbolTable>(scope);
+        std::string name = scope->get_unique_name(
+            generated_symbol_name(iface->m_name, "unknown_interface"), false);
+        ASR::symbol_t *decl = ASR::down_cast<ASR::symbol_t>(
+            ASRUtils::make_Function_t_util(al, iface->base.base.loc,
+                iface_scope, s2c(al, name), nullptr, 0, nullptr, 0, nullptr, 0,
+                keep_result
+                    ? declare_result_of_cyclic_interface(iface, iface_scope)
+                    : nullptr,
+                ASR::abiType::Source, ASR::accessType::Private,
+                ASR::deftypeType::Interface, nullptr, false, false, false,
+                false, false, nullptr, 0, false, false, false));
+        scope->add_symbol(name, decl);
+        return decl;
+    }
+
+    // Makes `var`, a dummy procedure or procedure pointer result reported
+    // for an interface `iface` that depends on its own characteristics,
+    // declare its type with an interface without dummy arguments, as a
+    // procedure declared with an undefined interface does, and returns its
+    // type. Its type then names no procedure leading back to `var`, so it
+    // agrees with the procedure naming it wherever they are compared. The
+    // interface keeps the result of `iface` where possible, so that `var`
+    // is still referenced as a function.
+    ASR::ttype_t *declare_unknown_interface(ASR::Variable_t *var,
+            ASR::Function_t *iface) {
+        var->m_type_declaration = declare_unknown_interface(iface,
+            var->m_parent_symtab, true);
+        return ASR::down_cast<ASR::Function_t>(
+            var->m_type_declaration)->m_function_signature;
+    }
+
+    // Makes `var`, a procedure pointer or dummy procedure whose interface
+    // includes that of a replaced placeholder, take the completed
+    // interface of the procedure it is declared with, imported into the
+    // scope of `var` as a declaration naming the procedure imports it. That
+    // interface is completed first, so that a copy made by the import does
+    // not keep the placeholder interface of one of its dummy procedures.
+    void complete_procedure_declaration(ASR::Variable_t *var,
+            ProcedureInterfaceCompletion &c) {
+        if (c.stale_declarations.count(var) == 0
+                || !c.completed_declarations.insert(var).second) {
+            return;
+        }
+        ASR::Function_t *iface = c.interface_of(var);
+        auto it = c.placeholder_to_real.find(var->m_type_declaration);
+        if (it != c.placeholder_to_real.end()) {
+            var->m_type_declaration = ASRUtils::import_type_declaration(al,
+                it->second, var->m_parent_symtab);
+        }
+        ASR::ttype_t *real_func_type;
+        if (c.procedures_in_progress.count(iface) > 0) {
+            report_cyclic_interface(var, iface, c);
+            real_func_type = declare_unknown_interface(var, iface);
+        } else {
+            c.declarations_in_progress.push_back(var);
+            complete_procedure_signature(iface, c);
+            c.declarations_in_progress.pop_back();
+            real_func_type = ASRUtils::import_procedure_type(al,
+                iface->m_function_signature, var->m_parent_symtab);
+        }
+        if (ASR::is_a<ASR::Pointer_t>(*var->m_type)) {
+            var->m_type = ASRUtils::TYPE(
+                ASR::make_Pointer_t(al, var->base.base.loc, real_func_type));
+        } else {
+            var->m_type = real_func_type;
+        }
+        // A `null()` initializer has the type of the pointer it initializes.
+        for (ASR::expr_t *init : {var->m_symbolic_value, var->m_value}) {
+            if (init && ASR::is_a<ASR::PointerNullConstant_t>(*init)) {
+                ASR::down_cast<ASR::PointerNullConstant_t>(init)->m_type
+                    = var->m_type;
+            }
+        }
+    }
+
+    // Makes the signature of `func` take the completed types of its dummy
+    // procedures and result whose interface includes that of a replaced
+    // placeholder. A declaration whose interface is reached again through
+    // a cycle of interfaces is reported, see
+    // `complete_procedure_declaration()`.
+    void complete_procedure_signature(ASR::Function_t *func,
+            ProcedureInterfaceCompletion &c) {
+        if (c.stale_procedures.count(func) == 0
+                || !c.completed_procedures.insert(func).second) {
+            return;
+        }
+        c.procedures_in_progress.insert(func);
+        ASR::FunctionType_t *func_ft = ASR::down_cast<ASR::FunctionType_t>(
+            func->m_function_signature);
+        for (auto &[i, var] : c.signature_variables(func)) {
+            if (c.stale_declarations.count(var) == 0) continue;
+            complete_procedure_declaration(var, c);
+            if (i < func->n_args) {
+                if (i < func_ft->n_arg_types) {
+                    func_ft->m_arg_types[i] = var->m_type;
+                }
+            } else {
+                func_ft->m_return_var_type = var->m_type;
+            }
+        }
+        c.procedures_in_progress.erase(func);
+    }
+
+    // Makes everything in `scope` and in every scope nested in it, such as
+    // a derived type, procedure, BLOCK or template, refer to the procedures
+    // that replace the placeholders of `replacer` instead. A procedure
+    // pointer `null()` in an initializer, such as a constructor argument or
+    // a component default filled into a constructor, refers to the
+    // interface of its component, and so to the procedure instead. Collects
+    // the procedure pointers, dummy procedures and procedures of the scopes
+    // in `c`, whose interfaces are completed once all scopes are walked.
+    void replace_placeholder_references(SymbolTable *scope,
+            PlaceholderVarReplacer &replacer, ProcedureInterfaceCompletion &c) {
+        if (scope->asr_owner != nullptr
+                && ASR::is_a<ASR::symbol_t>(*scope->asr_owner)
+                && ASR::is_a<ASR::Function_t>(
+                    *ASR::down_cast<ASR::symbol_t>(scope->asr_owner))) {
+            c.procedures.push_back(ASR::down_cast<ASR::Function_t>(
+                ASR::down_cast<ASR::symbol_t>(scope->asr_owner)));
+        }
         for (auto &[sym_name, sym] : scope->get_scope()) {
             if (replacer.placeholder_to_real.count(sym) > 0) continue;
             if (ASR::is_a<ASR::Variable_t>(*sym)) {
@@ -7672,111 +8554,149 @@ public:
                 replacer.replace_expr(var->m_symbolic_value);
                 replacer.current_expr = &var->m_value;
                 replacer.replace_expr(var->m_value);
-            } else if (ASR::is_a<ASR::Struct_t>(*sym)) {
-                replace_placeholder_in_initializers(
-                    ASR::down_cast<ASR::Struct_t>(sym)->m_symtab, replacer);
-            } else if (ASR::is_a<ASR::Function_t>(*sym)) {
-                replace_placeholder_in_initializers(
-                    ASR::down_cast<ASR::Function_t>(sym)->m_symtab, replacer);
+                if (c.interface_of(var) != nullptr) {
+                    c.declarations.push_back(var);
+                }
+            } else if (SymbolTable *nested = ASRUtils::symbol_symtab(sym)) {
+                replace_placeholder_references(nested, replacer, c);
             }
         }
+    }
+
+    // Completes the interfaces of the procedure pointers, dummy procedures
+    // and procedures collected in `c`: a procedure pointer or dummy
+    // procedure declared with the interface of a placeholder takes that of
+    // the procedure replacing it, as does the signature of a procedure with
+    // such a dummy or result. So does each declaration, and each signature,
+    // that includes such an interface through that of another procedure.
+    // Each procedure's signature is completed before it is imported, so the
+    // result does not depend on the order of the scopes.
+    void complete_procedure_interfaces(ProcedureInterfaceCompletion &c) {
+        c.find_stale();
+        for (ASR::Function_t *func : c.procedures) {
+            complete_procedure_signature(func, c);
+        }
+        for (ASR::Variable_t *var : c.declarations) {
+            complete_procedure_declaration(var, c);
+        }
+    }
+
+    // The scope that holds the procedure placeholder `placeholder`, and so
+    // every declaration that has referenced it: the scope that looks the
+    // procedure up, or its host.
+    static SymbolTable *proc_placeholder_scope(ASR::symbol_t *placeholder) {
+        return ASR::down_cast<ASR::Function_t>(placeholder)->m_symtab->parent;
+    }
+
+    // The procedure that the placeholder `pending` stands for, if it is
+    // defined yet: its name as seen from the scope looking it up, where
+    // placeholders hide it until they are replaced.
+    ASR::symbol_t *proc_placeholder_target(const ProcPlaceholder &pending) {
+        for (SymbolTable *s = pending.scope; s; s = s->parent) {
+            ASR::symbol_t *sym = s->get_symbol(pending.name);
+            if (sym && !is_pending_proc_placeholder(sym)) return sym;
+        }
+        return nullptr;
     }
 
     void resolve_proc_pointer_placeholders() {
         // After all interfaces/functions have been processed, update
         // m_type_declaration and m_type for procedure pointer variables
         // inside structs and function parameters that still reference
-        // a placeholder Function_t.
+        // a placeholder Function_t. A placeholder is replaced by the
+        // procedure that the scope looking it up has once it, or a host of
+        // it, defines the procedure; until then it stays pending.
         std::map<ASR::symbol_t*, ASR::symbol_t*> placeholder_to_real;
-        for (auto &[name, placeholder_sym] : pending_proc_placeholders) {
-            ASR::symbol_t *real_sym = current_scope->resolve_symbol(name);
-            if (!real_sym || real_sym == placeholder_sym) continue;
-            if (!ASR::is_a<ASR::Function_t>(*ASRUtils::symbol_get_past_external(real_sym))) continue;
-            placeholder_to_real[placeholder_sym] = real_sym;
+        std::vector<ProcPlaceholder> unresolved_placeholders;
+        // The scopes holding the references to the replaced placeholders,
+        // in the order of `pending_proc_placeholders`.
+        std::vector<SymbolTable*> scopes;
+        for (auto &pending : pending_proc_placeholders) {
+            ASR::symbol_t *real_sym = proc_placeholder_target(pending);
+            if (real_sym == nullptr || !ASR::is_a<ASR::Function_t>(
+                    *ASRUtils::symbol_get_past_external(real_sym))) {
+                unresolved_placeholders.push_back(pending);
+                continue;
+            }
+            placeholder_to_real[pending.placeholder] = real_sym;
+            // The global scope holds only program units, so only the
+            // scope looking the procedure up refers to a placeholder there.
+            SymbolTable *scope = proc_placeholder_scope(pending.placeholder);
+            scope = scope->parent ? scope : pending.scope;
+            if (std::find(scopes.begin(), scopes.end(), scope) == scopes.end()) {
+                scopes.push_back(scope);
+            }
+        }
+        // A replaced placeholder no longer hides the procedure, also from
+        // the declarations importing the procedure's interface below.
+        for (auto &pending : pending_proc_placeholders) {
+            if (placeholder_to_real.count(pending.placeholder) == 0) continue;
+            SymbolTable *scope = proc_placeholder_scope(pending.placeholder);
+            if (scope->get_symbol(pending.name) == pending.placeholder) {
+                scope->erase_symbol(pending.name);
+            }
         }
         if (!placeholder_to_real.empty()) {
             PlaceholderVarReplacer replacer(placeholder_to_real);
-            replace_placeholder_in_initializers(current_scope, replacer);
+            ProcedureInterfaceCompletion completion(placeholder_to_real);
+            for (SymbolTable *scope : scopes) {
+                bool nested = false;
+                for (SymbolTable *s = scope->parent; s && !nested; s = s->parent) {
+                    nested = std::find(scopes.begin(), scopes.end(), s)
+                        != scopes.end();
+                }
+                if (!nested) {
+                    replace_placeholder_references(scope, replacer, completion);
+                }
+            }
+            complete_procedure_interfaces(completion);
+            if (completion.cyclic_interface
+                    && !compiler_options.continue_compilation) {
+                throw SemanticAbort();
+            }
         }
-        // A procedure given to a procedure pointer component before its
-        // definition is checked against the component as the structure
-        // constructor checks a procedure defined earlier. Every mismatch is
-        // reported before compilation stops.
-        bool forward_target_mismatch = false;
-        for (auto &use : forward_procedure_target_uses) {
-            auto it = placeholder_to_real.find(use.placeholder);
-            if (it == placeholder_to_real.end()) continue;
+        pending_proc_placeholders = std::move(unresolved_placeholders);
+        // A procedure given to a procedure pointer component before the
+        // procedure or the component's interface is defined is checked
+        // against the component as the structure constructor checks one
+        // whose interface and procedure are both known. One that still waits
+        // for either is checked once its host is complete, see
+        // `DeferredProcedureComponentValueScope`; a placeholder that no
+        // procedure replaces is reported then. Every mismatch is reported
+        // before compilation stops.
+        bool deferred_value_mismatch = false;
+        std::vector<DeferredProcedureComponentValue> unresolved_values;
+        for (auto &value : deferred_procedure_component_values) {
+            auto it = placeholder_to_real.find(value.procedure);
+            if (it != placeholder_to_real.end()) {
+                value.procedure = it->second;
+            }
+            ASR::symbol_t* iface = value.member->m_type_declaration;
+            if (is_pending_proc_placeholder(value.procedure)
+                    || (iface != nullptr && is_pending_proc_placeholder(iface))) {
+                unresolved_values.push_back(value);
+                continue;
+            }
             ASR::expr_t* target = ASRUtils::EXPR(
-                ASR::make_Var_t(al, use.loc, it->second));
-            if (!procedure_component_value_matches(use.member, target)) {
-                forward_target_mismatch = true;
+                ASR::make_Var_t(al, value.loc, value.procedure));
+            if (check_elemental_procedure_target(target)
+                    || !procedure_component_value_matches(value.member, target)) {
+                deferred_value_mismatch = true;
             }
         }
-        forward_procedure_target_uses.clear();
-        if (forward_target_mismatch && !compiler_options.continue_compilation) {
+        deferred_procedure_component_values = std::move(unresolved_values);
+        if (deferred_value_mismatch && !compiler_options.continue_compilation) {
             throw SemanticAbort();
-        }
-        for (auto &[name, placeholder_sym] : pending_proc_placeholders) {
-            ASR::symbol_t *real_sym = current_scope->resolve_symbol(name);
-            if (!real_sym || real_sym == placeholder_sym) continue;
-            ASR::symbol_t *real_sym_underlying = ASRUtils::symbol_get_past_external(real_sym);
-            if (!ASR::is_a<ASR::Function_t>(*real_sym_underlying)) continue;
-            ASR::Function_t *real_func = ASR::down_cast<ASR::Function_t>(real_sym_underlying);
-            ASR::ttype_t *real_func_type = real_func->m_function_signature;
-            for (auto &[sym_name, sym] : current_scope->get_scope()) {
-                if (ASR::is_a<ASR::Variable_t>(*sym)) {
-                    ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(sym);
-                    if (var->m_type_declaration == placeholder_sym) {
-                        var->m_type_declaration = real_sym;
-                        if (ASR::is_a<ASR::Pointer_t>(*var->m_type)) {
-                            var->m_type = ASRUtils::TYPE(
-                                ASR::make_Pointer_t(al, var->base.base.loc, real_func_type));
-                        } else {
-                            var->m_type = real_func_type;
-                        }
-                    }
-                }
-                if (ASR::is_a<ASR::Struct_t>(*sym)) {
-                    ASR::Struct_t* struct_def = ASR::down_cast<ASR::Struct_t>(sym);
-                    for (auto &[var_name, var_sym] : struct_def->m_symtab->get_scope()) {
-                        if (ASR::is_a<ASR::Variable_t>(*var_sym)) {
-                            ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(var_sym);
-                            if (var->m_type_declaration == placeholder_sym) {
-                                var->m_type_declaration = real_sym;
-                                if (ASR::is_a<ASR::Pointer_t>(*var->m_type)) {
-                                    var->m_type = ASRUtils::TYPE(
-                                        ASR::make_Pointer_t(al, var->base.base.loc, real_func_type));
-                                } else {
-                                    var->m_type = real_func_type;
-                                }
-                            }
-                        }
-                    }
-                }
-                if (ASR::is_a<ASR::Function_t>(*sym)) {
-                    ASR::Function_t* func = ASR::down_cast<ASR::Function_t>(sym);
-                    ASR::FunctionType_t* func_ft = ASR::down_cast<ASR::FunctionType_t>(
-                        func->m_function_signature);
-                    for (size_t i = 0; i < func->n_args; i++) {
-                        if (!ASR::is_a<ASR::Var_t>(*func->m_args[i])) continue;
-                        ASR::symbol_t* arg_sym = ASR::down_cast<ASR::Var_t>(
-                            func->m_args[i])->m_v;
-                        if (!ASR::is_a<ASR::Variable_t>(*arg_sym)) continue;
-                        ASR::Variable_t* var = ASR::down_cast<ASR::Variable_t>(arg_sym);
-                        if (var->m_type_declaration == placeholder_sym) {
-                            var->m_type_declaration = real_sym;
-                            var->m_type = real_func_type;
-                            if (i < func_ft->n_arg_types) {
-                                func_ft->m_arg_types[i] = real_func_type;
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 
     void resolve_pending_proc_ptr_inits() {
+        // The target and the interface of each pointer are known now, unless
+        // one is still a placeholder that no procedure defines, which is
+        // reported afterwards instead. A target that is not a procedure or a
+        // variable, or a known target that does not match a known interface,
+        // is reported, every mismatch before compilation stops.
+        bool init_mismatch = false;
         for (auto &item : pending_proc_ptr_inits) {
             ASR::symbol_t *proc_sym = item.resolve_scope->resolve_symbol(item.proc_name);
             if (!proc_sym) {
@@ -7785,8 +8705,28 @@ public:
                     "'" + item.proc_name + "' is undeclared");
                 throw SemanticAbort();
             }
+            ASR::symbol_t *proc_past = ASRUtils::symbol_get_past_external(proc_sym);
+            if (!ASR::is_a<ASR::Function_t>(*proc_past)
+                    && !ASR::is_a<ASR::Variable_t>(*proc_past)) {
+                report_not_variable_or_procedure(item.proc_name, item.loc,
+                    proc_past);
+                init_mismatch = true;
+                continue;
+            }
             ASR::expr_t *init_expr = ASRUtils::EXPR(
                 ASR::make_Var_t(al, item.loc, proc_sym));
+            if (check_elemental_procedure_target(init_expr)) {
+                init_mismatch = true;
+                continue;
+            }
+            ASR::symbol_t *iface = item.var->m_type_declaration;
+            if (!is_pending_proc_placeholder(proc_sym)
+                    && !(iface && is_pending_proc_placeholder(iface))
+                    && !check_initializer_type(item.var->m_type,
+                        ASRUtils::expr_type(init_expr), init_expr)) {
+                init_mismatch = true;
+                continue;
+            }
             item.var->m_symbolic_value = init_expr;
             item.var->m_value = nullptr;
             SetChar variable_dependencies_vec;
@@ -7798,6 +8738,88 @@ public:
             item.var->n_dependencies = variable_dependencies_vec.n;
         }
         pending_proc_ptr_inits.clear();
+        if (init_mismatch && !compiler_options.continue_compilation) {
+            throw SemanticAbort();
+        }
+    }
+
+    // A type declared in a module procedure can bind a module procedure
+    // defined after that procedure. Such a binding is added once the
+    // module's procedures are defined.
+    struct LaterModuleProcedureBinding {
+        SymbolTable *scope;
+        std::string dt_name;
+        std::string binding;
+        std::map<std::string, ClassProcInfo> info;
+        std::map<std::string, Location> attributes;
+    };
+    std::vector<LaterModuleProcedureBinding> later_module_procedure_bindings;
+
+    void add_later_module_procedure_bindings() {
+        std::vector<LaterModuleProcedureBinding> bindings;
+        bindings.swap(later_module_procedure_bindings);
+        SymbolTable *scope = current_scope;
+        for (auto &later : bindings) {
+            current_scope = later.scope;
+            ASR::Struct_t *clss = ASR::down_cast<ASR::Struct_t>(
+                ASRUtils::symbol_get_past_external(
+                    current_scope->resolve_symbol(later.dt_name)));
+            class_procedures[later.dt_name][later.binding] = later.info;
+            if (!later.attributes.empty()) {
+                class_deferred_procedures[class_deferred_procedures_key(
+                    later.dt_name, clss)][later.binding] = later.attributes;
+            }
+            try {
+                add_class_procedures();
+                check_overrides_of_later_binding(clss, later.binding);
+            } catch (SemanticAbort &) {
+                class_procedures.clear();
+                class_deferred_procedures.clear();
+                if (!compiler_options.continue_compilation) {
+                    current_scope = scope;
+                    throw;
+                }
+            }
+        }
+        current_scope = scope;
+    }
+
+    // The bindings of an extension of `clss` were checked against the
+    // bindings they override when they were added. A binding `name` of
+    // `clss` added later did not exist then, so the bindings that override
+    // it are checked now. An extension of a type declared in a procedure is
+    // declared in the same procedure or in a scope nested in it.
+    void check_overrides_of_later_binding(ASR::Struct_t *clss,
+            const std::string &name) {
+        ASR::symbol_t *late = clss->m_symtab->get_symbol(name);
+        if (late == nullptr
+                || !ASR::is_a<ASR::StructMethodDeclaration_t>(*late)) {
+            return;
+        }
+        std::function<void(SymbolTable*)> check_scope = [&](SymbolTable *scope) {
+            for (auto &item : scope->get_scope()) {
+                ASR::symbol_t *sym = item.second;
+                if (ASR::is_a<ASR::Struct_t>(*sym)) {
+                    ASR::Struct_t *ext = ASR::down_cast<ASR::Struct_t>(sym);
+                    ASR::symbol_t *b = ext->m_symtab->get_symbol(name);
+                    if (ext != clss && b != nullptr
+                            && ASR::is_a<ASR::StructMethodDeclaration_t>(*b)) {
+                        ASR::StructMethodDeclaration_t *binding =
+                            ASR::down_cast<ASR::StructMethodDeclaration_t>(b);
+                        if (ASRUtils::overridden_binding(*binding)
+                                == ASR::down_cast<ASR::StructMethodDeclaration_t>(late)) {
+                            check_class_procedure_override(ext, binding,
+                                binding->base.base.loc);
+                        }
+                    }
+                } else if (ASR::is_a<ASR::Function_t>(*sym)) {
+                    check_scope(ASR::down_cast<ASR::Function_t>(sym)->m_symtab);
+                } else if (ASR::is_a<ASR::Block_t>(*sym)) {
+                    check_scope(ASR::down_cast<ASR::Block_t>(sym)->m_symtab);
+                }
+            }
+        };
+        check_scope(clss->m_symtab->parent);
     }
 
     void add_class_procedures() {
@@ -7811,18 +8833,8 @@ public:
                 auto& cdf = class_deferred_procedures;
                 bool is_pass = pname.second.count("pass");
                 bool is_deferred = check_is_deferred(pname.first, clss);
-                std::string new_dt_name = proc.first;
-                // Use module-qualified name
-                ASR::symbol_t* owner_sym = ASRUtils::get_asr_owner(&clss->base);
-                // The definition of a generic type belongs to its package.
-                while (owner_sym && ASR::is_a<ASR::Template_t>(*owner_sym) &&
-                        ASRUtils::generic_type_definition_metadata(*clss)) {
-                    owner_sym = ASRUtils::get_asr_owner(owner_sym);
-                }
-                if (owner_sym && ASR::is_a<ASR::Module_t>(*owner_sym)) {
-                    ASR::Module_t* mod = ASR::down_cast<ASR::Module_t>(owner_sym);
-                    new_dt_name = std::string(mod->m_name) + "_" + new_dt_name;
-                } 
+                std::string new_dt_name = class_deferred_procedures_key(
+                    proc.first, clss);
                 bool is_nopass = (cdf.count(new_dt_name) && cdf[new_dt_name].count(pname.first) && cdf[new_dt_name][pname.first].count("nopass"));
                 if (is_pass && is_nopass) {
                     diag.add(diag::Diagnostic("Pass and NoPass attributes cannot be provided together",
@@ -7834,6 +8846,20 @@ public:
                 }
 
                 ASR::symbol_t *proc_sym = proc_scope->resolve_symbol(pname.second["procedure"].name);
+                if (proc_sym == nullptr && !is_deferred
+                        && procedure_declared_later(pname.second["procedure"].name)
+                            == ProcedureDeclaredLater::InModule) {
+                    LaterModuleProcedureBinding later;
+                    later.scope = current_scope;
+                    later.dt_name = proc.first;
+                    later.binding = pname.first;
+                    later.info = pname.second;
+                    if (cdf.count(new_dt_name) && cdf[new_dt_name].count(pname.first)) {
+                        later.attributes = cdf[new_dt_name][pname.first];
+                    }
+                    later_module_procedure_bindings.push_back(later);
+                    continue;
+                }
                 if (proc_sym == nullptr) {
                     if (is_deferred) {
                         diag.add(diag::Diagnostic(
@@ -7857,9 +8883,11 @@ public:
                 // A generic binding's specific procedure is owned by its
                 // Template; the type's scope names it through an import, which
                 // also keeps the binding loadable from a module file.
-                proc_sym = ASRUtils::trait_method_template(*func)
-                    ? make_operator_proc_visible(&func->base, "trait", proc_scope)
-                    : &func->base;
+                // Otherwise the binding names the procedure as resolved, so
+                // a procedure of another module is named through its import.
+                if (ASRUtils::trait_method_template(*func)) {
+                    proc_sym = make_operator_proc_visible(&func->base, "trait", proc_scope);
+                }
                 // FIXME: pname.second["procedure"].name is set to the UseSymbol remote_sym if there is no interface.
                 //        If the UseSymbol remote_sym is declared in an interface and defined in another submodule, this throws on valid code
                 // if (!is_deferred &&
@@ -7882,10 +8910,11 @@ public:
                 if (!is_nopass) {
                     ensure_matching_types_for_pass_obj_dum_arg(func, pass_arg_name, clss_sym, loc);
                 }
+                ASR::accessType access = pname.second["procedure"].access;
                 ASR::asr_t *v = ASR::make_StructMethodDeclaration_t(al, loc,
                     clss->m_symtab, name, pass_arg_name,
                     proc_name, proc_sym, ASR::abiType::Source,
-                    is_deferred, is_nopass, nullptr);
+                    is_deferred, is_nopass, access, nullptr);
                 ASR::symbol_t *cls_proc_sym = ASR::down_cast<ASR::symbol_t>(v);
                 clss->m_symtab->add_symbol(pname.first, cls_proc_sym);
                 sync_pdt_specialization_symbols(clss, proc_scope);
@@ -7957,40 +8986,44 @@ public:
                         !ASR::is_a<ASR::StructMethodDeclaration_t>(*sym)) {
                     continue;
                 }
-                ASR::StructMethodDeclaration_t *binding =
-                    ASR::down_cast<ASR::StructMethodDeclaration_t>(sym);
-                ASR::symbol_t *proc_sym = ASRUtils::symbol_get_past_external(
-                    binding->m_proc);
-                if (proc_sym == nullptr ||
-                        !ASR::is_a<ASR::Function_t>(*proc_sym)) {
-                    continue;
-                }
-                std::string what = "Type bound procedure '" +
-                    std::string(binding->m_name) + "' of '" +
-                    std::string(clss->m_name) + "' overriding the binding of "
-                    "the same name in '" + overridden_binding_owner(*binding) +
-                    "'";
-                ASRUtils::InterfaceMismatch m =
-                    ASRUtils::binding_override_mismatch(*binding,
-                        ASR::down_cast<ASR::Function_t>(proc_sym), what, true);
-                if (m.mismatch) {
-                    diag.add(diag::Diagnostic(m.message,
-                        diag::Level::Error, diag::Stage::Semantic, {
-                            diag::Label("", {pname.second["procedure"].loc})}));
-                    if (!compiler_options.continue_compilation) {
-                        throw SemanticAbort();
-                    }
-                    // Continuing means the rest of the file still has to be
-                    // walked, and every later stage assumes a binding it can
-                    // dispatch through. Leaving this one in place hands them a
-                    // procedure the parent's interface does not describe, so
-                    // the type keeps the binding it inherited instead.
-                    adopt_overridden_binding(binding);
-                } else {
-                    create_sealed_dispatch_adapter(*binding,
-                        *ASR::down_cast<ASR::Function_t>(proc_sym), *clss);
-                }
+                check_class_procedure_override(clss,
+                    ASR::down_cast<ASR::StructMethodDeclaration_t>(sym),
+                    pname.second["procedure"].loc);
             }
+        }
+    }
+
+    void check_class_procedure_override(ASR::Struct_t *clss,
+            ASR::StructMethodDeclaration_t *binding, const Location &loc) {
+        ASR::symbol_t *proc_sym = ASRUtils::symbol_get_past_external(
+            binding->m_proc);
+        if (proc_sym == nullptr || !ASR::is_a<ASR::Function_t>(*proc_sym)) {
+            return;
+        }
+        std::string what = "Type bound procedure '" +
+            std::string(binding->m_name) + "' of '" +
+            std::string(clss->m_name) + "' overriding the binding of "
+            "the same name in '" + overridden_binding_owner(*binding) +
+            "'";
+        ASRUtils::InterfaceMismatch m =
+            ASRUtils::binding_override_mismatch(*binding,
+                ASR::down_cast<ASR::Function_t>(proc_sym), what, true);
+        if (m.mismatch) {
+            diag.add(diag::Diagnostic(m.message,
+                diag::Level::Error, diag::Stage::Semantic, {
+                    diag::Label("", {loc})}));
+            if (!compiler_options.continue_compilation) {
+                throw SemanticAbort();
+            }
+            // Continuing means the rest of the file still has to be
+            // walked, and every later stage assumes a binding it can
+            // dispatch through. Leaving this one in place hands them a
+            // procedure the parent's interface does not describe, so
+            // the type keeps the binding it inherited instead.
+            adopt_overridden_binding(binding);
+        } else {
+            create_sealed_dispatch_adapter(*binding,
+                *ASR::down_cast<ASR::Function_t>(proc_sym), *clss);
         }
     }
 
@@ -8007,7 +9040,7 @@ public:
         bool load_submodules = (!compiler_options.separate_compilation && in_program);
         if (!t) {
             t = (ASR::symbol_t*)(ASRUtils::load_module(al, tu_symtab,
-                msym, x.base.base.loc, used.intrinsic, loaded_submodules, compiler_options.po, true,
+                msym, x.base.base.loc, used.intrinsic, loaded_submodules, compiler_options.po, !diag.has_error(),
                 [&](const std::string &msg, const Location &loc) {
                     diag.add(diag::Diagnostic(
                         msg, diag::Level::Error, diag::Stage::Semantic, {
@@ -8025,7 +9058,7 @@ public:
             ASR::Module_t* mod = ASR::down_cast<ASR::Module_t>(t);
             if (load_submodules) {
                 ASRUtils::load_dependent_submodules(al, tu_symtab, mod, x.base.base.loc,
-                                                    loaded_submodules, compiler_options.po, true,
+                                                    loaded_submodules, compiler_options.po, !diag.has_error(),
                                                     [&](const std::string &msg, const Location &loc) {
                                                         diag.add(diag::Diagnostic(
                                                             msg, diag::Level::Error, diag::Stage::Semantic, {
@@ -8040,7 +9073,7 @@ public:
                         tu_symtab, nullptr, 0, nullptr));
 
                 // Fix all external symbols and update dependencies
-                ASRUtils::fix_translation_unit(al, tu, tu_symtab, true);
+                ASRUtils::fix_translation_unit(al, tu, tu_symtab, !diag.has_error());
                 tu_symtab->asr_owner = orig_asr_owner;
             }
         }
@@ -8050,6 +9083,19 @@ public:
 
     void visit_GenericName(const AST::GenericName_t& x) {
         std::string generic_name = to_lower(std::string(x.m_name));
+        ASR::accessType access = binding_dflt_access;
+        for (size_t i = 0; i < x.n_attr; i++) {
+            if (AST::is_a<AST::SimpleAttribute_t>(*x.m_attr[i])) {
+                AST::simple_attributeType attr = AST::down_cast<
+                    AST::SimpleAttribute_t>(x.m_attr[i])->m_attr;
+                if (attr == AST::simple_attributeType::AttrPrivate) {
+                    access = ASR::accessType::Private;
+                } else if (attr == AST::simple_attributeType::AttrPublic) {
+                    access = ASR::accessType::Public;
+                }
+            }
+        }
+        generic_class_procedure_access[dt_name][generic_name] = access;
         for( size_t i = 0; i < x.n_names; i++ ) {
             std::string x_m_name = std::string(x.m_names[i]);
             generic_class_procedures[dt_name][generic_name].push_back(to_lower(x_m_name));
@@ -8263,6 +9309,7 @@ public:
         }
         RequirementScope requirement_scope(*this);
         ScopingUnitScope scoping_unit_scope(*this, ScopingUnitKind::Other);
+        PendingAttributeScope pending_attribute_scope(*this);
 
         std::vector<std::string> requirement_args;
         for (size_t i=0; i<x.n_namelist; i++) {
@@ -8272,7 +9319,7 @@ public:
             requirement_args, true);
 
         SymbolTable *parent_scope = current_scope;
-        current_scope = al.make_new<SymbolTable>(parent_scope);
+        TemplateLocalStateScope requirement_state(*this);
 
         SetChar args;
         args.reserve(al, x.n_namelist);
@@ -8300,8 +9347,6 @@ public:
             args.push_back(al, s2c(al, arg));
             current_procedure_args.push_back(arg);
         }
-
-        OperatorProcedureScope operator_procedure_scope(*this);
 
         Vec<ASR::require_instantiation_t*> reqs;
         reqs.reserve(al, x.n_items);
@@ -8395,9 +9440,6 @@ public:
             reqs.p, reqs.size());
 
         parent_scope->add_symbol(to_lower(x.m_name), ASR::down_cast<ASR::symbol_t>(req));
-
-        current_scope = parent_scope;
-        current_procedure_args.clear();
     }
 
     void visit_Require(const AST::Require_t &x) {
@@ -9032,8 +10074,8 @@ public:
                     diag::Label("", {x.base.base.loc})}));
             throw SemanticAbort();
         }
-        is_template = true;
         ScopingUnitScope scoping_unit_scope(*this, ScopingUnitKind::Template);
+        PendingAttributeScope pending_attribute_scope(*this);
         TemplateDefinitionScope template_definition_scope(*this, true);
         std::string template_name = to_lower(std::string(x.m_name));
         std::vector<std::string> template_args;
@@ -9041,26 +10083,22 @@ public:
             template_args.push_back(to_lower(x.m_namelist[i]));
         }
         DeferredArgScope deferred_arg_scope(*this, template_name, template_args, true);
-        ASR::accessType dflt_access_copy = dflt_access;
         SymbolTable *parent_scope = current_scope;
-        current_scope = al.make_new<SymbolTable>(parent_scope);
+        TemplateLocalStateScope template_state(*this);
+        is_template = true;
         ContainedProcedureScope contained_procedures(*this, x.m_contains, x.n_contains);
         // The type-bound procedures and generic bindings of the derived types
         // declared in the template are added in the template's scope; those
         // of the host's types are added once the host is complete.
         ClassProcedureScope class_procedure_scope(*this);
         GenericClassProcedureScope generic_class_procedure_scope(*this);
+        DeferredProcedureComponentValueScope deferred_component_value_scope(*this);
 
         std::vector<std::string> deferred_args;
         for (size_t i=0; i<x.n_namelist; i++) {
             deferred_args.push_back(to_lower(x.m_namelist[i]));
             current_procedure_args.push_back(deferred_args.back());
         }
-
-        OperatorProcedureScope operator_procedure_scope(*this);
-        std::vector<std::pair<std::string, Location>> ext_assgn_proc_names_locations
-            = assgn_proc_names_locations;
-        assgn_proc_names_locations.clear();
 
         Vec<ASR::require_instantiation_t*> reqs;
         reqs.reserve(al, x.n_items);
@@ -9090,6 +10128,9 @@ public:
             }
         }
 
+        // The deferred arguments are not dummy arguments of the template's
+        // procedures, whose entities of the same name are local.
+        current_procedure_args.clear();
         for (size_t i=0; i<x.n_contains; i++) {
             SymbolTable *template_scope = current_scope;
             try {
@@ -9101,6 +10142,9 @@ public:
                 current_scope = template_scope;
             }
         }
+        // A procedure dummy of a template procedure can take its interface
+        // from a procedure of the template defined after it.
+        resolve_proc_pointer_placeholders();
 
         SetChar args;
         args.reserve(al, x.n_namelist);
@@ -9123,11 +10167,9 @@ public:
         add_generic_class_procedures();
         try {
             add_assignment_procedures();
-        } catch (SemanticAbort &e) {
+        } catch (SemanticAbort &) {
             if (!compiler_options.continue_compilation) throw;
         }
-
-        assgn_proc_names_locations = ext_assgn_proc_names_locations;
 
         ASR::asr_t *temp = ASR::make_Template_t(al, x.base.base.loc,
             current_scope, s2c(al, template_name), args.p, args.size(), reqs.p, reqs.size());
@@ -9136,11 +10178,9 @@ public:
         SymbolTable *template_scope = current_scope;
         current_scope = parent_scope;
 
-        dflt_access = dflt_access_copy;
-        is_template = false;
         // The specification part of the template itself, checked once the
-        // enclosing context has been restored so that an abort here leaves the
-        // visitor in the same state as a clean return.
+        // template is complete; `template_state` restores the enclosing
+        // context on either exit.
         check_no_save_in_template(template_scope);
     }
 
@@ -9365,7 +10405,7 @@ public:
                 s2c(al, local_sym), procs.p, procs.size(), gp->m_access);
         } else {
             append_accessible_custom_operator_procs(
-                current_scope->resolve_symbol(local_sym), local_sym, procs);
+                current_scope->resolve_symbol(local_sym), procs);
             v = ASR::make_CustomOperator_t(al, loc, current_scope,
                 s2c(al, local_sym), procs.p, procs.size(),
                 ASR::down_cast<ASR::CustomOperator_t>(generic)->m_access);
@@ -9461,7 +10501,8 @@ public:
             bool is_generic = ASR::is_a<ASR::GenericProcedure_t>(*s)
                 && is_instantiable_generic_spec(s, temp);
             if (!(ASR::is_a<ASR::Function_t>(*s) || ASR::is_a<ASR::Struct_t>(*s)
-                        || is_generic)
+                        || is_generic
+                        || is_template_named_constant(s, &temp->base))
                     || ASRUtils::is_template_arg(&temp->base, s_name)) {
                 continue;
             }
@@ -9685,194 +10726,10 @@ public:
                     }
                 }
             } else if (AST::is_a<AST::AttrIntrinsicOperator_t>(*arg_attr)) {
-                AST::AttrIntrinsicOperator_t *intrinsic_op
-                    = AST::down_cast<AST::AttrIntrinsicOperator_t>(arg_attr);
-                ASR::binopType binop = ASR::Add;
-                ASR::cmpopType cmpop = ASR::Eq;
-                bool is_binop = false, is_cmpop = false;
-                std::string op_name;
-                switch (intrinsic_op->m_op) {
-                    case (AST::PLUS):
-                        is_binop = true; binop = ASR::Add; op_name = "~add";
-                        break;
-                    case (AST::MINUS):
-                        is_binop = true; binop = ASR::Sub; op_name = "~sub";
-                        break;
-                    case (AST::STAR):
-                        is_binop = true; binop = ASR::Mul; op_name = "~mul";
-                        break;
-                    case (AST::DIV):
-                        is_binop = true; binop = ASR::Div; op_name = "~div";
-                        break;
-                    case (AST::POW):
-                        is_binop = true; binop = ASR::Pow; op_name = "~pow";
-                        break;
-                    case (AST::EQ):
-                        is_cmpop = true; cmpop = ASR::Eq; op_name = "~eq";
-                        break;
-                    case (AST::NOTEQ):
-                        is_cmpop = true; cmpop = ASR::NotEq; op_name = "~neq";
-                        break;
-                    case (AST::LT):
-                        is_cmpop = true; cmpop = ASR::Lt; op_name = "~lt";
-                        break;
-                    case (AST::LTE):
-                        is_cmpop = true; cmpop = ASR::LtE; op_name = "~lte";
-                        break;
-                    case (AST::GT):
-                        is_cmpop = true; cmpop = ASR::Gt; op_name = "~gt";
-                        break;
-                    case (AST::GTE):
-                        is_cmpop = true; cmpop = ASR::GtE; op_name = "~gte";
-                        break;
-                    default:
-                        diag.add(diag::Diagnostic(
-                            "Unsupported binary operator",
-                            diag::Level::Error, diag::Stage::Semantic, {
-                                diag::Label("", {arg_attr->base.loc})}));
-                        throw SemanticAbort();
-                }
-
-                bool is_overloaded;
-                if (is_binop) {
-                    is_overloaded = ASRUtils::is_op_overloaded(binop, op_name, current_scope, nullptr);
-                } else if (is_cmpop) {
-                    is_overloaded = ASRUtils::is_op_overloaded(cmpop, op_name, current_scope, nullptr);
-                } else {
-                    diag.add(diag::Diagnostic(
-                        "Must be binop or cmop",
-                        diag::Level::Error, diag::Stage::Semantic, {
-                            diag::Label("", {arg_attr->base.loc})}));
-                    throw SemanticAbort();
-                }
-
-                ASR::Function_t *f = ASR::down_cast<ASR::Function_t>(param_sym);
-                std::string f_name = f->m_name;
-                bool found = false;
-                // check if an alias is defined for the operator
-                if (is_overloaded) {
-                    ASR::symbol_t* sym = current_scope->resolve_symbol(op_name);
-                    ASR::symbol_t* orig_sym = ASRUtils::symbol_get_past_external(sym);
-                    ASR::CustomOperator_t* gen_proc = ASR::down_cast<ASR::CustomOperator_t>(orig_sym);
-                    for (size_t i = 0; i < gen_proc->n_procs && !found; i++) {
-                        ASR::symbol_t* proc = gen_proc->m_procs[i];
-                        found = check_restriction(type_subs,
-                            symbol_subs, f, proc, arg_attr->base.loc, diag,
-                            []() { throw SemanticAbort(); }, false);
-                        if (found) {
-                            symbol_subs[f_name] = make_operator_proc_visible(
-                                proc, op_name, current_scope);
-                        }
-                    }
-                }
-
-                // if not found, then try to build a function for intrinsic operator
-                if (!found) {
-                    if (f->n_args != 2) {
-                        diag.add(diag::Diagnostic(
-                            "The restriction " + f_name
-                            + " does not have 2 parameters",
-                            diag::Level::Error, diag::Stage::Semantic, {
-                                diag::Label("", {x.base.base.loc})}));
-                        throw SemanticAbort();
-                    }
-
-                    ASR::ttype_t *left_type = ASRUtils::subs_expr_type(type_subs, f->m_args[0]);
-                    ASR::ttype_t *right_type = ASRUtils::subs_expr_type(type_subs, f->m_args[1]);
-                    ASR::ttype_t *ftype = ASRUtils::subs_expr_type(type_subs, f->m_return_var);
-
-                    SymbolTable *parent_scope = current_scope;
-                    current_scope = al.make_new<SymbolTable>(parent_scope);
-                    Vec<ASR::expr_t*> args;
-                    args.reserve(al, 2);
-                    for (size_t i=0; i<2; i++) {
-                        ASR::ttype_t* var_type = nullptr;
-                        ASR::symbol_t* var_type_decl = nullptr;
-
-                        if (i == 0) {
-                            var_type = ASRUtils::duplicate_type(al, left_type);
-                            var_type_decl = ASRUtils::get_struct_sym_from_struct_expr(f->m_args[0]);
-                        } else {
-                            var_type = ASRUtils::duplicate_type(al, right_type);
-                            var_type_decl = ASRUtils::get_struct_sym_from_struct_expr(f->m_args[1]);
-                        }
-                        std::string var_name = "arg" + std::to_string(i);
-                        ASR::asr_t *v = ASRUtils::make_Variable_t_util(al, x.base.base.loc, current_scope,
-                            s2c(al, var_name), nullptr, 0, ASR::intentType::In, nullptr,
-                            nullptr, ASR::storage_typeType::Default,
-                            var_type, var_type_decl, ASR::abiType::Source, ASR::accessType::Private,
-                            ASR::presenceType::Required, false);
-                        current_scope->add_symbol(var_name, ASR::down_cast<ASR::symbol_t>(v));
-                        ASR::symbol_t *var = current_scope->get_symbol(var_name);
-                        args.push_back(al, ASRUtils::EXPR(ASR::make_Var_t(al, x.base.base.loc, var)));
-                    }
-
-                    std::string func_name = parent_scope->get_unique_name(op_name + "_intrinsic");
-
-                    ASR::ttype_t *return_type = nullptr;
-                    ASR::expr_t *value = nullptr;
-                    ASR::expr_t *left = ASRUtils::EXPR(ASR::make_Var_t(al, x.base.base.loc,
-                        current_scope->get_symbol("arg0")));
-                    ASR::expr_t *right = ASRUtils::EXPR(ASR::make_Var_t(al, x.base.base.loc,
-                        current_scope->get_symbol("arg1")));
-
-                    ASR::expr_t **conversion_cand = &left;
-                    ASR::ttype_t *source_type = left_type;
-                    ASR::ttype_t *dest_type = right_type;
-
-                    if (is_binop) {
-                        ImplicitCastRules::find_conversion_candidate(&left, &right, left_type,
-                                                                     right_type, conversion_cand,
-                                                                     &source_type, &dest_type);
-                        ImplicitCastRules::set_converted_value(al, x.base.base.loc, conversion_cand,
-                                                               source_type, dest_type, diag);
-                        return_type = ASRUtils::duplicate_type(al, ftype);
-                        value = ASRUtils::EXPR(ASRUtils::make_Binop_util(al, x.base.base.loc, binop, left, right, dest_type));
-                        if (!ASRUtils::check_equal_type(dest_type, return_type, f->m_args[1], f->m_return_var)) {
-                            ImplicitCastRules::set_converted_value(al, x.base.base.loc,
-                                &value, dest_type, return_type, diag);
-                        }
-                    } else {
-                        return_type = ASRUtils::TYPE(ASR::make_Logical_t(al, x.base.base.loc, compiler_options.po.default_integer_kind));
-                        value = ASRUtils::EXPR(ASRUtils::make_Cmpop_util(al, x.base.base.loc, cmpop, left, right, left_type));
-                    }
-
-                    ASR::asr_t *return_v = ASRUtils::make_Variable_t_util(al, x.base.base.loc,
-                        current_scope, s2c(al, "ret"), nullptr, 0,
-                        ASR::intentType::ReturnVar, nullptr, nullptr, ASR::storage_typeType::Default,
-                        return_type, ASRUtils::get_struct_sym_from_struct_expr(value), ASR::abiType::Source,
-                        ASR::accessType::Private, ASR::presenceType::Required, false);
-                    current_scope->add_symbol("ret", ASR::down_cast<ASR::symbol_t>(return_v));
-                    ASR::expr_t *return_expr = ASRUtils::EXPR(ASR::make_Var_t(al, x.base.base.loc,
-                        current_scope->get_symbol("ret")));
-
-                    Vec<ASR::stmt_t*> body;
-                    body.reserve(al, 1);
-                    ASR::symbol_t *return_sym = current_scope->get_symbol("ret");
-                    ASR::expr_t *target = ASRUtils::EXPR(ASR::make_Var_t(al, x.base.base.loc, return_sym));
-                    ASRUtils::make_ArrayBroadcast_t_util(al, x.base.base.loc, target, value);
-                    ASR::stmt_t *assignment = ASRUtils::STMT(ASRUtils::make_Assignment_t_util(al, x.base.base.loc,
-                        target, value, nullptr, false, false));
-                    body.push_back(al, assignment);
-
-                    ASR::FunctionType_t *req_type = ASR::down_cast<ASR::FunctionType_t>(f->m_function_signature);
-
-                    ASR::asr_t *op_function = ASRUtils::make_Function_t_util(
-                        al, x.base.base.loc, current_scope, s2c(al, func_name),
-                        nullptr, 0, args.p, 2, body.p, 1, return_expr,
-                        ASR::abiType::Source, ASR::accessType::Public,
-                        ASR::deftypeType::Implementation, nullptr, req_type->m_elemental,
-                        req_type->m_pure, req_type->m_module, req_type->m_inline,
-                        req_type->m_static, nullptr, 0, f->m_deterministic,
-                        f->m_side_effect_free, true);
-                    ASR::symbol_t *op_sym = ASR::down_cast<ASR::symbol_t>(op_function);
-                    parent_scope->add_symbol(func_name, op_sym);
-
-                    // Bind the wrapper only to the deferred procedure, not to
-                    // the instantiating scope's operator interface.
-                    current_scope = parent_scope;
-                    symbol_subs[f->m_name] = op_sym;
-                }
+                bind_intrinsic_op_arg(
+                    AST::down_cast<AST::AttrIntrinsicOperator_t>(arg_attr)->m_op,
+                    param, param_sym, type_subs, symbol_subs, current_scope,
+                    x.base.base.loc, arg_attr->base.loc);
             } else if (AST::is_a<AST::AttrDefinedOperator_t>(*arg_attr)) {
                 bind_defined_operator_arg(
                     *AST::down_cast<AST::AttrDefinedOperator_t>(arg_attr),
@@ -9896,6 +10753,16 @@ public:
         size_t n_diagnostics = diag.diagnostics.size();
         std::map<std::string, ASR::symbol_t*> scope_before = current_scope->get_scope();
         if (x.n_symbols == 0) {
+            // Named constants first, so that the other entities that use
+            // them refer to these instances.
+            for (auto const &sym_pair: temp->m_symtab->get_scope()) {
+                ASR::symbol_t *s = sym_pair.second;
+                if (is_template_named_constant(s, sym)) {
+                    std::string s_name = ASRUtils::symbol_name(s);
+                    symbol_subs[s_name] = instantiate_symbol(al, current_scope,
+                        type_subs, symbol_subs, s_name, s, diag);
+                }
+            }
             // An abstract interface that a procedure instantiated before it
             // uses is already instantiated, under a generated name; that
             // instance becomes the named one, as for derived types below.
@@ -9999,7 +10866,7 @@ public:
                 ASR::Variable_t* v = ASR::down_cast<ASR::Variable_t>(s);
                 ASR::ttype_t* t = ASRUtils::duplicate_type(al, v->m_type);
                 ASR::dimension_t* tp_m_dims = nullptr;
-                int tp_n_dims = ASRUtils::extract_dimensions_from_ttype(t, tp_m_dims);
+                size_t tp_n_dims = ASRUtils::extract_dimensions_from_ttype(t, tp_m_dims);
                 t = ASRUtils::type_get_past_array(t);
                 if (ASR::is_a<ASR::TypeParameter_t>(*t)) {
                     ASR::TypeParameter_t* tp = ASR::down_cast<ASR::TypeParameter_t>(t);
@@ -10036,7 +10903,7 @@ public:
                         (ASR::down_cast<ASR::Var_t>(f->m_args[i]))->m_v);
                     ASR::ttype_t* param_type = ASRUtils::expr_type(f->m_args[i]);
                     ASR::dimension_t* tp_m_dims = nullptr;
-                    int tp_n_dims = ASRUtils::extract_dimensions_from_ttype(param_type, tp_m_dims);
+                    size_t tp_n_dims = ASRUtils::extract_dimensions_from_ttype(param_type, tp_m_dims);
                     param_type = ASRUtils::type_get_past_array(param_type);
                     if (ASR::is_a<ASR::TypeParameter_t>(*param_type)) {
                         ASR::TypeParameter_t* tp = ASR::down_cast<ASR::TypeParameter_t>(param_type);
@@ -10090,7 +10957,7 @@ public:
                     std::string return_var_name = return_var->m_name;
                     ASR::ttype_t *return_type = ASRUtils::expr_type(f->m_return_var);
                     ASR::dimension_t* tp_m_dims = nullptr;
-                    int tp_n_dims = ASRUtils::extract_dimensions_from_ttype(return_type, tp_m_dims);
+                    size_t tp_n_dims = ASRUtils::extract_dimensions_from_ttype(return_type, tp_m_dims);
                     return_type = ASRUtils::type_get_past_array(return_type);
                     if (ASR::is_a<ASR::TypeParameter_t>(*return_type)) {
                         ASR::TypeParameter_t* tp = ASR::down_cast<ASR::TypeParameter_t>(return_type);
@@ -10165,14 +11032,18 @@ Result<ASR::asr_t*> symbol_table_visitor(Allocator &al, AST::TranslationUnit_t &
         std::map<std::string, std::vector<int>> &entry_function_arguments_mapping,
         std::map<uint32_t, std::vector<ASR::stmt_t*>> &data_structure,
         GenericInstanceCompletions &generic_instance_completions,
-        LCompilers::LocationManager &lm)
+        std::set<ASR::symbol_t*> &getter_functions, LCompilers::LocationManager &lm,
+        const std::map<std::string, ASR::ttype_t*> *interactive_implicit_types)
 {
     SymbolTableVisitor v(al, symbol_table, diagnostics, compiler_options,
                          implicit_mapping, external_procedures_mapping,
                          explicit_intrinsic_procedures_mapping,
                          instantiate_types, instantiate_symbols, entry_functions,
                          entry_function_arguments_mapping, data_structure,
-                         generic_instance_completions, lm);
+                         generic_instance_completions, getter_functions, lm);
+    if (interactive_implicit_types) {
+        v.implicit_dictionary = *interactive_implicit_types;
+    }
     try {
         v.visit_TranslationUnit(ast);
     } catch (const SemanticAbort &) {
@@ -10181,6 +11052,50 @@ Result<ASR::asr_t*> symbol_table_visitor(Allocator &al, AST::TranslationUnit_t &
     }
     ASR::asr_t *unit = v.tmp;
     return unit;
+}
+
+BlockInterfaceVisitor::BlockInterfaceVisitor(Allocator &al, SymbolTable *block_scope,
+        diag::Diagnostics &diagnostics, CompilerOptions &compiler_options,
+        std::map<uint64_t, std::map<std::string, ASR::ttype_t*>> &implicit_mapping,
+        std::map<uint64_t, std::vector<std::string>> &external_procedures_mapping,
+        std::map<uint64_t, std::vector<std::string>> &explicit_intrinsic_procedures_mapping,
+        std::map<uint32_t, std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>>> &instantiate_types,
+        std::map<uint32_t, std::map<std::string, ASR::symbol_t*>> &instantiate_symbols,
+        std::map<std::string, std::map<std::string, std::vector<AST::decl_stmt_t*>>> &entry_functions,
+        std::map<std::string, std::vector<int>> &entry_function_arguments_mapping,
+        std::map<uint32_t, std::vector<ASR::stmt_t*>> &data_structure,
+        GenericInstanceCompletions &generic_instance_completions,
+        std::set<ASR::symbol_t*> &getter_functions,
+        LCompilers::LocationManager &lm)
+    : v(std::make_unique<SymbolTableVisitor>(al, block_scope, diagnostics,
+        compiler_options, implicit_mapping, external_procedures_mapping,
+        explicit_intrinsic_procedures_mapping, instantiate_types,
+        instantiate_symbols, entry_functions, entry_function_arguments_mapping,
+        data_structure, generic_instance_completions, getter_functions, lm))
+{
+    v->global_scope = block_scope;
+    while (v->global_scope->parent != nullptr) {
+        v->global_scope = v->global_scope->parent;
+    }
+}
+
+BlockInterfaceVisitor::~BlockInterfaceVisitor() = default;
+
+void BlockInterfaceVisitor::visit_Interface(const AST::Interface_t &x)
+{
+    v->visit_Interface(x);
+}
+
+void BlockInterfaceVisitor::finalize(Allocator &al, SetChar &module_dependencies,
+        std::vector<std::pair<ASR::symbol_t*, ASR::symbol_t*>> &construct_variable_pointers)
+{
+    v->finalize_interfaces();
+    v->report_saved_without_declaration();
+    for (size_t i = 0; i < v->current_module_dependencies.size(); i++) {
+        module_dependencies.push_back(al, v->current_module_dependencies[i]);
+    }
+    construct_variable_pointers.insert(construct_variable_pointers.end(),
+        v->construct_variable_pointers.begin(), v->construct_variable_pointers.end());
 }
 
 } // namespace LCompilers::LFortran

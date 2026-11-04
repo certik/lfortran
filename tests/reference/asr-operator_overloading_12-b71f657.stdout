@@ -32,6 +32,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -55,6 +56,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -82,6 +84,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -97,7 +100,7 @@
                                         Implementation
                                         ()
                                         .true.
-                                        .false.
+                                        .true.
                                         .true.
                                         .false.
                                         .false.
@@ -118,6 +121,8 @@
                                             ()
                                         )
                                         ()
+                                        .false.
+                                        .false.
                                         .false.
                                         .false.
                                     )]
@@ -168,6 +173,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -181,7 +187,7 @@
                                     module_operator_overloading_12
                                     []
                                     and
-                                    Public
+                                    Private
                                 ),
                             b:
                                 (Variable
@@ -201,6 +207,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -228,19 +235,17 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
                                     ()
                                 ),
                             ~and:
-                                (ExternalSymbol
+                                (CustomOperator
                                     5
                                     ~and
-                                    2 ~and
-                                    module_operator_overloading_12
-                                    []
-                                    ~and
+                                    [5 and@~and]
                                     Public
                                 )
                         })
@@ -252,11 +257,15 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Assignment
                         (Var 5 b)
                         (IntegerConstant 5 (Integer 4) Decimal)
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -281,6 +290,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Print
                         (StringFormat
@@ -291,6 +302,8 @@
                             )
                             (Var 5 c)]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )

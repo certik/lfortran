@@ -33,6 +33,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -62,6 +63,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -95,6 +97,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -118,6 +121,33 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
+                                    .false.
+                                    .false.
+                                    NotMethod
+                                    ()
+                                    []
+                                    ()
+                                ),
+                            i__dc:
+                                (Variable
+                                    2
+                                    i__dc
+                                    []
+                                    Local
+                                    ()
+                                    ()
+                                    Default
+                                    (Integer 4)
+                                    ()
+                                    Source
+                                    Public
+                                    Required
+                                    .false.
+                                    .false.
+                                    .false.
+                                    ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -145,6 +175,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -168,6 +199,7 @@
                                     .false.
                                     .false.
                                     ()
+                                    .false.
                                     .false.
                                     .false.
                                     NotMethod
@@ -206,6 +238,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -235,6 +268,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -268,6 +302,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -291,6 +326,33 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    NotMethod
+                                                    ()
+                                                    []
+                                                    ()
+                                                ),
+                                            i__dc1:
+                                                (Variable
+                                                    3
+                                                    i__dc1
+                                                    []
+                                                    Local
+                                                    ()
+                                                    ()
+                                                    Default
+                                                    (Integer 4)
+                                                    ()
+                                                    Source
+                                                    Public
+                                                    Required
+                                                    .false.
+                                                    .false.
+                                                    .false.
+                                                    ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -318,6 +380,7 @@
                                                     ()
                                                     .false.
                                                     .false.
+                                                    .false.
                                                     NotMethod
                                                     ()
                                                     []
@@ -341,6 +404,7 @@
                                                     .false.
                                                     .false.
                                                     ()
+                                                    .false.
                                                     .false.
                                                     .false.
                                                     NotMethod
@@ -402,12 +466,14 @@
                                         ()
                                         .false.
                                         .false.
+                                        .false.
+                                        .false.
                                     )
                                     (DoConcurrentLoop
-                                        [((Var 3 i)
+                                        [((Var 3 i__dc1)
                                         (IntegerConstant 1 (Integer 4) Decimal)
                                         (Var 3 n)
-                                        ())]
+                                        (IntegerConstant 1 (Integer 4) Decimal))]
                                         []
                                         []
                                         []
@@ -415,21 +481,23 @@
                                             (ArrayItem
                                                 (Var 3 c)
                                                 [(()
-                                                (Var 3 i)
+                                                (Var 3 i__dc1)
                                                 ())]
                                                 (Real 4)
                                                 ColMajor
                                                 ()
+                                                .false.
                                             )
                                             (RealBinOp
                                                 (ArrayItem
                                                     (Var 3 a)
                                                     [(()
-                                                    (Var 3 i)
+                                                    (Var 3 i__dc1)
                                                     ())]
                                                     (Real 4)
                                                     ColMajor
                                                     ()
+                                                    .false.
                                                 )
                                                 Add
                                                 (RealBinOp
@@ -438,11 +506,12 @@
                                                     (ArrayItem
                                                         (Var 3 b)
                                                         [(()
-                                                        (Var 3 i)
+                                                        (Var 3 i__dc1)
                                                         ())]
                                                         (Real 4)
                                                         ColMajor
                                                         ()
+                                                        .false.
                                                     )
                                                     (Real 4)
                                                     ()
@@ -451,6 +520,8 @@
                                                 ()
                                             )
                                             ()
+                                            .false.
+                                            .false.
                                             .false.
                                             .false.
                                         )]
@@ -479,6 +550,8 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (Assignment
                         (Var 2 nsize)
@@ -491,12 +564,14 @@
                         ()
                         .false.
                         .false.
+                        .false.
+                        .false.
                     )
                     (DoConcurrentLoop
-                        [((Var 2 i)
+                        [((Var 2 i__dc)
                         (IntegerConstant 1 (Integer 4) Decimal)
                         (Var 2 nsize)
-                        ())]
+                        (IntegerConstant 1 (Integer 4) Decimal))]
                         []
                         []
                         []
@@ -504,11 +579,12 @@
                             (ArrayItem
                                 (Var 2 a)
                                 [(()
-                                (Var 2 i)
+                                (Var 2 i__dc)
                                 ())]
                                 (Real 4)
                                 ColMajor
                                 ()
+                                .false.
                             )
                             (Cast
                                 (IntegerConstant 5 (Integer 4) Decimal)
@@ -521,6 +597,8 @@
                                 ()
                             )
                             ()
+                            .false.
+                            .false.
                             .false.
                             .false.
                         )
@@ -528,11 +606,12 @@
                             (ArrayItem
                                 (Var 2 b)
                                 [(()
-                                (Var 2 i)
+                                (Var 2 i__dc)
                                 ())]
                                 (Real 4)
                                 ColMajor
                                 ()
+                                .false.
                             )
                             (Cast
                                 (IntegerConstant 5 (Integer 4) Decimal)
@@ -545,6 +624,8 @@
                                 ()
                             )
                             ()
+                            .false.
+                            .false.
                             .false.
                             .false.
                         )]

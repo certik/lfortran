@@ -33,6 +33,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -64,6 +65,7 @@
                                     ()
                                     .false.
                                     .false.
+                                    .false.
                                     NotMethod
                                     ()
                                     []
@@ -81,12 +83,15 @@
                             (Real 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (RealConstant
                             1.000000
                             (Real 4)
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -99,12 +104,15 @@
                             (Real 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (RealConstant
                             2.000000
                             (Real 4)
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -117,12 +125,15 @@
                             (Real 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (RealConstant
                             0.500000
                             (Real 4)
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -135,12 +146,15 @@
                             (Real 4)
                             ColMajor
                             ()
+                            .true.
                         )
                         (RealConstant
                             3.500000
                             (Real 4)
                         )
                         ()
+                        .false.
+                        .false.
                         .false.
                         .false.
                     )
@@ -201,6 +215,8 @@
                             ()
                             .false.
                             .false.
+                            .false.
+                            .false.
                         )]
                         []
                     )
@@ -209,6 +225,8 @@
                             ()
                             [(Var 2 a)]
                             FormatFortran
+                            []
+                            ()
                             (Allocatable
                                 (String 1 () DeferredLength DescriptorString)
                             )
@@ -229,6 +247,7 @@
                                         (Real 4)
                                         ColMajor
                                         ()
+                                        .true.
                                     )
                                     Sub
                                     (RealConstant
@@ -269,6 +288,7 @@
                                         (Real 4)
                                         ColMajor
                                         ()
+                                        .true.
                                     )
                                     Sub
                                     (RealConstant
