@@ -5109,7 +5109,12 @@ public:
                             type_spec->base.loc);
                     }
                     ASR::ttype_t* struct_t = ASRUtils::make_StructType_t_util(al, loc, v, true);
-                    alloc_arg.m_type = struct_t;
+                    // The structural type embeds the member types of a type
+                    // declared in another module, so any trait contract they
+                    // reference must be imported into this scope. Otherwise
+                    // the missing symbol cannot be deserialized from the
+                    // module file.
+                    alloc_arg.m_type = ASRUtils::import_trait_type(al, struct_t, current_scope);
                     alloc_arg.m_sym_subclass = v;
                 } else {
                     diag.add(Diagnostic(
