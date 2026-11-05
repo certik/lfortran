@@ -84,14 +84,28 @@ and method as above, in one interleaved run:
 | LFortran `--fast`, after | 1.851 | 1.66 |
 | GFortran 16.2 | 3.224 | 2.89 |
 
-LFortran is now about 8% behind Flang instead of 17%. The remaining gap is
-that Flang fully unrolls the ten-pair loop and its SLP vectorizer combines
-the unrolled iterations, while LFortran vectorizes the loop but leaves the
-two-pair epilogue as a separate loop.
+LFortran was now about 8% behind Flang instead of 17%. The remaining
+difference turned out to be the CPU model, not the loop shape: with LLVM 11,
+`--mcpu=native` reports `generic` for Zen 5, and the generic cost model
+prefers 512-bit vectors, while the known models use 256-bit vectors, which
+are faster for this small loop. `--fast` now maps an unrecognized AVX-512
+host to `skylake-avx512` and an AVX2 host to `haswell`, keeping the detected
+features.
+
+Final result with plain `--fast` (quiet machine, best of 6 interleaved runs):
+
+| Compiler | secs | vs C++ |
+|---|---:|---:|
+| **C++ g++ #0** | **0.956** | 1.00 |
+| LFortran `--fast` | 1.413 | 1.48 |
+| Flang 23.1.4 | 1.456 | 1.52 |
+| GFortran 16.2 | 2.763 | 2.89 |
+
+LFortran now beats Flang by about 3% on the unchanged source. The CPU model
+also explains the other measurements: `--mcpu=znver2` gives 1.408 s, while
+the old generic-resolved build took 1.6 to 1.7 s.
 
 ## Next
 
-1. Close the remaining gap to Flang with the unchanged source (SLP
-   vectorization of the unrolled pair loop, or an unrolled epilogue).
-2. Then change the Fortran source, within the rules of the benchmark, to
-   reach the C++ time.
+1. Change the Fortran source, within the rules of the benchmark, to reach
+   the C++ time.
