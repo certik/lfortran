@@ -63,9 +63,35 @@ lfortran --fast nbody.ifx-5.f90 -o nbody.lfortran
 taskset -c 17 ./nbody.gpp0 50000000
 ```
 
+## First codegen result
+
+The `do m = 1, N` loop in `advance` was not vectorized: inlining wraps the
+`real(d2)` conversion in a BLOCK, and the code generator emitted
+`llvm.stacksave`/`llvm.stackrestore` around it. Those calls cannot be crossed
+by the vectorizer, so the ten pairs stayed scalar while Flang vectorized the
+loop to `llvm.sqrt.v4f32`.
+
+Fixed-size BLOCK allocas are now moved to the function entry, and the stack
+save/restore is emitted only when a dynamically sized alloca remains. The
+loop vectorizes (four `llvm.sqrt.v4f32` calls, no stack save). Same machine
+and method as above, in one interleaved run:
+
+| Compiler | secs | vs C++ |
+|---|---:|---:|
+| **C++ g++ #0** | **1.117** | 1.00 |
+| Flang 23.1.4 | 1.710 | 1.53 |
+| LFortran `--fast`, before | 1.881 | 1.68 |
+| LFortran `--fast`, after | 1.851 | 1.66 |
+| GFortran 16.2 | 3.224 | 2.89 |
+
+LFortran is now about 8% behind Flang instead of 17%. The remaining gap is
+that Flang fully unrolls the ten-pair loop and its SLP vectorizer combines
+the unrolled iterations, while LFortran vectorizes the loop but leaves the
+two-pair epilogue as a separate loop.
+
 ## Next
 
-1. Match Flang with the unchanged Fortran source, by comparing the generated
-   code of `advance`.
+1. Close the remaining gap to Flang with the unchanged source (SLP
+   vectorization of the unrolled pair loop, or an unrolled epilogue).
 2. Then change the Fortran source, within the rules of the benchmark, to
    reach the C++ time.
