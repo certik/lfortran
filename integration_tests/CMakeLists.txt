@@ -5179,6 +5179,8 @@ RUN(NAME traits_procedure_component_01_oracle LABELS gfortran llvm EXTRA_ARGS --
 RUN(NAME traits_component_allocatable_01 LABELS llvm llvm2 NO_STD_F23 ISOLATE_MODULES
     EXTRA_ARGS --verify-all-passes
     EXTRAFILES traits_component_allocatable_01_provider.f90)
+RUN(NAME traits_block_bound_01 LABELS llvm llvm2 NO_STD_F23
+    EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_recursive_01 LABELS llvm llvm2 NO_STD_F23
     EXTRAFILES traits_recursive_01_mod.f90)
 RUN(NAME traits_recursive_01_oracle LABELS gfortran llvm)

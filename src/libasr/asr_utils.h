@@ -3987,6 +3987,10 @@ public:
             identifiers.push_back(al, ASRUtils::symbol_name(x.m_name));
             ASR::BaseWalkVisitor<CollectIdentifiersFromASRExpression>::visit_FunctionCall(x);
         }
+        void visit_TraitFunctionCall(const ASR::TraitFunctionCall_t &x){
+            identifiers.push_back(al, ASRUtils::symbol_name(x.m_name));
+            ASR::BaseWalkVisitor<CollectIdentifiersFromASRExpression>::visit_TraitFunctionCall(x);
+        }
 };
 
 void collect_variable_dependencies(Allocator& al, SetChar& deps_vec,
