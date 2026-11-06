@@ -121,12 +121,19 @@ operation. Same batch, best of 8:
 | LFortran `--fast`, exact ifx source | 1.523 | 1.50 |
 | Flang, exact ifx source | 1.566 | 1.55 |
 
-The remaining 7% is the horizontal sum of squares in the pair loop: g++
-uses `vhaddpd` on the pair vectors, while LFortran assembles them with
-`vpermt2pd` and `vunpck*`. The rest of the loop has the same shape (three
-`vrsqrtps`, 256-bit vectors).
+The remaining gap is LLVM 11's code generation, not the CPU model: the same
+C++ built with `-march=skylake-avx512` is still 0.959 s, so GCC's register
+allocation and horizontal reduction are better than LLVM's. GCC keeps the
+body and pair vectors in `ymm` registers and reduces with `vhaddpd`; LLVM 11
+vectorizes the flat loops with `vpermt2pd`/`vunpck*` and keeps part of the
+state in memory (145 vs 120 instructions per step). The quietest batch
+measures C++ 0.959 s against `nbody_opt.f90` 1.018 s, 6% behind.
+
+LLVM 23 is not an alternative here: its new pass manager does not vectorize
+these small loops at all, and the same source takes about 2.0 s.
 
 ## Next
 
-1. Generate `vhaddpd`-style reductions for the pair loop, or another form
-   of the `d2` sum that avoids the extra shuffles.
+1. Teach the vectorizer to form a four-wide load with a horizontal
+   reduction (`llvm.vector.reduce.fadd`) for small unrolled pair loops, and
+   keep the body/pair arrays in registers, to match GCC's loop.
