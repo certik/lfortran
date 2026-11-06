@@ -105,7 +105,28 @@ LFortran now beats Flang by about 3% on the unchanged source. The CPU model
 also explains the other measurements: `--mcpu=znver2` gives 1.408 s, while
 the old generic-resolved build took 1.6 to 1.7 s.
 
+## Matching the C++ source
+
+`nbody_opt.f90` restructures the Intel Fortran source after the C++ g++ #0
+solution: the ten pairs are four-element vectors in `r(4, PAIRS)`, the five
+bodies are four-element vectors in `x(4, NB)` and `v(4, NB)`, the pair
+indices are compile-time constants so the ten pairs unroll, and each
+component loop runs over the four slots, which maps to one 256-bit
+operation. Same batch, best of 8:
+
+| Compiler / source | secs | vs C++ |
+|---|---:|---:|
+| **C++ g++ #0** | **1.013** | 1.00 |
+| LFortran `--fast`, `nbody_opt.f90` | 1.084 | 1.07 |
+| LFortran `--fast`, exact ifx source | 1.523 | 1.50 |
+| Flang, exact ifx source | 1.566 | 1.55 |
+
+The remaining 7% is the horizontal sum of squares in the pair loop: g++
+uses `vhaddpd` on the pair vectors, while LFortran assembles them with
+`vpermt2pd` and `vunpck*`. The rest of the loop has the same shape (three
+`vrsqrtps`, 256-bit vectors).
+
 ## Next
 
-1. Change the Fortran source, within the rules of the benchmark, to reach
-   the C++ time.
+1. Generate `vhaddpd`-style reductions for the pair loop, or another form
+   of the `d2` sum that avoids the extra shuffles.
