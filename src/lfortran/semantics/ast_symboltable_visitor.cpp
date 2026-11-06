@@ -9878,21 +9878,53 @@ public:
                     entry.second.end());
             }
         };
+        std::vector<std::vector<ASR::symbol_t*>> parameter_traits(generic.n_parameters);
         try {
             for (size_t i = 0; i < generic.n_parameters; i++) {
                 const auto &parameter = generic.m_parameters[i];
+                Vec<ASR::ttype_t*> members;
+                members.reserve(al, 0);
                 if (parameter.n_member_types) {
-                    trait_error("type-set constrained generic type parameters are not "
-                        "implemented yet", parameter.loc);
+                    members = resolve_type_set_members(parameter.m_member_types,
+                        parameter.n_member_types, to_lower(parameter.m_name));
                 }
                 // An unconstrained parameter admits any type (the empty trait
                 // IAnyType): it has no constraint and its arguments no evidence.
-                for (size_t j = 0; j < parameter.n_traits; j++) {
-                    auto *trait = resolve_trait(parameter.m_traits[j].m_name, parameter.loc);
-                    if (trait->m_kind != ASR::trait_kindType::UniversalTrait) {
-                        trait_error("type-set constrained generic type parameters are not "
-                            "implemented yet", parameter.loc);
+                for (size_t j = 0; !parameter.n_member_types && j < parameter.n_traits; j++) {
+                    std::string trait_name = to_lower(parameter.m_traits[j].m_name);
+                    ASR::symbol_t *symbol = scope->resolve_symbol(trait_name);
+                    // Bare intrinsic keywords remain names in the AST. A
+                    // visible trait wins; an explicit kind takes the type-set path.
+                    if (!symbol || !ASR::is_a<ASR::Trait_t>(
+                            *ASRUtils::symbol_get_past_external(symbol))) {
+                        if (auto *member = bare_type_set_member(trait_name, parameter.loc)) {
+                            if (parameter.n_traits != 1) {
+                                trait_error("type-set trait composition is not implemented "
+                                    "yet", parameter.loc);
+                            }
+                            members = resolve_type_set_members(&member, 1,
+                                to_lower(parameter.m_name));
+                            continue;
+                        }
                     }
+                    auto *trait = resolve_trait(parameter.m_traits[j].m_name, parameter.loc);
+                    if (trait->m_kind == ASR::trait_kindType::IntrinsicTypeSet &&
+                            parameter.n_traits != 1) {
+                        trait_error("type-set trait composition is not implemented yet",
+                            parameter.loc);
+                    }
+                    parameter_traits[i].push_back(scope->resolve_symbol(trait_name));
+                }
+                if (members.size()) {
+                    std::string trait_name = scope->get_unique_name(
+                        "__type_set_" + to_lower(parameter.m_name));
+                    auto *trait_scope = al.make_new<SymbolTable>(scope);
+                    ASR::symbol_t *trait = ASR::down_cast<ASR::symbol_t>(ASR::make_Trait_t(
+                        al, parameter.loc, trait_scope, s2c(al, trait_name), nullptr, 0,
+                        ASR::accessType::Private, ASR::trait_kindType::IntrinsicTypeSet,
+                        members.p, members.size(), nullptr, 0));
+                    scope->add_symbol(trait_name, trait);
+                    parameter_traits[i].push_back(trait);
                 }
             }
             for (const auto &foreign : package.foreign) {
@@ -9975,13 +10007,8 @@ public:
             }
             for (size_t i = 0; i < generic.n_parameters; i++) {
                 const auto &parameter = generic.m_parameters[i];
-                std::vector<ASR::symbol_t*> traits;
-                for (size_t j = 0; j < parameter.n_traits; j++) {
-                    traits.push_back(scope->resolve_symbol(
-                        to_lower(parameter.m_traits[j].m_name)));
-                }
                 auto same_types = resolve_trait_same_types(scope, parameter);
-                add_trait_parameter_constraints(scope, binders[i], traits,
+                add_trait_parameter_constraints(scope, binders[i], parameter_traits[i],
                     parameter.loc, true, same_types);
             }
             // The type arguments of a generic parent (TD-45).

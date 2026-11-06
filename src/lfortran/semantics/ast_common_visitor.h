@@ -28699,6 +28699,19 @@ public:
         return result;
     }
 
+    // The constraints whose arguments carry evidence: a type-set constraint
+    // only restricts the argument's type.
+    std::vector<ASR::TraitConstraint_t*> evidence_trait_constraints(ASR::Template_t *generic) {
+        std::vector<ASR::TraitConstraint_t*> result;
+        for (auto *constraint : trait_constraints(generic)) {
+            auto *trait = ASRUtils::symbol_get_past_external(constraint->m_trait);
+            if (ASR::is_a<ASR::Trait_t>(*trait) && ASR::down_cast<ASR::Trait_t>(trait)->m_kind ==
+                    ASR::trait_kindType::IntrinsicTypeSet) continue;
+            result.push_back(constraint);
+        }
+        return result;
+    }
+
     std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>>
     trait_erased_types(ASR::Template_t &generic, SymbolTable *scope) {
         std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> types;
@@ -34930,6 +34943,21 @@ public:
             }
             auto *trait = ASR::down_cast<ASR::Trait_t>(
                 ASRUtils::symbol_get_past_external(constraint->m_trait));
+            if (trait->m_kind == ASR::trait_kindType::IntrinsicTypeSet) {
+                bool member = false;
+                for (size_t k = 0; k < trait->n_member_types; k++) {
+                    member = member || ASRUtils::type_set_member_admits(
+                        trait->m_member_types[k], argument.first);
+                }
+                if (!member) {
+                    trait_call_error(ASRUtils::type_to_str_fortran_symbol(
+                        argument.first, argument.second, true) +
+                        " is not a member of the type set of generic type parameter '" +
+                        std::string(package.m_args[i]) + "' of '" + definition->m_name + "'",
+                        loc);
+                }
+                continue;
+            }
             ASR::TraitImplementation_t *selected = nullptr;
             for (auto *implementation : pending
                     ? generic_definition_conformances(*pending)
@@ -35146,7 +35174,7 @@ public:
             types[package->m_args[i]] = {metadata->m_arguments[i].m_type,
                 metadata->m_arguments[i].m_type_declaration};
         }
-        for (auto *constraint : trait_constraints(package)) {
+        for (auto *constraint : evidence_trait_constraints(package)) {
             if (!constraint->n_same_types) continue;
             size_t i = ASRUtils::trait_binder_position(*package, constraint->m_parameter);
             // A declaration can wait for its own unit's conformance signatures.
@@ -35892,7 +35920,7 @@ public:
         for (size_t i = 0; i < package.n_args; i++) {
             if (package.m_symtab->get_symbol(package.m_args[i]) == binder) argument = i;
         }
-        for (auto *other : trait_constraints(&package)) {
+        for (auto *other : evidence_trait_constraints(&package)) {
             if (other == &constraint) break;
             if (ASRUtils::symbol_get_past_external(other->m_parameter) == binder) position++;
         }
@@ -35909,7 +35937,7 @@ public:
             std::map<std::string, ASR::symbol_t*> &symbol_subs) {
         // Each published specialization: its constraint and requirement.
         std::map<ASR::symbol_t*, std::pair<ASR::TraitConstraint_t*, size_t>> published;
-        for (auto *constraint : trait_constraints(&package)) {
+        for (auto *constraint : evidence_trait_constraints(&package)) {
             for (size_t i = 0; i < constraint->n_requirements; i++) {
                 if (!ASRUtils::trait_requirement_specialization(*constraint, i)) continue;
                 published[ASRUtils::symbol_get_past_external(
@@ -36100,7 +36128,7 @@ public:
                 ? ASRUtils::symbol_get_past_external(argument.m_type_declaration) : nullptr;
             ASR::symbol_t *binder = package->m_symtab->get_symbol(package->m_args[i]);
             std::vector<ASR::TraitImplementation_t*> evidence;
-            for (auto *constraint : trait_constraints(package)) {
+            for (auto *constraint : evidence_trait_constraints(package)) {
                 if (ASRUtils::symbol_get_past_external(constraint->m_parameter) != binder) {
                     continue;
                 }
@@ -36159,12 +36187,19 @@ public:
         // The constraints of the parameters and their requirements are bound
         // by substitution; they are not copied.
         std::set<ASR::symbol_t*> requirements;
-        auto constraints = trait_constraints(package);
-        for (auto *constraint : constraints) {
+        auto constraints = evidence_trait_constraints(package);
+        for (auto *constraint : trait_constraints(package)) {
             requirements.insert(&constraint->base);
             for (size_t i = 0; i < constraint->n_requirements; i++) {
                 requirements.insert(ASRUtils::symbol_get_past_external(
                     constraint->m_requirements[i].m_procedure));
+            }
+            for (size_t i = 0; i < constraint->n_intrinsic_requirements; i++) {
+                const auto &requirement = constraint->m_intrinsic_requirements[i];
+                requirements.insert(requirement.m_procedure);
+                for (size_t j = 0; j < requirement.n_witnesses; j++) {
+                    requirements.insert(requirement.m_witnesses[j].m_procedure);
+                }
             }
         }
         auto *saved_scope = current_scope;
@@ -36202,8 +36237,14 @@ public:
                                 std::pair<ASR::ttype_t*, ASR::symbol_t*>>{}, symbol_subs);
                 }
             }
+            // A type-set operation of the package's parameters is bound to
+            // the member of the type set its argument selects.
+            PendingBodyInstantiation type_set{type_subs, symbol_subs, {}, {}};
+            bind_type_set_requirements(type_set, package, owner);
+            symbol_subs = type_set.symbol_subs;
             std::map<ASR::symbol_t*, ASR::symbol_t*> copies;
             std::vector<std::pair<ASR::symbol_t*, ASR::symbol_t*>> functions, methods;
+            functions.insert(functions.end(), type_set.symbols.begin(), type_set.symbols.end());
             size_t n_diagnostics = diag.diagnostics.size();
             for (const auto &entry : package->m_symtab->get_scope()) {
                 ASR::symbol_t *member = entry.second;

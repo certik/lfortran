@@ -5799,6 +5799,13 @@ public:
                 requirements.insert(ASRUtils::symbol_get_past_external(
                     constraint->m_requirements[i].m_procedure));
             }
+            for (size_t i = 0; i < constraint->n_intrinsic_requirements; i++) {
+                const auto &requirement = constraint->m_intrinsic_requirements[i];
+                requirements.insert(requirement.m_procedure);
+                for (size_t j = 0; j < requirement.n_witnesses; j++) {
+                    requirements.insert(requirement.m_witnesses[j].m_procedure);
+                }
+            }
         }
         for (const auto &entry : package->m_symtab->get_scope()) {
             if ((ASR::is_a<Function_t>(*entry.second) || ASR::is_a<Template_t>(*entry.second)) &&
