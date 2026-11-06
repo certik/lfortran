@@ -5224,7 +5224,15 @@ public:
             trait_error("trait declarations currently require a module scope", x.base.base.loc);
         }
         std::string name = to_lower(x.m_name);
-        if (current_scope->get_symbol(name)) {
+        ASR::symbol_t *previous = current_scope->get_symbol(name);
+        // An access statement does not declare an entity, so with implicit
+        // typing it leaves behind an implicitly typed variable that the trait
+        // declaration replaces.
+        bool replaces_implicit_variable = previous != nullptr
+            && compiler_options.implicit_typing
+            && ASR::is_a<ASR::Variable_t>(*previous)
+            && explicitly_typed_variables.find(previous) == explicitly_typed_variables.end();
+        if (previous && !replaces_implicit_variable) {
             trait_error("trait '" + name + "' is already declared",
                 x.base.base.loc);
         }
@@ -5236,7 +5244,7 @@ public:
                 s2c(al, name), nullptr, 0,
                 assgnd_access.count(name) ? assgnd_access[name] : saved_access,
                 ASR::trait_kindType::UniversalTrait, nullptr, 0, nullptr, 0));
-        parent->add_symbol(name, trait);
+        parent->add_or_overwrite_symbol(name, trait);
         dflt_access = ASR::accessType::Public;
         try {
             auto *trait_definition = ASR::down_cast<ASR::Trait_t>(trait);
