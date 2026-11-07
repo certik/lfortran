@@ -6,7 +6,7 @@
     "outfile": null,
     "outfile_hash": null,
     "stdout": "gpu_metal_kernel-gpu_residue_unroll_01-19a7efa.stdout",
-    "stdout_hash": "bbe40b362ecf73edad4cb9675659edc5f301110fb333d0fec26dc790",
+    "stdout_hash": "9a38ce1d07c2b82da67fbbf1a266faf959c71fde2fbb9aef3acf7a0e",
     "stderr": "gpu_metal_kernel-gpu_residue_unroll_01-19a7efa.stderr",
     "stderr_hash": "462bbbdc2062a52298ced1d15269ce6ce565b59c7e2e05a28774ecf7",
     "returncode": 0
