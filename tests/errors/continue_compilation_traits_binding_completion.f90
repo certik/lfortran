@@ -377,25 +377,6 @@ contains
     end subroutine show_real
 end module cc_traits_binding_completion_intrinsic
 
-! E17: binding procedures to a generic type without traits.
-module cc_traits_binding_completion_generic
-    use cc_traits_binding_completion_contracts, only: IPrintable
-    implicit none
-    type :: Holder{IPrintable :: T}
-        type(T) :: item
-    end type Holder
-
-    implements :: Holder{IPrintable :: T}
-        initial :: holder_from_item
-    end implements Holder
-contains
-    function holder_from_item(item) result(res)
-        type(T), intent(in) :: item
-        type(Holder{T})     :: res
-        res%item = item
-    end function holder_from_item
-end module cc_traits_binding_completion_generic
-
 ! E18: an implements statement cannot target an abstract type.
 module cc_traits_binding_completion_abstract
     implicit none

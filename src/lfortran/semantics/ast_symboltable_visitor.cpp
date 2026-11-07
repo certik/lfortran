@@ -6012,13 +6012,10 @@ public:
     // requirement for a static or operator binding to implement.
     void check_inherent_implements(const AST::Implements_t &x) {
         AST::decl_attribute_t *type = x.m_implementing_type;
-        if (AST::is_a<AST::AttrGenericTypeParams_t>(*type)) {
-            trait_error("an implements statement without traits for a generic type "
-                "is not implemented yet", type->base.loc);
-        }
-        if (!AST::is_a<AST::AttrType_t>(*type) ||
+        if (!AST::is_a<AST::AttrGenericTypeParams_t>(*type) &&
+                (!AST::is_a<AST::AttrType_t>(*type) ||
                 AST::down_cast<AST::AttrType_t>(type)->m_type != AST::decl_typeType::TypeType ||
-                !AST::down_cast<AST::AttrType_t>(type)->m_name) {
+                !AST::down_cast<AST::AttrType_t>(type)->m_name)) {
             trait_error("an implements statement without traits for an intrinsic type "
                 "is not implemented yet", type->base.loc);
         }
@@ -6083,8 +6080,7 @@ public:
 
     void bind_inherent_implements(const AST::Implements_t &x) {
         const Location &loc = x.m_implementing_type->base.loc;
-        std::string name = to_lower(AST::down_cast<AST::AttrType_t>(
-            x.m_implementing_type)->m_name);
+        std::string name = generic_implements_target(x);
         ASR::symbol_t *symbol = current_scope->resolve_symbol(name);
         ASR::symbol_t *declaration = symbol ? ASRUtils::symbol_get_past_external(symbol) : nullptr;
         if (!declaration || !ASR::is_a<ASR::Struct_t>(*declaration)) {
@@ -10106,6 +10102,7 @@ public:
                     }
                 }
             }
+            bind_inherent_implements();
             add_class_procedures();
             complete_trait_implementations();
         } catch (const SemanticAbort &) {

@@ -108,24 +108,14 @@ semantic error: an implements statement without traits for an intrinsic type is 
 370 |     implements :: real(8)
     |                   ^^^^^^^ 
 
-semantic error: an implements statement without traits for a generic type is not implemented yet
-   --> tests/errors/continue_compilation_traits_binding_completion.f90:388:5 - 390:26
-    |
-388 |        implements :: Holder{IPrintable :: T}
-    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
-...
-    |
-390 |        end implements Holder
-    | ...^^^^^^^^^^^^^^^^^^^^^^^^^^ 
-
 semantic error: an implements block cannot target an abstract type
-   --> tests/errors/continue_compilation_traits_binding_completion.f90:406:5 - 408:25
+   --> tests/errors/continue_compilation_traits_binding_completion.f90:387:5 - 389:25
     |
-406 |        implements :: Shape
+387 |        implements :: Shape
     |        ^^^^^^^^^^^^^^^^^^^...
 ...
     |
-408 |        end implements Shape
+389 |        end implements Shape
     | ...^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
 semantic error: no visible nominal implementation of trait 'iconstructable' for generic type parameter 't'
