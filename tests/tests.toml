@@ -7063,6 +7063,10 @@ semantics_only_cc = true
 options = "--implicit-interface"
 
 [[test]]
+filename = "errors/continue_compilation_traits_sealed_receiver.f90"
+semantics_only_cc = true
+
+[[test]]
 filename = "errors/continue_compilation_traits_view_argument.f90"
 semantics_only_cc = true
 

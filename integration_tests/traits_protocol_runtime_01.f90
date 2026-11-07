@@ -137,7 +137,7 @@ contains
     function folded_weighted{INumeric :: T}(x, w, self) result(s)
         type(T),       intent(in) :: x(:)
         type(T),       intent(in) :: w
-        class(Folder), intent(in) :: self
+        type(Folder), intent(in) :: self
         type(T)                   :: s
         s = halves(x(size(x):1:-1)) * w + T(self%calls)
     end function folded_weighted

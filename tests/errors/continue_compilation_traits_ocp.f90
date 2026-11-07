@@ -296,7 +296,7 @@ contains
         s = simple_sum(x) * x(1)
     end function helped_scaled
     function forwarded_scaled{IField :: T}(self, x) result(s)
-        class(Forwarded), intent(in) :: self
+        type(Forwarded), intent(in) :: self
         type(T),          intent(in) :: x(:)
         type(T)                      :: s
         ! E14: to a runtime generic message.

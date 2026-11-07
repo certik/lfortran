@@ -133,7 +133,7 @@ contains
     end function child_value
 
     subroutine folder_fold{INumeric :: T}(self, x, total)
-        class(Folder), intent(in) :: self
+        type(Folder), intent(in) :: self
         type(T), intent(in) :: x(:)
         type(T), intent(inout) :: total
         integer :: i

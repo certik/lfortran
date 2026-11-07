@@ -1,0 +1,13 @@
+{
+    "basename": "asr-continue_compilation_traits_sealed_receiver-9509481",
+    "cmd": "lfortran --semantics-only --continue-compilation --no-color {infile}",
+    "infile": "tests/errors/continue_compilation_traits_sealed_receiver.f90",
+    "infile_hash": "d397263cba3dfb3412681bf525b252943184ac876ad97232fb360091",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": "asr-continue_compilation_traits_sealed_receiver-9509481.stderr",
+    "stderr_hash": "7ce91b1f37745247f8690f2db4ab76b7f4621c1c963a836d2ed38d8b",
+    "returncode": 1
+}

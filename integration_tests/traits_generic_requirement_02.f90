@@ -167,7 +167,7 @@ contains
     end function doubler_apply
 
     subroutine folder_fold{INumeric :: T}(self, x, total)
-        class(Folder), intent(in) :: self
+        type(Folder), intent(in) :: self
         type(T), intent(in) :: x(:)
         type(T), intent(inout) :: total
         integer :: i
@@ -177,7 +177,7 @@ contains
     end subroutine folder_fold
 
     function pairer_pair{INumeric :: A, INumeric :: B}(self, x, y) result(r)
-        class(Pairer), intent(in) :: self
+        type(Pairer), intent(in) :: self
         type(A), intent(in) :: x
         type(B), intent(in) :: y
         integer :: r

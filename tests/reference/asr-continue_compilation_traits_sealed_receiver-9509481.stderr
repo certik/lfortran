@@ -1,0 +1,11 @@
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+ --> tests/errors/continue_compilation_traits_sealed_receiver.f90:2:10
+  |
+2 |    type, sealed :: MyType
+  |          ^^^^^^ LFortran extension
+
+semantic error: the passed-object dummy argument 'self' of the type-bound procedure 'output' of the sealed type 'mytype' must be declared with type(mytype), not class(mytype)
+  --> tests/errors/continue_compilation_traits_sealed_receiver.f90:15:36
+   |
+15 |       class(MyType), intent(in) :: self
+   |                                    ^^^^ 

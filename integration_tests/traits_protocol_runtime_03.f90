@@ -67,7 +67,7 @@ contains
 
     ! Only the shapes of the erased arrays are read.
     function grid_extent{INumeric :: T}(self, x) result(n)
-        class(Grid), intent(in) :: self
+        type(Grid), intent(in) :: self
         type(T),     intent(in) :: x(:, :)
         integer                 :: n
         integer                 :: dims(2), every_other(2)
@@ -79,7 +79,7 @@ contains
     end function grid_extent
 
     function grid_corners{INumeric :: T}(self, x) result(s)
-        class(Grid), intent(in) :: self
+        type(Grid), intent(in) :: self
         type(T),     intent(in) :: x(:, :)
         type(T)                 :: s
         type(T)                 :: first, last

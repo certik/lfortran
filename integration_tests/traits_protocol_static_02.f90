@@ -51,13 +51,13 @@ contains
     end function make
 
     function key_of(self) result(r)
-        class(Key), intent(in) :: self
+        type(Key), intent(in) :: self
         integer :: r
         r = self%k
     end function key_of
 
     function cell_scaled{IKey :: U}(self, k) result(r)
-        class(Cell), intent(in) :: self
+        type(Cell), intent(in) :: self
         type(U), intent(in) :: k
         integer :: r
         r = self%n * k%key()

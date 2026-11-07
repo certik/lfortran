@@ -97,7 +97,7 @@ contains
         character(len=*), intent(in) :: label
         type(T),          intent(in) :: x(:)
         character(len=*), intent(in) :: suffix
-        class(Weighted),  intent(in) :: self
+        type(Weighted),  intent(in) :: self
         type(T)                      :: s
         integer                      :: i
         s = T(self%weight * len(label // suffix))

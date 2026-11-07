@@ -8059,6 +8059,26 @@ public:
         return false;
     }
 
+    // The passed-object dummy argument of a sealed type's binding must be
+    // declared with type(...): a class(...) one would defeat devirtualization.
+    void ensure_sealed_pass_obj_dum_arg_is_not_class(ASR::Variable_t* arg,
+            ASR::Function_t* func, ASR::symbol_t* clss_sym, Location &loc) {
+        ASR::Struct_t* clss = ASR::down_cast<ASR::Struct_t>(clss_sym);
+        if (!clss->m_is_sealed ||
+                !ASRUtils::is_class_type(ASRUtils::type_get_past_pointer(arg->m_type))) {
+            return;
+        }
+        std::string type_name = ASRUtils::symbol_name(clss_sym);
+        diag.add(diag::Diagnostic(
+            "the passed-object dummy argument '" + std::string(arg->m_name) +
+            "' of the type-bound procedure '" + std::string(func->m_name) +
+            "' of the sealed type '" + type_name + "' must be declared with type(" +
+            type_name + "), not class(" + type_name + ")",
+            diag::Level::Error, diag::Stage::Semantic, {
+                diag::Label("", {arg->base.base.loc})}));
+        throw SemanticAbort();
+    }
+
     void ensure_matching_types_for_pass_obj_dum_arg(ASR::Function_t* func, char* pass_arg_name, ASR::symbol_t* clss_sym, Location &loc) {
         if (pass_arg_name == nullptr) {
             ASR::FunctionType_t* func_type = ASRUtils::get_FunctionType(*func);
@@ -8070,8 +8090,9 @@ public:
                         diag::Label("", {loc})}));
                 throw SemanticAbort();
             }
-            // Check for INTENT(IN) POINTER - issue warning but allow compilation
             ASR::Variable_t* first_arg = ASRUtils::EXPR2VAR(func->m_args[0]);
+            ensure_sealed_pass_obj_dum_arg_is_not_class(first_arg, func, clss_sym, loc);
+            // Check for INTENT(IN) POINTER - issue warning but allow compilation
             if (ASRUtils::is_pointer(first_arg->m_type) &&
                 first_arg->m_intent == ASR::intentType::In) {
                 diag.add(diag::Diagnostic(
@@ -8095,6 +8116,7 @@ public:
                                 diag::Label("", {loc})}));
                         throw SemanticAbort();
                     }
+                    ensure_sealed_pass_obj_dum_arg_is_not_class(v, func, clss_sym, loc);
                     // Check for INTENT(IN) POINTER - issue warning but allow compilation
                     if (ASRUtils::is_pointer(v->m_type) &&
                         v->m_intent == ASR::intentType::In) {
