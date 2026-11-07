@@ -8069,6 +8069,15 @@ public:
             return;
         }
         std::string type_name = ASRUtils::symbol_name(clss_sym);
+        if (clss->m_generic && clss->m_generic->type == ASR::struct_genericType::GenericTypeDefinition) {
+            auto *definition = ASR::down_cast<ASR::GenericTypeDefinition_t>(clss->m_generic);
+            type_name += "{";
+            for (size_t i = 0; i < definition->n_parameters; i++) {
+                if (i > 0) type_name += ",";
+                type_name += ASRUtils::symbol_name(definition->m_parameters[i]);
+            }
+            type_name += "}";
+        }
         diag.add(diag::Diagnostic(
             "the passed-object dummy argument '" + std::string(arg->m_name) +
             "' of the type-bound procedure '" + std::string(func->m_name) +

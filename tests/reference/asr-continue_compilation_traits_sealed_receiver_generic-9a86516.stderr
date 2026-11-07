@@ -1,0 +1,15 @@
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+ --> tests/errors/continue_compilation_traits_sealed_receiver_generic.f90:2:4 - 6:22
+  |
+2 |       type, sealed :: MyGeneric{T}
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+  |
+6 |       end type MyGeneric
+  | ...^^^^^^^^^^^^^^^^^^^^^^ LFortran extension
+
+semantic error: the passed-object dummy argument 'self' of the type-bound procedure 'output' of the sealed type 'mygeneric{t}' must be declared with type(mygeneric{t}), not class(mygeneric{t})
+ --> tests/errors/continue_compilation_traits_sealed_receiver_generic.f90:9:42
+  |
+9 |       class(MyGeneric{T}), intent(in) :: self
+  |                                          ^^^^ 
