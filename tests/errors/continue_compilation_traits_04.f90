@@ -548,3 +548,59 @@ contains
         res%item = item
     end function wrap
 end module gt_neg_34
+
+! N35 (prototype boundary): an implements statement for a generic type with an
+! inline type set repeats a different member list.
+module gt_neg_35
+    implicit none
+    type, sealed :: InlineSet{real | real(8) | complex :: T}
+        type(T) :: number
+    end type InlineSet
+    implements :: InlineSet{real | complex :: T}
+        procedure :: get
+    end implements
+contains
+    function get(self) result(n)
+        type(InlineSet{T}), intent(in) :: self
+        type(T) :: n
+        n = self%number
+    end function get
+end module gt_neg_35
+
+! N36 (prototype boundary): an alpha-renamed binder over an inline type set.
+module gt_neg_36
+    implicit none
+    type, sealed :: InlineRenamed{real | real(8) :: T}
+        type(T) :: number
+    end type InlineRenamed
+    implements :: InlineRenamed{real | real(8) :: V}
+        procedure :: get
+    end implements
+contains
+    function get(self) result(n)
+        type(InlineRenamed{T}), intent(in) :: self
+        type(T) :: n
+        n = self%number
+    end function get
+end module gt_neg_36
+
+! N37 (prototype boundary): a named type set in the type, an inline one in
+! the implements statement.
+module gt_neg_37
+    implicit none
+    abstract interface :: IReal
+        real | real(8)
+    end interface IReal
+    type, sealed :: NamedSet{IReal :: T}
+        type(T) :: number
+    end type NamedSet
+    implements :: NamedSet{real | real(8) :: T}
+        procedure :: get
+    end implements
+contains
+    function get(self) result(n)
+        type(NamedSet{T}), intent(in) :: self
+        type(T) :: n
+        n = self%number
+    end function get
+end module gt_neg_37

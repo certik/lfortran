@@ -9732,8 +9732,22 @@ public:
             const auto &left = target->m_parameters[i];
             const auto &right = generic.m_parameters[i];
             same = to_lower(left.m_name) == to_lower(right.m_name) &&
-                left.n_member_types == 0 && right.n_member_types == 0 &&
+                (left.n_member_types == 0) == (right.n_member_types == 0) &&
                 resolved(left) == resolved(right);
+            if (same && left.n_member_types) {
+                auto a = resolve_type_set_members(left.m_member_types,
+                    left.n_member_types, to_lower(left.m_name));
+                auto b = resolve_type_set_members(right.m_member_types,
+                    right.n_member_types, to_lower(right.m_name));
+                same = a.size() == b.size();
+                for (size_t k = 0; same && k < a.size(); k++) {
+                    bool found = false;
+                    for (size_t m = 0; !found && m < b.size(); m++) {
+                        found = ASRUtils::type_set_members_equal(a[k], b[m]);
+                    }
+                    same = found;
+                }
+            }
             if (same) {
                 auto a = resolve_trait_same_types(current_scope, left);
                 auto b = resolve_trait_same_types(current_scope, right);

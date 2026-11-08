@@ -152,6 +152,36 @@ semantic error: DEFERRED bindings of a generic derived type are not implemented 
 421 |         procedure(run_iface), deferred, nopass :: run
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
+semantic error: this prototype requires the implements statement to repeat the generic parameters of 'inlineset' exactly
+   --> tests/errors/continue_compilation_traits_04.f90:559:5 - 561:19
+    |
+559 |        implements :: InlineSet{real | complex :: T}
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+    |
+561 |        end implements
+    | ...^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: this prototype requires the implements statement to repeat the generic parameters of 'inlinerenamed' exactly
+   --> tests/errors/continue_compilation_traits_04.f90:576:5 - 578:19
+    |
+576 |        implements :: InlineRenamed{real | real(8) :: V}
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+    |
+578 |        end implements
+    | ...^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: this prototype requires the implements statement to repeat the generic parameters of 'namedset' exactly
+   --> tests/errors/continue_compilation_traits_04.f90:597:5 - 599:19
+    |
+597 |        implements :: NamedSet{real | real(8) :: T}
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+    |
+599 |        end implements
+    | ...^^^^^^^^^^^^^^^^^^^ 
+
 warning: `:=` is an experimental LFortran extension (subject to change); use `--infer` to suppress this warning
   --> tests/errors/continue_compilation_traits_04.f90:43:9 - 45:14
    |

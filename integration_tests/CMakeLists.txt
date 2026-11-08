@@ -5230,6 +5230,7 @@ RUN(NAME traits_kind_sets_02 LABELS llvm llvm2 NO_STD_F23 ISOLATE_MODULES
     EXTRAFILES traits_kind_sets_01_contracts.f90 traits_kind_sets_01_providers.f90)
 RUN(NAME traits_type_set_type_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_implements_generic_type_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
+RUN(NAME traits_implements_generic_type_02 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_type_sets_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_type_sets_02 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_type_sets_03 LABELS llvm llvm2 NO_STD_F23 ISOLATE_MODULES
