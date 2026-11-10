@@ -2260,27 +2260,35 @@ static int big_digit(Big *a, const Big *b) {
     while(big_cmp(a,b)>=0&&q<9){big_sub(a,(Big*)b);q++;}
     return q;
 }
+static int big_is_zero(const Big *a) {
+    for(int i=0;i<a->n;i++) if(a->d[i]) return 0;
+    return 1;
+}
 static int32_t floor_log10_pow2b(int32_t n) {
     if(!n) return 0;
     if(n>0) return (int32_t)((uint32_t)n*30103u/100000u);
     return -(int32_t)((uint32_t)(-n)*30103u/100000u+1);
 }
 
-void lf_float128_to_str(char *result, const uint8_t bytes[16]) {
+/* Leading unrounded digits of a binary128 value.
+ * kind: 0 finite nonzero, 1 NaN, 2 Inf, 3 zero.
+ * For kind 0, digits[0..nkeep) are exact leading digits (not rounded),
+ * *extra is the next digit, and *sticky is 1 when any remainder follows
+ * that digit. *dec_exp is the lf_float128_to_str exponent
+ * (digits[0].digits[1..] * 10^dec_exp). nkeep is a significant-digit count,
+ * not the decimal exponent. */
+static int lf_float128_digits(const uint8_t bytes[16], char *digits, int nkeep,
+                              int *extra, int *sticky, int32_t *dec_exp_out, int *vsign_out) {
     uint64_t lo_w, hi_w;
     memcpy(&lo_w, bytes, 8); memcpy(&hi_w, bytes+8, 8);
     int vsign=(int)(hi_w>>63);
     int32_t biased=(int32_t)((hi_w>>48)&0x7FFFu);
     uint64_t mhi=hi_w&0x0000FFFFFFFFFFFFull, mlo=lo_w;
+    *extra=0; *sticky=0; *dec_exp_out=0; *vsign_out=vsign;
 
-    if(biased==0x7FFF){
-        sprintf(result,(mhi||mlo)?"NaN":"%sInfinity",vsign?"-":"");
-        return;
-    }
-    if(!biased&&!mhi&&!mlo){
-        sprintf(result,"%s0.000000000000000000000000000000000E+0000",vsign?"-":"");
-        return;
-    }
+    if(biased==0x7FFF) return (mhi||mlo)?1:2;
+    if(!biased&&!mhi&&!mlo) return 3;
+
     uint64_t sig_hi=mhi|(biased?(1ull<<48):0ull);
     uint64_t sig_lo=mlo;
     int32_t bin_exp=biased?(biased-16383-112):(1-16383-112);
@@ -2298,12 +2306,30 @@ void lf_float128_to_str(char *result, const uint8_t bytes[16]) {
      if(big_cmp(&R,&S10)>=0){dec_exp++;S_scaled=S10;}
      else if(big_cmp(&R,&S_scaled)<0){dec_exp--;big_mul_small(&R,10);}}
 
-    char digits[36]; int nd=0;
-    digits[nd++]=(char)('0'+big_digit(&R,&S_scaled));
-    for(int i=1;i<34;i++){big_mul_small(&R,10);digits[nd++]=(char)('0'+big_digit(&R,&S_scaled));}
-
+    if(nkeep<1) nkeep=1;
+    digits[0]=(char)('0'+big_digit(&R,&S_scaled));
+    for(int i=1;i<nkeep;i++){big_mul_small(&R,10);digits[i]=(char)('0'+big_digit(&R,&S_scaled));}
     big_mul_small(&R,10);
-    if(big_digit(&R,&S_scaled)>=5){
+    *extra=big_digit(&R,&S_scaled);
+    *sticky=!big_is_zero(&R);
+    *dec_exp_out=dec_exp;
+    return 0;
+}
+
+void lf_float128_to_str(char *result, const uint8_t bytes[16]) {
+    char digits[40];
+    int extra=0, sticky=0, vsign=0;
+    int32_t dec_exp=0;
+    int kind=lf_float128_digits(bytes, digits, 34, &extra, &sticky, &dec_exp, &vsign);
+    (void)sticky; /* 34-digit nearest output rounds on the next digit only. */
+    if(kind==1){sprintf(result,"NaN");return;}
+    if(kind==2){sprintf(result,"%sInfinity",vsign?"-":"");return;}
+    if(kind==3){
+        sprintf(result,"%s0.000000000000000000000000000000000E+0000",vsign?"-":"");
+        return;
+    }
+    if(extra>=5){
+        int nd=34;
         for(int i=nd-1;i>=0;i--){
             int dv=(digits[i]-'0')+1; digits[i]=(char)('0'+dv%10);
             if(dv<10) break;
