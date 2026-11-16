@@ -130,7 +130,10 @@ void ASRToGpuCVisitor<D>::emit_kernel_signature(const ASR::Function_t &kernel) {
     if (layout.m_lanes) {
         std::stringstream prologue;
         dialect.emit_lane_prologue(prologue, get_indent(),
-            ASRUtils::symbol_name(layout.m_lanes));
+            ASRUtils::symbol_name(layout.m_lanes),
+            kernel_caps.lanes_wide > 0
+                && kernel.m_gpu->m_lanes_max == kernel_caps.lanes_wide
+                ? kernel_caps.lanes_wide : 0);
         kernel_declarations.push_back({{}, prologue.str()});
     }
     if (layout.m_packed) {

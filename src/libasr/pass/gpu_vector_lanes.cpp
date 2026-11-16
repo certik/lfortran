@@ -4159,6 +4159,11 @@ public:
                     {b.Assignment(n, b.i32(lanes))}, {}));
             }
         }
+        // The kernel names those lanes as a constant (gpu_kernel_signature.h),
+        // whatever the size of the launch.
+        if (wide_block) {
+            pass_result.push_back(al, b.Assignment(n, b.i32(caps.lanes_wide)));
+        }
         // A tiled launch (gpu_offload.cpp) numbers an iteration in its tile
         // from the thread index along the tile's width and height, which
         // lanes narrow to the iterations' (the lanes of one iteration share

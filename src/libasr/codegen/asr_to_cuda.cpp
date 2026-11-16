@@ -172,13 +172,19 @@ struct CudaDialect {
     void emit_lane_thread_params(std::stringstream & /*src*/,
             bool /*has_prev*/) const {}
     void emit_lane_prologue(std::stringstream &src, const std::string &indent,
-            const std::string &lanes) const {
+            const std::string &lanes, int64_t fixed_lanes = 0) const {
+        // A kernel that every launch gives the same lanes (fixed_lanes,
+        // gpu_vector_lanes.cpp) names them as a constant: its loops step
+        // by a constant, which nvcc turns into constant address increments.
+        if (fixed_lanes > 0) {
+            src << indent << lanes << " = " << fixed_lanes << ";\n";
+        }
         // `lanes` is a power of two: written as a shift, it divides the
         // thread index, the block size and the trip counts of the loops
         // the lanes share (`/ lanes`, emit_do_loop) with shifts rather than
         // divisions of 20 or 30 instructions each, which a block of 64
         // threads that runs 5 iterations of a loop spent 3% of its time on.
-        if (!emulate_cpu && !hip) {
+        if (!emulate_cpu && !hip && fixed_lanes == 0) {
             src << indent << "const int __gpu_lanes_shift = __ffs(" << lanes
                 << ") - 1;\n";
             src << indent << lanes << " = 1 << __gpu_lanes_shift;\n";
@@ -317,7 +323,17 @@ struct CudaDialect {
             "// largest. With one lane, the lane's own value.\n"
             "template <int op, typename T>\n"
             "__device__ inline T __lfortran_lane_reduce(T v, int lanes, unsigned mask) {\n"
-            "    if (lanes == 32 || lanes == 16) {\n"
+            "    if (lanes == 32) {\n"
+            "        // A whole warp, named as a constant: with the mask in a\n"
+            "        // register nvcc tests every shuffle for diverged lanes.\n"
+            "        #pragma unroll\n"
+            "        for (int offset = 16; offset > 0; offset >>= 1) {\n"
+            "            v = __lfortran_lane_combine<op>(v,\n"
+            "                __shfl_xor_sync(0xffffffffu, v, offset, 32));\n"
+            "        }\n"
+            "        return v;\n"
+            "    }\n"
+            "    if (lanes == 16) {\n"
             "        // The common sizes, with the shuffles unrolled.\n"
             "        #pragma unroll\n"
             "        for (int offset = 16; offset > 0; offset >>= 1) {\n"
