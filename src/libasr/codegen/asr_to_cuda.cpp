@@ -173,6 +173,16 @@ struct CudaDialect {
             bool /*has_prev*/) const {}
     void emit_lane_prologue(std::stringstream &src, const std::string &indent,
             const std::string &lanes) const {
+        // `lanes` is a power of two: written as a shift, it divides the
+        // thread index, the block size and the trip counts of the loops
+        // the lanes share (`/ lanes`, emit_do_loop) with shifts rather than
+        // divisions of 20 or 30 instructions each, which a block of 64
+        // threads that runs 5 iterations of a loop spent 3% of its time on.
+        if (!emulate_cpu && !hip) {
+            src << indent << "const int __gpu_lanes_shift = __ffs(" << lanes
+                << ") - 1;\n";
+            src << indent << lanes << " = 1 << __gpu_lanes_shift;\n";
+        }
         src << indent << "int __gpu_lanes_n = " << lanes << ";\n";
         src << indent << "unsigned __gpu_lane_mask = __gpu_lanes_n >= 32 ? "
             "0xffffffffu : (((1u << __gpu_lanes_n) - 1u) << "
@@ -212,6 +222,12 @@ struct CudaDialect {
             : "__lfortran_lane_reduce<") + std::to_string(op) + ">(" + value
             + ", " + (has_lanes ? "__gpu_lanes_n, __gpu_lane_mask"
                 : "32, 0xffffffffu") + ")";
+    }
+    // Whether consecutive combinations over the lanes of a whole block
+    // share one barrier (emit_stmts): not in the CPU emulation or on HIP,
+    // whose blocks have no lanes of more than a warp.
+    bool batched_block_reduce() const {
+        return !emulate_cpu && !hip;
     }
     // `targets` are assigned the elements that start at `source` (`a[i]`),
     // read with __lfortran_wide_load in the prologue of the kernel source.
