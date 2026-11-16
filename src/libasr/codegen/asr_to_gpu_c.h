@@ -4528,8 +4528,8 @@ public:
             src << get_indent() << v << " = ";
             visit_expr(head.m_start);
             src << ";\n";
-            // The span is not negative there, and an unsigned division by
-            // a power of two (the lanes, emit_lane_prologue) is a shift.
+            // The span is not negative there, and an unsigned division is
+            // shorter than a signed one.
             std::string unsigned_name = ASRUtils::extract_kind_from_ttype_t(
                 type) == 8 ? "unsigned long long" : "unsigned";
             src << get_indent() << "const " << type_name << " " << trips

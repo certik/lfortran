@@ -4058,6 +4058,8 @@ public:
                 wide_kernels.insert(&kernel);
                 if (!scattered && caps.lanes_wide > caps.lanes_per_iteration
                         && kernel_lanes == caps.lanes_per_iteration
+                        && gpu_wide_rows_per_iteration(kernel)
+                            >= wide_block_rows
                         && kernel.m_gpu->m_lanes_max >= caps.lanes_wide
                         && kernel.m_gpu->m_lanes_max % caps.lanes_wide == 0) {
                     kernel.m_gpu->m_lanes_max = caps.lanes_wide;
@@ -4246,6 +4248,12 @@ private:
     static constexpr int64_t wide_iterations_max = int64_t(1) << 24;
     // The iterations, a warp each, of a block of a launch of such a kernel.
     static constexpr int64_t wide_block_iterations = 2;
+    // The rows of a matrix an iteration of a kernel that reads vectors must
+    // read in one loop to get the lanes of caps.lanes_wide threads, as a
+    // hand-written product gives a block to several rows at once. A product
+    // of one row per iteration reads its row faster with a warp: 64 lanes
+    // made it 12% slower.
+    static constexpr int64_t wide_block_rows = 2;
     // A loop of fewer iterations than this many per thread of a block does
     // not get a block of lanes.
     static constexpr int64_t short_loop_threads = 8;

@@ -179,16 +179,6 @@ struct CudaDialect {
         if (fixed_lanes > 0) {
             src << indent << lanes << " = " << fixed_lanes << ";\n";
         }
-        // `lanes` is a power of two: written as a shift, it divides the
-        // thread index, the block size and the trip counts of the loops
-        // the lanes share (`/ lanes`, emit_do_loop) with shifts rather than
-        // divisions of 20 or 30 instructions each, which a block of 64
-        // threads that runs 5 iterations of a loop spent 3% of its time on.
-        if (!emulate_cpu && !hip && fixed_lanes == 0) {
-            src << indent << "const int __gpu_lanes_shift = __ffs(" << lanes
-                << ") - 1;\n";
-            src << indent << lanes << " = 1 << __gpu_lanes_shift;\n";
-        }
         src << indent << "int __gpu_lanes_n = " << lanes << ";\n";
         src << indent << "unsigned __gpu_lane_mask = __gpu_lanes_n >= 32 ? "
             "0xffffffffu : (((1u << __gpu_lanes_n) - 1u) << "
