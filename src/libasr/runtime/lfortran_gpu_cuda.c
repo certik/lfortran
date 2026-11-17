@@ -511,7 +511,9 @@ static void check(cudaError_t err, const char *what) {
 // the host has waited since it was freed.
 static uint64_t sync_epoch = 0;
 
+static void g_flush(void);
 static void device_synchronize(void) {
+    g_flush();
     if (!device_busy) return;
     device_busy = 0;
     check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
@@ -1385,6 +1387,41 @@ void lfortran_gpu_set_scalar_arg(lfortran_gpu_kernel* k, int idx,
     if (idx >= k->n_args) k->n_args = idx + 1;
 }
 
+
+/* HACK (LF_GRAPH=n): after n tokens, the launches from one launch of the kernel named *5embed* to the
+   next are captured on a stream of their own into a CUDA graph, which is then replayed (updated in place
+   when only parameters change), as src-cuda replays one graph per token. */
+static int g_mode = -1, g_capturing = 0;
+static long g_marks = 0;
+static cudaStream_t g_stream;
+static cudaGraphExec_t g_exec = NULL;
+static kernel_func_t g_first = NULL;
+static void g_init(void) {
+    if (g_mode >= 0) return;
+    const char* e = getenv("LF_GRAPH");
+    g_mode = e ? atoi(e) : 0;
+    if (!g_mode) return;
+    check(cudaStreamCreateWithFlags(&g_stream, cudaStreamNonBlocking), "cudaStreamCreate");
+    for (int i = 0; i < n_registered; i++)
+        if (strstr(kernel_registry[i]->name, "5embed")) g_first = kernel_registry[i]->func;
+}
+static void g_flush(void) {
+    if (!g_capturing) return;
+    cudaGraph_t gr;
+    check(cudaStreamEndCapture(g_stream, &gr), "cudaStreamEndCapture");
+    if (g_exec) {
+        cudaGraphExecUpdateResultInfo info;
+        if (cudaGraphExecUpdate(g_exec, gr, &info) != cudaSuccess) {
+            cudaGetLastError();
+            cudaGraphExecDestroy(g_exec);
+            g_exec = NULL;
+        }
+    }
+    if (!g_exec) check(cudaGraphInstantiate(&g_exec, gr, 0), "cudaGraphInstantiate");
+    check(cudaGraphLaunch(g_exec, g_stream), "cudaGraphLaunch");
+    cudaGraphDestroy(gr);
+    g_capturing = 0;
+}
 void lfortran_gpu_launch(lfortran_gpu_ctx* ctx, lfortran_gpu_kernel* k,
     int grid[3], int block[3])
 {
@@ -1531,6 +1568,15 @@ void lfortran_gpu_launch(lfortran_gpu_ctx* ctx, lfortran_gpu_kernel* k,
         }
     }
 
+    g_init();
+    if (g_mode && k->func == g_first) {
+        g_marks++;
+        g_flush();
+        if (g_marks > g_mode) {
+            check(cudaStreamBeginCapture(g_stream, cudaStreamCaptureModeRelaxed), "cudaStreamBeginCapture");
+            g_capturing = 1;
+        }
+    }
     dim3 grid_dim = {(unsigned)grid[0], (unsigned)grid[1], (unsigned)grid[2]};
     dim3 block_dim = {(unsigned)block[0], (unsigned)block[1],
         (unsigned)block[2]};
@@ -1556,6 +1602,7 @@ void lfortran_gpu_launch(lfortran_gpu_ctx* ctx, lfortran_gpu_kernel* k,
         attr[0].val.programmaticStreamSerializationAllowed = 1;
         cfg.attrs = attr;
         cfg.numAttrs = 1;
+        if (g_mode) cfg.stream = g_stream;
         check(cudaLaunchKernelExC(&cfg, (const void*)k->func, args),
             "cudaLaunchKernelExC");
     } else
@@ -1568,11 +1615,13 @@ void lfortran_gpu_launch(lfortran_gpu_ctx* ctx, lfortran_gpu_kernel* k,
 
 void lfortran_gpu_sync(lfortran_gpu_ctx* ctx) {
     if (!ctx) return;
+    g_flush();
     sync_all();
 }
 
 void lfortran_gpu_wait(lfortran_gpu_ctx* ctx) {
     if (!ctx) return;
+    g_flush();
     end_wait_period();
     if (!pending_in_place_reads) return;
     pending_in_place_reads = 0;
