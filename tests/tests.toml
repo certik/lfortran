@@ -8034,3 +8034,16 @@ gpu_cuda_kernel = true
 [[test]]
 filename = "../integration_tests/gpu_lanes_block_03.f90"
 gpu_cuda_kernel = true
+
+# The rows that follow the sums an iteration's lanes combine are shared out
+# among the lanes (the device code needs no GPU to be written).
+[[test]]
+filename = "../integration_tests/gpu_lanes_split_01.f90"
+gpu_cuda_kernel = true
+
+# A kernel whose iteration is a block of lanes that read vectors of 16 bytes
+# has a second version, held to fewer registers and numbering its iterations
+# by its blocks.
+[[test]]
+filename = "../integration_tests/gpu_lanes_variants_01.f90"
+gpu_cuda_kernel = true
