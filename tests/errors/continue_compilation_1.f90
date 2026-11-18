@@ -5073,3 +5073,152 @@ subroutine cc1_specific_intrinsic_name_errors()
     cc1_sn_d = dsign(1d0, a=2d0)  ! {Error} No matching signature found for intrinsic dsign
     cc1_sn_d = realpart(cc1_sn_z, [4, 4])  ! {Error} `kind` argument of `realpart` intrinsic must be a scalar
 end subroutine
+
+! The x argument of atan2, atan2d and atan2pi, and of the two-argument forms
+! of atan, atand and atanpi, must have the same kind as the y argument.
+subroutine cc1_atan2_kind_errors()
+    real(8) :: cc1_a2k_y
+    real :: cc1_a2k_x, cc1_a2k_r
+    real(8), parameter :: cc1_a2k_p = atan2pi(1.0, 1.0d0)  ! {Error} arguments of the 'atan2pi' intrinsic must have the same type and kind, found real(4) and real(8)
+    cc1_a2k_y = 1.0d0
+    cc1_a2k_x = 1.0
+    cc1_a2k_r = atan2(cc1_a2k_y, cc1_a2k_x)  ! {Error} arguments of the 'atan2' intrinsic must have the same type and kind, found real(8) and real(4)
+    cc1_a2k_r = atan2(1.0, 1.0d0)  ! {Error} arguments of the 'atan2' intrinsic must have the same type and kind, found real(4) and real(8)
+    cc1_a2k_r = atan2d(cc1_a2k_x, cc1_a2k_y)  ! {Error} arguments of the 'atan2d' intrinsic must have the same type and kind, found real(4) and real(8)
+    cc1_a2k_r = atan(cc1_a2k_y, cc1_a2k_x)  ! {Error} arguments 'y' and 'x' of the 'atan' intrinsic must have the same kind, found real(8) and real(4)
+    cc1_a2k_r = atand(1.0d0, 1.0)  ! {Error} arguments 'y' and 'x' of the 'atand' intrinsic must have the same kind, found real(8) and real(4)
+end subroutine
+
+! `array` of `findloc` must be of intrinsic type and in type conformance with `value`
+subroutine cc1_findloc_type_conformance()
+    type :: cc1_ftc_t
+        integer :: k
+    end type
+    type(cc1_ftc_t) :: cc1_ftc_x(2)
+    logical :: cc1_ftc_l(2)
+    real :: cc1_ftc_r(2)
+    cc1_ftc_x%k = 1
+    cc1_ftc_l = .true.
+    cc1_ftc_r = 1.0
+    print *, findloc([1, 2], .true.)  ! {Error} `array` and `value` arguments of `findloc` must be in type conformance, but got integer(4) and logical(4)
+    print *, findloc(cc1_ftc_l, (1.0, 0.0))  ! {Error} `array` and `value` arguments of `findloc` must be in type conformance, but got logical(4) and complex(4)
+    print *, findloc(cc1_ftc_r, .false.)  ! {Error} `array` and `value` arguments of `findloc` must be in type conformance, but got real(4) and logical(4)
+    print *, findloc(cc1_ftc_x, 1)  ! {Error} `array` argument of `findloc` must be of intrinsic type, but got type(cc1_ftc_t)
+    print *, findloc(cc1_ftc_r, [1, 2])  ! {Error} `value` argument of `findloc` must be a scalar of integer, real, logical, character or complex type
+end subroutine
+
+! A real or complex scalar cannot initialize a logical array
+subroutine cc1_logical_array_numeric_init()
+    complex(10), parameter :: cc1_lani_z = (1.0_10, 2.0_10)
+    logical :: cc1_lani_a(2) = cc1_lani_z  ! {Error} type mismatch in initialization: `complex` cannot be assigned to `logical[:]`
+    logical :: cc1_lani_b(2) = (1.0_8, 2.0_8)  ! {Error} type mismatch in initialization: `complex` cannot be assigned to `logical[:]`
+    logical :: cc1_lani_c(2) = 1.5  ! {Error} type mismatch in initialization: `real` cannot be assigned to `logical[:]`
+end subroutine
+
+! An internal file is a variable, so a character named constant or a subobject
+! of one cannot be the unit of a READ or WRITE statement.
+subroutine cc1_internal_file_named_constant()
+    type :: cc1_ifnc_t
+        character(len=8) :: c
+    end type
+    character(len=8), parameter :: cc1_ifnc_s = "42"
+    character(len=8), parameter :: cc1_ifnc_a(2) = ["1", "2"]
+    type(cc1_ifnc_t), parameter :: cc1_ifnc_p = cc1_ifnc_t("7")
+    integer, parameter :: cc1_ifnc_u = 6
+    integer :: cc1_ifnc_i
+    write(cc1_ifnc_s, '(i3)') 42  ! {Error} internal file must be a variable, not a named constant
+    write(unit=cc1_ifnc_s, fmt='(i3)') 42  ! {Error} internal file must be a variable, not a named constant
+    read(cc1_ifnc_s, *) cc1_ifnc_i  ! {Error} internal file must be a variable, not a named constant
+    read(unit=cc1_ifnc_s, fmt=*) cc1_ifnc_i  ! {Error} internal file must be a variable, not a named constant
+    read(cc1_ifnc_s(1:2), *) cc1_ifnc_i  ! {Error} internal file must be a variable, not a named constant
+    write(cc1_ifnc_a(1), *) 1  ! {Error} internal file must be a variable, not a named constant
+    read(cc1_ifnc_a, *) cc1_ifnc_i  ! {Error} internal file must be a variable, not a named constant
+    write(cc1_ifnc_p%c, *) 1  ! {Error} internal file must be a variable, not a named constant
+    write(cc1_ifnc_u, *) cc1_ifnc_s
+    write(6, *) cc1_ifnc_a
+end subroutine
+
+! An input item and the do variable of an io-implied-do are variables, so a
+! named constant or a subobject of one cannot be either.
+subroutine cc1_read_item_named_constant()
+    type :: cc1_rinc_t
+        integer :: i
+    end type
+    integer, parameter :: cc1_rinc_n = 1
+    integer, parameter :: cc1_rinc_a(2) = [1, 2]
+    character(len=4), parameter :: cc1_rinc_c = "abcd"
+    type(cc1_rinc_t), parameter :: cc1_rinc_p = cc1_rinc_t(3)
+    integer :: cc1_rinc_x(3), cc1_rinc_j
+    read(*, *) cc1_rinc_n  ! {Error} input item must be a variable, not a named constant
+    read(*, *) cc1_rinc_a(1)  ! {Error} input item must be a variable, not a named constant
+    read(*, *) cc1_rinc_a  ! {Error} input item must be a variable, not a named constant
+    read(*, *) cc1_rinc_c(1:2)  ! {Error} input item must be a variable, not a named constant
+    read(*, *) cc1_rinc_c  ! {Error} input item must be a variable, not a named constant
+    read(*, *) cc1_rinc_p%i  ! {Error} input item must be a variable, not a named constant
+    read(*, *) cc1_rinc_x(1), (cc1_rinc_a(cc1_rinc_j), cc1_rinc_j = 1, 2)  ! {Error} input item must be a variable, not a named constant
+    read(*, *) (cc1_rinc_x(cc1_rinc_n), cc1_rinc_n = 1, 3)  ! {Error} implied-do variable cannot be a named constant
+    write(*, *) (cc1_rinc_x(cc1_rinc_n), cc1_rinc_n = 1, 3)  ! {Error} implied-do variable cannot be a named constant
+    print *, (cc1_rinc_x(cc1_rinc_n), cc1_rinc_n = 1, 3)  ! {Error} implied-do variable cannot be a named constant
+    write(*, *) cc1_rinc_n, cc1_rinc_a, cc1_rinc_c(1:2), cc1_rinc_p%i
+    write(*, *) (cc1_rinc_a(cc1_rinc_j), cc1_rinc_j = 1, 2)
+    print *, cc1_rinc_n, (cc1_rinc_a(cc1_rinc_j), cc1_rinc_j = 1, 2)
+end subroutine
+
+! The SIZE= of a READ, and the IOSTAT= and IOMSG= of REWIND, FLUSH and
+! ENDFILE, are variables that the statement defines.
+subroutine cc1_io_specifier_named_constant()
+    integer, parameter :: cc1_iosnc_n = 0
+    character(len=20), parameter :: cc1_iosnc_m = ""
+    character(len=10) :: cc1_iosnc_c
+    read(*, '(a)', advance='no', size=cc1_iosnc_n) cc1_iosnc_c  ! {Error} non-variable expression for `size`
+    rewind(10, iostat=cc1_iosnc_n)  ! {Error} non-variable expression for `iostat`
+    rewind(10, iomsg=cc1_iosnc_m)  ! {Error} non-variable expression for `iomsg`
+    flush(10, iostat=cc1_iosnc_n)  ! {Error} non-variable expression for `iostat`
+    flush(10, iomsg=cc1_iosnc_m)  ! {Error} non-variable expression for `iomsg`
+    endfile(10, iostat=cc1_iosnc_n)  ! {Error} non-variable expression for `iostat`
+    endfile(10, iomsg=cc1_iosnc_m)  ! {Error} non-variable expression for `iomsg`
+end subroutine
+
+! Every INQUIRE specifier other than UNIT=, FILE= and ERR= is a variable that
+! the statement defines.
+subroutine cc1_inquire_named_constant()
+    integer, parameter :: cc1_inqnc_n = 0
+    logical, parameter :: cc1_inqnc_l = .false.
+    character(len=20), parameter :: cc1_inqnc_s = ""
+    character(len=20), parameter :: cc1_inqnc_a(2) = ["", ""]
+    inquire(10, exist=cc1_inqnc_l)  ! {Error} exist in inquire must be a definable variable
+    inquire(file="cc1.txt", opened=cc1_inqnc_l)  ! {Error} opened in inquire must be a definable variable
+    inquire(10, named=cc1_inqnc_l)  ! {Error} named in inquire must be a definable variable
+    inquire(10, pending=cc1_inqnc_l)  ! {Error} pending in inquire must be a definable variable
+    inquire(10, number=cc1_inqnc_n)  ! {Error} number in inquire must be a definable variable
+    inquire(10, recl=cc1_inqnc_n)  ! {Error} recl in inquire must be a definable variable
+    inquire(10, nextrec=cc1_inqnc_n)  ! {Error} nextrec in inquire must be a definable variable
+    inquire(10, iostat=cc1_inqnc_n)  ! {Error} iostat in inquire must be a definable variable
+    inquire(10, iomsg=cc1_inqnc_s)  ! {Error} iomsg in inquire must be a definable variable
+    inquire(10, name=cc1_inqnc_s)  ! {Error} name in inquire must be a definable variable
+    inquire(10, access=cc1_inqnc_a(1))  ! {Error} access in inquire must be a definable variable
+    inquire(10, form=cc1_inqnc_s(1:5))  ! {Error} form in inquire must be a definable variable
+    inquire(10, action=cc1_inqnc_s)  ! {Error} action in inquire must be a definable variable
+    inquire(10, position=cc1_inqnc_s)  ! {Error} position in inquire must be a definable variable
+    inquire(10, encoding=cc1_inqnc_s)  ! {Error} encoding in inquire must be a definable variable
+    inquire(10, round=cc1_inqnc_s)  ! {Error} round in inquire must be a definable variable
+    inquire(iolength=cc1_inqnc_n) 1.0  ! {Error} iolength in inquire must be a definable variable
+end subroutine
+
+! The result of nint, floor, ceiling and int of a real(10) or real(16)
+! constant must fit its integer kind.
+subroutine cc1_extended_real_to_integer_overflow()
+    integer(1) :: cc1_ero_i1
+    integer(2) :: cc1_ero_i2
+    integer :: cc1_ero_i4
+    integer(8) :: cc1_ero_i8
+    cc1_ero_i2 = nint(40000.0_10, 2)  ! {Error} Result of `nint` overflows its kind(2)
+    cc1_ero_i2 = floor(40000.5_10, 2)  ! {Error} Result of `floor` overflows its kind(2)
+    cc1_ero_i1 = ceiling(300.5_10, 1)  ! {Error} Result of `ceiling` overflows its kind(1)
+    cc1_ero_i4 = int(3.0e9_10)  ! {Error} Result of `int` overflows its kind(4)
+    cc1_ero_i8 = int(1.0e19_10, 8)  ! {Error} Result of `int` overflows its kind(8)
+    cc1_ero_i2 = nint(40000.0_16, 2)  ! {Error} Result of `nint` overflows its kind(2)
+    cc1_ero_i4 = floor(3.0e9_16)  ! {Error} Result of `floor` overflows its kind(4)
+    cc1_ero_i1 = ceiling(300.5_16, 1)  ! {Error} Result of `ceiling` overflows its kind(1)
+    cc1_ero_i2 = int(-40000.5_16, 2)  ! {Error} Result of `int` overflows its kind(2)
+end subroutine

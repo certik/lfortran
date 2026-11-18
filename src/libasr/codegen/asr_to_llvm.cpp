@@ -20176,7 +20176,17 @@ public:
         // Create <n x float> type, where `n` is the length of the `x` constant array
         int64_t simd_n = ASRUtils::get_fixed_size_of_array(x.m_type);
         llvm::Type* type_fxn = nullptr;
-        if (ASR::is_a<ASR::StructType_t>(*x_m_type)) {
+        llvm::DataLayout data_layout(module->getDataLayout());
+        // The elements are copied out as an array, so build them in one
+        // whenever a vector would lay them out differently: a vector packs
+        // its elements by their size in bits, which is smaller than their
+        // allocation size for x86_fp80 (real(10)), and it cannot hold
+        // structures (complex) at all.
+        bool array_layout = ASR::is_a<ASR::StructType_t>(*x_m_type)
+            || !llvm::VectorType::isValidElementType(el_type)
+            || static_cast<uint64_t>(data_layout.getTypeSizeInBits(el_type))
+                != static_cast<uint64_t>(data_layout.getTypeAllocSizeInBits(el_type));
+        if (array_layout) {
             type_fxn = llvm::ArrayType::get(el_type, simd_n > 0 ? simd_n : 0);
         } else if (simd_n <= 0) {
             type_fxn = llvm::ArrayType::get(el_type, 0);
@@ -20260,13 +20270,8 @@ public:
         } else if (ASRUtils::is_real(*x_m_type)) {
             for (size_t i=0; i < (size_t) arr_size; i++) {
                 ASR::expr_t *el = ASRUtils::fetch_ArrayConstant_value(al, x, i);
-                ASR::RealConstant_t *real_const = down_cast<ASR::RealConstant_t>(el);
-                if (ASRUtils::extract_kind_from_ttype_t(x_m_type) == 16) {
-                    values.push_back(binary128_constant(
-                        ASRUtils::real_constant_get_r16_bytes(real_const)));
-                } else {
-                    values.push_back(llvm::ConstantFP::get(el_type, real_const->m_r));
-                }
+                values.push_back(real_constant_to_llvm(
+                    *down_cast<ASR::RealConstant_t>(el)));
             }
         } else if (ASRUtils::is_logical(*x_m_type)) {
             int a_kind = ASRUtils::extract_kind_from_ttype_t(x_m_type);
@@ -21149,11 +21154,15 @@ public:
             this->visit_expr_wrapper(x.m_value, true);
             return;
         }
-        // Visit with appropriate load
-        if (ASRUtils::is_string_only(expr_type(x.m_arg))) {
+        // Visit with appropriate load. An allocatable scalar, like a pointer,
+        // is held through a pointer that must be loaded to get its value.
+        ASR::ttype_t* arg_type = expr_type(x.m_arg);
+        if (ASRUtils::is_string_only(arg_type)) {
             this->visit_expr_load_wrapper(x.m_arg, 0);
-        } else if(ASRUtils::is_pointer(expr_type(x.m_arg))){
+        } else if (ASRUtils::is_pointer(arg_type) ||
+                (LLVM::is_llvm_pointer(*arg_type) && !ASRUtils::is_array(arg_type))) {
             this->visit_expr_load_wrapper(x.m_arg, 2, true);
+            load_non_array_non_character_pointers(x.m_arg, arg_type, tmp);
         } else {
             this->visit_expr_load_wrapper(x.m_arg, ptr_loads, true);
         }

@@ -1903,9 +1903,13 @@ public:
 
             if (array_construct && array_construct->n_args > 0) {
                 for (size_t j = 0; j < array_construct->n_args; j++) {
+                    // An element is constant, or has a folded constant value,
+                    // as for `is_value_constant` of the array constructor.
+                    ASR::expr_t *element = array_construct->m_args[j];
                     require( (x.m_symbolic_value == nullptr && x.m_value == nullptr) ||
                             (x.m_symbolic_value != nullptr && x.m_value != nullptr) ||
-                            (x.m_symbolic_value != nullptr && ASRUtils::is_value_constant(array_construct->m_args[j])) ||
+                            (x.m_symbolic_value != nullptr && (ASRUtils::is_value_constant(element) ||
+                                ASRUtils::is_value_constant(ASRUtils::expr_value(element)))) ||
                             (_inside_template && x.m_storage == ASR::storage_typeType::Parameter &&
                                 ASRUtils::reads_valueless_parameter(x.m_symbolic_value)),
                             "Initialisation of " + std::string(x.m_name) +
@@ -4567,10 +4571,12 @@ public:
                     || x.m_op == ASR::reduction_opType::ReduceMul
                     || x.m_op == ASR::reduction_opType::ReduceMIN
                     || x.m_op == ASR::reduction_opType::ReduceMAX)
-                && x.m_value == nullptr,
+                && x.m_value == nullptr && x.m_width >= 0 && x.m_width <= 32
+                && (x.m_width & (x.m_width - 1)) == 0,
             "asr.verify.gpu_lanes.reduce",
             "GpuLaneReduce must combine an integer or real scalar of its own "
-            "type with +, *, min or max");
+            "type with +, *, min or max, over the lanes of the iteration or "
+            "groups of a power of two of them up to 32");
         BaseWalkVisitor<VerifyVisitor>::visit_GpuLaneReduce(x);
     }
     // Records the function and module dependencies that a call to

@@ -1504,15 +1504,22 @@ RUN(NAME real16_parameter_matmul_01 LABELS gfortran llvm)
 RUN(NAME real16_parameter_maxloc_01 LABELS gfortran llvm)
 RUN(NAME real16_parameter_findloc_01 LABELS llvm) # not gfortran: GFortran 15.3 folds findloc of a PARAMETER array with a numeric value to 0
 RUN(NAME real16_parameter_norm2_01 LABELS gfortran llvm)
+RUN(NAME norm2_dim_real16_01 LABELS gfortran llvm) # norm2 with DIM of non-constant real(16) arrays (#17873)
 RUN(NAME real16_parameter_spread_01 LABELS gfortran llvm)
 RUN(NAME real16_parameter_cshift_01 LABELS gfortran llvm)
 RUN(NAME cshift_eoshift_shift_overflow_01 LABELS gfortran llvm) # cshift/eoshift folding with |shift| > size (#17875)
 RUN(NAME spread_int8_fold_01 LABELS gfortran llvm) # spread of an integer(8) PARAMETER array keeps 64-bit elements (#17874)
 RUN(NAME cshift_eoshift_int8_fold_01 LABELS gfortran llvm) # cshift/eoshift of an integer(8) PARAMETER array keep 64-bit elements (#17880)
+RUN(NAME cshift_eoshift_rank2_fold_01 LABELS gfortran llvm) # cshift/eoshift folding of constant arrays of any rank (#17250)
+RUN(NAME real16_transfer_fold_01 LABELS gfortran llvm)
+RUN(NAME real16_aint_kind_fold_01 LABELS gfortran llvm)
+RUN(NAME real16_int_fold_01 LABELS gfortran llvm)
+RUN(NAME real16_out_of_range_fold_01 LABELS gfortran llvm)
 RUN(NAME complex16_cmplx_kind_const_01 LABELS gfortran llvm)
 RUN(NAME complex16_param_fold_01 LABELS gfortran llvm)
 RUN(NAME complex16_param_fold_02 LABELS gfortran llvm)
 RUN(NAME complex16_tanh_overflow_01 LABELS gfortran llvm)
+RUN(NAME complex16_inverse_trig_signed_zero_01 LABELS gfortran llvm NO_FAST_MATH)
 
 RUN(NAME format_01 LABELS gfortran llvm fortran)
 RUN(NAME format_02 LABELS gfortran llvm fortran)
@@ -1951,6 +1958,7 @@ RUN(NAME unpack_allocatable_mask_02 LABELS gfortran llvm EXTRA_ARGS --realloc-lh
 RUN(NAME unpack_parameter_01 LABELS gfortran llvm) # unpack of integer(1), integer(2) and character constants in a parameter (#17827)
 RUN(NAME unpack_parameter_02 LABELS gfortran llvm) # unpack with a rank-2 mask folded to the shape of the mask (#17310)
 RUN(NAME pack_char_param_fold_01 LABELS gfortran llvm) # pack of constant character arrays in parameters (#15051)
+RUN(NAME unpack_derived_type_param_01 LABELS gfortran llvm) # unpack with a scalar derived-type field in a parameter (#17878)
 RUN(NAME intrinsics_150 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # maskr
 RUN(NAME intrinsics_151 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # maskl
 RUN(NAME intrinsics_152 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # selected_real_kind
@@ -2031,6 +2039,8 @@ RUN(NAME intrinsics_225 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) #
 RUN(NAME intrinsics_226 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # iall
 RUN(NAME iany_01 LABELS gfortran llvm) # iany, iall and iparity with a mask (#12357)
 RUN(NAME intrinsics_227 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # norm2
+RUN(NAME norm2_overflow_01 LABELS gfortran llvm NO_FAST_MATH) # norm2 without undue overflow or underflow, at run time and folded (#17877); overflow is detected through an infinite sum of squares, which fast-math assumes away
+RUN(NAME norm2_underflow_01 LABELS llvm) # norm2 without undue underflow at run time (#17877); not gfortran, whose run-time norm2 returns 0 here
 RUN(NAME intrinsics_228 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # derf
 RUN(NAME intrinsics_229 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # derfc
 RUN(NAME intrinsics_230 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc fortran) # bessel
@@ -2246,6 +2256,7 @@ RUN(NAME intrinsics_435 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # minloc/
 RUN(NAME intrinsics_436 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # rand
 RUN(NAME intrinsics_437 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # norm2 with dim argument
 RUN(NAME intrinsics_438 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # norm2 with variable dim argument
+RUN(NAME norm2_dim_fold_01 LABELS gfortran llvm) # norm2 with dim of a constant array is folded along dim (#17872)
 RUN(NAME intrinsics_439 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # minval/maxval for strings
 RUN(NAME intrinsics_440 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # atan2d
 RUN(NAME intrinsics_441 LABELS llvm llvm_wasm llvm_wasm_emcc) # sinpi/cospi/tanpi/asinpi/acospi/atanpi/atan2pi  <--- GFortran does not have support for these intrinsics
@@ -2260,6 +2271,10 @@ RUN(NAME intrinsics_449 LABELS gfortran llvm) # storage_size with c_ptr
 RUN(NAME intrinsics_450 LABELS llvm) # storage_size struct alignment
 RUN(NAME intrinsics_451 LABELS gfortran llvm) # findloc with character ExpressionLength
 RUN(NAME intrinsics_452 LABELS gfortran llvm) # findloc with Pointer-wrapped ExpressionLength
+RUN(NAME findloc_value_kind_01 LABELS gfortran llvm)
+RUN(NAME findloc_value_mixed_01 LABELS llvm) # not gfortran: GFortran converts VALUE to the type and kind of ARRAY
+RUN(NAME findloc_int8_parameter_01 LABELS gfortran llvm)
+RUN(NAME findloc_value_component_01 LABELS gfortran llvm)
 RUN(NAME intrinsics_453 LABELS gfortran llvm) # Lgt intrinsic as while loop condition
 RUN(NAME intrinsics_454 LABELS gfortran llvm) # all/any with array section and whole array
 RUN(NAME intrinsics_455 LABELS gfortran llvm) # intrinsic declaration scope isolation
@@ -2281,6 +2296,12 @@ RUN(NAME intrinsics_470 LABELS gfortran llvm) # index with character(kind=4) arg
 RUN(NAME intrinsics_471 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc GFORTRAN_ARGS -fcoarray=single) # co_max
 RUN(NAME intrinsics_472 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc GFORTRAN_ARGS -fcoarray=single) # co_min
 RUN(NAME intrinsics_473 LABELS gfortran llvm) # maxloc/minloc with compile-time mask evaluation on 2D arrays
+RUN(NAME maxloc_runtime_mask_01 LABELS gfortran llvm) # maxloc/minloc with a run-time mask on PARAMETER arrays are not folded
+RUN(NAME maxloc_rank2_fold_01 LABELS gfortran llvm) # maxloc/minloc of rank-2 constant arrays in PARAMETERs (#17876)
+RUN(NAME spread_rank2_fold_01 LABELS gfortran llvm) # spread of rank-2 and rank-3 constant arrays in PARAMETERs (#17876)
+RUN(NAME spread_rank2_fold_02 LABELS llvm) # interior-dim spread of constants in PARAMETERs (#17876); no gfortran label: GFortran 15.3 mis-folds it
+RUN(NAME spread_rank2_fold_03 LABELS gfortran llvm) # large spread of a rank-2 constant runs at run time and compiles quickly (#17876)
+RUN(NAME assignment_rank2_constant_kind_conversion_01 LABELS gfortran llvm)
 RUN(NAME intrinsics_474 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc GFORTRAN_ARGS -fcoarray=single) # co_broadcast
 RUN(NAME intrinsics_475 LABELS gfortran llvm) # ishftc with SIZE keeps high bits of I
 RUN(NAME intrinsics_476 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # scale with a negative exponent
@@ -2307,6 +2328,9 @@ RUN(NAME intrinsics_496 LABELS gfortran llvm) # transpose/spread of deferred-len
 RUN(NAME intrinsics_497 LABELS gfortran llvm) # spread with ncopies from size() of a parameter array (#15327)
 RUN(NAME intrinsics_498 LABELS gfortran llvm) # compile-time dot_product/merge_bits/max/min/ibset/btest of integer(8)
 RUN(NAME intrinsics_499 LABELS gfortran llvm fortran) # spread of a scalar source, printed by the Fortran backend
+RUN(NAME spread_scalar_struct_01 LABELS gfortran llvm) # spread of a scalar complex or derived-type source (#13597)
+RUN(NAME spread_scalar_char_param_01 LABELS gfortran llvm) # spread of a scalar character constant in initialization expressions
+RUN(NAME cshift_eoshift_struct_param_01 LABELS gfortran llvm) # cshift/eoshift of a derived-type array constant in a PARAMETER
 RUN(NAME intrinsics_502 LABELS gfortran llvm) # pack/count with a negated complex comparison of array sections (#15926)
 RUN(NAME intrinsics_503 LABELS gfortran llvm) # ibset constant folding at signed-kind boundaries
 RUN(NAME intrinsics_504 LABELS gfortran llvm) # ishft/shiftl/shiftr/shifta with |shift| == bit_size (#16451)
@@ -2328,9 +2352,14 @@ RUN(NAME intrinsics_519 LABELS gfortran llvm) # digits/maxexponent/minexponent o
 RUN(NAME eoshift_default_boundary_complex_01 LABELS gfortran llvm) # eoshift of a complex array without BOUNDARY (#16933)
 RUN(NAME eoshift_default_boundary_char_01 LABELS gfortran llvm) # eoshift of a character array without BOUNDARY (#14677)
 RUN(NAME intrinsics_520 LABELS gfortran llvm) # x= keyword for sind and atand (#17843)
+RUN(NAME trig_degree_reduction_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc) # sind/cosd/tand exact argument reduction (#3912)
+RUN(NAME trig_halfrev_reduction_01 LABELS llvm llvm_wasm llvm_wasm_emcc) # sinpi/cospi/tanpi exact argument reduction (#3912); GFortran does not have these intrinsics
+RUN(NAME trig_degree_reduction_real10_01 LABELS gfortran llvm) # real(10) sind/cosd/tand folding (#3912)
+RUN(NAME trig_halfrev_reduction_real10_01 LABELS llvm) # real(10) sinpi/cospi/tanpi folding (#3912); GFortran does not have these intrinsics
 RUN(NAME real16_gamma_01 LABELS gfortran llvm) # real(16) gamma/log_gamma/erfc_scaled of non-constant arguments (#15736, #17463)
 RUN(NAME real16_gamma_02 LABELS gfortran llvm) # real(16) gamma/log_gamma within 2 ulp, folded and at run time (#17825)
 RUN(NAME real16_gamma_poles_01 LABELS gfortran llvm NO_FAST_MATH GFORTRAN_ARGS -fno-range-check) # real(16) gamma/log_gamma return infinity at their poles, folded and at run time (#17857)
+RUN(NAME real16_log_gamma_negzero_01 LABELS gfortran llvm) # real(16) log_gamma next to its zeros on the negative axis, folded and at run time (#17858)
 RUN(NAME real16_intrinsics_rounding_01 LABELS gfortran llvm) # real(16) exp, hyperbolic and ** correctly rounded when folded (#17825)
 RUN(NAME real16_intrinsics_rounding_02 LABELS gfortran llvm) # real(16) sin, cos, tan correctly rounded when folded (#17825)
 RUN(NAME real16_intrinsics_rounding_03 LABELS gfortran llvm) # real(16) erf, erfc correctly rounded when folded (#17825)
@@ -4264,6 +4293,7 @@ RUN(NAME tbaa_14 LABELS gfortran llvm)
 RUN(NAME test_inquire_size LABELS gfortran llvm )
 RUN(NAME inquire_size_64 LABELS gfortran llvm EXTRAFILES inquire_size_64.c)
 RUN(NAME inquire_size_regions LABELS gfortran llvm llvm_omp GFORTRAN_ARGS -fopenmp)
+RUN(NAME inquire_submodule_protected_01 LABELS gfortran llvm)
 RUN(NAME test_backspace_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc COPY_TO_BIN file_01_data.txt)
 RUN(NAME backspace_iomsg_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME backspace_unformatted_01 LABELS gfortran llvm)
@@ -5591,6 +5621,7 @@ RUN(NAME common_63 LABELS llvm flang) # not gfortran: GFortran 16.2 misses the o
 RUN(NAME common_array_section_01 LABELS gfortran llvm)
 RUN(NAME common_substring_01 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
 RUN(NAME common_substring_02 LABELS gfortran llvm llvm_wasm llvm_wasm_emcc)
+RUN(NAME string_substring_int8_alloc_bounds_01 LABELS gfortran llvm)
 
 RUN(NAME statement_01 LABELS llvm gfortran llvmImplicit)
 RUN(NAME statement_02 LABELS gfortran llvmImplicit)
@@ -6798,6 +6829,7 @@ RUN(NAME pure_side_effects_02 LABELS gfortran llvm)
 RUN(NAME set_exponent_01 LABELS gfortran llvm)
 RUN(NAME count_param_01 LABELS gfortran llvm)
 RUN(NAME count_with_kind LABELS gfortran llvm)
+RUN(NAME count_any_all_parity_dim_fold_01 LABELS gfortran llvm)
 RUN(NAME char_param_reshape_01 LABELS gfortran llvm)
 RUN(NAME insertion_sort_01 LABELS gfortran llvm EXTRA_ARGS --realloc-lhs-arrays)
 RUN(NAME iachar_achar_01 LABELS gfortran llvm)
@@ -7100,7 +7132,7 @@ RUN(NAME gpu_lanes_defer_01 LABELS gfortran llvm cuda)
 RUN(NAME gpu_lanes_exact_01 LABELS gfortran llvm cuda)
 RUN(NAME gpu_lanes_term_01 LABELS gfortran llvm cuda)
 RUN(NAME gpu_lanes_block_02 LABELS gfortran llvm cuda)
-RUN(NAME gpu_lanes_block_03 LABELS gfortran llvm cuda)
+RUN(NAME gpu_lanes_block_03 LABELS gfortran llvm cuda NO_FAST_MATH)
 RUN(NAME gpu_lanes_block_04 LABELS gfortran llvm cuda)
 RUN(NAME gpu_lanes_scattered_01 LABELS gfortran llvm cuda)
 RUN(NAME gpu_lanes_scattered_02 LABELS gfortran llvm cuda)
@@ -7128,6 +7160,13 @@ RUN(NAME gpu_wide_rows_01 LABELS gfortran llvm cuda)
 RUN(NAME gpu_lanes_split_01 LABELS gfortran llvm cuda)
 RUN(NAME gpu_lanes_variants_01 LABELS gfortran llvm cuda)
 RUN(NAME gpu_lanes_versioned_01 LABELS gfortran llvm cuda)
+RUN(NAME gpu_block_shared_01 LABELS gfortran llvm cuda)
+RUN(NAME gpu_block_shared_02 LABELS gfortran llvm cuda)
+RUN(NAME gpu_block_shared_03 LABELS gfortran llvm cuda)
+RUN(NAME gpu_block_shared_04 LABELS gfortran llvm cuda)
+RUN(NAME gpu_block_shared_05 LABELS gfortran llvm cuda)
+RUN(NAME gpu_block_shared_06 LABELS gfortran llvm cuda)
+RUN(NAME gpu_block_shared_07 LABELS gfortran llvm cuda)
 RUN(NAME gpu_wide_pinned_01 LABELS gfortran llvm cuda)
 RUN(NAME gpu_launch_bounds_01 LABELS gfortran llvm cuda)
 RUN(NAME gpu_separate_compilation_01 LABELS gfortran llvm metal cuda EXTRAFILES gpu_separate_compilation_01_mod.f90 EXTRA_ARGS --separate-compilation)
@@ -8014,6 +8053,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_6
     RUN(NAME real80_literal_01 LABELS gfortran llvm)
     RUN(NAME real80_print_01 LABELS gfortran llvm)
     RUN(NAME real80_intrinsic_math_01 LABELS llvm) # sinpi etc. in parameters; GFortran does not have these intrinsics
+    RUN(NAME real80_array_constructor_01 LABELS gfortran llvm)
     RUN(NAME complex10_arith_01 LABELS gfortran llvm)
     RUN(NAME complex10_array_01 LABELS gfortran llvm)
     RUN(NAME complex10_intrinsic_math_01 LABELS gfortran llvm)
@@ -8028,6 +8068,34 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_6
     RUN(NAME complex10_unformatted_01 LABELS gfortran llvm)
     RUN(NAME complex10_parameter_array_01 LABELS gfortran llvm)
     RUN(NAME complex10_storage_size_01 LABELS gfortran llvm)
+    RUN(NAME norm2_dim_real10_01 LABELS gfortran llvm) # norm2 with DIM of non-constant real(10) arrays (#17873)
+    RUN(NAME complex10_param_fold_01 LABELS gfortran llvm)
+    RUN(NAME complex10_param_fold_02 LABELS gfortran llvm)
+    RUN(NAME complex10_param_fold_03 LABELS gfortran llvm)
+    RUN(NAME real10_elemental_scalar_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_kind_conversion_scalar_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_cmplx_scalar_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_transfer_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_aint_kind_scalar_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_int_nint_floor_ceiling_scalar_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_modulo_scalar_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_out_of_range_scalar_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_integer_power_scalar_fold_01 LABELS gfortran llvm)
+    RUN(NAME real16_real10_scalar_min_max_01 LABELS gfortran llvm)
+    RUN(NAME complex16_real10_part_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_array_constant_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_array_constant_fold_02 LABELS gfortran llvm
+        EXTRAFILES real10_array_constant_fold_02_mod.f90)
+    RUN(NAME real10_elemental_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_kind_conversion_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_cmplx_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_array_intrinsic_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_aint_kind_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_floor_ceiling_nint_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_int_modulo_cmplx_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_real16_min_max_01 LABELS gfortran llvm)
+    RUN(NAME real10_out_of_range_degrees_powi_fold_01 LABELS gfortran llvm)
+    RUN(NAME real10_rank2_constant_kind_conversion_01 LABELS gfortran llvm)
     # The value check waits on #17031.
     RUN(NAME separate_compilation_73 LABELS gfortran llvm
         EXTRAFILES separate_compilation_73a.f90) # real(10) constant round-trip through a mod file (#17032)

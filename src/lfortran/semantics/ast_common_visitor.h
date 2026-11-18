@@ -605,6 +605,14 @@ static inline ASR::expr_t* compare_helper(Allocator &al, ASR::expr_t* left_value
         return ASRUtils::fold_compare_constants(al, left_value, right_value,
             asr_op, loc, logical_type);
     } else if (ASR::is_a<ASR::Complex_t>(*ASRUtils::expr_type(left_value))) {
+        std::complex<long double> left_r10, right_r10;
+        if ((asr_op == ASR::cmpopType::Eq || asr_op == ASR::cmpopType::NotEq) &&
+                ASRUtils::extract_complex_r10(left_value, left_r10) &&
+                ASRUtils::extract_complex_r10(right_value, right_r10)) {
+            return ASRUtils::EXPR(ASR::make_LogicalConstant_t(al, loc,
+                (left_r10 == right_r10) == (asr_op == ASR::cmpopType::Eq),
+                logical_type));
+        }
         if (!ASR::is_a<ASR::ComplexConstant_t>(*left_value) ||
             !ASR::is_a<ASR::ComplexConstant_t>(*right_value)) {
             return nullptr;
@@ -1301,9 +1309,18 @@ static ASR::expr_t* eval_unary_array_const(Allocator& al, const Location& loc, A
     return ASRUtils::EXPR(ASRUtils::make_ArrayConstant_t_util(al, loc, res_data, type, arr->m_storage_format));
 }
 
-// Negates the elements of a real(16) or complex(16) array constant, which
-// are not stored as host floating point values.
-static ASR::expr_t* negate_kind16_array_const(Allocator& al, const Location& loc,
+// The negation of the real(10) or real(16) constant `e` (see
+// ASRUtils::ExtendedReal).
+template <typename T>
+static ASR::expr_t* negate_extended_real(Allocator& al, const Location& loc,
+        ASR::expr_t* e, ASR::ttype_t* type) {
+    using R = ASRUtils::ExtendedReal<T>;
+    return R::make(al, loc, R::neg(R::get(e)), type);
+}
+
+// Negates the elements of a real(10), real(16) or complex(16) array constant,
+// which are not stored as host floating point values of the element type.
+static ASR::expr_t* negate_extended_array_const(Allocator& al, const Location& loc,
         ASR::ArrayConstant_t* arr, ASR::ttype_t* type) {
     int64_t arr_size = ASRUtils::get_fixed_size_of_array(type);
     if (arr_size == -1) return nullptr;
@@ -1312,9 +1329,9 @@ static ASR::expr_t* negate_kind16_array_const(Allocator& al, const Location& loc
     for (int64_t i = 0; i < arr_size; i++) {
         ASR::expr_t* e = ASRUtils::fetch_ArrayConstant_value(al, arr, i);
         if (ASR::is_a<ASR::RealConstant_t>(*e)) {
-            values.push_back(al, ASRUtils::make_RealConstant_r16(al, loc,
-                lf_f128_neg(ASRUtils::real_constant_get_r16(
-                    ASR::down_cast<ASR::RealConstant_t>(e))), elem_type));
+            values.push_back(al, ASRUtils::extract_kind_from_ttype_t(elem_type) == 10
+                ? negate_extended_real<long double>(al, loc, e, elem_type)
+                : negate_extended_real<lf_float128>(al, loc, e, elem_type));
         } else if (ASR::is_a<ASR::ComplexConstant_t>(*e)) {
             ASR::ComplexConstant_t* c = ASR::down_cast<ASR::ComplexConstant_t>(e);
             values.push_back(al, ASRUtils::make_ComplexConstant_r16(al, loc,
@@ -1479,8 +1496,8 @@ static ASR::expr_t* negate_kind16_array_const(Allocator& al, const Location& loc
                         value = eval_unary_array_const<float>(al, x.base.base.loc, arr_const, result_type, USubOp<float>());
                     } else if (kind == 8) {
                         value = eval_unary_array_const<double>(al, x.base.base.loc, arr_const, result_type, USubOp<double>());
-                    } else if (kind == 16) {
-                        value = negate_kind16_array_const(al, x.base.base.loc, arr_const, result_type);
+                    } else if (kind == 10 || kind == 16) {
+                        value = negate_extended_array_const(al, x.base.base.loc, arr_const, result_type);
                     }
                 }
             }
@@ -1504,9 +1521,15 @@ static ASR::expr_t* negate_kind16_array_const(Allocator& al, const Location& loc
                                 ASRUtils::make_ComplexConstant_util(al, x.base.base.loc, std::real(result),
                                 std::imag(result), result_type));
                     }
+                } else if (ASR::is_a<ASR::ComplexConstructor_t>(*ASRUtils::expr_value(operand))) {
+                    std::complex<long double> c;
+                    if (ASRUtils::extract_complex_r10(ASRUtils::expr_value(operand), c)) {
+                        value = ASRUtils::make_ComplexConstant_r10(al, x.base.base.loc,
+                            -c, result_type);
+                    }
                 } else if (ASR::is_a<ASR::ArrayConstant_t>(*ASRUtils::expr_value(operand)) &&
                         ASRUtils::extract_kind_from_ttype_t(result_type) == 16) {
-                    value = negate_kind16_array_const(al, x.base.base.loc,
+                    value = negate_extended_array_const(al, x.base.base.loc,
                         ASR::down_cast<ASR::ArrayConstant_t>(ASRUtils::expr_value(operand)),
                         result_type);
                 }
@@ -2313,6 +2336,17 @@ public:
                 intrinsic_name + "' intrinsic must be real, found " +
                 ASRUtils::type_to_str_with_kind(y_type, args[0]) + " and " +
                 ASRUtils::type_to_str_with_kind(x_type, args[1]),
+                Level::Error, Stage::Semantic, {Label("", {loc})}));
+            throw SemanticAbort();
+        }
+        if (ASRUtils::extract_kind_from_ttype_t(y_type) !=
+                ASRUtils::extract_kind_from_ttype_t(x_type)) {
+            diag.add(Diagnostic("arguments 'y' and 'x' of the '" +
+                intrinsic_name + "' intrinsic must have the same kind, found " +
+                ASRUtils::type_to_str_with_kind(
+                    ASRUtils::extract_type(y_type), args[0]) + " and " +
+                ASRUtils::type_to_str_with_kind(
+                    ASRUtils::extract_type(x_type), args[1]),
                 Level::Error, Stage::Semantic, {Label("", {loc})}));
             throw SemanticAbort();
         }
@@ -12777,11 +12811,21 @@ public:
                     if (value != nullptr) {
                         tmp_init = value;
                     }
+                    std::complex<long double> complex10_init;
+                    // A real or complex scalar cannot initialize a logical
+                    // array: leave it to the type check below instead of
+                    // broadcasting it.
+                    bool incompatible_scalar = (ASRUtils::is_real(*ASRUtils::expr_type(tmp_init))
+                            || ASRUtils::is_complex(*ASRUtils::expr_type(tmp_init)))
+                        && ASRUtils::is_logical(*ASRUtils::type_get_past_array(
+                            ASRUtils::type_get_past_allocatable(type)));
                     if (!is_compile_time && ASR::is_a<ASR::Array_t>(*type)
+                        && !incompatible_scalar
                         && (ASR::is_a<ASR::IntegerConstant_t>(*tmp_init) || ASR::is_a<ASR::RealConstant_t>(*tmp_init)
                             || ASR::is_a<ASR::ComplexConstant_t>(*tmp_init) || ASR::is_a<ASR::RealUnaryMinus_t>(*tmp_init)
                             || ASR::is_a<ASR::IntegerUnaryMinus_t>(*tmp_init) || ASR::is_a<ASR::StringConstant_t>(*tmp_init)
-                            || ASR::is_a<ASR::LogicalConstant_t>(*tmp_init)))
+                            || ASR::is_a<ASR::LogicalConstant_t>(*tmp_init)
+                            || ASRUtils::extract_complex_r10(tmp_init, complex10_init)))
                     {
                         /*
                             Case: integer :: x(2) = 1
@@ -12846,20 +12890,31 @@ public:
                                     al, init_expr->base.loc, nullptr, type,
                                     ASR::arraystorageType::ColMajor));
                             } else {
-                                init_expr = ASRUtils::expr_value(
-                                    ASRUtils::EXPR(ASRUtils::make_ArrayConstructor_t_util(al, init_expr->base.loc,
-                                        args.p, args.n, type, ASR::arraystorageType::ColMajor))
-                                );
+                                ASR::expr_t* array_constructor = ASRUtils::EXPR(
+                                    ASRUtils::make_ArrayConstructor_t_util(al, init_expr->base.loc,
+                                        args.p, args.n, type, ASR::arraystorageType::ColMajor));
+                                init_expr = ASRUtils::expr_value(array_constructor);
+                                if (init_expr == nullptr) {
+                                    // Elements an ArrayConstant cannot hold,
+                                    // such as complex(10) ones, stay an array
+                                    // constructor of the constant values, as
+                                    // written in `x(2) = [z, z]`.
+                                    init_expr = array_constructor;
+                                }
                             }
-                            LCOMPILERS_ASSERT(ASR::is_a<ASR::ArrayConstant_t>(*init_expr));
-                            // The folded constant has a rank 1 type; give it
-                            // the rank and bounds of the declared array, as
-                            // `integer :: x(2,2) = 1` is a 2x2 array. A
-                            // component default is filled into a structure
-                            // constructor, which checks its rank.
-                            ASR::down_cast<ASR::ArrayConstant_t>(init_expr)->m_type =
-                                ASRUtils::duplicate_type(al, type);
-                            value = init_expr;
+                            if (ASR::is_a<ASR::ArrayConstructor_t>(*init_expr)) {
+                                value = nullptr;
+                            } else {
+                                LCOMPILERS_ASSERT(ASR::is_a<ASR::ArrayConstant_t>(*init_expr));
+                                // The folded constant has a rank 1 type; give
+                                // it the rank and bounds of the declared array,
+                                // as `integer :: x(2,2) = 1` is a 2x2 array. A
+                                // component default is filled into a structure
+                                // constructor, which checks its rank.
+                                ASR::down_cast<ASR::ArrayConstant_t>(init_expr)->m_type =
+                                    ASRUtils::duplicate_type(al, type);
+                                value = init_expr;
+                            }
                         }
                     }
                     if (!is_compile_time && ASR::is_a<ASR::Array_t>(*type)
@@ -13135,7 +13190,14 @@ public:
                                                 }
                                             }
                                         } else if (cast_kind == ASR::cast_kindType::RealToReal) {
-                                            for (size_t i = 0; i < (size_t) ASRUtils::get_fixed_size_of_array(a->m_type); i++) {
+                                            // A real(10) or real(16) constant keeps its value
+                                            // behind a pointer, not in a double: the implicit
+                                            // cast already folds those element by element.
+                                            int src_kind = ASRUtils::extract_kind_from_ttype_t(a->m_type);
+                                            int dest_kind = ASRUtils::extract_kind_from_ttype_t(cast_type);
+                                            bool extended = src_kind == 10 || src_kind == 16
+                                                || dest_kind == 10 || dest_kind == 16;
+                                            for (size_t i = 0; !extended && i < (size_t) ASRUtils::get_fixed_size_of_array(a->m_type); i++) {
                                                 ASR::expr_t *e = ASRUtils::fetch_ArrayConstant_value(al, a, i);
                                                 if (ASR::is_a<ASR::RealConstant_t>(*e)) {
                                                     ASR::RealConstant_t *real_const = ASR::down_cast<ASR::RealConstant_t>(e);
@@ -22785,12 +22847,20 @@ public:
                                     reinterpret_cast<uint8_t*>(&val_i64) + sizeof(val_i64));
                 }
             } else if (ASR::is_a<ASR::RealConstant_t>(*source_value)) {
-                if (ASRUtils::extract_kind_from_ttype_t(ASRUtils::expr_type(source)) == 4) {
-                    float val = static_cast<float>(ASR::down_cast<ASR::RealConstant_t>(source_value)->m_r);
+                ASR::RealConstant_t* r = ASR::down_cast<ASR::RealConstant_t>(source_value);
+                int source_kind = ASRUtils::extract_kind_from_ttype_t(ASRUtils::expr_type(source));
+                if (source_kind == 10) {
+                    // The storage of a real(10) value depends on the target
+                    return ASR::make_BitCast_t(al, x.base.base.loc, source, mold, size, type, nullptr);
+                } else if (source_kind == 16) {
+                    const uint8_t* bytes = ASRUtils::real_constant_get_r16_bytes(r);
+                    source_bits.assign(bytes, bytes + 16);
+                } else if (source_kind == 4) {
+                    float val = static_cast<float>(r->m_r);
                     source_bits.assign(reinterpret_cast<uint8_t*>(&val),
                                     reinterpret_cast<uint8_t*>(&val) + sizeof(val));
                 } else {
-                    double val = ASR::down_cast<ASR::RealConstant_t>(source_value)->m_r;
+                    double val = r->m_r;
                     source_bits.assign(reinterpret_cast<uint8_t*>(&val),
                                     reinterpret_cast<uint8_t*>(&val) + sizeof(val));
                 }
@@ -22844,7 +22914,17 @@ public:
                         return ASR::make_BitCast_t(al, x.base.base.loc, source, mold, size, type, nullptr);
                     }
                 } else if (ASRUtils::is_real(*source_type)) {
-                    if (kind == 4) {
+                    if (kind == 10) {
+                        // The storage of a real(10) value depends on the target
+                        return ASR::make_BitCast_t(al, x.base.base.loc, source, mold, size, type, nullptr);
+                    } else if (kind == 16) {
+                        for (size_t i=0; i < n_elements; i++) {
+                            const uint8_t* bytes = ASRUtils::real_constant_get_r16_bytes(
+                                ASR::down_cast<ASR::RealConstant_t>(
+                                    ASRUtils::fetch_ArrayConstant_value(al, const_source, i)));
+                            source_bits.insert(source_bits.end(), bytes, bytes + 16);
+                        }
+                    } else if (kind == 4) {
                         for (size_t i=0; i < n_elements; i++) {
                             float val = static_cast<float>(ASR::down_cast<ASR::RealConstant_t>(ASRUtils::fetch_ArrayConstant_value(al, const_source, i))->m_r);
                             source_bits.insert(source_bits.end(),
@@ -23665,13 +23745,13 @@ public:
                     }
                 }
                 if( ASRUtils::IntrinsicElementalFunctionRegistry::is_intrinsic_function(var_name) ) {
-                    // real, aimag, conjg and merge fold complex(16) values
-                    // exactly
-                    const bool exact_complex16_fold = (var_name == "real" ||
+                    // real, aimag, conjg and merge fold complex(10) and
+                    // complex(16) values exactly
+                    const bool wide_complex_fold = (var_name == "real" ||
                         var_name == "aimag" || var_name == "conjg" ||
                         var_name == "merge");
                     const bool are_all_args_evaluated {
-                        ASRUtils::all_args_evaluated(args, true, exact_complex16_fold, true) };
+                        ASRUtils::all_args_evaluated(args, true, wide_complex_fold, true) };
                     if (is_specific_type_intrinsic && specific_var_name == "dcmplx") {
                         ASR::ttype_t *int4_type = ASRUtils::TYPE(ASR::make_Integer_t(al, x.base.base.loc, 4));
                         args.p[2] = ASRUtils::EXPR(ASR::make_IntegerConstant_t(al, x.base.base.loc, 8, int4_type));
@@ -23779,6 +23859,19 @@ public:
                     }
                     CommonVisitorMethods::set_intrinsic_return_kind(al, x.base.base.loc, var_name,
                         args, compiler_options.po.default_integer_kind);
+                    if (restricted_expr_context == RestrictedExprContext::InitExpr) {
+                        // A structure constructor argument, such as `t(0)`
+                        // in `unpack(v, mask, t(0))`, is only a
+                        // StructConstructor here; fold it like an element
+                        // of an array constructor, so that the intrinsic
+                        // can be evaluated at compile time.
+                        for (size_t i = 0; i < args.size(); i++) {
+                            if (args[i] && ASR::is_a<ASR::StructConstructor_t>(*args[i])
+                                    && ASRUtils::is_value_constant(args[i])) {
+                                args.p[i] = fold_struct_constant_arg(args[i]);
+                            }
+                        }
+                    }
                     ASRUtils::create_intrinsic_function create_func =
                         ASRUtils::IntrinsicArrayFunctionRegistry::get_create_function(var_name);
                     tmp = create_func(al, x.base.base.loc, args, diag);
@@ -26189,9 +26282,9 @@ public:
         }
         // check compiletime evaluation possibility
         bool is_compiletime = is_compiletime_implied_do_loop(idl, loop_vars);
-        // The data of a constant array holds no real(10) or complex(10)
-        // elements: the values of such a loop are kept as constant elements.
-        bool is_kind10_loop = (ASRUtils::is_real(*type) || ASRUtils::is_complex(*type)) &&
+        // The data of a constant array holds no complex(10) elements: the
+        // values of such a loop are kept as constant elements.
+        bool is_complex10_loop = ASRUtils::is_complex(*type) &&
                 ASRUtils::extract_kind_from_ttype_t(type) == 10;
 
         if (is_compiletime && idl_nesting_level == 1) {
@@ -26205,7 +26298,7 @@ public:
             idl_not_evaluated = false;
             // TODO: handle multiple types
             // populate compiletime array
-            if (is_kind10_loop) {
+            if (is_complex10_loop) {
                 Vec<ASR::expr_t*> array; array.reserve(al, 1);
                 populate_compiletime_array_for_idl(idl, array, loop_vars, loop_indices, curr_nesting_level, itr);
                 bool all_constant = !idl_not_evaluated;
@@ -26245,7 +26338,7 @@ public:
                     Vec<double> array; array.reserve(al, 1);
                     populate_compiletime_array_for_idl(idl, array, loop_vars, loop_indices, curr_nesting_level, itr);
                     data = &array.p[0];
-                } else if (kind == 16) {
+                } else if (kind == 10 || kind == 16) {
                     data = populate_compiletime_expr_data_for_idl(idl, type, loop_vars, loop_indices, curr_nesting_level, itr);
                 } else {
                     diag.add(Diagnostic("Unsupported kind for real type in compiletime evaluation of implied do loop",

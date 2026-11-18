@@ -3,6 +3,7 @@
 
 #include <libasr/asr_builder.h>
 #include <libasr/casting_utils.h>
+#include <libasr/runtime/lfortran_trig.h>
 #include <math.h>
 #include <algorithm>
 #include <cstdint>
@@ -295,7 +296,7 @@ static inline std::string real_c_func_name(const std::string &name,
             "exp", "log", "log10", "sin", "cos", "tan", "asin", "acos",
             "atan", "atan2", "sinh", "cosh", "tanh", "asinh", "acosh",
             "atanh", "sind", "cosd", "tand", "asind", "acosd", "atand",
-            "erf", "erfc"};
+            "sinpi", "cospi", "tanpi", "erf", "erfc"};
         for (const char *f : quad_functions) {
             if (name == f) return "lf_" + name + "q";
         }
@@ -420,14 +421,14 @@ static inline ASR::expr_t* instantiate_functions(Allocator &al,
     return b.Call(new_symbol, new_args, return_type);
 }
 
-// `allow_complex16` is true when `eval_function` evaluates complex(16)
-// constants without rounding them to a double.
+// `allow_wide_complex` is true when `eval_function` evaluates complex(10) and
+// complex(16) constants without rounding them to a double.
 static inline ASR::asr_t* create_UnaryFunction(Allocator& al, const Location& loc,
     Vec<ASR::expr_t*>& args, eval_intrinsic_function eval_function,
     int64_t intrinsic_id, int64_t overload_id, ASR::ttype_t* type, diag::Diagnostics& diag,
-    bool allow_complex16=false) {
+    bool allow_wide_complex=false) {
     ASR::expr_t *value = nullptr;
-    if (ASRUtils::all_args_evaluated(args, false, allow_complex16)) {
+    if (ASRUtils::all_args_evaluated(args, false, allow_wide_complex)) {
         Vec<ASR::expr_t*> arg_values; arg_values.reserve(al, 1);
         arg_values.push_back(al, ASRUtils::expr_value(args[0]));
         value = eval_function(al, loc, type, arg_values, diag);
@@ -818,36 +819,36 @@ namespace Fix {
 
 } // namespace Fix
 
-// Kind 10 stores a pointer in RealConstant::m_r. Fold only the trig
-// functions that need it here; the empty variant leaves every other
-// create_trig evaluator unchanged.
-#define create_trig_eval_r10_0(...)
-#define create_trig_eval_r10_1(stdeval, al, loc, t, args)                       \
-    if (ASR::is_a<ASR::RealConstant_t>(*args[0]) &&                             \
-            ASRUtils::extract_kind_from_ttype_t(t) == 10) {                     \
-        long double rv = ASRUtils::real_constant_get_r10(                       \
-            ASR::down_cast<ASR::RealConstant_t>(args[0]));                      \
-        long double val = ::stdeval##l(rv);                                     \
-        return ASRUtils::make_RealConstant_r10(al, loc, val, t);                \
-    }
-
 // `X` is the name of the function in the IntrinsicElementalFunctions enum and
 // we use the same name for `create_X` and other places
 // `stdeval` is the name of the function in the `std` namespace for compile
 //  numerical time evaluation
 // `lcompilers_name` is the name that we use in the C runtime library
-// `fold_r10` is 1 to fold kind 10 with long double, 0 to leave it unfolded
-#define create_trig_impl(X, stdeval, lcompilers_name, fold_r10)                 \
+// Kind 10 stores a pointer in RealConstant::m_r: it is folded with the long
+// double variant of `stdeval`.
+#define create_trig(X, stdeval, lcompilers_name)                                \
 namespace X {                                                                   \
     static inline ASR::expr_t *eval_##X(Allocator &al, const Location &loc,     \
             ASR::ttype_t *t, Vec<ASR::expr_t*>& args,                           \
             diag::Diagnostics& /*diag*/) {                                      \
         LCOMPILERS_ASSERT(args.size() == 1);                                    \
-        create_trig_eval_r10_##fold_r10(stdeval, al, loc, t, args)              \
+        if (ASR::is_a<ASR::RealConstant_t>(*args[0]) &&                         \
+                ASRUtils::extract_kind_from_ttype_t(t) == 10) {                 \
+            long double rv = ASRUtils::real_constant_get_r10(                   \
+                ASR::down_cast<ASR::RealConstant_t>(args[0]));                  \
+            long double val = ::stdeval##l(rv);                                 \
+            return ASRUtils::make_RealConstant_r10(al, loc, val, t);            \
+        }                                                                       \
         lf_complex128 c16;                                                      \
         if( ASRUtils::extract_complex_r16(args[0], c16) ) {                     \
             return ASRUtils::make_ComplexConstant_c128(al, loc,                 \
                 lf_c128_##stdeval(c16), t);                                     \
+        }                                                                       \
+        /* Like the runtime, which calls csinl, ..., for complex(10) */         \
+        std::complex<long double> c10;                                          \
+        if( ASRUtils::extract_complex_r10(args[0], c10) ) {                     \
+            return ASRUtils::make_ComplexConstant_r10(al, loc,                  \
+                std::stdeval(c10), t);                                          \
         }                                                                       \
         if( ASR::is_a<ASR::RealConstant_t>(*args[0]) &&                         \
                 ASRUtils::extract_kind_from_ttype_t(t) == 16 ) {                \
@@ -881,15 +882,12 @@ namespace X {                                                                   
     }                                                                           \
 } // namespace X
 
-#define create_trig(X, stdeval, lcompilers_name)                                \
-    create_trig_impl(X, stdeval, lcompilers_name, 0)
-
-create_trig_impl(Sin, sin, sin, 1)
+create_trig(Sin, sin, sin)
 create_trig(Cos, cos, cos)
 create_trig(Tan, tan, tan)
 create_trig(Asin, asin, asin)
-create_trig_impl(Acos, acos, acos, 1)
-create_trig_impl(Atan, atan, atan, 1)
+create_trig(Acos, acos, acos)
+create_trig(Atan, atan, atan)
 create_trig(Sinh, sinh, sinh)
 create_trig(Cosh, cosh, cosh)
 create_trig(Tanh, tanh, tanh)
@@ -910,6 +908,25 @@ namespace Log {
                 return nullptr;
             }
             return ASRUtils::make_ComplexConstant_c128(al, loc, lf_c128_log(c16), t);
+        }
+        std::complex<long double> c10;
+        if( ASRUtils::extract_complex_r10(args[0], c10) ) {
+            if (c10 == std::complex<long double>(0.0L, 0.0L)) {
+                append_error(diag, "Complex argument of `log` cannot be zero", loc);
+                return nullptr;
+            }
+            return ASRUtils::make_ComplexConstant_r10(al, loc, std::log(c10), t);
+        }
+        if( ASR::is_a<ASR::RealConstant_t>(*args[0]) &&
+                ASRUtils::extract_kind_from_ttype_t(t) == 10 ) {
+            // kind=10 m_r is a pointer to the long double bytes
+            long double val = ASRUtils::real_constant_get_r10(
+                ASR::down_cast<ASR::RealConstant_t>(args[0]));
+            if (val <= 0.0L) {
+                append_error(diag, "Argument of `log` cannot be less than or equal to zero", loc);
+                return nullptr;
+            }
+            return ASRUtils::make_RealConstant_r10(al, loc, ::logl(val), t);
         }
         if( ASR::is_a<ASR::RealConstant_t>(*args[0]) &&
                 ASRUtils::extract_kind_from_ttype_t(t) == 16 ) {
@@ -1096,6 +1113,37 @@ namespace HostBessel {
     }
 } // namespace HostBessel
 
+// Folds a trigonometric function whose run-time implementation reduces its
+// argument exactly (sind, cosd, tand, sinpi, cospi, tanpi): real(4) and
+// real(8) call the run-time functions themselves, so that folding and run
+// time agree bit for bit with the same libm; real(10) and real(16) use the
+// binary128 implementation.
+static inline ASR::expr_t *eval_trig_exact_reduction(Allocator &al,
+        const Location &loc, ASR::ttype_t *t, Vec<ASR::expr_t*> &args,
+        float (*sp_fn)(float), double (*dp_fn)(double),
+        lf_float128 (*qp_fn)(lf_float128)) {
+    LCOMPILERS_ASSERT(args.size() == 1);
+    if (!ASR::is_a<ASR::RealConstant_t>(*args[0])) return nullptr;
+    ASR::RealConstant_t *c = ASR::down_cast<ASR::RealConstant_t>(args[0]);
+    int kind = ASRUtils::extract_kind_from_ttype_t(t);
+    if (kind == 16) {
+        return ASRUtils::make_RealConstant_r16(al, loc,
+            qp_fn(ASRUtils::real_constant_get_r16(c)), t);
+    }
+    if (kind == 10) {
+        // Kind 10 stores a pointer in m_r.
+        lf_float128 x = lf_f128_from_long_double(
+            ASRUtils::real_constant_get_r10(c));
+        return ASRUtils::make_RealConstant_r10(al, loc,
+            lf_f128_to_long_double(qp_fn(x)), t);
+    }
+    if (kind == 4) {
+        return ASRUtils::make_RealConstant_util(al, loc,
+            sp_fn(static_cast<float>(c->m_r)), t);
+    }
+    return ASRUtils::make_RealConstant_util(al, loc, dp_fn(c->m_r), t);
+}
+
 #define create_math_bindc(math_func, stdeval, stdeval_ld, degree, lcompilers_name, quad_eval)           \
 namespace math_func {                                                                                   \
     static inline ASR::expr_t *eval_##math_func(Allocator &al, const Location &loc,                     \
@@ -1126,8 +1174,6 @@ namespace math_func {                                                           
             long double result = stdeval_ld(rv);                                                        \
             if ( degree == 1 ) {                                                                        \
                 result = result * 180.0L / PI;                                                          \
-            } else if ( degree == 2 ) {                                                                 \
-                result = stdeval_ld( ( rv * PI ) / 180.0L );                                            \
             }                                                                                           \
             return ASRUtils::make_RealConstant_r10(al, loc, result, t);                                 \
         }                                                                                               \
@@ -1136,9 +1182,6 @@ namespace math_func {                                                           
         if ( degree == 1 ) {                                                                            \
             double PI = 3.14159265358979323846;                                                         \
             result = result * 180.0/PI;                                                                 \
-        } else if ( degree == 2 ) {                                                                     \
-            double PI = 3.14159265358979323846;                                                         \
-            result = stdeval( ( rv * PI ) / 180.0 );                                                    \
         }                                                                                               \
         return ASRUtils::make_RealConstant_util(al, loc, result, t);                              \
     }                                                                                                   \
@@ -1154,7 +1197,6 @@ namespace math_func {                                                           
 /*
     Degree acts as a switch
     - if degree = 1, math function output is in degrees
-    - if degree = 2, math function input is in degrees
     - degree = 0, implies no change in input or output ( radians )
 */
 
@@ -1165,42 +1207,72 @@ create_math_bindc(BesselY1, HostBessel::y1, HostBessel::y1l, 0, bessel_y1, lf_f1
 create_math_bindc(Asind, asin, asinl, 1, asind, lf_f128_asind)
 create_math_bindc(Acosd, acos, acosl, 1, acosd, lf_f128_acosd)
 create_math_bindc(Atand, atan, atanl, 1, atand, lf_f128_atand)
-create_math_bindc(Sind, sin, sinl, 2, sind, lf_f128_sind)
-create_math_bindc(Cosd, cos, cosl, 2, cosd, lf_f128_cosd)
-create_math_bindc(Tand, tan, tanl, 2, tand, lf_f128_tand)
 
-#define create_math_pi_input(math_func, stdeval, c_name, lcompilers_name, quad_eval)                    \
+namespace Sind {
+    static inline ASR::expr_t *eval_Sind(Allocator &al, const Location &loc,
+            ASR::ttype_t *t, Vec<ASR::expr_t*>& args,
+            diag::Diagnostics& /*diag*/) {
+        return eval_trig_exact_reduction(al, loc, t, args, _lfortran_ssind,
+            _lfortran_dsind, lf_f128_sind);
+    }
+    static inline ASR::expr_t* instantiate_Sind(Allocator &al,
+            const Location &loc, SymbolTable *scope,
+            Vec<ASR::ttype_t*>& arg_types, ASR::ttype_t *return_type,
+            Vec<ASR::call_arg_t>& new_args, int64_t overload_id, int index_kind) {
+        return MathIntrinsicFunction::instantiate_functions(al, loc, scope,
+            "sind", arg_types, return_type, new_args, overload_id, index_kind);
+    }
+} // namespace Sind
+
+namespace Cosd {
+    static inline ASR::expr_t *eval_Cosd(Allocator &al, const Location &loc,
+            ASR::ttype_t *t, Vec<ASR::expr_t*>& args,
+            diag::Diagnostics& /*diag*/) {
+        return eval_trig_exact_reduction(al, loc, t, args, _lfortran_scosd,
+            _lfortran_dcosd, lf_f128_cosd);
+    }
+    static inline ASR::expr_t* instantiate_Cosd(Allocator &al,
+            const Location &loc, SymbolTable *scope,
+            Vec<ASR::ttype_t*>& arg_types, ASR::ttype_t *return_type,
+            Vec<ASR::call_arg_t>& new_args, int64_t overload_id, int index_kind) {
+        return MathIntrinsicFunction::instantiate_functions(al, loc, scope,
+            "cosd", arg_types, return_type, new_args, overload_id, index_kind);
+    }
+} // namespace Cosd
+
+namespace Tand {
+    static inline ASR::expr_t *eval_Tand(Allocator &al, const Location &loc,
+            ASR::ttype_t *t, Vec<ASR::expr_t*>& args,
+            diag::Diagnostics& /*diag*/) {
+        return eval_trig_exact_reduction(al, loc, t, args, _lfortran_stand,
+            _lfortran_dtand, lf_f128_tand);
+    }
+    static inline ASR::expr_t* instantiate_Tand(Allocator &al,
+            const Location &loc, SymbolTable *scope,
+            Vec<ASR::ttype_t*>& arg_types, ASR::ttype_t *return_type,
+            Vec<ASR::call_arg_t>& new_args, int64_t overload_id, int index_kind) {
+        return MathIntrinsicFunction::instantiate_functions(al, loc, scope,
+            "tand", arg_types, return_type, new_args, overload_id, index_kind);
+    }
+} // namespace Tand
+
+#define create_math_pi_input(math_func, sp_eval, dp_eval, c_name, lcompilers_name, quad_eval)           \
 namespace math_func {                                                                                   \
     static inline ASR::expr_t *eval_##math_func(Allocator &al, const Location &loc,                     \
             ASR::ttype_t *t, Vec<ASR::expr_t*>& args,                                                   \
             diag::Diagnostics& /*diag*/) {                                                              \
-        LCOMPILERS_ASSERT(args.size() == 1);                                                            \
-        if (ASRUtils::extract_kind_from_ttype_t(t) == 16) {                                             \
-            if (!ASR::is_a<ASR::RealConstant_t>(*args[0])) return nullptr;                              \
-            return ASRUtils::make_RealConstant_r16(al, loc,                                             \
-                quad_eval(ASRUtils::real_expr_get_r16(args[0])), t);                                    \
-        }                                                                                               \
-        if (ASRUtils::extract_kind_from_ttype_t(t) == 10) {                                             \
-            /* Kind 10 stores a pointer in m_r. Fold in long double. */                                 \
-            if (!ASR::is_a<ASR::RealConstant_t>(*args[0])) return nullptr;                              \
-            long double rv = ASRUtils::real_constant_get_r10(                                           \
-                ASR::down_cast<ASR::RealConstant_t>(args[0]));                                          \
-            long double PI = 3.141592653589793238462643383279502884L;                                   \
-            return ASRUtils::make_RealConstant_r10(al, loc, std::stdeval(rv * PI), t);                  \
-        }                                                                                               \
-        double rv = -1;                                                                                 \
-        if( ASRUtils::extract_value(args[0], rv) ) {                                                    \
-            double PI = 3.14159265358979323846;                                                         \
-            double result = std::stdeval(rv * PI);                                                      \
-            return ASRUtils::make_RealConstant_util(al, loc, result, t);                          \
-        }                                                                                               \
-        return nullptr;                                                                                 \
+        return eval_trig_exact_reduction(al, loc, t, args, sp_eval, dp_eval, quad_eval);                \
     }                                                                                                   \
     static inline ASR::expr_t* instantiate_##math_func (Allocator &al,                                  \
             const Location &loc, SymbolTable *scope,                                                    \
             Vec<ASR::ttype_t*>& arg_types, ASR::ttype_t *return_type,                                   \
-            Vec<ASR::call_arg_t>& new_args, int64_t /*overload_id*/, int /*index_kind*/)  {             \
+            Vec<ASR::call_arg_t>& new_args, int64_t overload_id, int index_kind)  {                     \
         ASR::ttype_t* arg_type = arg_types[0];                                                          \
+        if (ASRUtils::extract_kind_from_ttype_t(arg_type) != 10) {                                      \
+            return MathIntrinsicFunction::instantiate_functions(al, loc, scope,                         \
+                lcompilers_name, arg_types, return_type, new_args, overload_id, index_kind);            \
+        }                                                                                               \
+        /* real(10) has no run-time function: evaluate c_name(x*pi). */                                 \
         std::string c_func_name = real_c_func_name(c_name, arg_type);                                   \
         std::string new_name = "_lcompilers_" + std::string(lcompilers_name) + "_" +                    \
             type_to_str_python_expr(arg_type, new_args[0].m_value);                                     \
@@ -1289,9 +1361,9 @@ namespace math_func {                                                           
     }                                                                                                   \
 } // namespace math_func
 
-create_math_pi_input(Sinpi, sin, "sin", "sinpi", lf_f128_sinpi)
-create_math_pi_input(Cospi, cos, "cos", "cospi", lf_f128_cospi)
-create_math_pi_input(Tanpi, tan, "tan", "tanpi", lf_f128_tanpi)
+create_math_pi_input(Sinpi, _lfortran_ssinpi, _lfortran_dsinpi, "sin", "sinpi", lf_f128_sinpi)
+create_math_pi_input(Cospi, _lfortran_scospi, _lfortran_dcospi, "cos", "cospi", lf_f128_cospi)
+create_math_pi_input(Tanpi, _lfortran_stanpi, _lfortran_dtanpi, "tan", "tanpi", lf_f128_tanpi)
 create_math_pi_output(Asinpi, asin, "asin", "asinpi", lf_f128_asinpi)
 create_math_pi_output(Acospi, acos, "acos", "acospi", lf_f128_acospi)
 create_math_pi_output(Atanpi, atan, "atan", "atanpi", lf_f128_atanpi)
@@ -1302,10 +1374,13 @@ namespace Aimag {
             ASR::ttype_t *t, Vec<ASR::expr_t*>& args, diag::Diagnostics& /*diag*/) {
         ASRUtils::ASRBuilder b(al, loc);
         std::complex<double> crv;
+        std::complex<long double> c10;
         ASR::expr_t* value = ASRUtils::expr_value(args[0]);
         if( value && ASR::is_a<ASR::ComplexConstant_t>(*value) ) {
             return ASRUtils::complex_constant_part_to_real(al, loc,
                 ASR::down_cast<ASR::ComplexConstant_t>(value), true, t);
+        } else if( ASRUtils::extract_complex_r10(value, c10) ) {
+            return ASRUtils::make_RealConstant_r10(al, loc, c10.imag(), t);
         } else if( ASRUtils::extract_value(args[0], crv) ) {
             ASR::ComplexConstant_t *c = ASR::down_cast<ASR::ComplexConstant_t>(ASRUtils::expr_value(args[0]));
             return ASRUtils::make_RealConstant_util(al, loc, c->m_im, t);
@@ -1601,6 +1676,11 @@ namespace Abs {
         lf_complex128 c16;
         if (ASRUtils::extract_complex_r16(arg, c16)) {
             return ASRUtils::make_RealConstant_r16(al, loc, lf_c128_abs(c16), t);
+        }
+        std::complex<long double> c10;
+        if (ASRUtils::extract_complex_r10(arg, c10)) {
+            return ASRUtils::make_RealConstant_r10(al, loc,
+                hypotl(c10.real(), c10.imag()), t);
         }
         if (ASRUtils::is_real(*expr_type(arg))) {
             int kind = ASRUtils::extract_kind_from_ttype_t(expr_type(arg));
@@ -2039,6 +2119,37 @@ namespace Range {
 namespace OutOfRange
 {
 
+    // out_of_range(x, mold[, round]) for a real(10) or real(16) constant `x`
+    // (of kind `kind_x`) and a mold of kind `kind_mold`
+    static bool extended_real_out_of_range(Vec<ASR::expr_t*>& args,
+            int kind_x, int kind_mold) {
+        ASR::RealConstant_t* x = ASR::down_cast<ASR::RealConstant_t>(args[0]);
+        lf_float128 v = kind_x == 10
+            ? lf_f128_from_long_double(ASRUtils::real_constant_get_r10(x))
+            : ASRUtils::real_constant_get_r16(x);
+        if (is_integer(*expr_type(args[1]))) {
+            if (!ASRUtils::real16_is_finite(v)) {
+                return true;
+            }
+            bool round = ASR::down_cast<ASR::LogicalConstant_t>(args[2])->m_value;
+            lf_float128 t = round ? ASRUtils::real16_round_half_away(v)
+                : lf_f128_signbit(v) ? lf_f128_ceiling(v) : lf_f128_floor(v);
+            int64_t i;
+            return !ASRUtils::real16_integral_to_int64(t, i)
+                || !ASRUtils::int64_fits_integer_kind(i, kind_mold);
+        }
+        // A real mold: a finite `x` whose magnitude exceeds huge(mold)
+        if (!ASRUtils::real16_is_finite(v) || kind_mold == 16
+                || (kind_mold == 10 && kind_x == 10)) {
+            return false;
+        }
+        lf_float128 huge = kind_mold == 4
+            ? lf_f128_from_double(std::numeric_limits<float>::max())
+            : kind_mold == 8 ? lf_f128_from_double(std::numeric_limits<double>::max())
+            : lf_f128_from_long_double(std::numeric_limits<long double>::max());
+        return lf_f128_cmp(lf_f128_abs(v), huge) > 0;
+    }
+
     static ASR::expr_t* eval_OutOfRange(Allocator& al, const Location& loc,
         ASR::ttype_t* return_type, Vec<ASR::expr_t*>& args, diag::Diagnostics& /*diag*/){
         ASRUtils::ASRBuilder b(al, loc);
@@ -2050,6 +2161,13 @@ namespace OutOfRange
         ASR::ttype_t* arg_type_1 = expr_type(args[0]);
         ASR::ttype_t* arg_type_2 = expr_type(args[1]);
         int32_t kind_2 = extract_kind_from_ttype_t(arg_type_2);
+        int32_t kind_1 = extract_kind_from_ttype_t(arg_type_1);
+        if (is_real(*arg_type_1) && (kind_1 == 10 || kind_1 == 16)) {
+            // Decided exactly in binary128, which holds every real(10) value,
+            // not through double
+            return b.bool_t(extended_real_out_of_range(args, kind_1, kind_2),
+                return_type);
+        }
         switch (kind_2) {
             case 1:
                 max_val_int = 127;
@@ -3403,8 +3521,25 @@ namespace Int {
         } else if (ASR::is_a<ASR::RealConstant_t>(*args[0])) {
             ASR::RealConstant_t* real_constant = ASR::down_cast<ASR::RealConstant_t>(
                 ASRUtils::expr_value(args[0]));
-            if (ASRUtils::extract_kind_from_ttype_t(ASRUtils::expr_type(args[0])) == 16) {
-                i = static_cast<int64_t>(lf_f128_to_double(ASRUtils::real_constant_get_r16(real_constant)));
+            int arg_kind = ASRUtils::extract_kind_from_ttype_t(ASRUtils::expr_type(args[0]));
+            if (arg_kind == 10 || arg_kind == 16) {
+                // Truncated in the precision of the argument, not through
+                // double
+                bool exact;
+                if (arg_kind == 10) {
+                    exact = ASRUtils::real10_integral_to_int64(truncl(
+                        ASRUtils::real_constant_get_r10(real_constant)), i);
+                } else {
+                    lf_float128 v = ASRUtils::real_constant_get_r16(real_constant);
+                    exact = ASRUtils::real16_integral_to_int64(lf_f128_signbit(v)
+                        ? lf_f128_ceiling(v) : lf_f128_floor(v), i);
+                }
+                int kind = ASRUtils::extract_kind_from_ttype_t(t1);
+                if (!exact || !ASRUtils::int64_fits_integer_kind(i, kind)) {
+                    diag.semantic_error_label("Result of `int` overflows its kind("
+                        + std::to_string(kind) + ")", {loc}, "");
+                    return nullptr;
+                }
             } else {
                 i = static_cast<int64_t>(ASRUtils::real_constant_get_double(real_constant));
             }
@@ -3744,15 +3879,17 @@ namespace Aint {
     static ASR::expr_t *eval_Aint(Allocator &al, const Location &loc,
             ASR::ttype_t* arg_type, Vec<ASR::expr_t*> &args, diag::Diagnostics& /*diag*/) {
         int kind = ASRUtils::extract_kind_from_ttype_t(ASRUtils::expr_type(args[0]));
+        // Truncated in the precision of the argument, then converted to the
+        // result kind
         if (kind == 16) {
             lf_float128 v = ASRUtils::real_expr_get_r16(args[0]);
-            return ASRUtils::make_RealConstant_r16(al, loc, lf_f128_signbit(v) ? lf_f128_ceiling(v) : lf_f128_floor(v), arg_type);
+            return ASRUtils::make_RealConstant_from_r16(al, loc, lf_f128_signbit(v) ? lf_f128_ceiling(v) : lf_f128_floor(v), arg_type);
         }
         // Kind 10 stores a pointer in m_r, not the numeric value.
         if (kind == 10) {
             long double rv = ASRUtils::real_constant_get_r10(
                 ASR::down_cast<ASR::RealConstant_t>(args[0]));
-            return ASRUtils::make_RealConstant_r10(al, loc, truncl(rv), arg_type);
+            return ASRUtils::make_RealConstant_from_r10(al, loc, truncl(rv), arg_type);
         }
         double rv = ASR::down_cast<ASR::RealConstant_t>(args[0])->m_r;
         ASRUtils::ASRBuilder b(al, loc);
@@ -3787,14 +3924,16 @@ namespace Anint {
     static ASR::expr_t *eval_Anint(Allocator &al, const Location &loc,
             ASR::ttype_t* arg_type, Vec<ASR::expr_t*> &args, diag::Diagnostics& /*diag*/) {
         int kind = ASRUtils::extract_kind_from_ttype_t(ASRUtils::expr_type(args[0]));
+        // Rounded in the precision of the argument, then converted to the
+        // result kind
         if (kind == 16) {
-            return ASRUtils::make_RealConstant_r16(al, loc, ASRUtils::real16_round_half_away(ASRUtils::real_expr_get_r16(args[0])), arg_type);
+            return ASRUtils::make_RealConstant_from_r16(al, loc, ASRUtils::real16_round_half_away(ASRUtils::real_expr_get_r16(args[0])), arg_type);
         }
         // Kind 10 stores a pointer in m_r, not the numeric value.
         if (kind == 10) {
             long double rv = ASRUtils::real_constant_get_r10(
                 ASR::down_cast<ASR::RealConstant_t>(args[0]));
-            return ASRUtils::make_RealConstant_r10(al, loc, roundl(rv), arg_type);
+            return ASRUtils::make_RealConstant_from_r10(al, loc, roundl(rv), arg_type);
         }
         double rv = ASR::down_cast<ASR::RealConstant_t>(args[0])->m_r;
         ASRUtils::ASRBuilder b(al, loc);
@@ -3842,8 +3981,18 @@ namespace Nint {
             int64_t near_int;
             if (!ASRUtils::real16_integral_to_int64(
                     ASRUtils::real16_round_half_away(ASRUtils::real_expr_get_r16(args[0])), near_int)
-                    || (kind == 4 && (near_int < std::numeric_limits<int32_t>::min() ||
-                        near_int > std::numeric_limits<int32_t>::max()))) {
+                    || !ASRUtils::int64_fits_integer_kind(near_int, kind)) {
+                diag.semantic_error_label("Result of `nint` overflows its kind(" + std::to_string(kind) + ")", {loc}, "");
+                return nullptr;
+            }
+            return make_ConstantWithType(make_IntegerConstant_t, near_int, arg_type, loc);
+        }
+        // Kind 10 stores a pointer in m_r: round in long double, not double
+        if (ASRUtils::extract_kind_from_ttype_t(ASRUtils::expr_type(args[0])) == 10) {
+            int64_t near_int;
+            if (!ASRUtils::real10_integral_to_int64(roundl(ASRUtils::real_constant_get_r10(
+                    ASR::down_cast<ASR::RealConstant_t>(args[0]))), near_int)
+                    || !ASRUtils::int64_fits_integer_kind(near_int, kind)) {
                 diag.semantic_error_label("Result of `nint` overflows its kind(" + std::to_string(kind) + ")", {loc}, "");
                 return nullptr;
             }
@@ -3954,13 +4103,24 @@ namespace Logical {
 namespace Floor {
 
     static ASR::expr_t *eval_Floor(Allocator &al, const Location &loc,
-            ASR::ttype_t* t1, Vec<ASR::expr_t*> &args, diag::Diagnostics& /*diag*/) {
+            ASR::ttype_t* t1, Vec<ASR::expr_t*> &args, diag::Diagnostics& diag) {
+        int kind = ASRUtils::extract_kind_from_ttype_t(t1);
         if (ASRUtils::extract_kind_from_ttype_t(ASRUtils::expr_type(args[0])) == 16) {
             int64_t floored;
             if (!ASRUtils::real16_integral_to_int64(lf_f128_floor(ASRUtils::real_expr_get_r16(args[0])), floored)
-                    || (ASRUtils::extract_kind_from_ttype_t(t1) == 4
-                        && (floored < std::numeric_limits<int32_t>::min()
-                            || floored > std::numeric_limits<int32_t>::max()))) {
+                    || !ASRUtils::int64_fits_integer_kind(floored, kind)) {
+                diag.semantic_error_label("Result of `floor` overflows its kind(" + std::to_string(kind) + ")", {loc}, "");
+                return nullptr;
+            }
+            return make_ConstantWithType(make_IntegerConstant_t, floored, t1, loc);
+        }
+        // Kind 10 stores a pointer in m_r: round in long double, not double
+        if (ASRUtils::extract_kind_from_ttype_t(ASRUtils::expr_type(args[0])) == 10) {
+            int64_t floored;
+            if (!ASRUtils::real10_integral_to_int64(floorl(ASRUtils::real_constant_get_r10(
+                    ASR::down_cast<ASR::RealConstant_t>(args[0]))), floored)
+                    || !ASRUtils::int64_fits_integer_kind(floored, kind)) {
+                diag.semantic_error_label("Result of `floor` overflows its kind(" + std::to_string(kind) + ")", {loc}, "");
                 return nullptr;
             }
             return make_ConstantWithType(make_IntegerConstant_t, floored, t1, loc);
@@ -4007,13 +4167,24 @@ namespace Floor {
 namespace Ceiling {
 
     static ASR::expr_t *eval_Ceiling(Allocator &al, const Location &loc,
-            ASR::ttype_t* t1, Vec<ASR::expr_t*> &args, diag::Diagnostics& /*diag*/) {
+            ASR::ttype_t* t1, Vec<ASR::expr_t*> &args, diag::Diagnostics& diag) {
+        int kind = ASRUtils::extract_kind_from_ttype_t(t1);
         if (ASRUtils::extract_kind_from_ttype_t(ASRUtils::expr_type(args[0])) == 16) {
             int64_t ceiled;
             if (!ASRUtils::real16_integral_to_int64(lf_f128_ceiling(ASRUtils::real_expr_get_r16(args[0])), ceiled)
-                    || (ASRUtils::extract_kind_from_ttype_t(t1) == 4
-                        && (ceiled < std::numeric_limits<int32_t>::min()
-                            || ceiled > std::numeric_limits<int32_t>::max()))) {
+                    || !ASRUtils::int64_fits_integer_kind(ceiled, kind)) {
+                diag.semantic_error_label("Result of `ceiling` overflows its kind(" + std::to_string(kind) + ")", {loc}, "");
+                return nullptr;
+            }
+            return make_ConstantWithType(make_IntegerConstant_t, ceiled, t1, loc);
+        }
+        // Kind 10 stores a pointer in m_r: round in long double, not double
+        if (ASRUtils::extract_kind_from_ttype_t(ASRUtils::expr_type(args[0])) == 10) {
+            int64_t ceiled;
+            if (!ASRUtils::real10_integral_to_int64(ceill(ASRUtils::real_constant_get_r10(
+                    ASR::down_cast<ASR::RealConstant_t>(args[0]))), ceiled)
+                    || !ASRUtils::int64_fits_integer_kind(ceiled, kind)) {
+                diag.semantic_error_label("Result of `ceiling` overflows its kind(" + std::to_string(kind) + ")", {loc}, "");
                 return nullptr;
             }
             return make_ConstantWithType(make_IntegerConstant_t, ceiled, t1, loc);
@@ -4190,6 +4361,11 @@ namespace Sqrt {
             if( ASRUtils::extract_complex_r16(args[0], c16) ) {
                 return ASRUtils::make_ComplexConstant_c128(al, loc,
                     lf_c128_sqrt(c16), arg_type);
+            }
+            std::complex<long double> c10;
+            if( ASRUtils::extract_complex_r10(args[0], c10) ) {
+                return ASRUtils::make_ComplexConstant_r10(al, loc,
+                    std::sqrt(c10), arg_type);
             }
             std::complex<double> crv;
             if( ASRUtils::extract_value(args[0], crv) ) {
@@ -5797,7 +5973,11 @@ namespace Modulo {
                     append_error(diag, "Second argument of modulo cannot be 0", loc);
                     return nullptr;
                 }
-                long double r = a - b * floorl(a / b);
+                // fmodl is exact; `a - b*floorl(a/b)` rounds the product
+                long double r = fmodl(a, b);
+                if (r != 0 && std::signbit(r) != std::signbit(b)) {
+                    r += b;
+                }
                 return ASRUtils::make_RealConstant_r10(al, loc, r, t1);
             }
             double a = ASR::down_cast<ASR::RealConstant_t>(args[0])->m_r;
@@ -6031,60 +6211,9 @@ namespace Poppar {
 
 namespace Real {
 
-    // Exact widening of a kind-10 payload (host long double) to binary128.
-    // x87 extended and binary128 share exponent bias 16383, so the 63
-    // fraction bits move to binary128 fraction bits [111:49]. Rounding
-    // through double turns 1 + 2^-63 into 1.
-    static lf_float128 widen_long_double_to_f128(long double value) {
-        constexpr int digits = std::numeric_limits<long double>::digits;
-        static_assert(digits == 53 || digits == 64 || digits == 113,
-            "unsupported long double format");
-        if constexpr (digits == 53) {
-            return lf_f128_from_double(static_cast<double>(value));
-        } else if constexpr (digits == 113) {
-            lf_float128 out;
-            std::memcpy(out.bytes, &value, 16);
-            return out;
-        } else {
-            // Kind-10 payloads are a little-endian 80-bit image. binary128
-            // bytes in lf_float128 are little-endian as well.
-            unsigned char raw[10] = {};
-            std::memcpy(raw, &value, 10);
-            uint64_t significand = 0;
-            uint16_t exponent_and_sign = 0;
-            std::memcpy(&significand, raw, 8);
-            std::memcpy(&exponent_and_sign, raw + 8, 2);
-            const int sign = (exponent_and_sign >> 15) & 1;
-            const uint32_t exponent = exponent_and_sign & 0x7FFFu;
-            const uint64_t fraction63 = significand & 0x7FFFFFFFFFFFFFFFULL;
-            uint64_t lo = 0;
-            uint64_t hi = static_cast<uint64_t>(sign) << 63;
-            if (exponent == 0x7FFFu) {
-                hi |= 0x7FFFULL << 48;
-                if (significand != 0x8000000000000000ULL) {
-                    hi |= 1ULL << 47;
-                }
-            } else if (exponent == 0 && significand == 0) {
-                // signed zero
-            } else if ((significand & 0x8000000000000000ULL) != 0) {
-                // Normal, or a pseudo-denormal (exponent 0 with the integer
-                // bit set), which is the minimum binary128 normal.
-                const uint32_t biased = exponent == 0 ? 1u : exponent;
-                lo = fraction63 << 49;
-                hi |= (static_cast<uint64_t>(biased) << 48) | (fraction63 >> 15);
-            } else {
-                lo = significand << 49;
-                hi |= significand >> 15;
-            }
-            lf_float128 out;
-            std::memcpy(out.bytes, &lo, 8);
-            std::memcpy(out.bytes + 8, &hi, 8);
-            return out;
-        }
-    }
-
     static ASR::expr_t *eval_Real(Allocator &al, const Location &loc,
             ASR::ttype_t* t1, Vec<ASR::expr_t*> &args, diag::Diagnostics& diag) {
+        std::complex<long double> c10;
         if (ASR::is_a<ASR::IntegerConstant_t>(*args[0])) {
             int64_t i = ASR::down_cast<ASR::IntegerConstant_t>(ASRUtils::expr_value(args[0]))->m_n;
             if (ASRUtils::extract_kind_from_ttype_t(t1) == 16) {
@@ -6094,32 +6223,27 @@ namespace Real {
         } else if (ASR::is_a<ASR::RealConstant_t>(*args[0])) {
             ASR::RealConstant_t *r = ASR::down_cast<ASR::RealConstant_t>(ASRUtils::expr_value(args[0]));
             int src_kind = ASRUtils::extract_kind_from_ttype_t(r->m_type);
-            int dest_kind = ASRUtils::extract_kind_from_ttype_t(t1);
             if (src_kind == 16) {
-                lf_float128 v = ASRUtils::real_constant_get_r16(r);
-                if (dest_kind == 16) {
-                    return ASRUtils::make_RealConstant_r16(al, loc, v, t1);
-                }
-                return ASRUtils::make_RealConstant_util(al, loc, lf_f128_to_double(v), t1);
+                return ASRUtils::make_RealConstant_from_r16(al, loc,
+                    ASRUtils::real_constant_get_r16(r), t1);
             }
-            // kind 10 stores a pointer in m_r, not the numeric value.
+            // kind 10 stores a pointer in m_r, not the numeric value. It is
+            // rounded once, not through double for real(4).
             if (src_kind == 10) {
-                long double v = ASRUtils::real_constant_get_r10(r);
-                if (dest_kind == 10) {
-                    return ASRUtils::make_RealConstant_r10(al, loc, v, t1);
-                }
-                if (dest_kind == 16) {
-                    return ASRUtils::make_RealConstant_r16(al, loc,
-                        widen_long_double_to_f128(v), t1);
-                }
-                return ASRUtils::make_RealConstant_util(al, loc,
-                    static_cast<double>(v), t1);
+                return ASRUtils::make_RealConstant_from_r10(al, loc,
+                    ASRUtils::real_constant_get_r10(r), t1);
             }
             return ASRUtils::make_RealConstant_util(al, loc,
                 ASRUtils::real_constant_get_double(r), t1);
         } else if (ASR::is_a<ASR::ComplexConstant_t>(*args[0])) {
             ASR::ComplexConstant_t *c = ASR::down_cast<ASR::ComplexConstant_t>(ASRUtils::expr_value(args[0]));
             return ASRUtils::complex_constant_part_to_real(al, loc, c, false, t1);
+        } else if (ASRUtils::extract_complex_r10(args[0], c10)) {
+            // The real part of a complex(10) constant is a real(10) constant
+            Vec<ASR::expr_t*> re; re.reserve(al, 1);
+            re.push_back(al, ASR::expr_value0(
+                ASR::down_cast<ASR::ComplexConstructor_t>(args[0])->m_re));
+            return eval_Real(al, loc, t1, re, diag);
         } else {
             append_error(diag, "Invalid argument to `real` intrinsic", loc);
             return nullptr;
@@ -6172,25 +6296,32 @@ namespace Cmplx {
                 ASR::down_cast<ASR::UnsignedIntegerConstant_t>(value)->m_n));
         } else if (ASR::is_a<ASR::RealConstant_t>(*value)) {
             ASR::RealConstant_t* r = ASR::down_cast<ASR::RealConstant_t>(value);
-            v = ASRUtils::extract_kind_from_ttype_t(r->m_type) == 16 ?
-                ASRUtils::real_constant_get_r16(r) : lf_f128_from_double(r->m_r);
+            // kind=10 and kind=16 m_r is a pointer to the value's bytes
+            int kind = ASRUtils::extract_kind_from_ttype_t(r->m_type);
+            v = kind == 16 ? ASRUtils::real_constant_get_r16(r)
+                : kind == 10 ? lf_f128_from_long_double(
+                    ASRUtils::real_constant_get_r10(r))
+                : lf_f128_from_double(r->m_r);
         } else {
             return false;
         }
         return true;
     }
 
-    // The value of the real or integer constant `arg` as a double.
-    static inline bool cmplx_part_double(ASR::expr_t* arg, double &v) {
+    // The value of the real or integer constant `arg` as a double, rounded
+    // once to the real kind `kind` of the result.
+    static inline bool cmplx_part_double(ASR::expr_t* arg, int kind, double &v) {
         ASR::expr_t* value = ASRUtils::expr_value(arg);
         if (ASR::is_a<ASR::IntegerConstant_t>(*value)) {
             v = static_cast<double>(ASR::down_cast<ASR::IntegerConstant_t>(value)->m_n);
         } else if (ASR::is_a<ASR::UnsignedIntegerConstant_t>(*value)) {
             v = static_cast<double>(ASR::down_cast<ASR::UnsignedIntegerConstant_t>(value)->m_n);
         } else if (ASR::is_a<ASR::RealConstant_t>(*value)) {
+            // kind=10 and kind=16 m_r is a pointer to the value's bytes
             ASR::RealConstant_t* r = ASR::down_cast<ASR::RealConstant_t>(value);
-            v = ASRUtils::extract_kind_from_ttype_t(r->m_type) == 16 ?
-                lf_f128_to_double(ASRUtils::real_constant_get_r16(r)) : r->m_r;
+            v = ASRUtils::extract_kind_from_ttype_t(r->m_type) == 10
+                ? ASRUtils::real10_to_kind_double(ASRUtils::real_constant_get_r10(r), kind)
+                : ASRUtils::real_constant_get_double(r);
         } else {
             return false;
         }
@@ -6228,11 +6359,12 @@ namespace Cmplx {
         }
         double arg1_val = 0.0;
         double arg2_val = 0.0;
-        if (!cmplx_part_double(args[0], arg1_val)) {
+        int kind = ASRUtils::extract_kind_from_ttype_t(t1);
+        if (!cmplx_part_double(args[0], kind, arg1_val)) {
             append_error(diag, "Invalid first argument to `cmplx` intrinsic", loc);
             return nullptr;
         }
-        if (!cmplx_part_double(args[1], arg2_val)) {
+        if (!cmplx_part_double(args[1], kind, arg2_val)) {
             append_error(diag, "Invalid second argument to `cmplx` intrinsic", loc);
             return nullptr;
         }
@@ -6284,15 +6416,21 @@ namespace Cmplx {
         }
 
         if (is_complex(*expr_type(args[0])) && !ASRUtils::is_array(return_type) &&
-                !ASRUtils::is_array(expr_type(args[0])) && expr_value(args[0]) &&
-                ASR::is_a<ASR::ComplexConstant_t>(*expr_value(args[0]))) {
-            ASR::ComplexConstant_t* cc = ASR::down_cast<ASR::ComplexConstant_t>(expr_value(args[0]));
-            // A conversion to complex(10) is left to run time; one from or
-            // to complex(16) is folded here, the others below.
+                !ASRUtils::is_array(expr_type(args[0])) && expr_value(args[0])) {
+            // A conversion from or to complex(10) or complex(16) is folded
+            // here, the others below.
+            ASR::expr_t* arg_value = expr_value(args[0]);
             int return_kind = extract_kind_from_ttype_t(return_type);
-            if (return_kind == 16 ||
-                    (return_kind != 10 && ASRUtils::complex_constant_is_r16(cc))) {
-                m_value = ASRUtils::fold_complex_cast(al, loc, cc,
+            std::complex<long double> c10;
+            if (return_kind == 10 || ASRUtils::extract_complex_r10(arg_value, c10)) {
+                // A complex(10) constant is a ComplexConstructor
+                m_value = ASRUtils::fold_wide_complex_cast(al, loc, arg_value,
+                    ASR::cast_kindType::ComplexToComplex, return_type);
+            } else if (ASR::is_a<ASR::ComplexConstant_t>(*arg_value) && (return_kind == 16 ||
+                    ASRUtils::complex_constant_is_r16(
+                        ASR::down_cast<ASR::ComplexConstant_t>(arg_value)))) {
+                m_value = ASRUtils::fold_complex_cast(al, loc,
+                    ASR::down_cast<ASR::ComplexConstant_t>(arg_value),
                     ASR::cast_kindType::ComplexToComplex, return_type);
             }
         }
@@ -8759,6 +8897,17 @@ namespace Exp {
         if( ASRUtils::extract_complex_r16(args[0], c16) ) {
             return ASRUtils::make_ComplexConstant_c128(al, loc, lf_c128_exp(c16), t);
         }
+        std::complex<long double> c10;
+        if( ASRUtils::extract_complex_r10(args[0], c10) ) {
+            return ASRUtils::make_ComplexConstant_r10(al, loc, std::exp(c10), t);
+        }
+        if( ASR::is_a<ASR::RealConstant_t>(*args[0]) &&
+                ASRUtils::extract_kind_from_ttype_t(t) == 10 ) {
+            // kind=10 m_r is a pointer to the long double bytes
+            return ASRUtils::make_RealConstant_r10(al, loc, ::expl(
+                ASRUtils::real_constant_get_r10(
+                    ASR::down_cast<ASR::RealConstant_t>(args[0]))), t);
+        }
         if( ASR::is_a<ASR::RealConstant_t>(*args[0]) &&
                 ASRUtils::extract_kind_from_ttype_t(t) == 16 ) {
             return ASRUtils::make_RealConstant_r16(al, loc, lf_f128_exp(
@@ -9964,6 +10113,7 @@ namespace Conjg {
     static ASR::expr_t *eval_Conjg(Allocator &al, const Location &loc,
             ASR::ttype_t* arg_type, Vec<ASR::expr_t*> &args, diag::Diagnostics& /*diag*/) {
         std::complex<double> crv;
+        std::complex<long double> c10;
         ASR::expr_t* value = ASRUtils::expr_value(args[0]);
         if( value && ASR::is_a<ASR::ComplexConstant_t>(*value) &&
                 ASRUtils::complex_constant_is_r16(ASR::down_cast<ASR::ComplexConstant_t>(value)) ) {
@@ -9971,6 +10121,8 @@ namespace Conjg {
             return ASRUtils::make_ComplexConstant_r16(al, loc,
                 ASRUtils::complex_constant_re_r16(c),
                 lf_f128_neg(ASRUtils::complex_constant_im_r16(c)), arg_type);
+        } else if( ASRUtils::extract_complex_r10(value, c10) ) {
+            return ASRUtils::make_ComplexConstant_r10(al, loc, std::conj(c10), arg_type);
         } else if( extract_value(args[0], crv) ) {
             std::complex<double> val = std::conj(crv);
             return EXPR(ASRUtils::make_ComplexConstant_util(
