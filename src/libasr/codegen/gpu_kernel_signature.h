@@ -51,11 +51,28 @@ void ASRToGpuCVisitor<D>::emit_kernel_signature(const ASR::Function_t &kernel) {
     int64_t kernel_threads = kernel_lane_vectors && kernel_caps.lanes_wide > 0
             && kernel.m_gpu->m_lanes_max == kernel_caps.lanes_wide
         ? kernel_caps.lanes_wide : kernel_caps.threads_per_block;
-    src << dialect.kernel_qualifier(kernel_threads,
-            streams_rows, kernel_lane_vectors
-                ? std::max<int64_t>(1, gpu_wide_vectors_per_iteration(kernel))
-                : 0)
-        << name << "(\n";
+    int64_t lane_vectors = kernel_lane_vectors
+        ? std::max<int64_t>(1, gpu_wide_vectors_per_iteration(kernel)) : 0;
+    std::string qualifier = dialect.kernel_qualifier(kernel_threads,
+        streams_rows, lane_vectors);
+    // A kernel whose iteration is a whole block of lanes that read vectors
+    // of 16 bytes may have a second version for more blocks per
+    // multiprocessor (visit_device_kernel), the same source under its own
+    // name and qualifier.
+    kernel_variant = {};
+    if (kernel_lane_vectors && kernel_caps.lanes_wide > 0
+            && kernel.m_gpu->m_lanes_max == kernel_caps.lanes_wide) {
+        auto variant = dialect.occupancy_variant(kernel_threads, streams_rows,
+            lane_vectors);
+        if (!variant.first.empty()) {
+            kernel_variant.start = src.tellp();
+            kernel_variant.signature = qualifier + name + "(";
+            kernel_variant.qualifier = variant.first;
+            kernel_variant.name = name + "__blocks"
+                + std::to_string(variant.second);
+        }
+    }
+    src << qualifier << name << "(\n";
     kernel_params.clear();
     int slot = 0;
     bool previous = false;
