@@ -7135,7 +7135,14 @@ bool trait_erased_signature_matches(const ASR::Function_t &generic,
 
 std::string trait_deferred_pack_key(const ASR::TraitDeferredPack_t &pack)
 {
-    return nominal_symbol_name(pack.m_constraint) + ":" + nominal_symbol_name(
+    // A value of a symbolic generic type instance is packed by the
+    // conformance of its definition; the instance tells such packs apart.
+    std::string instance;
+    if (ASR::is_a<ASR::StructType_t>(*expr_type(pack.m_payload))) {
+        ASR::symbol_t *declaration = get_struct_sym_from_struct_expr(pack.m_payload);
+        if (declaration) instance = nominal_symbol_name(declaration) + ":";
+    }
+    return instance + nominal_symbol_name(pack.m_constraint) + ":" + nominal_symbol_name(
         ASR::down_cast<ASR::TraitObjectType_t>(extract_type(pack.m_type))->m_contract);
 }
 
@@ -9907,6 +9914,22 @@ ASR::GenericTypeInstance_t *generic_type_instance(const ASR::Struct_t &x)
         return nullptr;
     }
     return ASR::down_cast<ASR::GenericTypeInstance_t>(x.m_generic);
+}
+
+bool is_symbolic_generic_instance(const ASR::Struct_t &x)
+{
+    auto *instance = generic_type_instance(x);
+    if (!instance) return false;
+    SymbolTable *owner = x.m_symtab->parent;
+    if (!owner || !owner->asr_owner || !ASR::is_a<ASR::symbol_t>(*owner->asr_owner) ||
+            !ASR::is_a<ASR::Template_t>(*ASR::down_cast<ASR::symbol_t>(owner->asr_owner))) {
+        return false;
+    }
+    for (size_t i = 0; i < instance->n_arguments; i++) {
+        if (instance->m_arguments[i].m_type &&
+                ASR::is_a<ASR::TypeParameter_t>(*instance->m_arguments[i].m_type)) return true;
+    }
+    return false;
 }
 
 ASR::Struct_t *generic_type_definition(const ASR::Template_t &x)

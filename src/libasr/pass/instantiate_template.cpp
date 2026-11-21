@@ -3604,6 +3604,11 @@ public:
         LCOMPILERS_ASSERT(selected != symbol_subs.end());
         [[maybe_unused]] auto *evidence = ASRUtils::symbol_get_past_external(selected->second);
         auto *actual_type = ASRUtils::expr_type(payload);
+        if (ASR::is_a<ASR::TraitImplementation_t>(*evidence)) {
+            // A value of a symbolic instance that stays symbolic.
+            return ASR::make_TraitDeferredPack_t(al, x->base.base.loc,
+                payload, selected->second, type);
+        }
         if (ASR::is_a<ASR::TypeParameter_t>(*actual_type)) {
             LCOMPILERS_ASSERT(ASR::is_a<ASR::TraitConstraint_t>(*evidence));
             return ASR::make_TraitDeferredPack_t(al, x->base.base.loc,
@@ -3662,6 +3667,16 @@ public:
     ASR::asr_t *duplicate_TraitAssignment(ASR::TraitAssignment_t *x) {
         auto *assignment = ASR::down_cast2<ASR::TraitAssignment_t>(
             BaseExprStmtDuplicator<BodyInstantiator>::duplicate_TraitAssignment(x));
+        if (!assignment->m_witness && ASR::is_a<ASR::TraitDeferredPack_t>(*x->m_value) &&
+                ASR::is_a<ASR::TraitPack_t>(*assignment->m_value) &&
+                ASR::is_a<ASR::StructType_t>(*ASRUtils::expr_type(
+                    ASR::down_cast<ASR::TraitPack_t>(assignment->m_value)->m_payload))) {
+            // A value of a symbolic generic type instance, now of a concrete
+            // instance, is assigned with its witness like any other value.
+            auto *pack = ASR::down_cast<ASR::TraitPack_t>(assignment->m_value);
+            assignment->m_value = pack->m_payload;
+            assignment->m_witness = pack->m_witness;
+        }
         assignment->m_witness = visible_evidence(assignment->m_witness);
         return &assignment->base.base;
     }
@@ -4201,7 +4216,12 @@ public:
         ASR::GenericTypeInstance_t *instance = ASR::is_a<ASR::Struct_t>(*target)
             ? ASRUtils::generic_type_instance(*ASR::down_cast<ASR::Struct_t>(target))
             : nullptr;
-        if (instance && &ASRUtils::generic_instance_definition(*instance)->base == type) {
+        // A symbolic instance of the generic procedure being instantiated
+        // becomes the instance of the bound type arguments.
+        bool symbolic = ASR::is_a<ASR::Struct_t>(*type) &&
+            ASRUtils::is_symbolic_generic_instance(*ASR::down_cast<ASR::Struct_t>(type));
+        if (instance && (symbolic ||
+                &ASRUtils::generic_instance_definition(*instance)->base == type)) {
             copy->m_dt_sym = candidate->second;
             copy->m_type = ASRUtils::make_StructType_t_util(al, x->base.base.loc,
                 candidate->second, ASR::down_cast<ASR::StructType_t>(x->m_type)->m_is_cstruct);

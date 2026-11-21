@@ -4200,6 +4200,33 @@ public:
     }
 
     void visit_TraitDeferredPack(const TraitDeferredPack_t &x) {
+        if (x.m_payload && x.m_constraint && typed_expr_type(x.m_payload) &&
+                ASR::is_a<StructType_t>(*typed_expr_type(x.m_payload))) {
+            // A value of a symbolic generic type instance, packed by a
+            // conformance of its definition.
+            ASR::symbol_t *declaration = ASRUtils::get_struct_sym_from_struct_expr(x.m_payload);
+            declaration = declaration ? ASRUtils::symbol_get_past_external(declaration) : nullptr;
+            auto *instance = declaration && ASR::is_a<Struct_t>(*declaration) &&
+                    ASRUtils::is_symbolic_generic_instance(*ASR::down_cast<Struct_t>(declaration))
+                ? ASR::down_cast<Struct_t>(declaration) : nullptr;
+            require_id(instance && x.m_type && ASR::is_a<TraitObjectType_t>(*x.m_type),
+                "asr.verify.trait_deferred_pack.fields",
+                "A deferred pack of a derived value requires a symbolic generic type "
+                "instance");
+            visit_expr(*x.m_payload);
+            visit_ttype(*x.m_type);
+            if (!check_external || !instance) return;
+            ASR::symbol_t *conformance = ASRUtils::symbol_get_past_external(x.m_constraint);
+            require_id(conformance && ASR::is_a<TraitImplementation_t>(*conformance) &&
+                    ASRUtils::symbol_get_past_external(
+                        ASR::down_cast<TraitImplementation_t>(conformance)->m_type_declaration) ==
+                        &ASRUtils::generic_instance_definition(
+                            *ASRUtils::generic_type_instance(*instance))->base,
+                "asr.verify.trait_deferred_pack.constraint",
+                "A deferred pack of a symbolic generic type instance requires a "
+                "conformance of its definition");
+            return;
+        }
         require_id(x.m_payload && x.m_constraint && x.m_type &&
                 typed_expr_type(x.m_payload) &&
                 ASR::is_a<TypeParameter_t>(*typed_expr_type(x.m_payload)) &&
@@ -6073,9 +6100,38 @@ public:
         if (ASR::is_a<GenericTypeDefinition_t>(*x.m_generic)) {
             verify_generic_type_definition(x,
                 *ASR::down_cast<GenericTypeDefinition_t>(x.m_generic));
+        } else if (ASRUtils::is_symbolic_generic_instance(x)) {
+            verify_symbolic_generic_instance(x,
+                *ASR::down_cast<GenericTypeInstance_t>(x.m_generic));
         } else {
             verify_generic_type_instance(x,
                 *ASR::down_cast<GenericTypeInstance_t>(x.m_generic));
+        }
+    }
+
+    // A symbolic instance is declared in the scope of a generic procedure,
+    // and some of its type arguments are binders of that generic.
+    void verify_symbolic_generic_instance(const Struct_t &x,
+            const GenericTypeInstance_t &instance) {
+        SymbolTable *generic_scope = x.m_symtab->parent;
+        auto *generic = ASR::down_cast<Template_t>(
+            ASR::down_cast<ASR::symbol_t>(generic_scope->asr_owner));
+        require_id(instance.m_definition && symtab_in_scope(x.m_symtab, instance.m_definition) &&
+                generic->m_symtab->get_symbol(generic->m_name) &&
+                !ASR::is_a<Struct_t>(*generic->m_symtab->get_symbol(generic->m_name)),
+            "asr.verify.generic_type.symbolic_instance",
+            "A symbolic generic type instance must be declared in a generic procedure "
+            "and reference a visible definition");
+        for (size_t i = 0; i < instance.n_arguments; i++) {
+            const auto &argument = instance.m_arguments[i];
+            if (!argument.m_type || !ASR::is_a<TypeParameter_t>(*argument.m_type)) continue;
+            ASR::symbol_t *declaration = argument.m_type_declaration
+                ? ASRUtils::symbol_get_past_external(argument.m_type_declaration) : nullptr;
+            require_id(declaration && ASRUtils::symbol_parent_symtab(declaration) ==
+                    generic_scope && argument.n_evidence == 0,
+                "asr.verify.generic_type.symbolic_instance",
+                "The type arguments of a symbolic generic type instance that are type "
+                "parameters must be binders of its generic procedure");
         }
     }
 
