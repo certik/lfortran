@@ -4751,6 +4751,10 @@ public:
         }
         bool definable = ASRUtils::association_is_definable(selector);
         bool target_attr = ASRUtils::association_has_target(selector);
+        if (ASRUtils::trait_object_binder(selector_type)) {
+            trait_call_error("associate names of trait objects of a trait parameter are "
+                "not implemented yet", loc);
+        }
         auto *contract = ASRUtils::trait_runtime_contract(selector_type);
         auto *parent_scope = current_scope;
         current_scope = scope;
@@ -6338,6 +6342,15 @@ public:
     // the conformance of the dynamic type to T (TD-11); a trait is not a type.
     ASR::Trait_t *select_type_trait_guard(ASR::symbol_t *symbol, bool is_class,
             const Location &loc) {
+        if (auto *binder = ASRUtils::trait_parameter_binder(symbol)) {
+            if (!is_class) {
+                std::string name = ASRUtils::symbol_name(binder);
+                trait_call_error("trait parameter '" + name + "' is not a type; "
+                    "class is (" + name + ") queries conformance to the trait bound to it",
+                    loc);
+            }
+            return nullptr;
+        }
         auto *resolved = ASRUtils::symbol_get_past_external(symbol);
         if (!resolved || !ASR::is_a<ASR::Trait_t>(*resolved)) return nullptr;
         auto *trait = ASR::down_cast<ASR::Trait_t>(resolved);
@@ -6349,6 +6362,7 @@ public:
     }
 
     struct SelectTypeTraitGuard {
+        // nullptr for a guard of a trait parameter, `class is (P)`.
         ASR::Trait_t *trait = nullptr;
         // The runtime contract and retroactive witnesses, visible where the
         // select type statement is.
@@ -6399,6 +6413,29 @@ public:
         return guard;
     }
 
+    // The guard `class is (P)` of the trait parameter `binder` P: its query
+    // names the binder, which instantiation replaces with the bound trait's
+    // contract and the retroactive witnesses visible there.
+    SelectTypeTraitGuard trait_parameter_guard(ASR::symbol_t *binder, const Location &loc) {
+        SelectTypeTraitGuard guard;
+        guard.loc = loc;
+        guard.contract = binder;
+        guard.view_type = runtime_trait_type(nullptr, loc, false, false, false, binder);
+        return guard;
+    }
+
+    // The precedence of trait guards depends on how their traits extend one
+    // another, which is unknown for a trait parameter.
+    void check_trait_parameter_guards(const std::vector<SelectTypeTraitGuard> &guards) {
+        if (guards.size() < 2) return;
+        for (const auto &guard : guards) {
+            if (!guard.trait) {
+                trait_call_error("a select type with a `class is` guard of a trait "
+                    "parameter and other trait guards is not implemented yet", guard.loc);
+            }
+        }
+    }
+
     // The CLASS DEFAULT part of a select type with trait guards, whose
     // concrete guards have not matched: the block of the first guard in
     // source order whose trait the dynamic type of `selector` conforms to,
@@ -6425,7 +6462,7 @@ public:
         for (size_t i = guards.size(); i-- > 0;) {
             ASR::expr_t *test = conforms(guards[i]);
             for (size_t j = 0; j < guards.size(); j++) {
-                if (j == i) continue;
+                if (j == i || !guards[i].trait || !guards[j].trait) continue;
                 bool extends = false;
                 for (auto *parent : checked_trait_hierarchy(*guards[j].trait,
                         guards[j].loc).traits) {
@@ -6553,6 +6590,10 @@ public:
             ASR::symbol_t *view_declaration = nullptr;
             ASR::expr_t *view = selector, *ordinary = selector;
             if (ASR::is_a<ASR::TraitObjectType_t>(*view_type)) {
+                if (ASRUtils::trait_object_binder(view_type)) {
+                    trait_call_error("select type on a trait object of a trait parameter "
+                        "is not implemented yet", selector->base.loc);
+                }
                 make_runtime_trait_view(selector, view_type);
                 auto *contract = ASRUtils::trait_runtime_contract(view_type);
                 view_type = ASRUtils::TYPE(ASR::make_TraitObjectType_t(al, x.base.base.loc,
@@ -6642,6 +6683,10 @@ public:
                 }
                 ASR::Trait_t *guard_trait = is_default ? nullptr
                     : select_type_trait_guard(type_symbol, is_class, loc);
+                if (!is_default && ASRUtils::trait_parameter_binder(type_symbol)) {
+                    trait_call_error("a `class is` guard of a trait parameter with a "
+                        "trait-object selector is not implemented yet", loc);
+                }
                 if (guard_trait) {
                     if (!seen_traits.insert(guard_trait).second) {
                         trait_call_error("duplicate nominal select type guard", loc);
@@ -6728,6 +6773,7 @@ public:
             }
             ASRUtils::order_select_type_guards(guards.p, guards.size());
             if (!trait_guards.empty()) {
+                check_trait_parameter_guards(trait_guards);
                 default_body = select_type_trait_dispatch(trait_guards, ordinary, default_body);
             }
             body.push_back(al, ASRUtils::STMT(ASR::make_SelectType_t(al,
@@ -6980,20 +7026,23 @@ public:
                     ASR::symbol_t* guard_symbol = current_scope->resolve_symbol(
                         to_lower(std::string(class_stmt->m_id)));
                     const Location &guard_loc = class_stmt->base.base.loc;
-                    if (auto *guard_trait = select_type_trait_guard(guard_symbol, true,
-                            guard_loc)) {
+                    auto *guard_binder = ASRUtils::trait_parameter_binder(guard_symbol);
+                    auto *guard_trait = select_type_trait_guard(guard_symbol, true, guard_loc);
+                    if (guard_trait || guard_binder) {
                         if (ASRUtils::is_array(ASRUtils::expr_type(m_selector))) {
                             trait_call_error("a trait guard requires a scalar selector",
                                 guard_loc);
                         }
-                        if (!seen_traits.insert(guard_trait).second) {
+                        if (guard_trait && !seen_traits.insert(guard_trait).second) {
                             trait_call_error("duplicate nominal select type guard", guard_loc);
                         }
                         if (assoc_sym) current_scope->erase_symbol(std::string(assoc_name));
                         SymbolTable *block_scope = current_scope;
                         current_scope = parent_scope;
-                        auto trait_guard = select_type_trait_evidence(*guard_trait,
-                            class_stmt->m_id, guard_loc);
+                        auto trait_guard = guard_binder
+                            ? trait_parameter_guard(guard_binder, guard_loc)
+                            : select_type_trait_evidence(*guard_trait, class_stmt->m_id,
+                                guard_loc);
                         current_scope = block_scope;
                         std::string block_name = parent_scope->get_unique_name("~select_type_block_");
                         ASR::symbol_t* block_sym = ASR::down_cast<ASR::symbol_t>(ASR::make_Block_t(
@@ -7530,6 +7579,7 @@ public:
 
         ASRUtils::order_select_type_guards(select_type_body.p, select_type_body.size());
         if (!trait_guards.empty()) {
+            check_trait_parameter_guards(trait_guards);
             select_type_default = select_type_trait_dispatch(trait_guards, m_selector,
                 select_type_default);
         }

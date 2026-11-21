@@ -367,6 +367,10 @@ public:
                 }
                 break;
             } case ASR::ttypeType::TraitObjectType: {
+                if (auto *binder = ASRUtils::trait_object_binder(const_cast<ASR::ttype_t*>(t))) {
+                    r = "class(" + std::string(ASRUtils::symbol_name(binder)) + ")";
+                    break;
+                }
                 auto *contract = ASRUtils::trait_runtime_contract(const_cast<ASR::ttype_t*>(t));
                 r = "class(" + ASRUtils::trait_contract_name(*contract) + ")";
                 break;

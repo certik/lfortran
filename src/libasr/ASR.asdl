@@ -449,7 +449,9 @@ expr
     -- through the runtime conformance table of the dynamic type, or else by
     -- being exactly the lifecycle type of one of witnesses, the retroactive
     -- conformances to that contract visible where the query is made. type is
-    -- Logical.
+    -- Logical. Within a generic, contract may be the binder of a trait
+    -- parameter (`class is (P)`); instantiation replaces it with the
+    -- contract of the bound trait and the witnesses visible there.
     | TraitConforms(expr selector, symbol contract, symbol* witnesses, ttype type)
     -- A borrowed view (TraitObjectType of contract) of selector's payload with
     -- the conformance that TraitConforms with the same operands finds, which
@@ -502,6 +504,11 @@ ttype
     | TypeParameter(identifier param, deferred_type_attr deferred_attr, bool is_class)
     | Array(ttype type, dimension* dims, array_physical_type physical_type, memory_space memory_space)
     | FunctionType(ttype* arg_types, ttype? return_var_type, abi abi, deftype deftype, string? bindc_name, bool elemental, bool pure, bool module, bool inline, bool static, symbol* restrictions, bool is_restriction, exec_space exec_space)
+    -- contract is a TraitRuntimeContract or, only within a generic, the
+    -- binder of a trait parameter `{Trait :: P}` (a Variable whose type is a
+    -- TypeParameter with deferred_attr TraitParameter): `class(P)`, a trait
+    -- object of the trait bound to P. Instantiation replaces the binder with
+    -- the contract of the bound trait.
     | TraitObjectType(symbol contract)
     -- Compiler-owned retained results; each element owns a separate header.
     | TraitOwnerList(symbol contract)
@@ -524,7 +531,12 @@ cast_kind = RealToInteger | IntegerToReal | LogicalToReal | RealToReal | Integer
 -- subsumes `Extensible`, because a deferred type with the ABSTRACT
 -- attribute implicitly has the EXTENSIBLE attribute (16.4.1.2 paragraph 2);
 -- `NonExtensible` is a plain `deferred type ::` with no attribute.
-deferred_type_attr = NonExtensible | Extensible | Abstract
+-- `TraitParameter` marks the binder of a trait parameter `{Trait :: P}` of a
+-- generic procedure (traits extension, E1): it ranges over traits, not
+-- types, so it is used only as `class(P)` (a TraitObjectType of the binder),
+-- in `class is (P)` guards, as the constraint of another parameter and as a
+-- generic argument; `type(P)` is invalid.
+deferred_type_attr = NonExtensible | Extensible | Abstract | TraitParameter
 cptr_kind = CPointer | CFunPointer | CPtrUnspecified
 -- Association is a construct-local data alias bound once by Associate.
 -- It owns no storage and confers neither POINTER nor ALLOCATABLE.

@@ -7,7 +7,7 @@ Whether a deferred type may be extended, and whether it is abstract.
 ### Syntax
 
 ```text
-deferred_type_attr = NonExtensible | Extensible | Abstract
+deferred_type_attr = NonExtensible | Extensible | Abstract | TraitParameter
 ```
 
 ### Values
@@ -17,6 +17,7 @@ deferred_type_attr = NonExtensible | Extensible | Abstract
 | `NonExtensible` | the type is neither extensible nor abstract. An instantiation argument for it may be any non-extensible type, and only `TYPE(t)` can declare an entity of it. |
 | `Extensible` | the type is extensible: it may be extended, so `CLASS(t)` can declare a polymorphic entity of it. An instantiation argument for it shall be an extensible, non-abstract type. |
 | `Abstract` | the type is abstract, and therefore also extensible. `TYPE(t)` cannot declare an entity of it, only `CLASS(t)` can. An instantiation argument for it shall be an abstract type. |
+| `TraitParameter` | the binder of a trait parameter `{Trait :: P}` of a generic procedure (traits extension): it ranges over traits, not types. `CLASS(P)` declares a trait object of the trait bound to it, a [TraitObjectType](../type_nodes/TraitObjectType.md) whose contract is the binder; `TYPE(P)` is invalid. Its argument shall be a trait. |
 
 ### Return values
 

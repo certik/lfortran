@@ -17,6 +17,12 @@ queried trait. `witnesses` are the `TraitWitness` symbols of the retroactive
 conformances to that contract visible where the query is made, at most one per
 type. `type` is `Logical`. This expression has no constant value.
 
+Within a generic procedure, `contract` may instead be the binder of a trait
+parameter `{Trait :: P}`, for a `CLASS IS (P)` guard, with no witnesses. The
+instantiation of the generic replaces it with the contract of the trait bound
+to `P` and the retroactive witnesses visible where the generic is defined or
+instantiated, or, when `P` is passed on, with the caller's binder.
+
 ## Semantics
 
 The result is true when the dynamic type of `selector` conforms to the trait of

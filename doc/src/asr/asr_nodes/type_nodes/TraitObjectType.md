@@ -12,7 +12,11 @@ TraitObjectType(symbol contract)
 ```
 
 `contract` references the canonical `TraitRuntimeContract`, through a visible
-symbol. Its slot interfaces describe all ordinary arguments and results.
+symbol. Only within a generic procedure, it may instead be the binder of a
+trait parameter `{Trait :: P}` (a `Variable` whose
+[TypeParameter](TypeParameter.md) has the `deferred_attr` `TraitParameter`):
+`class(P)`, a trait object of the trait bound to `P`, which instantiation
+replaces with that trait's contract. Its slot interfaces describe all ordinary arguments and results.
 A bare view is a required, nonpointer, nonallocatable scalar `intent(in)` or
 `intent(inout)` dummy. Through an `intent(in)` view, only messages whose
 receiver is not `intent(inout)` or `intent(out)` can be called.

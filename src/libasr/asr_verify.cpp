@@ -3194,6 +3194,13 @@ public:
             "A trait view must reference a visible runtime contract");
         if (!check_external) return;
         auto *symbol = ASRUtils::symbol_get_past_external(x.m_contract);
+        if (ASRUtils::trait_parameter_binder(symbol)) {
+            // class(P) of a trait parameter, only within its generic.
+            require_id(_inside_template,
+                "asr.verify.trait_view.trait_parameter",
+                "A trait object of a trait parameter may exist only within its generic");
+            return;
+        }
         require_id(symbol && ASR::is_a<TraitRuntimeContract_t>(*symbol),
             "asr.verify.trait_view.contract",
             "A trait view must reference a runtime contract");
@@ -4298,6 +4305,14 @@ public:
         }
         if (!check_external) return;
         auto *contract = ASRUtils::symbol_get_past_external(x.m_contract);
+        if (ASRUtils::trait_parameter_binder(contract)) {
+            // `class is (P)` of a trait parameter, resolved by instantiation.
+            require_id(_inside_template && x.n_witnesses == 0,
+                "asr.verify.trait_conformance.trait_parameter",
+                "A conformance query of a trait parameter may exist only within its "
+                "generic, without witnesses");
+            return;
+        }
         require_id(contract && ASR::is_a<TraitRuntimeContract_t>(*contract) &&
                 !ASR::down_cast<TraitRuntimeContract_t>(contract)->m_anonymous,
             "asr.verify.trait_conformance.contract",

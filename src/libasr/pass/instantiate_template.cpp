@@ -20,6 +20,42 @@ static void retain_trait_lifecycle_effects(ASR::Function_t &function) {
     }
 }
 
+// class(P) of a trait parameter P bound in `types`: a trait object of the
+// bound trait's contract, imported into `scope`, or class(Q) of the caller's
+// trait parameter Q that P is forwarded to. Any other type is unchanged.
+static ASR::ttype_t *substitute_trait_parameter_object(Allocator &al, ASR::ttype_t *type,
+        const std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &types,
+        SymbolTable *scope) {
+    if (!type || !ASR::is_a<ASR::TraitObjectType_t>(*type)) return type;
+    ASR::symbol_t *binder = ASRUtils::trait_object_binder(type);
+    if (!binder) return type;
+    auto bound = types.find(ASRUtils::symbol_name(binder));
+    if (bound == types.end() || !bound->second.first) return type;
+    if (ASR::is_a<ASR::TraitObjectType_t>(*bound->second.first)) {
+        return ASRUtils::import_trait_type(al, ASRUtils::duplicate_type(al,
+            bound->second.first), scope);
+    }
+    if (ASR::is_a<ASR::TypeParameter_t>(*bound->second.first) && bound->second.second) {
+        return ASRUtils::TYPE(ASR::make_TraitObjectType_t(al, type->base.loc,
+            bound->second.second));
+    }
+    return type;
+}
+
+// The contract that a conformance query of the trait parameter `contract`
+// names once its binder is bound in `types`: the bound trait's contract,
+// imported into `scope`, or the binder it is forwarded to. Any other
+// contract is unchanged.
+static ASR::symbol_t *substitute_trait_parameter_contract(Allocator &al,
+        ASR::symbol_t *contract,
+        const std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &types,
+        SymbolTable *scope) {
+    if (!ASRUtils::trait_parameter_binder(contract)) return contract;
+    auto *type = substitute_trait_parameter_object(al, ASRUtils::TYPE(
+        ASR::make_TraitObjectType_t(al, contract->base.loc, contract)), types, scope);
+    return ASR::down_cast<ASR::TraitObjectType_t>(type)->m_contract;
+}
+
 namespace LPython {
 
 class SymbolRenamer : public ASR::BaseExprStmtDuplicator<SymbolRenamer>
@@ -2979,8 +3015,16 @@ public:
                 return ASRUtils::make_Pointer_t_util(al, ttype->base.loc,
                     substitute_type(expr, p->m_type));
             }
+            case (ASR::ttypeType::TraitObjectType) : {
+                return substitute_trait_parameter_object(al, ttype, type_subs, target_scope);
+            }
             default : return ttype;
         }
+    }
+
+    ASR::asr_t *duplicate_TraitObjectType(ASR::TraitObjectType_t *x) {
+        return &substitute_trait_parameter_object(al, &x->base, type_subs,
+            target_scope)->base;
     }
 
 };
@@ -3375,7 +3419,44 @@ public:
     }
 
     ASR::asr_t *duplicate_TraitObjectType(ASR::TraitObjectType_t *x) {
-        return &ASRUtils::import_trait_type(al, &x->base, new_scope)->base;
+        return &ASRUtils::import_trait_type(al, substitute_trait_parameter_object(
+            al, &x->base, type_subs, new_scope), new_scope)->base;
+    }
+
+    // `class is (P)` of a trait parameter P queries the trait bound to P,
+    // with the retroactive conformances to it visible where the generic is
+    // defined or instantiated (recorded under trait_guard_witness_key), or
+    // stays a query of the binder P is forwarded to.
+    template <typename T>
+    void substitute_trait_parameter_query(T *query, ASR::symbol_t *contract) {
+        if (!ASRUtils::trait_parameter_binder(contract)) return;
+        query->m_contract = substitute_trait_parameter_contract(al, contract, type_subs,
+            new_scope);
+        if (ASRUtils::trait_parameter_binder(query->m_contract)) return;
+        Vec<ASR::symbol_t*> witnesses;
+        witnesses.reserve(al, 0);
+        for (size_t i = 0; ; i++) {
+            auto witness = symbol_subs.find(ASRUtils::trait_guard_witness_key(
+                ASRUtils::symbol_name(contract), i));
+            if (witness == symbol_subs.end()) break;
+            witnesses.push_back(al, witness->second);
+        }
+        query->m_witnesses = witnesses.p;
+        query->n_witnesses = witnesses.size();
+    }
+
+    ASR::asr_t *duplicate_TraitConforms(ASR::TraitConforms_t *x) {
+        auto *query = ASR::down_cast2<ASR::TraitConforms_t>(
+            BaseExprStmtDuplicator<BodyInstantiator>::duplicate_TraitConforms(x));
+        substitute_trait_parameter_query(query, x->m_contract);
+        return &query->base.base;
+    }
+
+    ASR::asr_t *duplicate_TraitDiscover(ASR::TraitDiscover_t *x) {
+        auto *query = ASR::down_cast2<ASR::TraitDiscover_t>(
+            BaseExprStmtDuplicator<BodyInstantiator>::duplicate_TraitDiscover(x));
+        substitute_trait_parameter_query(query, x->m_contract);
+        return &query->base.base;
     }
 
     ASR::asr_t *duplicate_TraitDeferredPack(ASR::TraitDeferredPack_t *x) {
@@ -4255,7 +4336,8 @@ public:
             // scope the instantiation cannot see, e.g. a component's.
             case (ASR::ttypeType::TraitObjectType) :
             case (ASR::ttypeType::TraitOwnerList) : {
-                return ASRUtils::import_trait_type(al, ttype, new_scope);
+                return ASRUtils::import_trait_type(al, substitute_trait_parameter_object(
+                    al, ttype, type_subs, new_scope), new_scope);
             }
             default : return ttype;
         }

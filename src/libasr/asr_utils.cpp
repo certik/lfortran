@@ -6685,6 +6685,33 @@ ASR::symbol_t *unconstrained_type_parameter(SymbolTable *scope, const std::strin
     return nullptr;
 }
 
+ASR::symbol_t *trait_parameter_binder(ASR::symbol_t *symbol)
+{
+    symbol = symbol_get_past_external(symbol);
+    if (!symbol || !ASR::is_a<ASR::Variable_t>(*symbol)) return nullptr;
+    auto *type = ASR::down_cast<ASR::Variable_t>(symbol)->m_type;
+    if (!type || !ASR::is_a<ASR::TypeParameter_t>(*type) ||
+            ASR::down_cast<ASR::TypeParameter_t>(type)->m_deferred_attr !=
+                ASR::deferred_type_attrType::TraitParameter) return nullptr;
+    // The procedure of a generic repeats the declarations of its binders,
+    // which its scope encloses; the binder is the generic's own.
+    SymbolTable *scope = symbol_parent_symtab(symbol);
+    if (scope && scope->parent) {
+        ASR::symbol_t *binder = scope->parent->get_symbol(symbol_name(symbol));
+        if (binder && binder != symbol && trait_parameter_binder(binder)) {
+            return trait_parameter_binder(binder);
+        }
+    }
+    return symbol;
+}
+
+ASR::symbol_t *trait_object_binder(ASR::ttype_t *type)
+{
+    type = type ? extract_type(type) : nullptr;
+    if (!type || !ASR::is_a<ASR::TraitObjectType_t>(*type)) return nullptr;
+    return trait_parameter_binder(ASR::down_cast<ASR::TraitObjectType_t>(type)->m_contract);
+}
+
 ASR::symbol_t *trait_type_parameter(ASR::expr_t *value)
 {
     if (!value) return nullptr;
@@ -7017,6 +7044,11 @@ std::string trait_deferred_pack_key(const ASR::TraitDeferredPack_t &pack)
         nominal_symbol_name(&trait_runtime_contract(pack.m_type)->base);
 }
 
+std::string trait_guard_witness_key(const std::string &binder, size_t index)
+{
+    return "~trait_guard_witness:" + binder + ":" + std::to_string(index);
+}
+
 std::string trait_generic_correspondence(const ASR::Function_t &left,
     const ASR::Function_t &right,
     std::map<ASR::symbol_t*, ASR::symbol_t*> &parameters)
@@ -7037,6 +7069,14 @@ std::string trait_generic_correspondence(const ASR::Function_t &left,
                 !ASR::is_a<ASR::TypeParameter_t>(*symbol_type(ap)) ||
                 !ASR::is_a<ASR::TypeParameter_t>(*symbol_type(bp))) {
             return "generic type parameter declarations are missing";
+        }
+        // Trait parameters correspond to trait parameters.
+        if (bool(trait_parameter_binder(ap)) != bool(trait_parameter_binder(bp))) {
+            return "generic type parameter constraints must be nominally equivalent";
+        }
+        if (trait_parameter_binder(ap)) {
+            parameters.emplace(ap, bp);
+            continue;
         }
         auto ac = trait_parameter_traits(ap), bc = trait_parameter_traits(bp);
         if (ac.empty() || ac != bc) {
@@ -7115,8 +7155,11 @@ ASR::TraitRuntimeContract_t *trait_runtime_contract(ASR::symbol_t *trait)
 
 ASR::TraitRuntimeContract_t *trait_runtime_contract(ASR::ttype_t *view_type)
 {
-    return ASR::down_cast<ASR::TraitRuntimeContract_t>(symbol_get_past_external(
-        ASR::down_cast<ASR::TraitObjectType_t>(extract_type(view_type))->m_contract));
+    auto *contract = symbol_get_past_external(
+        ASR::down_cast<ASR::TraitObjectType_t>(extract_type(view_type))->m_contract);
+    // The contract of class(P) is not known until P is instantiated.
+    if (trait_parameter_binder(contract)) return nullptr;
+    return ASR::down_cast<ASR::TraitRuntimeContract_t>(contract);
 }
 
 ASR::TraitDictionaryContract_t *trait_dictionary_contract(ASR::symbol_t *trait)
@@ -7341,8 +7384,9 @@ bool trait_contracts_equal(ASR::symbol_t *left, ASR::symbol_t *right)
 
 bool trait_contracts_equal(ASR::ttype_t *left, ASR::ttype_t *right)
 {
-    return trait_contracts_equal(&trait_runtime_contract(left)->base,
-        &trait_runtime_contract(right)->base);
+    return trait_contracts_equal(
+        ASR::down_cast<ASR::TraitObjectType_t>(extract_type(left))->m_contract,
+        ASR::down_cast<ASR::TraitObjectType_t>(extract_type(right))->m_contract);
 }
 
 std::string trait_contract_name(const ASR::TraitRuntimeContract_t &contract)
@@ -8621,6 +8665,13 @@ static bool trait_types_equal_impl(ASR::expr_t *left, ASR::expr_t *right,
         return (ap == bp || (bound != parameters.end() && bound->second == bp)) &&
             at->m_is_class == bt->m_is_class &&
             at->m_deferred_attr == bt->m_deferred_attr;
+    }
+    if (trait_object_binder(a) || trait_object_binder(b)) {
+        // class(P) of corresponding trait parameters.
+        auto *ap = trait_object_binder(a), *bp = trait_object_binder(b);
+        if (!ap || !bp) return false;
+        auto bound = parameters.find(ap);
+        return ap == bp || (bound != parameters.end() && bound->second == bp);
     }
     if (ASR::is_a<ASR::StructType_t>(*a)) {
         const auto *a_type = ASR::down_cast<ASR::StructType_t>(a);
@@ -11941,6 +11992,9 @@ std::string type_to_str_fortran_symbol(const ASR::ttype_t* t,
             return ASRUtils::symbol_name(struct_sym);
         }
         case ASR::ttypeType::TraitObjectType: {
+            if (auto *binder = trait_object_binder(const_cast<ASR::ttype_t*>(t))) {
+                return "class(" + std::string(symbol_name(binder)) + ")";
+            }
             auto *contract = ASR::down_cast<ASR::TraitRuntimeContract_t>(
                 symbol_get_past_external(ASR::down_cast<ASR::TraitObjectType_t>(t)->m_contract));
             return "class(" + trait_contract_name(*contract) + ")";

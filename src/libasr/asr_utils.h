@@ -4762,6 +4762,13 @@ ASR::symbol_t *trait_type_parameter(ASR::expr_t *value);
 // generic with requirements is a template, whose deferred types are not
 // binders.
 ASR::symbol_t *unconstrained_type_parameter(SymbolTable *scope, const std::string &name);
+// The binder of a trait parameter `{Trait :: P}` (E1) that `symbol` is, a
+// Variable whose type is a TypeParameter with deferred_attr TraitParameter,
+// or nullptr.
+ASR::symbol_t *trait_parameter_binder(ASR::symbol_t *symbol);
+// The binder P of `class(P)`: of a TraitObjectType (past arrays, pointers
+// and allocatables) whose contract is still a trait parameter, or nullptr.
+ASR::symbol_t *trait_object_binder(ASR::ttype_t *type);
 std::vector<ASR::symbol_t*> trait_parameter_traits(ASR::symbol_t *parameter);
 // The runtime contract that erases a binder: that of its single nominal
 // trait, unless the trait has requirements without a receiver, which no view
@@ -4858,6 +4865,10 @@ size_t trait_member_slot(const ASR::TraitRuntimeContract_t &contract, size_t fam
 ASR::symbol_t *import_trait_slot(Allocator &al, ASR::TraitRuntimeContract_t &contract,
     size_t slot, SymbolTable *scope, const std::string &message, const Location &loc);
 std::string trait_deferred_pack_key(const ASR::TraitDeferredPack_t &pack);
+// The key under which the instantiation of a generic records the `index`-th
+// retroactive witness visible for the `class is (P)` guards of its trait
+// parameter `binder`.
+std::string trait_guard_witness_key(const std::string &binder, size_t index);
 std::string trait_generic_correspondence(const ASR::Function_t &left,
     const ASR::Function_t &right,
     std::map<ASR::symbol_t*, ASR::symbol_t*> &parameters);

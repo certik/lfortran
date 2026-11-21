@@ -703,6 +703,56 @@ generic procedure, so a `deferred type :: t` statement in it is an error.
 
 See `integration_tests/traits_anytype_01.f90`.
 
+### Trait parameters
+
+A generic parameter declared with the predefined meta-trait `Trait` ranges
+over traits, not types (DI extension E1). Its argument is a trait, given
+explicitly or inferred from a trait object passed for a `class(P)` dummy:
+
+```fortran
+function resolve{Trait :: P}(self) result(res)
+    type(Container), intent(in) :: self
+    class(P), allocatable :: res
+    integer :: i
+    do i = 1, 3
+        select type (obj => any_object(self, i))
+        class is (P)
+            res = obj
+            return
+        end select
+    end do
+    error stop "no registration"
+end function resolve
+```
+
+With `procedure :: resolve` bound to a sealed `Container`,
+`cont%resolve{IClient}()` and `cont%resolve{ILogger}()` are static instances
+in which `P` is the trait: `class(P)` declares a trait object of it (a dummy,
+a local, an allocatable result) and `class is (P)` is the ordinary
+conformance query for it (see "Conformance queries in SELECT TYPE"). The
+query of an instance also finds the retroactive conformances visible where
+the generic is defined or where it is instantiated. A trait parameter can be
+passed on to another generic, `kept{P}(view)`.
+
+Inside the generic the trait is unknown, so `class(P)` objects have no
+messages: they are declared, assigned, allocated, queried and passed on. A
+trait is not a type, so `type(P)` and `type is (P)` are errors, as are a type
+argument for a trait parameter and a trait argument for a type parameter.
+`Trait` is not reserved, and a variable may be named `trait`.
+
+Not yet implemented: trait combinations such as `IA + IB` as arguments of a
+trait parameter, trait parameters of generic derived types, arrays and associate names of
+`class(P)` objects, `select type` on a `class(P)` selector, a `class is (P)`
+guard together with other trait guards in one `select type`, and generic
+messages with trait parameters in generic constraints. Calling such a generic
+message through a trait object (E10) is not implemented either: a trait with
+one, such as `IResolver` with `resolve{Trait :: P}`, cannot be used in
+`class(IResolver)` yet, although a type can implement it and its instances
+can be called statically.
+
+See `integration_tests/traits_trait_param_01.f90` and the diagnostics in
+`tests/errors/continue_compilation_traits_trait_param.f90`.
+
 ### Explicit procedure values
 
 Without an ordinary actual-argument list, braces select a procedure itself,
@@ -3656,6 +3706,17 @@ signature compatibility, and agreement with the effective ordinary binding.
 `Struct::is_sealed` is checked both when declaring an extension and by ASR
 verification. Both fields are serialized, rather than inferred from names,
 layouts, or LLVM types.
+
+A trait parameter `{Trait :: P}` is a binder whose `TypeParameter` has the
+`deferred_attr` `TraitParameter`. Within the generic, `class(P)` is a
+`TraitObjectType` whose contract is the binder itself, and `class is (P)` is a
+`TraitConforms`/`TraitDiscover` pair whose contract is the binder, without
+witnesses. The shared instantiator binds `P` to the `TraitObjectType` of the
+argument trait's runtime contract and replaces the binder in these types and
+queries with that contract, adding the retroactive witnesses that the
+semantic phase records for the instance; a forwarded `P` is replaced by the
+caller's binder. This representation leaves room for erasing `P` with a trait descriptor
+instead of instantiating it.
 
 Constrained generic procedures use the existing `Template` carrier and shared
 type/symbol substitution and body-instantiation machinery. A normalized

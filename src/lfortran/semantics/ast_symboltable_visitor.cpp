@@ -5569,6 +5569,8 @@ public:
         std::set<std::string> parameters;
         std::vector<std::vector<ASR::symbol_t*>> parameter_traits(x.n_parameters);
         std::vector<Vec<ASR::ttype_t*>> parameter_members(x.n_parameters);
+        // `{Trait :: P}` declares a trait parameter (E1).
+        std::set<std::string> trait_parameters;
         for (size_t i = 0; i < x.n_parameters; i++) {
             const auto &parameter = x.m_parameters[i];
             std::string name = to_lower(parameter.m_name);
@@ -5580,6 +5582,18 @@ public:
             if (parameter.n_member_types) {
                 parameter_members[i] = resolve_type_set_members(
                     parameter.m_member_types, parameter.n_member_types, name);
+                continue;
+            }
+            bool meta = false;
+            for (size_t j = 0; j < parameter.n_traits; j++) {
+                if (is_trait_meta_constraint(parameter.m_traits[j].m_name)) meta = true;
+            }
+            if (meta) {
+                if (parameter.n_traits != 1 || parameter.m_traits[0].n_bindings) {
+                    trait_error("the meta-trait Trait cannot be combined with other "
+                        "constraints", parameter.loc);
+                }
+                trait_parameters.insert(name);
                 continue;
             }
             // An unconstrained parameter, `{U}` or `{AnyType :: U}`, admits
@@ -5613,7 +5627,17 @@ public:
         }
         check_trait_procedure_deferred_types(x, parameters);
         AST::program_unit_t *lowered = lower_trait_procedure(al, x);
-        visit_program_unit(*lowered);
+        {
+            auto saved_trait_parameters = declared_trait_parameter_names;
+            declared_trait_parameter_names = trait_parameters;
+            try {
+                visit_program_unit(*lowered);
+            } catch (const SemanticAbort &) {
+                declared_trait_parameter_names = saved_trait_parameters;
+                throw;
+            }
+            declared_trait_parameter_names = saved_trait_parameters;
+        }
         const char *name = AST::is_a<AST::Function_t>(*lowered)
             ? AST::down_cast<AST::Function_t>(lowered)->m_name
             : AST::down_cast<AST::Subroutine_t>(lowered)->m_name;
@@ -5928,6 +5952,14 @@ public:
     ASR::symbol_t *create_generic_trait_requirement(ASR::Function_t &method,
             ASR::Template_t &message, ASR::symbol_t *type_symbol, SymbolTable *scope,
             const Location &loc) {
+        for (size_t i = 0; i < message.n_args; i++) {
+            if (ASRUtils::trait_parameter_binder(
+                    message.m_symtab->get_symbol(message.m_args[i]))) {
+                trait_error("generic message '" + std::string(method.m_name) + "' with the "
+                    "trait parameter '" + std::string(message.m_args[i]) + "' in a generic "
+                    "constraint is not implemented yet", loc);
+            }
+        }
         std::string receiver = ASRUtils::symbol_name(type_symbol);
         std::string name = scope->get_unique_name(
             "__trait_" + receiver + "_" + std::string(method.m_name));
@@ -9995,6 +10027,10 @@ public:
                 for (size_t j = 0; !parameter.n_member_types && j < parameter.n_traits; j++) {
                     std::string trait_name = to_lower(parameter.m_traits[j].m_name);
                     if (is_any_type_constraint(trait_name)) continue;
+                    if (is_trait_meta_constraint(trait_name)) {
+                        trait_error("trait parameters of generic derived types are not "
+                            "implemented yet", parameter.loc);
+                    }
                     ASR::symbol_t *symbol = scope->resolve_symbol(trait_name);
                     // Bare intrinsic keywords remain names in the AST. A
                     // visible trait wins; an explicit kind takes the type-set path.

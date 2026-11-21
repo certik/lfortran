@@ -12716,6 +12716,18 @@ public:
         return to_lower(name) == "anytype";
     }
 
+    // `Trait` is the predefined meta-trait, which every trait satisfies: in
+    // a constraint, `{Trait :: P}` declares a trait parameter (E1). Like
+    // AnyType it is not reserved.
+    static bool is_trait_meta_constraint(const std::string &name) {
+        return to_lower(name) == "trait";
+    }
+
+    // The names of the trait parameters of the generic procedure whose
+    // deferred binders are being declared: their binders are marked with
+    // deferred_attr TraitParameter.
+    std::set<std::string> declared_trait_parameter_names;
+
     // Like an intrinsic type name (F2023 7.5.2.1), the predefined names of
     // the traits extension cannot name a derived type or a trait.
     void check_predefined_trait_name(const std::string &name, const std::string &entity,
@@ -12914,6 +12926,9 @@ public:
                 : (n_extensible_attr > 0
                     ? ASR::deferred_type_attrType::Extensible
                     : ASR::deferred_type_attrType::NonExtensible);
+            if (declared_trait_parameter_names.count(dt_name)) {
+                deferred_attr = ASR::deferred_type_attrType::TraitParameter;
+            }
             ASR::asr_t *tp = ASR::make_TypeParameter_t(al, x.base.base.loc,
                 s2c(al, dt_name), deferred_attr, false);
             tmp = ASRUtils::make_Variable_t_util(al, x.base.base.loc, current_scope, s2c(al, dt_name),
@@ -14724,6 +14739,11 @@ public:
                 ASR::TypeParameter_t* tp = ASR::down_cast<ASR::TypeParameter_t>(
                     ASRUtils::type_get_past_array(
                         ASR::down_cast<ASR::Variable_t>(v)->m_type));
+                if (tp->m_deferred_attr == ASR::deferred_type_attrType::TraitParameter) {
+                    trait_call_error("trait parameter '" + derived_type_name + "' cannot "
+                        "be used in type(" + derived_type_name + "): a trait is not a "
+                        "type; use class(" + derived_type_name + ") for a trait object", loc);
+                }
                 // C707: "In a declaration-type-spec, TYPE(derived-type-spec) or
                 // TYPE ( deferred-type-name ) shall not specify an abstract
                 // type." (Fortran 2028 working draft J3/26-007r1, 7.3.2.1);
@@ -14865,24 +14885,7 @@ public:
             check_generic_type_reference(v, derived_type_name, loc);
             if (v && ASRUtils::symbol_get_past_external(v)
                     && ASR::is_a<ASR::Trait_t>(*ASRUtils::symbol_get_past_external(v))) {
-                auto *trait = ASR::down_cast<ASR::Trait_t>(
-                    ASRUtils::symbol_get_past_external(v));
-                if (trait->m_kind == ASR::trait_kindType::IntrinsicTypeSet) {
-                    trait_call_error("a type-set trait cannot be used as a runtime class", loc);
-                }
-                check_runtime_trait_without_associated_types(*trait, loc);
-                check_trait_runtime_view(*trait, loc);
-                check_runtime_trait_length_wildcards(*trait, loc);
-                check_runtime_trait_results(*trait, loc);
-                auto *contract = ASRUtils::trait_runtime_contract(v);
-                if (!contract) {
-                    std::string reason = trait_runtime_contract_obstacle(
-                        *ASR::down_cast<ASR::Trait_t>(ASRUtils::symbol_get_past_external(v)), loc);
-                    if (!reason.empty()) {
-                        trait_call_error("runtime views of trait '" + derived_type_name +
-                            "' are not implemented yet: " + reason, loc);
-                    }
-                }
+                auto *contract = checked_runtime_trait_contract(v, derived_type_name, loc);
                 type_declaration = nullptr;
                 return runtime_trait_declared_type(contract, loc, is_pointer, is_allocatable,
                     dims, is_argument, is_assumed_rank);
@@ -14898,6 +14901,13 @@ public:
                 ASR::TypeParameter_t* tp = ASR::down_cast<ASR::TypeParameter_t>(
                     ASRUtils::type_get_past_array(
                         ASR::down_cast<ASR::Variable_t>(v)->m_type));
+                if (tp->m_deferred_attr == ASR::deferred_type_attrType::TraitParameter) {
+                    // class(P): a trait object of the trait bound to P.
+                    type_declaration = nullptr;
+                    return runtime_trait_declared_type(nullptr, loc, is_pointer,
+                        is_allocatable, dims, is_argument, is_assumed_rank,
+                        ASRUtils::trait_parameter_binder(v));
+                }
                 // C706: "In a declaration-type-spec, CLASS ( derived-type-spec )
                 // or CLASS ( deferred-type-name ) shall specify an extensible
                 // type." (Fortran 2028 working draft J3/26-007r1, 7.3.2.1). A
@@ -18405,6 +18415,8 @@ public:
                     ASRUtils::duplicate_type(al, return_type), current_scope);
             }
             case ASR::ttypeType::TraitObjectType: {
+                // class(P) of a trait parameter P forwarded from here.
+                if (ASRUtils::trait_object_binder(return_type)) return return_type;
                 auto *contract = ASRUtils::trait_runtime_contract(return_type);
                 auto *reference = make_operator_proc_visible(
                     &contract->base, "trait", current_scope);
@@ -28176,9 +28188,37 @@ public:
         // after the independent generic type parameters have been inferred.
         if (ASRUtils::is_class_type(formal_type) &&
                 ASR::is_a<ASR::StructType_t>(*actual_type)) return true;
+        if (auto *binder = ASRUtils::trait_object_binder(formal_type)) {
+            // class(P): a trait object binds the trait parameter P to its
+            // named trait, or forwards the caller's trait parameter.
+            auto &bound = type_subs[ASRUtils::symbol_name(binder)];
+            if (ASR::is_a<ASR::StructType_t>(*actual_type)) return true;
+            if (!ASR::is_a<ASR::TraitObjectType_t>(*actual_type)) return false;
+            ASR::symbol_t *forwarded = ASRUtils::trait_object_binder(actual_type);
+            auto *contract = ASRUtils::trait_runtime_contract(actual_type);
+            if (bound.first) {
+                if (forwarded) {
+                    return ASRUtils::symbol_get_past_external(bound.second) == forwarded;
+                }
+                return ASR::is_a<ASR::TraitObjectType_t>(*bound.first) &&
+                    !ASRUtils::trait_object_binder(bound.first) &&
+                    ASRUtils::trait_contract_implies(*contract,
+                        *ASRUtils::trait_runtime_contract(bound.first));
+            }
+            if (forwarded) {
+                bound = {ASRUtils::duplicate_type(al, ASRUtils::symbol_type(forwarded)),
+                    forwarded};
+            } else if (!contract->m_anonymous) {
+                bound = {ASRUtils::TYPE(ASR::make_TraitObjectType_t(al, actual_expr->base.loc,
+                    ASR::down_cast<ASR::TraitObjectType_t>(actual_type)->m_contract)),
+                    contract->m_trait};
+            }
+            return true;
+        }
         if (ASR::is_a<ASR::TraitObjectType_t>(*formal_type)) {
             if (ASR::is_a<ASR::StructType_t>(*actual_type)) return true;
             if (ASR::is_a<ASR::TraitObjectType_t>(*actual_type)) {
+                if (ASRUtils::trait_object_binder(actual_type)) return false;
                 return ASRUtils::trait_contract_implies(
                     *ASRUtils::trait_runtime_contract(actual_type),
                     *ASRUtils::trait_runtime_contract(formal_type));
@@ -28588,6 +28628,17 @@ public:
         for (auto *member : checked_trait_hierarchy(trait, loc).members) {
             if (ASRUtils::trait_member_is_initializer(member)) continue;
             auto *method = ASRUtils::trait_method_function(member);
+            auto *message = method ? ASRUtils::trait_method_template(*method) : nullptr;
+            for (size_t i = 0; message && i < message->n_args; i++) {
+                if (ASRUtils::trait_parameter_binder(
+                        message->m_symtab->get_symbol(message->m_args[i]))) {
+                    trait_call_error("calling generic message '" +
+                        ASRUtils::trait_member_display_name(member) + "' of trait '" +
+                        std::string(trait.m_name) + "', which has the trait parameter '" +
+                        std::string(message->m_args[i]) + "', through trait objects is "
+                        "not implemented yet", loc);
+                }
+            }
             std::string result = method ? ASRUtils::runtime_trait_unsupported_result(*method) : "";
             if (!result.empty()) {
                 trait_call_error(std::string("runtime dispatch of ") +
@@ -28660,7 +28711,12 @@ public:
     // allocatable dummy, local variable or component.
     ASR::ttype_t *runtime_trait_declared_type(ASR::TraitRuntimeContract_t *contract,
             const Location &loc, bool pointer, bool allocatable,
-            Vec<ASR::dimension_t> &dims, bool is_argument, bool assumed_rank) {
+            Vec<ASR::dimension_t> &dims, bool is_argument, bool assumed_rank,
+            ASR::symbol_t *trait_binder = nullptr) {
+        if (trait_binder && (dims.size() || assumed_rank)) {
+            trait_call_error("arrays of trait objects of a trait parameter are not "
+                "implemented yet", loc);
+        }
         bool assumed_shape = dims.size() && !assumed_rank;
         for (size_t i = 0; i < dims.size(); i++) {
             if (dims[i].m_length) assumed_shape = false;
@@ -28676,21 +28732,53 @@ public:
                     "allocatable storage", loc);
             }
             return runtime_trait_type(contract, loc, pointer, allocatable,
-                dims.size() || assumed_rank);
+                dims.size() || assumed_rank, trait_binder);
         }
-        auto *view = runtime_trait_type(contract, loc, false, false, false);
+        auto *view = runtime_trait_type(contract, loc, false, false, false, trait_binder);
         auto *array = ASRUtils::make_Array_t_util(al, loc, view, dims.p, dims.size(),
             ASR::abiType::Source, true);
         return owner ? ASRUtils::TYPE(ASR::make_Allocatable_t(al, loc, array)) : array;
     }
 
+    // The runtime contract of the trait `v` that class(v) declares a trait
+    // object of, with the checks of a runtime view; nullptr if the trait's
+    // messages have no runtime dispatch yet.
+    ASR::TraitRuntimeContract_t *checked_runtime_trait_contract(ASR::symbol_t *v,
+            const std::string &name, const Location &loc) {
+        auto *trait = ASR::down_cast<ASR::Trait_t>(ASRUtils::symbol_get_past_external(v));
+        if (trait->m_kind == ASR::trait_kindType::IntrinsicTypeSet) {
+            trait_call_error("a type-set trait cannot be used as a runtime class", loc);
+        }
+        check_runtime_trait_without_associated_types(*trait, loc);
+        check_trait_runtime_view(*trait, loc);
+        check_runtime_trait_length_wildcards(*trait, loc);
+        check_runtime_trait_results(*trait, loc);
+        auto *contract = ASRUtils::trait_runtime_contract(v);
+        if (!contract) {
+            std::string reason = trait_runtime_contract_obstacle(*trait, loc);
+            if (!reason.empty()) {
+                trait_call_error("runtime views of trait '" + name +
+                    "' are not implemented yet: " + reason, loc);
+            }
+        }
+        return contract;
+    }
+
+    // With `trait_binder`, the binder of a trait parameter P, the type is
+    // class(P), whose contract is the binder until P is instantiated.
     ASR::ttype_t *runtime_trait_type(ASR::TraitRuntimeContract_t *contract,
-            const Location &loc, bool pointer, bool allocatable, bool array) {
+            const Location &loc, bool pointer, bool allocatable, bool array,
+            ASR::symbol_t *trait_binder = nullptr) {
         if (array) {
             trait_call_error("runtime trait arrays other than assumed-shape dummy "
                 "arguments without the allocatable or pointer attribute and "
                 "deferred-shape allocatable dummy arguments, local variables and "
                 "components are not implemented yet", loc);
+        }
+        if (trait_binder) {
+            auto *view = ASRUtils::TYPE(ASR::make_TraitObjectType_t(al, loc, trait_binder));
+            if (pointer) return ASRUtils::TYPE(ASR::make_Pointer_t(al, loc, view));
+            return allocatable ? ASRUtils::TYPE(ASR::make_Allocatable_t(al, loc, view)) : view;
         }
         if (!contract) {
             trait_call_error("runtime dispatch for this trait method signature "
@@ -31172,14 +31260,21 @@ public:
         tmp = nullptr;
         if (ASR::is_a<ASR::TraitObjectType_t>(*ASRUtils::extract_type(source))) {
             if (ASRUtils::is_allocatable(source) || ASRUtils::is_trait_pointer(source)) {
-                auto *contract = ASRUtils::trait_runtime_contract(source);
+                ASR::symbol_t *reference = ASRUtils::trait_object_binder(source);
+                if (!reference) {
+                    reference = make_operator_proc_visible(&ASRUtils::trait_runtime_contract(
+                        source)->base, "trait", current_scope);
+                }
                 auto *view_type = ASRUtils::TYPE(ASR::make_TraitObjectType_t(
-                    al, actual->base.loc, make_operator_proc_visible(
-                        &contract->base, "trait", current_scope)));
+                    al, actual->base.loc, reference));
                 actual = ASRUtils::EXPR(ASR::make_TraitBorrow_t(
                     al, actual->base.loc, actual, view_type));
             }
             project_runtime_trait_view(actual, target);
+            return;
+        }
+        if (auto *binder = ASRUtils::trait_object_binder(target)) {
+            make_trait_parameter_view(actual, target, binder);
             return;
         }
         auto *concrete = ASRUtils::extract_type(source);
@@ -31705,11 +31800,45 @@ public:
             trait_call_error("a typed null runtime trait pointer target requires a "
                 "compatible declared runtime trait contract", value->base.loc);
         }
+        if (ASRUtils::trait_object_binder(source) || ASRUtils::trait_object_binder(target)) {
+            if (ASRUtils::trait_object_binder(source) == ASRUtils::trait_object_binder(target)) {
+                return;
+            }
+            trait_call_error("a typed null runtime trait pointer target requires a "
+                "compatible declared runtime trait contract", value->base.loc);
+        }
         checked_runtime_trait_projection(ASRUtils::trait_runtime_contract(source),
             ASRUtils::trait_runtime_contract(target), value->base.loc);
     }
 
+    // The trait bound to the trait parameter `binder` P is unknown in the
+    // generic, so no value of a type converts to class(P).
+    void make_trait_parameter_view(ASR::expr_t *&actual, ASR::ttype_t * /*target*/,
+            ASR::symbol_t *binder) {
+        auto *source = ASRUtils::expr_type(actual);
+        std::string name = ASRUtils::symbol_name(binder);
+        std::string description = ASR::is_a<ASR::TypeParameter_t>(*source)
+            ? "type(" + std::string(ASR::down_cast<ASR::TypeParameter_t>(source)->m_param) + ")"
+            : ASR::is_a<ASR::StructType_t>(*source) && !ASRUtils::is_class_type(source)
+                ? "type(" + std::string(ASRUtils::symbol_name(ASRUtils::symbol_get_past_external(
+                    ASRUtils::get_struct_sym_from_struct_expr(actual)))) + ")"
+                : ASRUtils::type_to_str_fortran_expr(source, actual);
+        trait_call_error("a value of " + description + " cannot be converted to class(" +
+            name + "): the trait bound to trait parameter '" + name + "' is not known in "
+            "the generic", actual->base.loc);
+    }
+
     void project_runtime_trait_view(ASR::expr_t *&value, ASR::ttype_t *target) {
+        auto *value_binder = ASRUtils::trait_object_binder(ASRUtils::expr_type(value));
+        auto *target_binder = ASRUtils::trait_object_binder(target);
+        if (value_binder || target_binder) {
+            if (value_binder == target_binder) return;
+            trait_call_error("a trait object of " + ASRUtils::type_to_str_fortran_expr(
+                ASRUtils::expr_type(value), value) + " cannot be converted to " +
+                ASRUtils::type_to_str_fortran_symbol(ASRUtils::extract_type(target),
+                    nullptr) + ": the trait bound to a trait parameter is not known "
+                "in the generic", value->base.loc);
+        }
         auto *source_contract = ASRUtils::trait_runtime_contract(ASRUtils::expr_type(value));
         auto *target_contract = ASRUtils::trait_runtime_contract(target);
         if (ASRUtils::trait_contracts_equal(&source_contract->base, &target_contract->base)) return;
@@ -31958,6 +32087,10 @@ public:
         auto *scalar = ASRUtils::extract_type(type);
         if (ASR::is_a<ASR::TraitObjectType_t>(*scalar)) {
             make_runtime_trait_view(value, target);
+            return nullptr;
+        }
+        if (auto *binder = ASRUtils::trait_object_binder(target)) {
+            make_trait_parameter_view(value, target, binder);
             return nullptr;
         }
         // A polymorphic source is borrowed as a view of its dynamic type,
@@ -32214,10 +32347,45 @@ public:
         for (size_t i = 0; i < ordered.size(); i++) {
             ASR::ttype_t *type = nullptr;
             ASR::symbol_t *declaration = nullptr;
+            bool trait_binder = ASRUtils::trait_parameter_binder(
+                generic->m_symtab->get_symbol(generic->m_args[i])) != nullptr;
+            std::string binder_description = "generic parameter '" +
+                trait_binder_display_name(*generic, generic->m_args[i]) + "' of '" +
+                trait_generic_display_name(*generic) + "'";
             if (AST::is_a<AST::AttrName_t>(*ordered[i])) {
                 std::string name = to_lower(
                     AST::down_cast<AST::AttrName_t>(ordered[i])->m_name);
                 declaration = current_scope->resolve_symbol(name);
+                ASR::symbol_t *resolved = declaration
+                    ? ASRUtils::symbol_get_past_external(declaration) : nullptr;
+                if (resolved && ASR::is_a<ASR::Trait_t>(*resolved)) {
+                    // A trait argument binds a trait parameter (E1).
+                    if (!trait_binder) {
+                        trait_call_error("'" + name + "' is a trait, but " +
+                            binder_description + " is a type parameter; a trait "
+                            "argument requires a trait parameter `Trait :: " +
+                            trait_binder_display_name(*generic, generic->m_args[i]) +
+                            "`", loc);
+                    }
+                    auto *contract = checked_runtime_trait_contract(declaration, name, loc);
+                    type = runtime_trait_type(contract, loc, false, false, false);
+                    types[generic->m_args[i]] = {type, declaration};
+                    continue;
+                }
+                if (auto *forwarded = ASRUtils::trait_parameter_binder(declaration)) {
+                    // A trait parameter of the enclosing generic, passed on.
+                    if (!trait_binder) {
+                        trait_call_error("'" + name + "' is a trait parameter, but " +
+                            binder_description + " is a type parameter", loc);
+                    }
+                    types[generic->m_args[i]] = {ASRUtils::duplicate_type(al,
+                        ASRUtils::symbol_type(forwarded)), forwarded};
+                    continue;
+                }
+                if (trait_binder) {
+                    trait_call_error(binder_description + " is a trait parameter, but '" +
+                        name + "' is not a trait", loc);
+                }
                 ASR::symbol_t *parameter = declared_trait_parameter(name, current_scope);
                 if (declaration && ASR::is_a<ASR::Struct_t>(
                         *ASRUtils::symbol_get_past_external(declaration))) {
@@ -32235,6 +32403,10 @@ public:
                     trait_call_error("'" + name + "' is not a concrete derived type", loc);
                 }
             } else if (AST::is_a<AST::AttrType_t>(*ordered[i])) {
+                if (trait_binder) {
+                    trait_call_error(binder_description + " is a trait parameter, but "
+                        "its argument is a type, not a trait", loc);
+                }
                 Vec<ASR::dimension_t> dimensions;
                 dimensions.reserve(al, 0);
                 std::string parameter = names[i];
@@ -32250,6 +32422,10 @@ public:
                             "can be forwarded to a trait generic", loc);
                     }
                 }
+            } else if (trait_binder) {
+                trait_call_error(binder_description + " is a trait parameter, whose "
+                    "argument must name a trait; trait combinations as arguments of trait "
+                    "parameters are not implemented yet", loc);
             } else {
                 trait_call_error("a generic type argument must name a type", loc);
             }
@@ -33219,6 +33395,12 @@ public:
                 receiver_type = ASRUtils::symbol_type(variable);
             }
             ASR::ttype_t *type = ASRUtils::extract_type(receiver_type);
+            if (auto *binder = ASRUtils::trait_object_binder(type)) {
+                trait_call_error("method '" + name + "' is not provided by trait parameter '" +
+                    std::string(ASRUtils::symbol_name(binder)) + "': the trait bound to it "
+                    "is not known in the generic, so its objects have no messages there",
+                    loc);
+            }
             if (ASR::is_a<ASR::TraitObjectType_t>(*type)) {
                 tmp = nullptr;
                 auto *contract = ASRUtils::trait_runtime_contract(type);
@@ -33879,6 +34061,79 @@ public:
         }
     }
 
+    // The retroactive conformances that the `class is (P)` guards of a trait
+    // parameter P of `generic` find in an instance in `target`: those to the
+    // trait bound to P visible where the generic is defined or where it is
+    // instantiated, one of each type, recorded in p.symbol_subs under
+    // ASRUtils::trait_guard_witness_key. A forwarded P records none.
+    void bind_trait_guard_witnesses(PendingBodyInstantiation &p, ASR::Template_t &generic,
+            SymbolTable *target) {
+        auto *saved_scope = current_scope;
+        for (size_t i = 0; i < generic.n_args; i++) {
+            auto *binder = ASRUtils::trait_parameter_binder(
+                generic.m_symtab->get_symbol(generic.m_args[i]));
+            if (!binder) continue;
+            auto bound = p.type_subs.find(generic.m_args[i]);
+            if (bound == p.type_subs.end() || !bound->second.first ||
+                    !ASR::is_a<ASR::TraitObjectType_t>(*bound->second.first) ||
+                    ASRUtils::trait_object_binder(bound->second.first)) continue;
+            if (p.symbol_subs.count(ASRUtils::trait_guard_witness_key(generic.m_args[i], 0))) {
+                continue;
+            }
+            auto *contract = ASRUtils::trait_runtime_contract(bound->second.first);
+            std::vector<ASR::TraitImplementation_t*> implementations;
+            current_scope = generic.m_symtab->parent;
+            for (auto *implementation : visible_trait_implementations()) {
+                implementations.push_back(implementation);
+            }
+            current_scope = target;
+            for (auto *implementation : visible_trait_implementations()) {
+                implementations.push_back(implementation);
+            }
+            auto witnesses = retroactive_trait_witnesses(*contract, implementations,
+                generic.base.base.loc);
+            for (size_t j = 0; j < witnesses.size(); j++) {
+                p.symbol_subs[ASRUtils::trait_guard_witness_key(generic.m_args[i], j)] =
+                    witnesses[j];
+            }
+        }
+        current_scope = saved_scope;
+    }
+
+    // The witnesses, made visible in current_scope, of the conformances among
+    // `implementations` to the trait of `contract` that the runtime
+    // conformance tables do not hold, the first one of each concrete type.
+    std::vector<ASR::symbol_t*> retroactive_trait_witnesses(
+            ASR::TraitRuntimeContract_t &contract,
+            const std::vector<ASR::TraitImplementation_t*> &implementations,
+            const Location &loc) {
+        std::vector<ASR::symbol_t*> result;
+        auto *required = ASRUtils::symbol_get_past_external(contract.m_trait);
+        std::set<ASR::symbol_t*> types, seen;
+        for (auto *implementation : implementations) {
+            if (!seen.insert(&implementation->base).second) continue;
+            if (ASRUtils::trait_conformance_in_table(*implementation)) continue;
+            auto *type = ASRUtils::symbol_get_past_external(implementation->m_type_declaration);
+            if (!type || !ASR::is_a<ASR::Struct_t>(*type) ||
+                    ASR::down_cast<ASR::Struct_t>(type)->m_is_abstract || types.count(type)) {
+                continue;
+            }
+            bool provides = false;
+            for (auto *parent : checked_trait_hierarchy(*ASR::down_cast<ASR::Trait_t>(
+                    ASRUtils::symbol_get_past_external(implementation->m_trait)), loc).traits) {
+                provides |= &parent->base == required;
+            }
+            auto *witness = provides
+                ? ASRUtils::trait_runtime_witness(*implementation, &contract) : nullptr;
+            if (!witness) continue;
+            types.insert(type);
+            auto *reference = make_operator_proc_visible(&witness->base, "trait", current_scope);
+            ASRUtils::insert_module_dependency(reference, al, current_module_dependencies);
+            result.push_back(reference);
+        }
+        return result;
+    }
+
     void bind_trait_pack_evidence(PendingBodyInstantiation &p,
             ASR::Function_t &source, SymbolTable *target) {
         class Collect : public ASR::BaseWalkVisitor<Collect> {
@@ -34310,8 +34565,14 @@ public:
             if (ASR::is_a<ASR::Function_t>(*selection.second)) {
                 std::set<std::string> dictionaries;
                 bool erased = false;
+                auto *owner = ASRUtils::get_asr_owner(selection.second);
+                auto *generic = owner && ASR::is_a<ASR::Template_t>(*owner)
+                    ? ASR::down_cast<ASR::Template_t>(owner) : nullptr;
                 for (const auto &type : p.type_subs) {
-                    if (ASR::is_a<ASR::TraitObjectType_t>(*type.second.first)) erased = true;
+                    // A trait parameter is bound to a trait, not erased.
+                    if (ASR::is_a<ASR::TraitObjectType_t>(*type.second.first) &&
+                            !(generic && ASRUtils::trait_parameter_binder(
+                                generic->m_symtab->get_symbol(type.first)))) erased = true;
                     if (ASR::is_a<ASR::TraitErasedType_t>(*type.second.first)) {
                         erased = true;
                         dictionaries.insert(type.first);
@@ -34323,6 +34584,10 @@ public:
                 }
                 bind_trait_pack_evidence(p, *ASR::down_cast<ASR::Function_t>(selection.second),
                     ASRUtils::symbol_parent_symtab(selection.first));
+                if (generic) {
+                    bind_trait_guard_witnesses(p, *generic,
+                        ASRUtils::symbol_parent_symtab(selection.first));
+                }
                 bind_trait_dictionary_evidence(p,
                     *ASR::down_cast<ASR::Function_t>(selection.second),
                     ASRUtils::symbol_parent_symtab(selection.first));
