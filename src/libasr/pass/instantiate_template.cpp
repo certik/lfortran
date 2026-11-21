@@ -4449,9 +4449,13 @@ public:
                     // A parameter of a nested template, left deferred
                     return ASRUtils::duplicate_type(al, ttype);
                 }
-                return ASRUtils::substitute_class_type_parameter(al, param,
-                    ASRUtils::duplicate_type(al, type_subs[param->m_param].first),
-                    type_subs[param->m_param].second);
+                // The trait contracts that the components of a derived type
+                // argument name are referenced through imports of the
+                // instance's scope, which a module file can resolve.
+                return ASRUtils::import_trait_type(al,
+                    ASRUtils::substitute_class_type_parameter(al, param,
+                        ASRUtils::duplicate_type(al, type_subs[param->m_param].first),
+                        type_subs[param->m_param].second), new_scope);
             }
             case (ASR::ttypeType::List) : {
                 ASR::List_t *tlist = ASR::down_cast<ASR::List_t>(ttype);
@@ -4470,8 +4474,8 @@ public:
                 }
                 if (symbol_subs.find(struct_name) != symbol_subs.end()) {
                     ASR::symbol_t *sym = symbol_subs[struct_name];
-                    ttype = ASRUtils::make_StructType_t_util(
-                        al, s->base.base.loc, sym, s->m_is_cstruct);
+                    ttype = ASRUtils::import_trait_type(al, ASRUtils::make_StructType_t_util(
+                        al, s->base.base.loc, sym, s->m_is_cstruct), new_scope);
                 }
                 return ttype;
             }

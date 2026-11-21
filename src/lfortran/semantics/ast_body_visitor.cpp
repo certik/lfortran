@@ -7616,7 +7616,6 @@ public:
         current_module_dependencies.clear(al);
         current_scope = v->m_symtab;
         current_module = v;
-        complete_generic_instances(current_scope);
 
         // Instantiations need bodies too; transform_stmts skips declarations.
         for (size_t i=0; i<x.n_items; i++) {
@@ -7626,6 +7625,9 @@ public:
                 visit_decl_stmt(*x.m_items[i]);
             }
         }
+        // After the packages of the module's own generic types, whose bodies
+        // its instances of them copy.
+        complete_generic_instances(current_scope);
 
         Vec<ASR::stmt_t*> body;
         body.reserve(al, x.n_items);

@@ -37699,10 +37699,6 @@ public:
         }
         ASR::Struct_t *definition = ASRUtils::generic_type_definition(package);
         SymbolTable *owner = generic_instance_unit_scope(current_scope);
-        if (owner == generic_instance_unit_scope(package.m_symtab)) {
-            trait_call_error("instantiating generic type '" + std::string(definition->m_name) +
-                "' in the module that defines it is not implemented yet", loc);
-        }
         // The symbol table visitor creates the symbol of a unit after its
         // declarations.
         bool unit = owner->asr_owner && ASR::is_a<ASR::symbol_t>(*owner->asr_owner)
@@ -37874,6 +37870,16 @@ public:
                 definition->m_members[i], component, diag);
             if (copy && ASR::is_a<ASR::Variable_t>(*copy)) {
                 auto *variable = ASR::down_cast<ASR::Variable_t>(copy);
+                // The type of the default initialization `=> null()` of a
+                // procedure component names the type arguments, whose trait
+                // contracts the instance's scope references through imports,
+                // as the component's type does.
+                for (ASR::expr_t *initial : {variable->m_symbolic_value, variable->m_value}) {
+                    if (initial && ASR::is_a<ASR::PointerNullConstant_t>(*initial)) {
+                        auto *null = ASR::down_cast<ASR::PointerNullConstant_t>(initial);
+                        null->m_type = ASRUtils::import_trait_type(al, null->m_type, scope);
+                    }
+                }
                 if (variable->m_type_declaration &&
                         !ASR::is_a<ASR::ExternalSymbol_t>(*variable->m_type_declaration) &&
                         ASR::is_a<ASR::StructType_t>(*ASRUtils::extract_type(variable->m_type))) {
