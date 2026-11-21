@@ -7220,6 +7220,7 @@ RUN(NAME infer_walrus_loop_02_oracle LABELS gfortran llvm EXTRA_ARGS --separate-
 RUN(NAME infer_walrus_01 LABELS llvm_infer NO_STD_F23)
 RUN(NAME infer_walrus_02 LABELS llvm_infer NO_STD_F23)
 RUN(NAME infer_walrus_03 LABELS llvm_infer NO_STD_F23)
+RUN(NAME infer_walrus_string_01 LABELS llvm llvm_infer NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 
 # Type inference with := syntax (arrays)
 RUN(NAME infer_walrus_array_01 LABELS llvm_infer NO_STD_F23)

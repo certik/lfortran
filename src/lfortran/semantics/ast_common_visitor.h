@@ -25236,6 +25236,15 @@ public:
         }
     }
 
+    // The constant length of a value of character type `type` that `:=`
+    // declares a variable for, or nullptr if it is known only at run time.
+    ASR::expr_t* inferred_string_length(ASR::String_t* type) {
+        if (type->m_len_kind != ASR::string_length_kindType::ExpressionLength ||
+                !type->m_len) return nullptr;
+        ASR::expr_t* length = ASRUtils::expr_value(type->m_len);
+        return length && ASR::is_a<ASR::IntegerConstant_t>(*length) ? type->m_len : nullptr;
+    }
+
     ASR::ttype_t* infer_scalar_type(const Location& loc, ASR::ttype_t* inferred_type,
             AST::expr_t* value) {
         if (ASR::is_a<ASR::Integer_t>(*inferred_type)) {
@@ -25252,10 +25261,20 @@ public:
             return ASRUtils::TYPE(ASR::make_Logical_t(al, loc, kind));
         } else if (ASR::is_a<ASR::String_t>(*inferred_type)) {
             ASR::String_t* str_type = ASR::down_cast<ASR::String_t>(inferred_type);
+            if (!inferred_string_length(str_type)) {
+                // A length known only at run time, such as a function's
+                // deferred-length result or an assumed-length dummy: the
+                // variable is `character(:), allocatable`.
+                return ASRUtils::TYPE(ASRUtils::make_Allocatable_t_util(al, loc,
+                    ASRUtils::TYPE(ASR::make_String_t(al, loc, str_type->m_kind,
+                        nullptr, ASR::string_length_kindType::DeferredLength,
+                        ASR::string_physical_typeType::DescriptorString))));
+            }
             return ASRUtils::TYPE(
                 ASR::make_String_t(al, loc,
-                    str_type->m_kind, str_type->m_len,
-                    str_type->m_len_kind, str_type->m_physical_type));
+                    str_type->m_kind, inferred_string_length(str_type),
+                    ASR::string_length_kindType::ExpressionLength,
+                    str_type->m_physical_type));
         } else if (ASR::is_a<ASR::StructType_t>(*inferred_type)) {
             return inferred_type;
         } else if (ASR::is_a<ASR::TypeParameter_t>(*inferred_type) &&
@@ -25287,6 +25306,13 @@ public:
         bool is_struct = false;
         if (ASR::is_a<ASR::Array_t>(*inferred_type)) {
             ASR::Array_t* arr = ASR::down_cast<ASR::Array_t>(inferred_type);
+            if (ASR::is_a<ASR::String_t>(*arr->m_type) && !inferred_string_length(
+                    ASR::down_cast<ASR::String_t>(arr->m_type))) {
+                diag.semantic_error_label(
+                    "type inference requires a constant character length for an array; "
+                    "use an explicit declaration", {value->base.loc}, "");
+                throw SemanticAbort();
+            }
             ASR::ttype_t* scalar_type = infer_scalar_type(loc, arr->m_type, value);
             ASR::dimension_t* dims = arr->m_dims;
             if (arr->n_dims == 1 && !dims[0].m_length &&
