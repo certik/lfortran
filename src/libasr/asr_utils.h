@@ -3277,6 +3277,8 @@ inline int64_t lookup_var_index(ASR::expr_t **args, size_t n_args, ASR::Var_t *v
 }
 
 
+ASR::Variable_t *trait_descriptor_variable(ASR::symbol_t *contract);
+
 class ExprStmtWithScopeDuplicator: public ASR::BaseExprStmtDuplicator<ExprStmtWithScopeDuplicator>
 {
     public:
@@ -3285,6 +3287,14 @@ class ExprStmtWithScopeDuplicator: public ASR::BaseExprStmtDuplicator<ExprStmtWi
     ExprStmtWithScopeDuplicator(Allocator &al, SymbolTable* current_scope): BaseExprStmtDuplicator(al), current_scope(current_scope) {}
 
     ASR::asr_t* duplicate_TraitObjectType(ASR::TraitObjectType_t* x) {
+        // A trait object of an erased entry names the entry's descriptor
+        // dummy, which the copy of the entry has under the same name.
+        if (trait_descriptor_variable(x->m_contract)) {
+            ASR::symbol_t *copy = current_scope->resolve_symbol(
+                ASRUtils::symbol_name(x->m_contract));
+            return ASR::make_TraitObjectType_t(al, x->base.base.loc,
+                copy && trait_descriptor_variable(copy) ? copy : x->m_contract);
+        }
         return ASR::make_TraitObjectType_t(al, x->base.base.loc,
             import_type_declaration(al, x->m_contract, current_scope));
     }
@@ -3523,6 +3533,11 @@ class SymbolDuplicator {
 
         void visit_Var(const ASR::Var_t &x) {
             const_cast<ASR::Var_t&>(x).m_v = remap(x.m_v);
+        }
+
+        // The descriptor dummy of an erased entry (E10).
+        void visit_TraitObjectType(const ASR::TraitObjectType_t &x) {
+            const_cast<ASR::TraitObjectType_t&>(x).m_contract = remap(x.m_contract);
         }
 
         void visit_FunctionCall(const ASR::FunctionCall_t &x) {
@@ -4769,6 +4784,20 @@ ASR::symbol_t *trait_parameter_binder(ASR::symbol_t *symbol);
 // The binder P of `class(P)`: of a TraitObjectType (past arrays, pointers
 // and allocatables) whose contract is still a trait parameter, or nullptr.
 ASR::symbol_t *trait_object_binder(ASR::ttype_t *type);
+// The descriptor dummy that the contract of a dynamic trait object of an
+// erased entry is (E10): a Variable of type TraitDescriptorType, or nullptr.
+ASR::Variable_t *trait_descriptor_variable(ASR::symbol_t *contract);
+// The descriptor dummy of `class(P)` in an erased entry: of a
+// TraitObjectType (past arrays, pointers and allocatables) whose contract is
+// a descriptor dummy, or nullptr.
+ASR::Variable_t *trait_object_descriptor(ASR::ttype_t *type);
+// The descriptor dummy of `procedure` passed for trait parameter
+// `parameter`, or nullptr.
+ASR::Variable_t *trait_descriptor_dummy(const ASR::Function_t &procedure,
+    const std::string &parameter);
+// The trait parameter that the descriptor dummy `variable` is passed for, or
+// nullptr.
+const char *trait_descriptor_parameter(const ASR::Variable_t &variable);
 // The trait of a nominal or type-set constraint, or nullptr for a
 // conformance constraint `P :: U` (E2), whose trait is the binder P.
 ASR::Trait_t *trait_constraint_trait(const ASR::TraitConstraint_t &constraint);

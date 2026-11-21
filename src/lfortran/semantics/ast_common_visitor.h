@@ -29121,14 +29121,21 @@ public:
             if (ASRUtils::trait_member_is_initializer(member)) continue;
             auto *method = ASRUtils::trait_method_function(member);
             auto *message = method ? ASRUtils::trait_method_template(*method) : nullptr;
+            // A message with trait parameters is called through its slot
+            // with their descriptors (E10), for the signatures
+            // ASRUtils::runtime_trait_method_supported admits.
             for (size_t i = 0; message && i < message->n_args; i++) {
                 if (ASRUtils::trait_parameter_binder(
-                        message->m_symtab->get_symbol(message->m_args[i]))) {
+                        message->m_symtab->get_symbol(message->m_args[i])) &&
+                        !ASRUtils::runtime_trait_method_supported(*method)) {
                     trait_call_error("calling generic message '" +
                         ASRUtils::trait_member_display_name(member) + "' of trait '" +
                         std::string(trait.m_name) + "', which has the trait parameter '" +
                         std::string(message->m_args[i]) + "', through trait objects is "
-                        "not implemented yet", loc);
+                        "not implemented yet for this signature; implemented are only trait "
+                        "parameters, an allocatable trait-object result of one of them or an "
+                        "integer or logical result, and numeric or logical scalar arguments",
+                        loc);
                 }
             }
             std::string result = method ? ASRUtils::runtime_trait_unsupported_result(*method) : "";
@@ -29357,6 +29364,13 @@ public:
         std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> types;
         for (size_t i = 0; i < generic.n_args; i++) {
             auto *parameter = generic.m_symtab->get_symbol(generic.m_args[i]);
+            // A trait parameter is erased to the descriptor the caller passes
+            // (E10): class(P) becomes a trait object of the descriptor dummy.
+            if (ASRUtils::trait_parameter_binder(parameter)) {
+                types[generic.m_args[i]] = {ASRUtils::TYPE(ASR::make_TraitDescriptorType_t(
+                    al, generic.base.base.loc, generic.m_args[i])), nullptr};
+                continue;
+            }
             // A protocol binder is erased to storage its per-call dictionary describes.
             if (ASRUtils::trait_parameter_dictionary(parameter)) {
                 types[generic.m_args[i]] = {ASRUtils::TYPE(ASR::make_TraitErasedType_t(
@@ -29436,6 +29450,10 @@ public:
             auto *variable = ASR::down_cast<ASR::Variable_t>(entry.second);
             if (!ASRUtils::is_type_parameter(*ASRUtils::extract_type(variable->m_type))) continue;
             auto *element = ASRUtils::extract_type(variable->m_type);
+            // The declaration of a trait parameter, erased to a descriptor.
+            if (ASR::is_a<ASR::TypeParameter_t>(*element) &&
+                    ASR::down_cast<ASR::TypeParameter_t>(element)->m_deferred_attr ==
+                        ASR::deferred_type_attrType::TraitParameter) continue;
             if (ASR::is_a<ASR::TypeParameter_t>(*element) && dictionaries.count(
                     ASR::down_cast<ASR::TypeParameter_t>(element)->m_param)) {
                 if (!trait_dictionary_storage(*variable, dictionaries, block)) {
@@ -30322,6 +30340,14 @@ public:
             parameter.m_member = nullptr;
             auto *binder = generic.m_symtab->get_symbol(generic.m_args[i]);
             parameter.m_parameter = make_operator_proc_visible(binder, "trait", scope);
+            // A trait parameter has its descriptor and no operations.
+            if (ASRUtils::trait_parameter_binder(binder)) {
+                parameter.m_contract = nullptr;
+                parameter.m_operations = nullptr;
+                parameter.n_operations = 0;
+                parameters.push_back(al, parameter);
+                continue;
+            }
             // A dictionary binder's requirements are called through its
             // dictionary's slots, so it needs no operation wrappers.
             if (auto *dictionary = ASRUtils::trait_parameter_dictionary(binder)) {
@@ -31129,14 +31155,24 @@ public:
             implementation_symbol, "trait", adapter->m_symtab);
         ADD_ASR_DEPENDENCIES(adapter->m_symtab, callee, dependencies);
         if (adapter->m_return_var) {
+            ASR::ttype_t *result_type = ASRUtils::expr_type(adapter->m_return_var);
             ASR::expr_t *value = ASRUtils::EXPR(ASRUtils::make_FunctionCall_t_util(
                 al, loc, callee, nullptr, args.p, args.size(),
-                ASRUtils::expr_type(adapter->m_return_var), nullptr, nullptr,
+                result_type, nullptr, nullptr,
                 adapter->m_symtab, dependencies,
                 compiler_options.implicit_argument_casting));
-            body.push_back(al, ASRUtils::STMT(ASRUtils::make_Assignment_t_util(
-                al, loc, adapter->m_return_var, value, nullptr,
-                compiler_options.po.realloc_lhs_arrays, false)));
+            if (ASRUtils::is_trait_owner(result_type)) {
+                // An owned trait object result (E10) is copied as from any
+                // function result.
+                body.push_back(al, ASRUtils::STMT(ASR::make_TraitAssignment_t(al, loc,
+                    adapter->m_return_var, ASRUtils::EXPR(ASR::make_TraitBorrow_t(al, loc,
+                        value, ASRUtils::duplicate_type(al,
+                            ASRUtils::extract_type(result_type)))), nullptr)));
+            } else {
+                body.push_back(al, ASRUtils::STMT(ASRUtils::make_Assignment_t_util(
+                    al, loc, adapter->m_return_var, value, nullptr,
+                    compiler_options.po.realloc_lhs_arrays, false)));
+            }
         } else {
             ASR::stmt_t *cast = nullptr;
             ASR::stmt_t *call = ASRUtils::STMT(ASRUtils::make_SubroutineCall_t_util(
@@ -33439,8 +33475,22 @@ public:
             const std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &types,
             const std::vector<std::pair<ASR::TraitConstraint_t*, ASR::TraitImplementation_t*>>
                 &conformances, Vec<ASR::call_arg_t> &args, const Location &loc) {
+        // The descriptors of trait parameters follow the dictionaries.
+        std::vector<ASR::call_arg_t> descriptors;
         for (size_t i = 0; i < generic.n_args; i++) {
             auto *binder = generic.m_symtab->get_symbol(generic.m_args[i]);
+            if (ASRUtils::trait_parameter_binder(binder)) {
+                // The descriptor of the trait bound to a trait parameter, or
+                // of the caller's trait parameter it is forwarded to (E10).
+                auto &actual = types.at(generic.m_args[i]);
+                ASR::symbol_t *descriptor = ASR::is_a<ASR::TypeParameter_t>(*actual.first)
+                    ? actual.second
+                    : ASR::down_cast<ASR::TraitObjectType_t>(actual.first)->m_contract;
+                descriptors.push_back(ASR::call_arg_t{loc, ASRUtils::EXPR(
+                    ASR::make_TraitDescriptor_t(al, loc, descriptor, ASRUtils::TYPE(
+                        ASR::make_TraitDescriptorType_t(al, loc, nullptr))))});
+                continue;
+            }
             auto *contract = ASRUtils::trait_parameter_dictionary(binder);
             if (!contract) continue;
             auto &actual = types.at(generic.m_args[i]);
@@ -33475,6 +33525,7 @@ public:
             }
             args.push_back(al, arg);
         }
+        for (auto &descriptor : descriptors) args.push_back(al, descriptor);
     }
 
     ASR::symbol_t *prepare_trait_procedure_call(ASR::Template_t *generic,
@@ -33601,6 +33652,15 @@ public:
             if (runtime_result && procedure->m_return_var) {
                 auto *result = ASRUtils::expr_type(procedure->m_return_var);
                 *runtime_result = result;
+                // class(P) of a trait parameter is a trait object of the trait
+                // bound to P, or of the caller's binder it is forwarded to.
+                if (auto *binder = ASRUtils::trait_object_binder(result)) {
+                    auto &actual = types.at(ASRUtils::symbol_name(binder));
+                    ASR::ttype_t *view = ASR::is_a<ASR::TypeParameter_t>(*actual.first)
+                        ? ASRUtils::TYPE(ASR::make_TraitObjectType_t(al, loc, actual.second))
+                        : ASRUtils::duplicate_type(al, actual.first);
+                    *runtime_result = ASRUtils::TYPE(ASR::make_Allocatable_t(al, loc, view));
+                }
                 if (ASR::is_a<ASR::TypeParameter_t>(*result) &&
                         types.count(ASR::down_cast<ASR::TypeParameter_t>(result)->m_param)) {
                     *runtime_result = ASRUtils::duplicate_type(al,

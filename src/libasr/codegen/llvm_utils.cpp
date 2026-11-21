@@ -1230,7 +1230,9 @@ namespace LCompilers {
                 break;
             case (ASR::ttypeType::TraitErasedType):
             case (ASR::ttypeType::TraitDictionaryType):
-                // The address of erased storage and the dictionary table.
+            case (ASR::ttypeType::TraitDescriptorType):
+                // The address of erased storage, the dictionary table and the
+                // trait descriptor.
                 type = i8_ptr;
                 break;
             case (ASR::ttypeType::StructType) : {
@@ -1888,6 +1890,7 @@ namespace LCompilers {
                 llvm_type = llvm::Type::getInt8Ty(context);
                 break;
             case (ASR::ttypeType::TraitDictionaryType):
+            case (ASR::ttypeType::TraitDescriptorType):
                 llvm_type = i8_ptr;
                 break;
             case (ASR::ttypeType::StructType) : {
@@ -10652,12 +10655,21 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(
     }
 
     llvm::Value* LLVMUtils::create_trait_value(llvm::StructType* type,
-            llvm::Value* view, llvm::Value* source) {
+            llvm::Value* view, llvm::Value* source, llvm::Value* header_size) {
         auto *initialize = llvm::FunctionType::get(i8_ptr, {i8_ptr}, false);
         auto *payload = trait_lifecycle_call(trait_field(view, 2), trait_field(view, 0),
             TraitLifecycleEntry::Initialize, initialize, {source});
-        auto *copy = trait_malloc(type);
-        builder->CreateStore(CreateLoad2(type, view), copy);
+        llvm::Value *copy = nullptr;
+        if (header_size) {
+            auto *data = LLVM::lfortran_malloc(context, *module, *builder, header_size);
+            trait_error_if(builder->CreateIsNull(data), "runtime trait allocation failed");
+            builder->CreateMemCpy(data, llvm::MaybeAlign(),
+                builder->CreateBitCast(view, i8_ptr), llvm::MaybeAlign(), header_size);
+            copy = builder->CreateBitCast(data, type->getPointerTo());
+        } else {
+            copy = trait_malloc(type);
+            builder->CreateStore(CreateLoad2(type, view), copy);
+        }
         builder->CreateStore(payload, create_gep2(type, copy, 1));
         return copy;
     }
@@ -10809,7 +10821,7 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(
     }
 
     void LLVMUtils::assign_trait_value(llvm::Value* slot, llvm::Value* snapshot,
-            llvm::StructType* type) {
+            llvm::StructType* type, llvm::Value* header_size) {
         auto *old = CreateLoad2(type->getPointerTo(), slot);
         auto *witness = trait_field(snapshot, 2);
         auto *vptr = trait_field(snapshot, 0);
@@ -10821,12 +10833,18 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(
             trait_lifecycle_call(witness, vptr, TraitLifecycleEntry::Assign, assign,
                 {payload, source,
                     llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), live)});
-            builder->CreateStore(CreateLoad2(type, snapshot), destination);
+            if (header_size) {
+                builder->CreateMemCpy(builder->CreateBitCast(destination, i8_ptr),
+                    llvm::MaybeAlign(), builder->CreateBitCast(snapshot, i8_ptr),
+                    llvm::MaybeAlign(), header_size);
+            } else {
+                builder->CreateStore(CreateLoad2(type, snapshot), destination);
+            }
             builder->CreateStore(payload, create_gep2(type, destination, 1));
         };
         auto initialize = [&]() {
             auto *value = create_trait_value(type, snapshot,
-                llvm::Constant::getNullValue(i8_ptr));
+                llvm::Constant::getNullValue(i8_ptr), header_size);
             apply(value, false);
             builder->CreateStore(value, slot);
         };
@@ -10880,14 +10898,36 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(
             llvm::GlobalValue::ExternalLinkage, nullptr, name);
     }
 
+    // The descriptor of a trait (E10): {i64 slot count of its runtime
+    // contract, name, qualified name}, each name a string descriptor of
+    // constant data. Every translation unit that names the trait defines the
+    // same descriptor; the merged address is the identity of the trait.
     llvm::GlobalVariable* LLVMStruct::get_trait_identity(
             ASR::symbol_t* trait, llvm::Module* module) {
+        trait = ASRUtils::symbol_get_past_external(trait);
         std::string name = "_Trait_Id_" + ASRUtils::nominal_symbol_name(trait);
         if (auto *existing = module->getNamedGlobal(name)) return existing;
+        auto *i64 = llvm::Type::getInt64Ty(context);
+        auto *string_type = llvm::cast<llvm::StructType>(llvm_utils->string_descriptor);
+        auto *type = llvm::StructType::get(context, {i64, string_type, string_type}, false);
+        auto *contract = ASRUtils::trait_runtime_contract(trait);
+        auto string = [&](bool qualified) -> llvm::Constant* {
+            std::string text = ASRUtils::type_argument_name(nullptr, trait, qualified);
+            auto *data = llvm::ConstantDataArray::getString(context, text, false);
+            auto *global = new llvm::GlobalVariable(*module, data->getType(), true,
+                llvm::GlobalValue::LinkOnceODRLinkage, data,
+                name + (qualified ? "_qualified_name" : "_name"));
+            auto *zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0);
+            return llvm::ConstantStruct::get(string_type, {
+                llvm::ConstantExpr::getInBoundsGetElementPtr(data->getType(), global,
+                    llvm::ArrayRef<llvm::Constant*>({zero, zero})),
+                llvm::ConstantInt::get(i64, text.size())});
+        };
         // Not unnamed_addr: the merged address is the identity of the trait.
-        auto *type = llvm::Type::getInt8Ty(context);
         return new llvm::GlobalVariable(*module, type, true,
-            llvm::GlobalValue::LinkOnceODRLinkage, llvm::ConstantInt::get(type, 0), name);
+            llvm::GlobalValue::LinkOnceODRLinkage, llvm::ConstantStruct::get(type, {
+                llvm::ConstantInt::get(i64, contract ? contract->n_slots : 0),
+                string(false), string(true)}), name);
     }
 
     llvm::GlobalVariable* LLVMStruct::get_trait_lifecycle(

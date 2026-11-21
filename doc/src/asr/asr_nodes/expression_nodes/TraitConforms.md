@@ -21,7 +21,13 @@ Within a generic procedure, `contract` may instead be the binder of a trait
 parameter `{Trait :: P}`, for a `CLASS IS (P)` guard, with no witnesses. The
 instantiation of the generic replaces it with the contract of the trait bound
 to `P` and the retroactive witnesses visible where the generic is defined or
-instantiated, or, when `P` is passed on, with the caller's binder.
+instantiated, or, when `P` is passed on, with the caller's binder. In the
+erased entry of a generic message (DI extension E10) it is the entry's
+descriptor dummy of `P` (see
+[TraitDescriptorType](../type_nodes/TraitDescriptorType.md)), again with no
+witnesses: the query searches only the runtime conformance tables, by the
+identity the descriptor is, and does not find retroactive conformances
+visible only where the message is called.
 
 ## Semantics
 

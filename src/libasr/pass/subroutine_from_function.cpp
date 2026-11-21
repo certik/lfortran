@@ -945,7 +945,14 @@ public :
         ASR::expr_t* result_var = PassUtils::create_var(result_counter++,
             "return_slot", x->base.base.loc, result_type, al, current_scope,
             slot->m_args[slot->n_args - 1]);
-        if (ASRUtils::is_allocatable(x->m_type)) {
+        if (ASRUtils::is_trait_owner(x->m_type)) {
+            // The variable may be unallocated, as before its first call.
+            Vec<ASR::expr_t*> vars;
+            vars.reserve(al, 1);
+            vars.push_back(al, result_var);
+            pass_result.push_back(al, ASRUtils::STMT(ASR::make_ImplicitDeallocate_t(al,
+                x->base.base.loc, vars.p, vars.size())));
+        } else if (ASRUtils::is_allocatable(x->m_type)) {
             insert_implicit_deallocate(result_var);
         } else if (array) {
             insert_allocate_stmt_for_array(al, result_var,

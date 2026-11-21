@@ -16,7 +16,14 @@ symbol. Only within a generic procedure, it may instead be the binder of a
 trait parameter `{Trait :: P}` (a `Variable` whose
 [TypeParameter](TypeParameter.md) has the `deferred_attr` `TraitParameter`):
 `class(P)`, a trait object of the trait bound to `P`, which instantiation
-replaces with that trait's contract. Its slot interfaces describe all ordinary arguments and results.
+replaces with that trait's contract. In the erased entry of a generic message
+with a trait parameter `P` (DI extension E10), in its slot interface and in
+the witness adapters filling the slot, it is instead the entry's descriptor
+dummy of `P`, a `Variable` of type [TraitDescriptorType](TraitDescriptorType.md):
+a trait object of the trait whose descriptor the caller passes. Its header has
+the slot count that the descriptor records, so an owner is a heap header of
+three plus that many words, and a call passing a trait object of a known
+contract for it passes the same header. Its slot interfaces describe all ordinary arguments and results.
 A bare view is a required, nonpointer, nonallocatable scalar `intent(in)` or
 `intent(inout)` dummy. Through an `intent(in)` view, only messages whose
 receiver is not `intent(inout)` or `intent(out)` can be called.

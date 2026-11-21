@@ -3171,6 +3171,34 @@ public:
             "A dictionary value has its dictionary's contract");
     }
 
+    void visit_TraitDescriptor(const TraitDescriptor_t &x) {
+        require_id(x.m_contract && symtab_in_scope(current_symtab, x.m_contract) &&
+                x.m_type && ASR::is_a<TraitDescriptorType_t>(*x.m_type),
+            "asr.verify.trait_descriptor.fields",
+            "A trait descriptor names a visible runtime contract");
+        if (!check_external) return;
+        auto *contract = ASRUtils::symbol_get_past_external(x.m_contract);
+        if (ASRUtils::trait_parameter_binder(contract)) {
+            require_id(_inside_template,
+                "asr.verify.trait_descriptor.trait_parameter",
+                "The descriptor of a trait parameter may exist only within its generic");
+            return;
+        }
+        require_id(ASR::is_a<TraitRuntimeContract_t>(*contract) &&
+                !ASR::down_cast<TraitRuntimeContract_t>(contract)->m_anonymous,
+            "asr.verify.trait_descriptor.contract",
+            "A trait descriptor describes one named trait");
+    }
+
+    void visit_TraitDescriptorName(const TraitDescriptorName_t &x) {
+        auto *descriptor = x.m_descriptor ? typed_expr_type(x.m_descriptor) : nullptr;
+        require_id(descriptor && ASR::is_a<TraitDescriptorType_t>(*descriptor) &&
+                x.m_type && ASRUtils::is_character(*x.m_type),
+            "asr.verify.trait_descriptor_name.fields",
+            "The name of a trait descriptor is a character value read from a descriptor");
+        visit_expr(*x.m_descriptor);
+    }
+
     void visit_TraitDeferredDictionary(const TraitDeferredDictionary_t &x) {
         require_id(_inside_template,
             "asr.verify.trait_deferred_dictionary.scope",
@@ -3210,6 +3238,15 @@ public:
             require_id(_inside_template,
                 "asr.verify.trait_view.trait_parameter",
                 "A trait object of a trait parameter may exist only within its generic");
+            return;
+        }
+        if (auto *descriptor = ASRUtils::trait_descriptor_variable(symbol)) {
+            // class(P) of an erased entry: the trait of its descriptor dummy.
+            require_id(descriptor->m_intent == intentType::In &&
+                    ASRUtils::trait_descriptor_parameter(*descriptor),
+                "asr.verify.trait_view.descriptor",
+                "A trait object of an erased trait parameter must name the descriptor "
+                "dummy of its entry");
             return;
         }
         require_id(symbol && ASR::is_a<TraitRuntimeContract_t>(*symbol),
@@ -3474,6 +3511,18 @@ public:
                 "The reusable entry must preserve its template's arguments and erase only checked scalar binders");
             for (size_t i = 0; i < x.n_parameters; i++) {
                 auto &parameter = x.m_parameters[i];
+                auto *trait_binder = generic->m_symtab->get_symbol(generic->m_args[i]);
+                if (ASRUtils::trait_parameter_binder(trait_binder)) {
+                    // A trait parameter is passed as its descriptor (E10).
+                    require_id(parameter.m_parameter && !parameter.m_contract &&
+                            !parameter.m_member && !parameter.n_operations &&
+                            ASRUtils::symbol_get_past_external(parameter.m_parameter) ==
+                                trait_binder &&
+                            ASRUtils::trait_descriptor_dummy(*entry, generic->m_args[i]),
+                        "asr.verify.trait_erasure.parameter_identity",
+                        "A trait parameter keeps its scope and the entry's descriptor dummy");
+                    continue;
+                }
                 require_id(parameter.m_parameter && parameter.m_contract && !parameter.m_member &&
                         symtab_in_scope(current_symtab, parameter.m_parameter) &&
                         symtab_in_scope(current_symtab, parameter.m_contract) &&
@@ -4201,11 +4250,12 @@ public:
         auto *type = typed_expr_type(owner);
         require_with_loc_id(owner && (ASR::is_a<Var_t>(*owner) ||
                 ASR::is_a<StructInstanceMember_t>(*owner) ||
-                (!defining && ASR::is_a<FunctionCall_t>(*owner))) &&
+                (!defining && (ASR::is_a<FunctionCall_t>(*owner) ||
+                    ASR::is_a<TraitFunctionCall_t>(*owner)))) &&
                 ASRUtils::is_trait_owner(type),
             "asr.verify.trait_owner.storage",
             "An owning operation requires a scalar allocatable trait slot or a borrowed function result", loc);
-        if (ASR::is_a<FunctionCall_t>(*owner)) {
+        if (ASR::is_a<FunctionCall_t>(*owner) || ASR::is_a<TraitFunctionCall_t>(*owner)) {
             visit_expr(*owner);
             return ASRUtils::extract_type(type);
         }
@@ -4329,6 +4379,14 @@ public:
                 "asr.verify.trait_conformance.trait_parameter",
                 "A conformance query of a trait parameter may exist only within its "
                 "generic, without witnesses");
+            return;
+        }
+        if (ASRUtils::trait_descriptor_variable(contract)) {
+            // `class is (P)` in an erased entry queries the trait of the
+            // descriptor its caller passes, in the conformance tables only.
+            require_id(x.n_witnesses == 0,
+                "asr.verify.trait_conformance.descriptor",
+                "A conformance query of an erased trait parameter has no witnesses");
             return;
         }
         require_id(contract && ASR::is_a<TraitRuntimeContract_t>(*contract) &&

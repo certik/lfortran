@@ -765,14 +765,100 @@ trait parameter, a constraint combining `P` with other traits, trait
 parameters of generic derived types, arrays and associate names of
 `class(P)` objects, `select type` on a `class(P)` selector, a `class is (P)`
 guard together with other trait guards in one `select type`, and generic
-messages with trait parameters in generic constraints. Calling such a generic
-message through a trait object (E10) is not implemented either: a trait with
-one, such as `IResolver` with `resolve{Trait :: P}`, cannot be used in
-`class(IResolver)` yet, although a type can implement it and its instances
-can be called statically.
+messages with trait parameters in generic constraints. A generic message with
+trait parameters can be called through a trait object (see the next section).
 
 See `integration_tests/traits_trait_param_01.f90`,
 `integration_tests/traits_trait_param_02.f90` and the diagnostics in
+`tests/errors/continue_compilation_traits_trait_param.f90`.
+
+### Generic messages with trait parameters through trait objects
+
+A message of a trait may have trait parameters, and may be called through a
+trait object (DI extension E10):
+
+```fortran
+abstract interface :: IResolver
+    function resolve{Trait :: P}(self) result(res)
+        type(itself), intent(in), pass :: self
+        class(P), allocatable :: res
+    end function resolve
+end interface IResolver
+
+class(IResolver), allocatable :: r
+class(IClient), allocatable :: c
+r = cont
+c = r%resolve{IClient}()
+
+function create1{Trait :: T1}(c) result(r)   ! inside a generic
+    class(IResolver), intent(in) :: c
+    class(T1), allocatable :: r
+    r = c%resolve{T1}()
+end function create1
+```
+
+A type implements it with a generic procedure of the same parameter list,
+such as a sealed `Container`'s `resolve{Trait :: P}`, whose body may use
+everything E1 allows: `class(P)` objects, `select type` with `class is (P)`,
+`type_name{P}()`, and `P` passed on to other generics, also through trait
+objects. Calls on a `type(Container)` stay static instances. The slot of
+`resolve` in `Container`'s witness for `IResolver` holds a single *erased*
+copy of the implementation, compiled once in the implementing module (a
+`TraitErasure`), whatever trait arguments later callers use.
+
+**Trait descriptors.** The erased copy receives each trait argument as a
+hidden trailing argument, a *trait descriptor*: a constant record of the
+trait's slot count and its unqualified and qualified names, defined
+identically (`linkonce_odr`) by every translation unit that names the trait.
+Its address is the trait's identity, the same identity the runtime
+conformance tables use, so the conformance runtime is unchanged. A call
+through the trait object passes the descriptor of the trait argument after
+the message's arguments and any conformance dictionaries (a `TraitDescriptor`
+of the trait's runtime contract); inside a generic, `c%resolve{T1}()` passes
+the descriptor of `T1`, which each static instance replaces with its trait's
+descriptor, and an erased copy that passes its own `P` on passes the
+descriptor it received. The result `class(P)` of the call is a trait object of
+the trait argument, here `class(IClient)`.
+
+**The erased copy.** Its `class(P)` objects are trait objects of the trait the
+caller passes: their type is a `TraitObjectType` whose contract is the copy's
+descriptor dummy. A trait object header is `{vptr, payload, lifecycle,
+slot 0, ..., slot n-1}` inline, so its size depends on the trait: in the
+erased copy `n` is read from the descriptor. Owners are heap headers of
+`3 + n` words, allocated and copied with the size read from the descriptor;
+the view of a `class is (P)` guard is a header of that size allocated in the
+entry block. `class is (P)` asks the runtime conformance table of the dynamic
+type for the descriptor's identity and builds the view from the witness
+table found, `res = obj` copies that view into the result, and
+`type_name{P}()` and `type_name{P}(qualified=.true.)` read the descriptor's
+names (`TraitDescriptorName`). The result is returned, as an allocatable
+result through a slot is, in a result variable of the caller, the last
+argument once results are lowered; the slot's witness adapter copies the
+erased copy's result there.
+
+A message may have several trait parameters, each with its descriptor, an
+allocatable `class(P)` result of one of them or an integer or logical
+result, and numeric or logical scalar arguments besides the receiver. Not yet
+implemented through trait objects: `class(P)` arguments, messages mixing trait
+parameters with type parameters, other results, and a call that mixes a
+forwarded and a concrete trait argument; declaring a trait object of a trait
+with such a message is diagnosed.
+
+**Known gap.** An erased `class is (P)` finds only the conformances declared
+with the dynamic type: `implements(...)` in its definition, also inherited,
+and the implementation blocks of its own module, which its runtime
+conformance table records. A static instance also sees the retroactive
+conformances visible where it is defined or instantiated; the erased copy
+does not know where it is called, so a conformance visible only there,
+declared in a third module, is not found and the guard does not match (its
+`class default`, if any, runs). The DI container is not affected: all its
+conformances are on the types. Generic messages whose type parameters range
+over types keep the member slots and dictionary passing described under
+"Generic messages".
+
+See `integration_tests/traits_trait_param_runtime_01.f90`,
+`integration_tests/traits_trait_param_runtime_02.f90` (a missing registration
+reaching `error stop` in the erased copy) and the diagnostics in
 `tests/errors/continue_compilation_traits_trait_param.f90`.
 
 ### Partially explicit and mixed type arguments
@@ -869,7 +955,9 @@ Where `P` is known, the reference is a character constant, which can initialize
 a named constant: `character(*), parameter :: n = type_name{SquareBox}()`.
 Inside a generic, where `P` is a type or trait parameter, it is a
 `DeferredTypeName` that the instantiator replaces with the constant of each
-instance, also when `P` is passed on to another generic. It is then not a
+instance, also when `P` is passed on to another generic, or, in the erased
+copy of a generic message where `P` is a trait parameter, with a read of the
+caller's trait descriptor (E10). It is then not a
 constant expression of the generic body. Its type there is a deferred-length
 character, so `key := type_name{P}()` declares `character(:), allocatable`
 (see below).
@@ -3951,8 +4039,15 @@ caller's binder. A conformance constraint `P :: U` is a `TraitConstraint` of
 `U` whose trait is the binder `P` and which has no requirements. A `type(U)`
 value converted to `class(P)` is a `TraitDeferredPack` of that constraint,
 which the instance packs with the conformance selected where it was checked.
-This representation leaves room for erasing `P` with a trait descriptor
-instead of instantiating it.
+The erased copy of a generic message with trait parameters erases each
+binder to a trait descriptor instead: its `TraitErasure` parameter has no
+contract and no operations, the entry has a trailing descriptor dummy
+`__descriptor_<P>` of type `TraitDescriptorType(P)` per binder, after any
+dictionary dummies, and the shared instantiator replaces the binder in
+`class(P)` types and queries with that dummy, `type_name{P}` with a
+`TraitDescriptorName` of it, and the `TraitDescriptor` of a forwarded binder
+with the dummy itself (see "Generic messages with trait parameters through
+trait objects").
 
 Constrained generic procedures use the existing `Template` carrier and shared
 type/symbol substitution and body-instantiation machinery. A normalized
@@ -4134,8 +4229,9 @@ survives module files as those witnesses do. LLVM gives every type-info
 object a fourth word, the address of the type's table or null, and defines
 the table, pairs of a trait identity and a witness table ending in null, in
 the object of the module that defines those witnesses. A trait identity is the
-address of a link-unique `linkonce_odr` byte named after the trait's defining
-scopes. The runtime function `_lfortran_trait_conformance` searches the table
+address of the trait's descriptor, a link-unique `linkonce_odr` constant named
+after the trait's defining scopes that records the slot count of the trait's
+runtime contract and its unqualified and qualified names (E10). The runtime function `_lfortran_trait_conformance` searches the table
 of the dynamic type; only if it finds nothing are the retroactive witnesses
 compared with the exact dynamic type. The view copies the concrete vptr and
 payload address of the selector and the lifecycle and methods of the witness

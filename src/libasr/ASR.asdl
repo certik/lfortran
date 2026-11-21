@@ -493,6 +493,19 @@ expr
     -- StringConstant naming the type or trait bound to P; qualified selects
     -- the qualified_name form. type is a deferred-length String.
     | DeferredTypeName(ttype type_argument, bool qualified, ttype type)
+    -- The descriptor of the trait of a runtime contract (DI extension E10),
+    -- of type TraitDescriptorType: a constant record of the contract's slot
+    -- count and the trait's unqualified and qualified names, whose address is
+    -- the trait's identity. contract is a TraitRuntimeContract of a named
+    -- trait or, within a generic, the binder of a trait parameter P, which
+    -- instantiation replaces with the contract of the trait bound to P or the
+    -- binder P is forwarded to; in an erased entry the descriptor dummy of P
+    -- replaces the whole node.
+    | TraitDescriptor(symbol contract, ttype type)
+    -- `type_name{P}()` of a trait parameter P in an erased entry: the name,
+    -- or with qualified the qualified name, recorded in the trait descriptor
+    -- descriptor. type is a deferred-length String.
+    | TraitDescriptorName(expr descriptor, bool qualified, ttype type)
     | GpuAtomicFetchAdd(expr target, expr increment, ttype type, expr? value)
     | GpuLaneIndex(ttype type, expr? value)
     | GpuLaneBroadcast(expr arg, ttype type, expr? value)
@@ -523,6 +536,10 @@ ttype
     -- TypeParameter with deferred_attr TraitParameter): `class(P)`, a trait
     -- object of the trait bound to P. Instantiation replaces the binder with
     -- the contract of the bound trait.
+    -- In an erased entry (TraitErasure) of a generic with a trait parameter
+    -- P, contract is the entry's descriptor dummy of P (a Variable of type
+    -- TraitDescriptorType): a trait object of the trait the caller passes,
+    -- whose header has the slot count read from the descriptor.
     | TraitObjectType(symbol contract)
     -- Compiler-owned retained results; each element owns a separate header.
     | TraitOwnerList(symbol contract)
@@ -532,6 +549,9 @@ ttype
     -- A conformance dictionary laid out by a TraitDictionaryContract; a
     -- dictionary dummy names the parameter its erased values use.
     | TraitDictionaryType(symbol contract, identifier? parameter)
+    -- A trait descriptor (see TraitDescriptor); the descriptor dummy of an
+    -- erased entry names the trait parameter it is passed for.
+    | TraitDescriptorType(identifier? parameter)
     -- The address of a variable of type `type`, held by a member of a frame
     -- created by the nested_vars pass. A StructInstanceMember of such a member
     -- designates the variable itself and has type `type`. It is never

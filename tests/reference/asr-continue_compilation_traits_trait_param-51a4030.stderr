@@ -26,16 +26,16 @@ semantic error: the meta-trait Trait cannot be combined with other constraints
 132 |     subroutine combined{Trait + IShow :: P}()
     |                         ^^^^^^^^^^^^^^^^^^ 
 
-semantic error: calling generic message 'resolve' of trait 'iresolver', which has the trait parameter 'p', through trait objects is not implemented yet
-   --> tests/errors/continue_compilation_traits_trait_param.f90:174:9
+semantic error: calling generic message 'accept' of trait 'iaccept', which has the trait parameter 'p', through trait objects is not implemented yet for this signature; implemented are only trait parameters, an allocatable trait-object result of one of them or an integer or logical result, and numeric or logical scalar arguments
+   --> tests/errors/continue_compilation_traits_trait_param.f90:183:9
     |
-174 |         class(IResolver), allocatable :: c
-    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+183 |         class(IAccept), allocatable :: a
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
 semantic error: trait parameters of generic derived types are not implemented yet
-   --> tests/errors/continue_compilation_traits_trait_param.f90:181:20
+   --> tests/errors/continue_compilation_traits_trait_param.f90:190:20
     |
-181 |     type :: Holder{Trait :: P}
+190 |     type :: Holder{Trait :: P}
     |                    ^^^^^^^^^^ 
 
 semantic error: generic parameter 'p' of 'none' is a trait parameter, but 'a' is not a trait
@@ -99,7 +99,13 @@ semantic error: a select type with a `class is` guard of a trait parameter and o
     | ...^^^^^^^^^^^^^^^^^^ 
 
 semantic error: generic parameter 'p' of 'none' is a trait parameter, whose argument must name a trait; trait combinations as arguments of trait parameters are not implemented yet
-   --> tests/errors/continue_compilation_traits_trait_param.f90:192:9
+   --> tests/errors/continue_compilation_traits_trait_param.f90:201:9
     |
-192 |         call none{IShow + IOther}()
+201 |         call none{IShow + IOther}()
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: mixing concrete and deferred generic type arguments in a call through a trait object is not implemented yet
+   --> tests/errors/continue_compilation_traits_trait_param.f90:216:13
+    |
+216 |         r = c%pair{T1, IPair}()
+    |             ^^^^^^^^^^^^^^^^^^^ 

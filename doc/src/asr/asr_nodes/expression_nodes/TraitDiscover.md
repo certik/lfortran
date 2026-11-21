@@ -13,7 +13,10 @@ TraitDiscover(expr selector, symbol contract, symbol* witnesses, ttype type)
 
 `selector`, `contract` and `witnesses` are as in `TraitConforms`. `type` is the
 `TraitObjectType` of `contract`, a borrowed view. This expression has no
-constant value.
+constant value. When `contract` is the descriptor dummy of an erased entry
+(DI extension E10), the view has the slot count the descriptor records: LLVM
+allocates its header in the entry block, sized from the descriptor, and copies
+that many method addresses from the witness table found.
 
 ## Semantics
 

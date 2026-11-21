@@ -857,8 +857,12 @@ class ASRToLLVMVisitor;
                 fields.insert(fields.end(), slots, i8_ptr);
                 return llvm::StructType::get(context, fields, false);
             }
+            // A dynamic trait object of an erased entry (E10), whose slot
+            // count its descriptor records, has the type of the common
+            // three-word prefix.
             llvm::StructType* getTraitType(ASR::ttype_t* type) {
-                return getTraitType(ASRUtils::trait_runtime_contract(type)->n_slots);
+                auto *contract = ASRUtils::trait_runtime_contract(type);
+                return getTraitType(contract ? contract->n_slots : 0);
             }
             llvm::StructType* getTraitOwnerListType() {
                 return llvm::StructType::get(context, {i8_ptr}, false);
@@ -875,8 +879,10 @@ class ASRToLLVMVisitor;
                 const std::vector<llvm::Value*>& args);
             void trait_error_if(llvm::Value* condition, const std::string& message);
             llvm::Value* trait_malloc(llvm::Type* type);
+            // With `header_size`, the size in bytes of a header whose slot
+            // count is known only at run time, `type` is the common prefix.
             llvm::Value* create_trait_value(llvm::StructType* type,
-                llvm::Value* view, llvm::Value* source);
+                llvm::Value* view, llvm::Value* source, llvm::Value* header_size = nullptr);
             void destroy_trait_value(llvm::Value* view, bool finalize = true);
             void destroy_trait_array_elements(llvm::Type* array_type,
                 llvm::Value* descriptor, int rank, bool finalize = true);
@@ -919,7 +925,7 @@ class ASRToLLVMVisitor;
             void retain_trait_owner(llvm::Value* storage, llvm::Value* owner);
             void release_trait_owners(llvm::Value* storage);
             void assign_trait_value(llvm::Value* slot, llvm::Value* snapshot,
-                llvm::StructType* type);
+                llvm::StructType* type, llvm::Value* header_size = nullptr);
             void copy_trait_component(llvm::Value* source, llvm::Value* destination,
                 llvm::StructType* type, bool use_defined_assignment, bool finalize_destination);
             llvm::Value* value_lifecycle_function(llvm::Value* vptr,

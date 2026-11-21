@@ -103,6 +103,7 @@ StructType
 SymbolicExpression
 TraitErasedType
 TraitDictionaryType
+TraitDescriptorType
 Tuple
 TypeParameter
 UnionType

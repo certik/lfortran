@@ -10213,7 +10213,8 @@ public:
         llvm::Value *target_var = nullptr;
         ASR::Variable_t *v = down_cast<ASR::Variable_t>(var_sym);
         uint64_t h = get_hash((ASR::asr_t*)v);
-        if (ASR::is_a<ASR::TraitDictionaryType_t>(*v->m_type)) return;
+        if (ASR::is_a<ASR::TraitDictionaryType_t>(*v->m_type) ||
+                ASR::is_a<ASR::TraitDescriptorType_t>(*v->m_type)) return;
         if (ASR::is_a<ASR::TraitErasedType_t>(*v->m_type)) {
             // A local lives in entry-block storage of the size its
             // dictionary describes; the result is the caller's storage.
@@ -20182,7 +20183,8 @@ public:
     inline void fetch_var(ASR::Variable_t* x) {
         if (ASRUtils::is_trait_pointer(x->m_type) ||
                 ASR::is_a<ASR::TraitErasedType_t>(*x->m_type) ||
-                ASR::is_a<ASR::TraitDictionaryType_t>(*x->m_type)) {
+                ASR::is_a<ASR::TraitDictionaryType_t>(*x->m_type) ||
+                ASR::is_a<ASR::TraitDescriptorType_t>(*x->m_type)) {
             uint64_t hash = get_hash((ASR::asr_t*)x);
             tmp = llvm_symtab.at(hash);
             return;
@@ -26579,7 +26581,8 @@ public:
 
             if (x.m_args[i].m_value &&
                     (ASRUtils::is_trait_erased(orig_arg->m_type) ||
-                     ASR::is_a<ASR::TraitDictionaryType_t>(*orig_arg->m_type))) {
+                     ASR::is_a<ASR::TraitDictionaryType_t>(*orig_arg->m_type) ||
+                     ASR::is_a<ASR::TraitDescriptorType_t>(*orig_arg->m_type))) {
                 args.push_back(trait_erased_argument(x.m_args[i].m_value, *orig_arg));
                 continue;
             }
@@ -30064,10 +30067,17 @@ public:
                 selector, selector_type, module.get()), object);
         }
         object = builder->CreateBitCast(object, llvm_utils->i8_ptr);
-        auto *trait = ASR::down_cast<ASR::TraitRuntimeContract_t>(
-            ASRUtils::symbol_get_past_external(contract))->m_trait;
-        auto *identity = builder->CreateBitCast(
-            struct_api->get_trait_identity(trait, module.get()), llvm_utils->i8_ptr);
+        // An erased entry queries the trait whose descriptor it was passed
+        // (E10); the descriptor's address is the trait's identity.
+        llvm::Value *identity = nullptr;
+        if (auto *descriptor = ASRUtils::trait_descriptor_variable(contract)) {
+            identity = trait_descriptor_value(*descriptor);
+        } else {
+            auto *trait = ASR::down_cast<ASR::TraitRuntimeContract_t>(
+                ASRUtils::symbol_get_past_external(contract))->m_trait;
+            identity = builder->CreateBitCast(
+                struct_api->get_trait_identity(trait, module.get()), llvm_utils->i8_ptr);
+        }
         std::string name = "_lfortran_trait_conformance";
         llvm::Function *lookup = module->getFunction(name);
         if (!lookup) {
@@ -30113,7 +30123,9 @@ public:
         llvm_utils->trait_error_if(builder->CreateIsNull(table),
             "the dynamic type does not conform to the trait of the select type guard");
         auto *type = llvm_utils->getTraitType(x.m_type);
-        auto *view = llvm_utils->CreateAlloca(type, nullptr, "trait_discovery");
+        auto *descriptor = ASRUtils::trait_object_descriptor(x.m_type);
+        llvm::Value *view = descriptor ? dynamic_trait_header(*descriptor)
+            : llvm_utils->CreateAlloca(type, nullptr, "trait_discovery");
         auto *ordinary = llvm::StructType::get(context,
             {llvm_utils->i8_ptr, llvm_utils->i8_ptr}, false);
         object = builder->CreateBitCast(object, ordinary->getPointerTo());
@@ -30127,6 +30139,17 @@ public:
                 llvm_utils->CreateLoad2(llvm_utils->i8_ptr, table),
                 llvm_utils->i8_ptr->getPointerTo()),
             llvm_utils->create_gep2(type, view, 2));
+        if (descriptor) {
+            // The methods of the witness table found, as many as the
+            // descriptor's slot count.
+            llvm::Value *bytes = builder->CreateSub(trait_header_size(*descriptor),
+                llvm::ConstantInt::get(llvm::Type::getInt64Ty(context), 3 * pointer_size()));
+            builder->CreateMemCpy(llvm_utils->trait_method_address(view, 0),
+                llvm::MaybeAlign(), llvm_utils->create_ptr_gep2(llvm_utils->i8_ptr, table, 1),
+                llvm::MaybeAlign(), bytes);
+            tmp = view;
+            return;
+        }
         size_t slots = ASRUtils::trait_runtime_contract(x.m_type)->n_slots;
         for (size_t i = 0; i < slots; i++) {
             auto *method = llvm_utils->CreateLoad2(llvm_utils->i8_ptr,
@@ -30134,6 +30157,76 @@ public:
             builder->CreateStore(method, llvm_utils->trait_method_address(view, i));
         }
         tmp = view;
+    }
+
+    uint64_t pointer_size() {
+        return llvm::DataLayout(module->getDataLayout()).getTypeAllocSize(llvm_utils->i8_ptr);
+    }
+
+    // The descriptor that the descriptor dummy `descriptor` of the erased
+    // entry being lowered holds (E10).
+    llvm::Value *trait_descriptor_value(const ASR::Variable_t &descriptor) {
+        return builder->CreateBitCast(llvm_symtab.at(get_hash((ASR::asr_t*)&descriptor)),
+            llvm_utils->i8_ptr);
+    }
+
+    // The size in bytes of the header of a trait object of the trait whose
+    // descriptor `descriptor` holds: three words and one per slot.
+    llvm::Value *trait_header_size(const ASR::Variable_t &descriptor) {
+        auto *i64 = llvm::Type::getInt64Ty(context);
+        llvm::Value *slots = llvm_utils->CreateLoad2(i64, builder->CreateBitCast(
+            trait_descriptor_value(descriptor), i64->getPointerTo()));
+        return builder->CreateMul(builder->CreateAdd(slots, llvm::ConstantInt::get(i64, 3)),
+            llvm::ConstantInt::get(i64, pointer_size()));
+    }
+
+    // The size of the header of a trait object of `type` when it has the
+    // slot count of a descriptor, else nullptr: the size of the header type.
+    llvm::Value *dynamic_trait_header_size(ASR::ttype_t *type) {
+        auto *descriptor = ASRUtils::trait_object_descriptor(type);
+        return descriptor ? trait_header_size(*descriptor) : nullptr;
+    }
+
+    // Storage for a header of a trait object of the trait whose descriptor
+    // `descriptor` holds, allocated in the entry block, where the dummy is
+    // already available, so that a loop does not grow the stack.
+    llvm::Value *dynamic_trait_header(const ASR::Variable_t &descriptor) {
+        llvm::Value *value = llvm_symtab.at(get_hash((ASR::asr_t*)&descriptor));
+        llvm::Type *prefix = llvm_utils->getTraitType();
+        if (!llvm::isa<llvm::Argument>(value)) {
+            return builder->CreateBitCast(builder->CreateAlloca(
+                llvm::Type::getInt8Ty(context), trait_header_size(descriptor)),
+                prefix->getPointerTo());
+        }
+        auto saved = builder->saveIP();
+        llvm::BasicBlock &entry = builder->GetInsertBlock()->getParent()->getEntryBlock();
+        builder->SetInsertPoint(&entry, entry.getFirstInsertionPt());
+        llvm::Value *storage = builder->CreateAlloca(llvm::Type::getInt8Ty(context),
+            trait_header_size(descriptor), "trait_discovery");
+        builder->restoreIP(saved);
+        return builder->CreateBitCast(storage, prefix->getPointerTo());
+    }
+
+    void visit_TraitDescriptor(const ASR::TraitDescriptor_t &x) {
+        auto *contract = ASR::down_cast<ASR::TraitRuntimeContract_t>(
+            ASRUtils::symbol_get_past_external(x.m_contract));
+        tmp = builder->CreateBitCast(
+            struct_api->get_trait_identity(contract->m_trait, module.get()),
+            llvm_utils->i8_ptr);
+    }
+
+    // The name or qualified name of a descriptor: the address of its string
+    // descriptor, as for a character constant.
+    void visit_TraitDescriptorName(const ASR::TraitDescriptorName_t &x) {
+        int64_t saved_loads = ptr_loads;
+        ptr_loads = 0;
+        visit_expr_wrapper(x.m_descriptor, false);
+        ptr_loads = saved_loads;
+        auto *string_type = llvm_utils->string_descriptor;
+        auto *type = llvm::StructType::get(context,
+            {llvm::Type::getInt64Ty(context), string_type, string_type}, false);
+        tmp = llvm_utils->create_gep2(type,
+            builder->CreateBitCast(tmp, type->getPointerTo()), x.m_qualified ? 2 : 1);
     }
 
     // Defines the runtime conformance tables of the concrete types of
@@ -30210,7 +30303,8 @@ public:
         auto *payload = copy_value ? llvm_utils->trait_field(view, 1)
             : llvm::Constant::getNullValue(llvm_utils->i8_ptr);
         return llvm_utils->create_trait_value(
-            llvm_utils->getTraitType(ASRUtils::expr_type(source)), view, payload);
+            llvm_utils->getTraitType(ASRUtils::expr_type(source)), view, payload,
+            dynamic_trait_header_size(ASRUtils::expr_type(source)));
     }
 
     void visit_TraitAllocate(const ASR::TraitAllocate_t &x) {
@@ -30323,7 +30417,8 @@ public:
         auto *snapshot = trait_snapshot(x.m_value, true, x.m_witness);
         auto *slot = trait_owner_slot(x.m_target);
         llvm_utils->assign_trait_value(slot, snapshot,
-            llvm_utils->getTraitType(ASRUtils::expr_type(x.m_target)));
+            llvm_utils->getTraitType(ASRUtils::expr_type(x.m_target)),
+            dynamic_trait_header_size(ASRUtils::expr_type(x.m_target)));
     }
 
     // F2018 10.2.1.3: the allocated array keeps its shape and dynamic type
@@ -30447,6 +30542,20 @@ public:
             return;
         }
         if (!procedure->m_return_var) {
+            // The owner of a trait object passed for a trait object of an
+            // erased trait parameter (E10), such as the result variable,
+            // has a header of the prefix type there.
+            for (size_t i = 0; i < x.n_args && i < args.size() &&
+                    i < function_type->getNumParams(); i++) {
+                llvm::Type *expected = function_type->getParamType(i);
+                auto *dummy = i < procedure->n_args
+                    ? ASRUtils::expr_to_variable_or_null(procedure->m_args[i]) : nullptr;
+                if (dummy && ASRUtils::trait_object_descriptor(dummy->m_type) &&
+                        args[i]->getType() != expected && args[i]->getType()->isPointerTy() &&
+                        expected->isPointerTy()) {
+                    args[i] = builder->CreateBitCast(args[i], expected);
+                }
+            }
             tmp = builder->CreateCall(function_type, entry, args);
             return;
         }
@@ -30595,6 +30704,7 @@ public:
             module.get(), false);
         if (is_array_type) dummy_type = dummy_type->getPointerTo();
         if (ASR::is_a<ASR::TraitDictionaryType_t>(*dummy.m_type) ||
+                ASR::is_a<ASR::TraitDescriptorType_t>(*dummy.m_type) ||
                 !ASRUtils::is_array(dummy.m_type)) {
             int64_t saved_loads = ptr_loads;
             ptr_loads = 0;

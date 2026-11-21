@@ -168,10 +168,19 @@ end module continue_compilation_traits_trait_param_m10
 module continue_compilation_traits_trait_param_m11
     use continue_compilation_traits_trait_param_m0
     implicit none
+    ! A generic message with trait parameters is called through trait objects
+    ! (E10) only with a class(P), allocatable or scalar result and scalar
+    ! numeric or logical other arguments, not with a class(P) argument.
+    abstract interface :: IAccept
+        logical function accept{Trait :: P}(self, x)
+            type(itself), intent(in), pass :: self
+            class(P), intent(in) :: x
+        end function accept
+    end interface IAccept
 contains
-    ! Generic messages with trait parameters through trait objects (E10).
     subroutine through_object()
         class(IResolver), allocatable :: c
+        class(IAccept), allocatable :: a
     end subroutine through_object
 end module continue_compilation_traits_trait_param_m11
 
@@ -192,3 +201,18 @@ contains
         call none{IShow + IOther}()
     end subroutine combination
 end module continue_compilation_traits_trait_param_m13
+
+module continue_compilation_traits_trait_param_m14
+    implicit none
+    abstract interface :: IPair
+        integer function pair{Trait :: P, Trait :: Q}(self)
+            type(itself), intent(in), pass :: self
+        end function pair
+    end interface IPair
+contains
+    ! A forwarded and a concrete trait argument through a trait object (E10).
+    integer function mixed{Trait :: T1}(c) result(r)
+        class(IPair), intent(in) :: c
+        r = c%pair{T1, IPair}()
+    end function mixed
+end module continue_compilation_traits_trait_param_m14

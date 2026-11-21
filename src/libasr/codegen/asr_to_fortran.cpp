@@ -371,6 +371,12 @@ public:
                     r = "class(" + std::string(ASRUtils::symbol_name(binder)) + ")";
                     break;
                 }
+                if (auto *descriptor = ASRUtils::trait_object_descriptor(
+                        const_cast<ASR::ttype_t*>(t))) {
+                    r = "class(" + std::string(ASRUtils::trait_descriptor_parameter(
+                        *descriptor)) + ")";
+                    break;
+                }
                 auto *contract = ASRUtils::trait_runtime_contract(const_cast<ASR::ttype_t*>(t));
                 r = "class(" + ASRUtils::trait_contract_name(*contract) + ")";
                 break;
@@ -388,6 +394,9 @@ public:
                 break;
             } case ASR::ttypeType::TraitDictionaryType: {
                 r = "type(conformance_dictionary)";
+                break;
+            } case ASR::ttypeType::TraitDescriptorType: {
+                r = "type(trait_descriptor)";
                 break;
             } case ASR::ttypeType::CPtr: {
                 r = "type(c_ptr)";

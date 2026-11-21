@@ -33,8 +33,10 @@ is a parameter, it is a **DeferredTypeName**. The generic body is checked
 once and copied as ASR when it is instantiated; the template instantiator
 replaces the node with the `StringConstant` naming the type or trait bound to
 `P`. Forwarded to another generic's binder, the copy is again a
-**DeferredTypeName** of that binder. An erased body (DI extension E10) will
-read the name from the run-time trait descriptor of `P`.
+**DeferredTypeName** of that binder. In an erased entry (DI extension E10),
+where `P` is a trait parameter passed as a trait descriptor, it becomes a
+[TraitDescriptorName](TraitDescriptorName.md) of the entry's descriptor dummy,
+which reads the name at run time.
 
 The node exists only in generic definitions; code generation never sees it in
 a static instance.

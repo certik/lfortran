@@ -20,6 +20,11 @@ static void retain_trait_lifecycle_effects(ASR::Function_t &function) {
     }
 }
 
+// The descriptor dummy of an erased entry for its trait parameter `binder`.
+static std::string trait_descriptor_dummy_name(const std::string &binder) {
+    return "__descriptor_" + binder;
+}
+
 // class(P) of a trait parameter P bound in `types`: a trait object of the
 // bound trait's contract, imported into `scope`, or class(Q) of the caller's
 // trait parameter Q that P is forwarded to. Any other type is unchanged.
@@ -31,6 +36,14 @@ static ASR::ttype_t *substitute_trait_parameter_object(Allocator &al, ASR::ttype
     if (!binder) return type;
     auto bound = types.find(ASRUtils::symbol_name(binder));
     if (bound == types.end() || !bound->second.first) return type;
+    if (ASR::is_a<ASR::TraitDescriptorType_t>(*bound->second.first)) {
+        // An erased entry: a trait object of the trait whose descriptor the
+        // entry's dummy for P is (E10).
+        ASR::symbol_t *dummy = scope->resolve_symbol(trait_descriptor_dummy_name(
+            ASR::down_cast<ASR::TraitDescriptorType_t>(bound->second.first)->m_parameter));
+        LCOMPILERS_ASSERT(dummy && ASRUtils::trait_descriptor_variable(dummy));
+        return ASRUtils::TYPE(ASR::make_TraitObjectType_t(al, type->base.loc, dummy));
+    }
     if (ASR::is_a<ASR::TraitObjectType_t>(*bound->second.first)) {
         return ASRUtils::import_trait_type(al, ASRUtils::duplicate_type(al,
             bound->second.first), scope);
@@ -1125,7 +1138,8 @@ static bool is_erased_binder_alias(ASR::symbol_t *symbol,
     auto *parameter = ASR::down_cast<ASR::TypeParameter_t>(variable->m_type);
     auto type = types.find(parameter->m_param);
     if (type == types.end() || (!ASR::is_a<ASR::TraitObjectType_t>(*type->second.first) &&
-            !ASR::is_a<ASR::TraitErasedType_t>(*type->second.first))) return false;
+            !ASR::is_a<ASR::TraitErasedType_t>(*type->second.first) &&
+            !ASR::is_a<ASR::TraitDescriptorType_t>(*type->second.first))) return false;
     auto *owner = ASRUtils::get_asr_owner(symbol);
     if (!owner || !ASR::is_a<ASR::Function_t>(*owner)) return false;
     auto *function = ASR::down_cast<ASR::Function_t>(owner);
@@ -1157,6 +1171,26 @@ erased_dictionary_binders(ASR::symbol_t *procedure,
         if (!contract) continue;
         result.push_back({ASR::down_cast<ASR::TraitErasedType_t>(
             found->second.first)->m_parameter, contract});
+    }
+    return result;
+}
+
+// The trait parameters of a procedure of a template that an erased
+// instantiation passes descriptors for (E10), in the template's binder order,
+// by the names of the erased parameters they are bound to.
+static std::vector<std::string>
+erased_descriptor_binders(ASR::symbol_t *procedure,
+        const std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &types) {
+    std::vector<std::string> result;
+    ASR::symbol_t *owner = ASRUtils::get_asr_owner(procedure);
+    if (!owner || !ASR::is_a<ASR::Template_t>(*owner)) return result;
+    auto *generic = ASR::down_cast<ASR::Template_t>(owner);
+    for (size_t i = 0; i < generic->n_args; i++) {
+        auto found = types.find(generic->m_args[i]);
+        if (found == types.end() || !found->second.first ||
+                !ASR::is_a<ASR::TraitDescriptorType_t>(*found->second.first)) continue;
+        result.push_back(ASR::down_cast<ASR::TraitDescriptorType_t>(
+            found->second.first)->m_parameter);
     }
     return result;
 }
@@ -1608,6 +1642,21 @@ public:
     ASR::symbol_t* instantiate_Function(ASR::Function_t* x) {
         dependencies.clear(al);
         new_scope = al.make_new<SymbolTable>(target_scope);
+        // Erased trait parameters travel with trailing descriptor dummies,
+        // which the declarations of class(P) objects name (E10).
+        std::vector<ASR::symbol_t*> descriptors;
+        for (auto &binder : erased_descriptor_binders(&x->base, type_subs)) {
+            std::string name = trait_descriptor_dummy_name(binder);
+            ASR::symbol_t *dummy = ASR::down_cast<ASR::symbol_t>(
+                ASRUtils::make_Variable_t_util(al, x->base.base.loc, new_scope,
+                    s2c(al, name), nullptr, 0, ASR::intentType::In, nullptr, nullptr,
+                    ASR::storage_typeType::Default, ASRUtils::TYPE(
+                        ASR::make_TraitDescriptorType_t(al, x->base.base.loc,
+                            s2c(al, binder))), nullptr, ASR::abiType::Source,
+                    ASR::accessType::Private, ASR::presenceType::Required, false));
+            new_scope->add_symbol(name, dummy);
+            descriptors.push_back(dummy);
+        }
         instantiate_local_symbols(x->m_symtab);
 
         Vec<ASR::expr_t*> args;
@@ -1671,6 +1720,22 @@ public:
             }
             instance.m_args = with_dictionaries.p;
             instance.n_args = with_dictionaries.size();
+            instance.m_function_signature = ASRUtils::TYPE(ASRUtils::make_FunctionType_t_util(
+                al, instance.base.base.loc, instance.m_args, instance.n_args,
+                instance.m_return_var, ASRUtils::get_FunctionType(instance), instance.m_symtab));
+        }
+        if (!descriptors.empty()) {
+            Vec<ASR::expr_t*> with_descriptors;
+            with_descriptors.reserve(al, instance.n_args + descriptors.size());
+            for (size_t i = 0; i < instance.n_args; i++) {
+                with_descriptors.push_back(al, instance.m_args[i]);
+            }
+            for (auto *dummy : descriptors) {
+                with_descriptors.push_back(al, ASRUtils::EXPR(
+                    ASR::make_Var_t(al, x->base.base.loc, dummy)));
+            }
+            instance.m_args = with_descriptors.p;
+            instance.n_args = with_descriptors.size();
             instance.m_function_signature = ASRUtils::TYPE(ASRUtils::make_FunctionType_t_util(
                 al, instance.base.base.loc, instance.m_args, instance.n_args,
                 instance.m_return_var, ASRUtils::get_FunctionType(instance), instance.m_symtab));
@@ -3435,7 +3500,10 @@ public:
         if (!ASRUtils::trait_parameter_binder(contract)) return;
         query->m_contract = substitute_trait_parameter_contract(al, contract, type_subs,
             new_scope);
-        if (ASRUtils::trait_parameter_binder(query->m_contract)) return;
+        // An erased entry queries the trait of its descriptor dummy, by the
+        // conformances declared with the dynamic type only (E10).
+        if (ASRUtils::trait_parameter_binder(query->m_contract) ||
+                ASRUtils::trait_descriptor_variable(query->m_contract)) return;
         Vec<ASR::symbol_t*> witnesses;
         witnesses.reserve(al, 0);
         for (size_t i = 0; ; i++) {
@@ -3462,6 +3530,43 @@ public:
         return &query->base.base;
     }
 
+    // The descriptor dummy of the procedure whose body is being instantiated
+    // for the erased trait parameter `parameter` (E10).
+    ASR::expr_t *erased_descriptor(const std::string &parameter, const Location &loc) {
+        ASR::Function_t *owner = ASRUtils::trait_erased_owner(new_scope);
+        ASR::Variable_t *dummy = owner ? ASRUtils::trait_descriptor_dummy(*owner, parameter)
+            : nullptr;
+        LCOMPILERS_ASSERT(dummy);
+        return ASRUtils::EXPR(ASR::make_Var_t(al, loc, &dummy->base));
+    }
+
+    // The descriptor of the trait bound to a trait parameter: of the bound
+    // trait's contract, of the binder it is forwarded to, or the erased
+    // entry's descriptor dummy.
+    ASR::asr_t *duplicate_TraitDescriptor(ASR::TraitDescriptor_t *x) {
+        auto *type = ASRUtils::duplicate_type(al, x->m_type);
+        auto *binder = ASRUtils::trait_parameter_binder(x->m_contract);
+        if (!binder) {
+            return ASR::make_TraitDescriptor_t(al, x->base.base.loc,
+                ASRUtils::import_type_declaration(al, x->m_contract, new_scope), type);
+        }
+        auto bound = type_subs.find(ASRUtils::symbol_name(binder));
+        if (bound != type_subs.end() && bound->second.first &&
+                ASR::is_a<ASR::TraitDescriptorType_t>(*bound->second.first)) {
+            return &erased_descriptor(ASR::down_cast<ASR::TraitDescriptorType_t>(
+                bound->second.first)->m_parameter, x->base.base.loc)->base;
+        }
+        return ASR::make_TraitDescriptor_t(al, x->base.base.loc,
+            substitute_trait_parameter_contract(al, x->m_contract, type_subs, new_scope),
+            type);
+    }
+
+    ASR::asr_t *duplicate_TraitDescriptorName(ASR::TraitDescriptorName_t *x) {
+        return ASR::make_TraitDescriptorName_t(al, x->base.base.loc,
+            duplicate_expr(x->m_descriptor), x->m_qualified,
+            ASRUtils::duplicate_type(al, x->m_type));
+    }
+
     // `type_name{P}()` names the type or trait bound to P. A binder of a
     // still-generic caller, or an erased one, keeps the name deferred.
     ASR::asr_t *duplicate_DeferredTypeName(ASR::DeferredTypeName_t *x) {
@@ -3469,6 +3574,14 @@ public:
         if (ASR::is_a<ASR::TypeParameter_t>(*argument)) {
             auto bound = type_subs.find(
                 ASR::down_cast<ASR::TypeParameter_t>(argument)->m_param);
+            // An erased entry reads the name from its descriptor dummy (E10).
+            if (bound != type_subs.end() && bound->second.first &&
+                    ASR::is_a<ASR::TraitDescriptorType_t>(*bound->second.first)) {
+                return ASR::make_TraitDescriptorName_t(al, x->base.base.loc,
+                    erased_descriptor(ASR::down_cast<ASR::TraitDescriptorType_t>(
+                        bound->second.first)->m_parameter, x->base.base.loc), x->m_qualified,
+                    ASRUtils::duplicate_type(al, x->m_type));
+            }
             if (bound != type_subs.end() && bound->second.first) {
                 std::string name = ASRUtils::type_argument_name(bound->second.first,
                     bound->second.second, x->m_qualified);
@@ -3524,6 +3637,41 @@ public:
         }
         ADD_ASR_DEPENDENCIES(new_scope, symbol, dependencies);
         return symbol;
+    }
+
+    // Selected evidence of the generic's scope, such as the witness of a
+    // concrete type of the generic's module packed in its body, imported
+    // into an instance made elsewhere.
+    ASR::symbol_t *visible_evidence(ASR::symbol_t *symbol) {
+        if (!symbol || ASRUtils::is_visible_from(symbol, new_scope)) return symbol;
+        ASR::symbol_t *reference = ASRUtils::import_symbol(al,
+            ASRUtils::symbol_get_past_external(symbol), new_scope);
+        if (ASR::is_a<ASR::ExternalSymbol_t>(*reference)) {
+            ADD_ASR_DEPENDENCIES(new_scope, reference, dependencies);
+        }
+        return reference;
+    }
+
+    ASR::asr_t *duplicate_TraitPack(ASR::TraitPack_t *x) {
+        auto *pack = ASR::down_cast2<ASR::TraitPack_t>(
+            BaseExprStmtDuplicator<BodyInstantiator>::duplicate_TraitPack(x));
+        pack->m_witness = visible_evidence(pack->m_witness);
+        return &pack->base.base;
+    }
+
+    ASR::asr_t *duplicate_TraitAssignment(ASR::TraitAssignment_t *x) {
+        auto *assignment = ASR::down_cast2<ASR::TraitAssignment_t>(
+            BaseExprStmtDuplicator<BodyInstantiator>::duplicate_TraitAssignment(x));
+        assignment->m_witness = visible_evidence(assignment->m_witness);
+        return &assignment->base.base;
+    }
+
+    ASR::asr_t *duplicate_TraitAllocate(ASR::TraitAllocate_t *x) {
+        auto *allocate = ASR::down_cast2<ASR::TraitAllocate_t>(
+            BaseExprStmtDuplicator<BodyInstantiator>::duplicate_TraitAllocate(x));
+        allocate->m_witness = visible_evidence(allocate->m_witness);
+        allocate->m_type_declaration = visible_evidence(allocate->m_type_declaration);
+        return &allocate->base.base;
     }
 
     ASR::asr_t *duplicate_TraitFunctionCall(ASR::TraitFunctionCall_t *x) {
@@ -3584,19 +3732,26 @@ public:
         if (!definition || !ASR::is_a<ASR::Function_t>(*definition)) return;
         auto *function = ASR::down_cast<ASR::Function_t>(definition);
         if (args.size() >= function->n_args) return;
-        std::vector<std::string> parameters;
+        // A parameter, and whether it is a trait parameter's descriptor.
+        std::vector<std::pair<std::string, bool>> parameters;
         for (size_t i = args.size(); i < function->n_args; i++) {
             auto *dummy = ASRUtils::get_variable_from_symbol(ASRUtils::symbol_get_past_external(
                 ASR::down_cast<ASR::Var_t>(function->m_args[i])->m_v));
+            if (dummy && ASRUtils::trait_descriptor_parameter(*dummy)) {
+                parameters.push_back({ASRUtils::trait_descriptor_parameter(*dummy), true});
+                continue;
+            }
             if (!dummy || !ASR::is_a<ASR::TraitDictionaryType_t>(*dummy->m_type) ||
                     !ASR::down_cast<ASR::TraitDictionaryType_t>(dummy->m_type)->m_parameter) {
                 return;
             }
-            parameters.push_back(ASR::down_cast<ASR::TraitDictionaryType_t>(
-                dummy->m_type)->m_parameter);
+            parameters.push_back({ASR::down_cast<ASR::TraitDictionaryType_t>(
+                dummy->m_type)->m_parameter, false});
         }
         for (auto &parameter : parameters) {
-            args.push_back(al, ASR::call_arg_t{loc, erased_dictionary(parameter, loc)});
+            args.push_back(al, ASR::call_arg_t{loc, parameter.second
+                ? erased_descriptor(parameter.first, loc)
+                : erased_dictionary(parameter.first, loc)});
         }
     }
 
