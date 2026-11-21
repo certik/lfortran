@@ -1956,6 +1956,8 @@ declaration_type_spec
 var_type
     : declaration_type_spec { $$ = $1; }
     | KW_PROCEDURE "(" id ")" { $$ = ATTR_TYPE_NAME(Procedure, $3, @$); }
+    | KW_PROCEDURE "(" id "{" instantiate_symbol_list "}" ")" {
+        $$ = ATTR_TYPE_ATTR(Procedure, GENERIC_TYPE_ARGS(p.m_a, $3, $5, @$), @$); }
     | KW_PROCEDURE "(" ")" { $$ = ATTR_TYPE(Procedure, @$); }
     | KW_PROCEDURE "(" KW_INTEGER "(" kind_arg_list ")" ")" { $$ = ATTR_TYPE_ATTR(
         Procedure, ATTR_TYPE_KIND(Integer, $5, @$), @$); }

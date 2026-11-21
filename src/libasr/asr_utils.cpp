@@ -6780,8 +6780,12 @@ ASR::symbol_t *trait_type_parameter(ASR::expr_t *value)
         scope = symbol_parent_symtab(symbol_get_past_external(
             ASR::down_cast<ASR::Var_t>(value)->m_v));
     } else if (ASR::is_a<ASR::FunctionCall_t>(*value)) {
-        scope = symbol_symtab(symbol_get_past_external(
-            ASR::down_cast<ASR::FunctionCall_t>(value)->m_name));
+        ASR::symbol_t *callee = symbol_get_past_external(
+            ASR::down_cast<ASR::FunctionCall_t>(value)->m_name);
+        // A call through a dummy procedure or a procedure pointer, whose
+        // interface mentions the binders of the generic declaring it.
+        scope = ASR::is_a<ASR::Variable_t>(*callee) ? symbol_parent_symtab(callee)
+            : symbol_symtab(callee);
     } else if (ASR::is_a<ASR::DeferredMethodCall_t>(*value)) {
         // Its binder-typed result is a type argument of the call, declared
         // where its object is.

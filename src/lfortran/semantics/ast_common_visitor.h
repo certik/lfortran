@@ -15067,6 +15067,22 @@ public:
                         ASRUtils::type_get_past_allocatable(type)));
                 }
             }
+        } else if (sym_type->m_type == AST::decl_typeType::TypeProcedure
+                && sym_type->m_attr
+                && AST::is_a<AST::AttrGenericTypeArgs_t>(*sym_type->m_attr)) {
+            // `procedure(ctor1{T1,U})`: the interface is an instance of a
+            // generic abstract interface (DI extension E4).
+            type_declaration = generic_interface_instance(
+                *AST::down_cast<AST::AttrGenericTypeArgs_t>(sym_type->m_attr));
+            type = ASRUtils::import_trait_type(al,
+                ASRUtils::import_procedure_type(al,
+                    ASR::down_cast<ASR::Function_t>(ASRUtils::symbol_get_past_external(
+                        type_declaration))->m_function_signature,
+                    current_scope),
+                current_scope);
+            if (is_pointer) {
+                type = ASRUtils::TYPE(ASR::make_Pointer_t(al, loc, type));
+            }
         } else if (sym_type->m_type == AST::decl_typeType::TypeProcedure) {
             // `procedure(real)`, `procedure(logical)`, ... name a type, as
             // `procedure(real(8))` does with its attribute (R1514), not the
@@ -15251,6 +15267,12 @@ public:
                 }
                 type_declaration = v;
                 v = ASRUtils::symbol_get_past_external(v);
+                if (ASR::is_a<ASR::Template_t>(*v) && generic_interface_template(v)) {
+                    diag.semantic_error_label("generic interface '" + func_name +
+                        "' needs type arguments", {sym_type->base.base.loc},
+                        "use `procedure(" + func_name + "{...})`");
+                    throw SemanticAbort();
+                }
                 LCOMPILERS_ASSERT(ASR::is_a<ASR::Function_t>(*v));
                 type = ASRUtils::import_trait_type(al,
                     ASRUtils::import_procedure_type(al,
@@ -26060,6 +26082,153 @@ public:
         }
     }
 
+    // The generic procedure or generic abstract interface that `symbol`
+    // names, if any: its Template, or the Template that owns it.
+    static ASR::Template_t *generic_interface_template(ASR::symbol_t *symbol) {
+        if (!symbol) return nullptr;
+        symbol = ASRUtils::symbol_get_past_external(symbol);
+        if (ASR::is_a<ASR::Function_t>(*symbol)) {
+            auto *owner = ASRUtils::get_asr_owner(symbol);
+            if (!owner || !ASR::is_a<ASR::Template_t>(*owner)) return nullptr;
+            auto *generic = ASR::down_cast<ASR::Template_t>(owner);
+            if (generic->m_symtab->get_symbol(generic->m_name) != symbol) return nullptr;
+            symbol = owner;
+        }
+        if (!ASR::is_a<ASR::Template_t>(*symbol)) return nullptr;
+        auto *generic = ASR::down_cast<ASR::Template_t>(symbol);
+        ASR::symbol_t *procedure = generic->m_symtab->get_symbol(generic->m_name);
+        if (!procedure || !ASR::is_a<ASR::Function_t>(*procedure)) return nullptr;
+        return generic;
+    }
+
+    // The interface `name{args}` of `procedure(name{args})` (DI extension
+    // E4): the specialization of the generic abstract interface (or generic
+    // procedure) `name` for the type arguments. The arguments are concrete
+    // types and traits, or parameters of the enclosing generic; an instance
+    // with such parameters is declared in the scope that uses it and copied
+    // with it when the enclosing generic is instantiated.
+    ASR::symbol_t *generic_interface_instance(const AST::AttrGenericTypeArgs_t &x) {
+        const Location &loc = x.base.base.loc;
+        std::string name = to_lower(x.m_name);
+        ASR::symbol_t *symbol = current_scope->resolve_symbol(name);
+        ASR::Template_t *generic = generic_interface_template(symbol);
+        if (!generic || !is_trait_generic_procedure(generic)) {
+            trait_call_error("'" + name + "' is not a generic interface, so it cannot "
+                "have type arguments", loc);
+        }
+        bool keywords = false;
+        for (size_t i = 0; i < x.n_args; i++) {
+            if (AST::is_a<AST::AttrKeyword_t>(*x.m_args[i])) keywords = true;
+        }
+        if (!keywords && x.n_args != generic->n_args) {
+            trait_call_error("generic interface '" + name + "' has " +
+                std::to_string(generic->n_args) + " generic parameter" +
+                (generic->n_args == 1 ? "" : "s") + ", but " +
+                std::to_string(x.n_args) + " type argument" +
+                (x.n_args == 1 ? " is" : "s are") + " given", loc);
+        }
+        auto *procedure = ASR::down_cast<ASR::Function_t>(
+            generic->m_symtab->get_symbol(generic->m_name));
+        std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> types;
+        trait_explicit_type_arguments(generic, generic->m_args, x.m_args, x.n_args,
+            types, loc);
+        bool forwarding = false;
+        std::string instance_name = "__instance_" + std::string(generic->m_name);
+        for (size_t i = 0; i < generic->n_args; i++) {
+            auto argument = types.find(generic->m_args[i]);
+            if (argument == types.end() || !argument->second.first) {
+                trait_call_error("missing type argument for generic parameter '" +
+                    std::string(generic->m_args[i]) + "' of generic interface '" +
+                    name + "'", loc);
+            }
+            ASR::ttype_t *type = argument->second.first;
+            if (ASR::is_a<ASR::TypeParameter_t>(*type) ||
+                    ASRUtils::trait_object_binder(type)) forwarding = true;
+            instance_name += "_" + (argument->second.second
+                ? std::string(ASRUtils::symbol_name(ASRUtils::symbol_get_past_external(
+                    argument->second.second)))
+                : ASRUtils::get_type_code(type));
+        }
+        if (forwarding) {
+            // Parameters of the enclosing generic, which is still being
+            // declared. Its constraints are checked once those of the
+            // enclosing generic are known.
+            SymbolTable *target = current_scope;
+            while (target && (!target->asr_owner ||
+                    !ASR::is_a<ASR::symbol_t>(*target->asr_owner) ||
+                    !ASR::is_a<ASR::Template_t>(
+                        *ASR::down_cast<ASR::symbol_t>(target->asr_owner)))) {
+                target = target->parent;
+            }
+            LCOMPILERS_ASSERT(target);
+            for (const auto &entry : types) {
+                if (!ASR::is_a<ASR::TypeParameter_t>(*entry.second.first) &&
+                        !ASRUtils::trait_object_binder(entry.second.first)) continue;
+                if (!entry.second.second || ASRUtils::symbol_parent_symtab(
+                        ASRUtils::symbol_get_past_external(entry.second.second)) != target) {
+                    trait_call_error("the type arguments of generic interface '" + name +
+                        "' can only be parameters of the innermost enclosing generic",
+                        loc);
+                }
+            }
+            // The instance is declared where it is used, as an interface
+            // body would be, so that it is copied with the scope using it.
+            SymbolTable *home = is_derived_type && current_scope->parent
+                ? current_scope->parent : current_scope;
+            if (ASR::symbol_t *existing = home->get_symbol(instance_name)) {
+                return existing;
+            }
+            std::map<std::string, ASR::symbol_t*> symbols;
+            size_t n_diagnostics = diag.diagnostics.size();
+            auto previous = home->get_scope();
+            ASR::symbol_t *instance = instantiate_symbol(al, home, types, symbols,
+                instance_name, &procedure->base, diag);
+            if (diag.diagnostics.size() > n_diagnostics) {
+                erase_failed_instantiation(home, previous);
+                throw SemanticAbort();
+            }
+            ASRUtils::get_FunctionType(instance)->m_deftype = ASR::deftypeType::Interface;
+            // The procedure of a generic repeats the declarations of its
+            // binders; an interface needs none of them.
+            auto *function = ASR::down_cast<ASR::Function_t>(instance);
+            for (size_t i = 0; i < generic->n_args; i++) {
+                ASR::symbol_t *alias = function->m_symtab->get_symbol(generic->m_args[i]);
+                if (!alias || !ASR::is_a<ASR::Variable_t>(*alias)) continue;
+                bool dummy = function->m_return_var &&
+                    ASRUtils::EXPR2VAR(function->m_return_var) ==
+                        ASR::down_cast<ASR::Variable_t>(alias);
+                for (size_t j = 0; j < function->n_args; j++) {
+                    dummy |= ASR::is_a<ASR::Var_t>(*function->m_args[j]) &&
+                        ASR::down_cast<ASR::Var_t>(function->m_args[j])->m_v == alias;
+                }
+                if (!dummy) function->m_symtab->erase_symbol(generic->m_args[i]);
+            }
+            pending_generic_interface_checks.push_back({generic, types, target, loc});
+            return instance;
+        }
+        Vec<ASR::call_arg_t> no_actuals;
+        no_actuals.reserve(al, 0);
+        // A component's interface belongs to the scope that hosts its type.
+        SymbolTable *saved_scope = current_scope;
+        if (is_derived_type && current_scope->parent) current_scope = current_scope->parent;
+        bool saved_specializing_interface = specializing_interface;
+        specializing_interface = true;
+        ASR::symbol_t *specialization = nullptr;
+        try {
+            specialization = prepare_trait_procedure_call(generic, procedure,
+                no_actuals, x.m_args, x.n_args, loc);
+        } catch (const SemanticAbort &) {
+            current_scope = saved_scope;
+            specializing_interface = saved_specializing_interface;
+            throw;
+        }
+        current_scope = saved_scope;
+        specializing_interface = saved_specializing_interface;
+        specialization = make_operator_proc_visible(specialization, "interface", current_scope);
+        ASRUtils::insert_module_dependency(specialization, al, current_module_dependencies);
+        return specialization;
+    }
+
     void visit_GenericProcedureValue(const AST::GenericProcedureValue_t &x) {
         const Location& loc = x.base.base.loc;
         std::string name = to_lower(x.m_name);
@@ -33156,7 +33325,7 @@ public:
             const Location &loc, ASR::Function_t *runtime_signature = nullptr,
             std::vector<ASR::ttype_t*> *closed_members = nullptr,
             ASR::ttype_t **runtime_result = nullptr, bool open_slot = false) {
-        if (!is_body_visitor) {
+        if (!is_body_visitor && !specializing_interface) {
             for (auto *constraint : trait_constraints(generic)) {
                 auto *trait = ASRUtils::trait_constraint_trait(*constraint);
                 if (trait && trait->m_kind == ASR::trait_kindType::IntrinsicTypeSet) {
@@ -33283,6 +33452,34 @@ public:
     }
 
     bool trait_requirement_specializations_changed = false;
+    // Set while `procedure(name{args})` specializes a generic interface.
+    bool specializing_interface = false;
+    // An instance of a generic interface whose type arguments are parameters
+    // of a generic being declared, checked against the constraints of the
+    // interface once that generic's constraints exist.
+    struct PendingGenericInterfaceCheck {
+        ASR::Template_t *generic;
+        std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> types;
+        SymbolTable *target;
+        Location loc;
+    };
+    std::vector<PendingGenericInterfaceCheck> pending_generic_interface_checks;
+
+    void check_generic_interface_instances(SymbolTable *target) {
+        std::vector<PendingGenericInterfaceCheck> checks;
+        for (auto it = pending_generic_interface_checks.begin();
+                it != pending_generic_interface_checks.end();) {
+            if (it->target == target) {
+                checks.push_back(*it);
+                it = pending_generic_interface_checks.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        for (auto &check : checks) {
+            resolve_trait_requirements(check.generic, check.types, check.loc);
+        }
+    }
 
     // Records that the module or program owning `scope` depends on module
     // `name`. Generic bodies are instantiated after the units' own

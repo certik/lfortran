@@ -5718,6 +5718,7 @@ public:
                 throw;
             }
         }
+        check_generic_interface_instances(generic->m_symtab);
         tmp = &generic->base.base;
     }
 
@@ -10192,6 +10193,7 @@ public:
                 add_trait_parameter_constraints(scope, binders[i], parameter_traits[i],
                     parameter.loc, true, same_types);
             }
+            check_generic_interface_instances(scope);
             // The type arguments of a generic parent (TD-45).
             if (parent_package) {
                 const AST::AttrExtends_t *extends = nullptr;
