@@ -10386,6 +10386,8 @@ public:
             bool is_nopass = false;
             bool is_class_procedure = false;
             for (size_t i = 0; i < f3->n_procs && !function_found; i++) {
+                // A generic specific was considered by handle_trait_call.
+                if (ASRUtils::is_generic_specific(f3->m_procs[i])) continue;
                 ASR::symbol_t* f4 = ASRUtils::symbol_get_past_external(f3->m_procs[i]);
                 if (ASR::is_a<ASR::StructMethodDeclaration_t>(*f4)) {
                     ASR::StructMethodDeclaration_t* f5 = ASR::down_cast<ASR::StructMethodDeclaration_t>(f4);

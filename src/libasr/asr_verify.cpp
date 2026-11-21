@@ -394,9 +394,11 @@ public:
     }
 
     // A generic name resolves to one of its specific procedures, so every
-    // entry has to be something that can be called.
+    // entry has to be something that can be called. A specific of a generic
+    // interface may also be a generic procedure (DI extension E6).
     void verify_specific_procedures(const std::string &what,
-            symbol_t **procs, size_t n_procs, const Location &loc) {
+            symbol_t **procs, size_t n_procs, const Location &loc,
+            bool allow_generic = false) {
         for (size_t i = 0; i < n_procs; i++) {
             require_with_loc_id(procs[i] != nullptr,
                 "asr.verify.generic_procedure.specific_is_procedure",
@@ -407,7 +409,9 @@ public:
                     (ASR::is_a<ASR::Function_t>(*proc) ||
                      ASR::is_a<ASR::StructMethodDeclaration_t>(*proc) ||
                      ASR::is_a<ASR::GenericProcedure_t>(*proc) ||
-                     ASR::is_a<ASR::ExternalSymbol_t>(*proc)),
+                     ASR::is_a<ASR::ExternalSymbol_t>(*proc) ||
+                     (allow_generic && ASR::is_a<ASR::Template_t>(*proc) &&
+                      ASRUtils::trait_method_function(proc) != nullptr)),
                 "asr.verify.generic_procedure.specific_is_procedure",
                 what + " specific procedure '" +
                 std::string(ASRUtils::symbol_name(procs[i])) +
@@ -423,7 +427,7 @@ public:
         require(x.m_parent_symtab != nullptr,
             gen_name + "::m_parent_symtab cannot be nullptr");
         verify_specific_procedures("GenericProcedure '" + gen_name + "'",
-            x.m_procs, x.n_procs, x.base.base.loc);
+            x.m_procs, x.n_procs, x.base.base.loc, true);
     }
 
     // A namelist group is a list of variables; I/O reads and writes each one

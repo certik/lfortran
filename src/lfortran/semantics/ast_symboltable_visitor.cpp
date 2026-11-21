@@ -7810,6 +7810,11 @@ public:
                 current_scope, generic_name,
                 symbols.p, symbols.size(), access);
             current_scope->add_or_overwrite_symbol(sym_name_str, ASR::down_cast<ASR::symbol_t>(v));
+            check_generic_specifics_distinguishable(proc.first, symbols.p, symbols.size(),
+                [&](size_t j) {
+                    return j < proc.second.size() ? proc.second[j].loc
+                        : symbols[j]->base.loc;
+                });
         }
         current_scope = current_scope_copy;
         generic_procedures.clear();
@@ -8047,6 +8052,10 @@ public:
                     v = ASR::make_GenericProcedure_t(al, loc,
                         clss->m_symtab, generic_name,
                         cand_procs.p, cand_procs.size(), access);
+                    check_generic_specifics_distinguishable(pname.first, cand_procs.p,
+                        cand_procs.size(), [&](size_t j) {
+                            return cand_procs[j]->base.loc;
+                        });
                 }
                 ASR::symbol_t *cls_proc_sym = ASR::down_cast<ASR::symbol_t>(v);
                 clss->m_symtab->add_symbol(pname.first, cls_proc_sym);

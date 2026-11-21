@@ -3024,6 +3024,11 @@ bool select_func_subrout(const ASR::symbol_t* proc, const Vec<ASR::call_arg_t>& 
     Location& loc, const std::function<void (const std::string &, const Location &)> err,
     const TraitConformance &conforms = nullptr);
 
+// Whether the specific `proc` of a generic interface or generic binding is a
+// generic procedure (DI extension E6), a Template or a binding of one. The
+// frontend resolves and instantiates generic specifics; they never match here.
+bool is_generic_specific(ASR::symbol_t *proc);
+
 template <typename T>
 int select_generic_procedure(const Vec<ASR::call_arg_t> &args,
     const T &p, Location loc,
@@ -3036,6 +3041,7 @@ int select_generic_procedure(const Vec<ASR::call_arg_t> &args,
     // excluding `args[0]`; another specific receives it as the dummy that its
     // PASS attribute names, which need not be the first.
     auto matches = [&](ASR::symbol_t* proc_sym, const TraitConformance &with) -> bool {
+        if (is_generic_specific(proc_sym)) return false;
         if( ASR::is_a<ASR::StructMethodDeclaration_t>(*proc_sym) ) {
             ASR::StructMethodDeclaration_t *clss_fn
                 = ASR::down_cast<ASR::StructMethodDeclaration_t>(proc_sym);

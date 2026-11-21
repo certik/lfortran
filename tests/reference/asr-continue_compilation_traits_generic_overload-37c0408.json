@@ -1,0 +1,13 @@
+{
+    "basename": "asr-continue_compilation_traits_generic_overload-37c0408",
+    "cmd": "lfortran --semantics-only --continue-compilation --no-color {infile}",
+    "infile": "tests/errors/continue_compilation_traits_generic_overload.f90",
+    "infile_hash": "c698e1067f6716047bf8f5d1d58bef8f11f8932e0a7458b2363d6770",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": "asr-continue_compilation_traits_generic_overload-37c0408.stderr",
+    "stderr_hash": "aaed8436fe2ae3061e2699becb713d0dde269c08677a2890b2a97ae5",
+    "returncode": 1
+}

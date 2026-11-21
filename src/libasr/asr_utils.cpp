@@ -16008,6 +16008,18 @@ bool check_class_assignment_compatibility(ASR::symbol_t* target, ASR::symbol_t* 
     return is_class_same;
 }
 
+bool is_generic_specific(ASR::symbol_t *proc) {
+    proc = ASRUtils::symbol_get_past_external(proc);
+    if (proc && ASR::is_a<ASR::StructMethodDeclaration_t>(*proc)) {
+        proc = ASRUtils::symbol_get_past_external(
+            ASR::down_cast<ASR::StructMethodDeclaration_t>(proc)->m_proc);
+    }
+    if (!proc) return false;
+    if (ASR::is_a<ASR::Template_t>(*proc)) return true;
+    return ASR::is_a<ASR::Function_t>(*proc) &&
+        trait_method_template(*ASR::down_cast<ASR::Function_t>(proc)) != nullptr;
+}
+
 bool is_elemental(ASR::symbol_t* x) {
     ASR::symbol_t* proc = ASRUtils::symbol_get_past_external(x);
     if (ASR::is_a<ASR::StructMethodDeclaration_t>(*proc)) {

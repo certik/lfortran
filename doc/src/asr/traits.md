@@ -1144,12 +1144,108 @@ call reg%register1{IClient}(Client, lg)   ! T1 = ILogger, U = Client
 
 No standard program changes meaning: a type name was never a valid actual
 argument. A type name associated with a data dummy, an argument of a
-standard generic interface (overloading of generic specifics is not
-implemented yet) and an initial procedure target (`procedure(mk), pointer ::
-p => T`) are errors. Generic initializers (E8) are not designated yet.
+generic interface whose specifics are all non-generic and an initial
+procedure target (`procedure(mk), pointer :: p => T`) are errors. As an
+argument of a generic interface with generic specifics, each generic
+specific designates it for its own dummy (next section). Generic
+initializers (E8) are not designated yet.
 
 See `integration_tests/traits_type_designator_01.f90` and the diagnostics in
 `tests/errors/continue_compilation_traits_type_designator.f90`.
+
+### Overloading of generic procedures
+
+A generic interface or a generic binding can have generic specific
+procedures, alongside non-generic ones (DI extension E6):
+
+```fortran
+type :: Container
+    ...
+contains
+    generic   :: register => register0, register1, register2
+    procedure :: register0, register1, register2
+end type Container
+
+interface norm
+    module procedure norm_generic   ! norm_generic{INumeric :: T}(x)
+    module procedure norm_real64    ! a specialization for real(real64)
+end interface norm
+
+call cont%register{IClient}(Client)   ! register1{IClient, ILogger, Client}
+x = norm(v)                           ! norm_real64 for real(real64)
+y = norm{real(8)}(v)                  ! norm_generic{real(8)}
+```
+
+In the ASR, a `GenericProcedure` lists the `Template` of a generic specific
+(`ASRUtils::is_generic_specific`), or, for a generic binding, the
+`StructMethodDeclaration` bound to it. `select_generic_procedure` never
+matches a generic specific: `handle_trait_call` resolves a reference to such
+a generic (`select_overloaded_specific`), for a function or a subroutine,
+with or without explicit type arguments, keywords and type names:
+
+1. Without explicit type arguments, the non-generic specifics are tried by
+   the standard rules. If one matches, the reference is resolved as an
+   ordinary generic reference. A type name as an argument is never accepted
+   by a non-generic specific.
+2. Otherwise each generic specific is tried. It is *viable* if its leading
+   parameters admit the explicit type arguments, inference, also through
+   dummy procedures (E4) and type names (E3), determines the other
+   parameters, and its constraints, also conformance constraints `P :: U`
+   (E2), hold. The arguments are visited for each specific as a trial whose
+   diagnostics, statements and scope changes are discarded
+   (`trait_trial`). The viable specific is then referenced as if it had been
+   named, and instantiated.
+3. If no specific is viable, the error lists each specific and why it fails:
+
+   ```
+   no specific procedure of generic 'register' accepts this reference:
+       register0: type 'printer' does not implement trait 'ilogger', as required for generic parameter 'u' of 'register0'
+       register1: type name 'printer' does not designate a procedure for dummy procedure 'ctor': the structure constructor 'printer(...)' with 1 component value is not valid here: the interface has 1 dummy argument, but the type has 0 components
+   ```
+
+A type name designates the type's initializer in preference to its structure
+constructor (E3), and this preference also holds across the specifics: when
+the type name designates an initializer for some viable specifics and the
+structure constructor for others, only the former remain. So
+`call cont%register{ILogger}(DoubleLogger)` selects `register2`, whose dummy
+procedure matches `DoubleLogger`'s initializer, although `DoubleLogger()`,
+whose components are allocatable, is also a valid structure constructor for
+`register0`'s interface without arguments (Sect. 4.8 of the extension). Two
+viable specifics that remain are reported as an ambiguous reference, which
+the declaration rule otherwise prevents.
+
+**Declaration rule.** When the generic is declared
+(`check_generic_specifics_distinguishable`, for interfaces and type-bound
+generic bindings), every two generic specifics must be distinguishable by
+F2023 15.4.3.4.5: by their passed-object dummies, or by a nonoptional dummy
+argument that disambiguates by position together with one, no earlier, that
+disambiguates by name. With two extensions:
+
+- A dummy argument whose type is a generic parameter is a wildcard over its
+  constraint. A type-set parameter ranges over its members, so
+  `{IInteger :: T}` and `{IReal :: T}` are distinguishable. Any other
+  parameter, constrained by traits or unconstrained, and a trait object
+  `class(T1)` are conservatively taken to range over every type, intrinsic or
+  derived, so they are distinguishable from another dummy only by rank, or by
+  being a procedure rather than a data object.
+- Two dummy procedures are distinguishable if one is a function and the other
+  a subroutine, if their interfaces have different numbers of nonoptional
+  dummy arguments, or if some corresponding dummy arguments, or their
+  results, are distinguishable. `register0`, `register1` and `register2`
+  are distinguishable by the arity of `ctor`'s interface.
+
+A non-generic specific may overlap a generic one, since resolution prefers
+it, and two non-generic specifics are not checked, as before. Generic
+specifics distinguishable only by the count rule (2) of 15.4.3.4.5 are
+reported; the check is made where a generic binding is declared, not when an
+extending type merges it with its parent's.
+
+When a trial designates a structure constructor for a type name, its
+procedure `__ctor_<type>_<n>` is created even if that specific is not
+selected; it is a private procedure of the unit and is otherwise unused.
+
+See `integration_tests/traits_generic_overload_01.f90` and the diagnostics in
+`tests/errors/continue_compilation_traits_generic_overload.f90`.
 
 ### Explicit procedure values
 
@@ -1256,7 +1352,8 @@ receiver whose declared type has member slots for the binding dispatches
 through them instead (see "Overriding generic bindings"). Its argument list
 omits the passed-object dummy argument.
 See `integration_tests/traits_generic_binding_05.f90`. A Fortran `GENERIC`
-binding whose specific procedure is generic is not supported.
+binding can have generic specific procedures; see "Overloading of generic
+procedures".
 
 ### Generic messages through a constrained type parameter
 

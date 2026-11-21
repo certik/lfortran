@@ -1,0 +1,59 @@
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+  --> tests/errors/continue_compilation_traits_generic_overload.f90:13:5 - 18:1
+   |
+13 |        abstract interface :: ILogger
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+   |
+18 |    
+   | ...^ LFortran extension
+
+semantic error: generic specific procedures 'overlap_real' and 'overlap_numeric' of generic 'overlap' are not distinguishable: some types that their generic parameters admit make a reference match both
+  --> tests/errors/continue_compilation_traits_generic_overload.f90:73:9
+   |
+73 |         module procedure overlap_real, overlap_numeric
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: generic specific procedures 'same_any' and 'same_numeric' of generic 'same' are not distinguishable: some types that their generic parameters admit make a reference match both
+  --> tests/errors/continue_compilation_traits_generic_overload.f90:68:9
+   |
+68 |         module procedure same_any, same_numeric
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: generic specific procedures 'add0' and 'add0b' of generic 'add' are not distinguishable: some types that their generic parameters admit make a reference match both
+  --> tests/errors/continue_compilation_traits_generic_overload.f90:63:9
+   |
+63 |         procedure :: add0, add0b
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: no specific procedure of generic 'register' accepts this reference:
+    register0: type 'printer' does not implement trait 'ilogger', as required for generic parameter 'u' of 'register0'
+    register1: type name 'printer' does not designate a procedure for dummy procedure 'ctor': the structure constructor 'printer(...)' with 1 component value is not valid here: the interface has 1 dummy argument, but the type has 0 components
+   --> tests/errors/continue_compilation_traits_generic_overload.f90:165:5
+    |
+165 |     call cont%register{ILogger}(Printer)
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: no specific procedure of generic 'register' accepts this reference:
+    register0: type 'logger' does not implement trait 'iprinter', as required for generic parameter 'u' of 'register0'
+    register1: type 'logger' does not implement trait 'iprinter', as required for generic parameter 'u' of 'register1'
+   --> tests/errors/continue_compilation_traits_generic_overload.f90:168:5
+    |
+168 |     call cont%register{IPrinter}(Logger)
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: no specific procedure of generic 'mixed' accepts this reference:
+    mixed_generic: character(len=2) is not a member of type-set trait 'inumeric'
+    mixed_real: it is not generic, but type arguments are given
+   --> tests/errors/continue_compilation_traits_generic_overload.f90:171:9
+    |
+171 |     i = mixed{character(len=2)}("ab")
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: no specific procedure of generic 'register' accepts this reference:
+    register0: it is a subroutine, but the reference is a function reference
+    register1: it is a subroutine, but the reference is a function reference
+   --> tests/errors/continue_compilation_traits_generic_overload.f90:173:9
+    |
+173 |     i = cont%register{IPrinter}(Printer)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
