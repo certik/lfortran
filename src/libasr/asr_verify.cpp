@@ -5687,6 +5687,16 @@ public:
             return false;
         }
         if (definition->type != instance->type) return false;
+        if (auto *binder = ASRUtils::trait_object_binder(definition)) {
+            // class(P) of a trait parameter: a trait object of its argument.
+            for (size_t i = 0; i < package.n_args && i < metadata.n_arguments; i++) {
+                if (std::string(ASRUtils::symbol_name(binder)) != package.m_args[i]) continue;
+                return !ASRUtils::trait_object_binder(instance) &&
+                    ASRUtils::trait_runtime_contract(instance) ==
+                        ASRUtils::trait_runtime_contract(metadata.m_arguments[i].m_type);
+            }
+            return false;
+        }
         if (ASR::is_a<StructType_t>(*definition)) {
             ASR::symbol_t *original = definition_declaration
                 ? ASRUtils::symbol_get_past_external(definition_declaration) : nullptr;
@@ -5746,6 +5756,22 @@ public:
             bool structure = type && ASR::is_a<StructType_t>(*type);
             ASR::symbol_t *declaration = argument.m_type_declaration
                 ? ASRUtils::symbol_get_past_external(argument.m_type_declaration) : nullptr;
+            if (ASRUtils::trait_parameter_binder(
+                    package->m_symtab->get_symbol(package->m_args[i]))) {
+                // The argument of a trait parameter (E1) is a visible trait,
+                // and its type the trait object of the trait's contract.
+                require_id(type && ASR::is_a<TraitObjectType_t>(*type) &&
+                        !ASRUtils::trait_object_binder(type) && declaration &&
+                        ASR::is_a<Trait_t>(*declaration) &&
+                        symtab_in_scope(x.m_symtab, argument.m_type_declaration) &&
+                        argument.n_evidence == 0 &&
+                        ASRUtils::trait_runtime_contract(type) ==
+                            ASRUtils::trait_runtime_contract(argument.m_type_declaration),
+                    "asr.verify.generic_type.instance_arguments",
+                    "The argument of a trait parameter of a generic type must be a visible "
+                    "trait, of the type of its trait objects");
+                continue;
+            }
             require_id(type && !ASRUtils::is_array(type) && !ASRUtils::is_pointer(type) &&
                     !ASRUtils::is_allocatable(type) &&
                     !ASR::is_a<TypeParameter_t>(*type) &&

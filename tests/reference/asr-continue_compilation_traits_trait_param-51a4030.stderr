@@ -32,11 +32,11 @@ semantic error: calling generic message 'accept' of trait 'iaccept', which has t
 183 |         class(IAccept), allocatable :: a
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
-semantic error: trait parameters of generic derived types are not implemented yet
-   --> tests/errors/continue_compilation_traits_trait_param.f90:190:20
+semantic error: conformance constraints of generic derived types are not implemented yet
+   --> tests/errors/continue_compilation_traits_trait_param.f90:190:32
     |
-190 |     type :: Holder{Trait :: P}
-    |                    ^^^^^^^^^^ 
+190 |     type :: Holder{Trait :: P, P :: U}
+    |                                ^^^^^^ 
 
 semantic error: generic parameter 'p' of 'none' is a trait parameter, but 'a' is not a trait
   --> tests/errors/continue_compilation_traits_trait_param.f90:71:9

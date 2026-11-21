@@ -10023,9 +10023,13 @@ public:
                 trait_error("duplicate generic type parameter '" + binder + "'",
                     parameter.loc);
             }
+            // `{Trait :: P}` declares a trait parameter (E1).
+            bool trait_parameter = !parameter.n_member_types && parameter.n_traits &&
+                is_trait_meta_constraint(to_lower(parameter.m_traits[0].m_name));
             ASR::ttype_t *binder_type = ASRUtils::TYPE(ASR::make_TypeParameter_t(al,
-                parameter.loc, s2c(al, binder),
-                ASR::deferred_type_attrType::NonExtensible, false));
+                parameter.loc, s2c(al, binder), trait_parameter
+                    ? ASR::deferred_type_attrType::TraitParameter
+                    : ASR::deferred_type_attrType::NonExtensible, false));
             ASR::symbol_t *declaration = ASR::down_cast<ASR::symbol_t>(
                 ASRUtils::make_Variable_t_util(al, parameter.loc, scope,
                     s2c(al, binder), nullptr, 0, ASRUtils::intent_in, nullptr, nullptr,
@@ -10082,9 +10086,20 @@ public:
                 for (size_t j = 0; !parameter.n_member_types && j < parameter.n_traits; j++) {
                     std::string trait_name = to_lower(parameter.m_traits[j].m_name);
                     if (is_any_type_constraint(trait_name)) continue;
+                    for (size_t k = 0; k < i; k++) {
+                        if (to_lower(generic.m_parameters[k].m_name) == trait_name &&
+                                ASRUtils::trait_parameter_binder(binders[k])) {
+                            trait_error("conformance constraints of generic derived types "
+                                "are not implemented yet", parameter.loc);
+                        }
+                    }
                     if (is_trait_meta_constraint(trait_name)) {
-                        trait_error("trait parameters of generic derived types are not "
-                            "implemented yet", parameter.loc);
+                        if (j != 0 || parameter.n_traits != 1 ||
+                                parameter.m_traits[0].n_bindings) {
+                            trait_error("the meta-trait Trait cannot be combined with "
+                                "other constraints", parameter.loc);
+                        }
+                        continue;
                     }
                     ASR::symbol_t *symbol = scope->resolve_symbol(trait_name);
                     // Bare intrinsic keywords remain names in the AST. A

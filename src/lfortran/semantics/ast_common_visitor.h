@@ -37138,14 +37138,61 @@ public:
         return scope;
     }
 
+    // With `binder`, the binder of the parameter the argument is given for:
+    // a trait parameter (E1) takes a trait, whose argument is class(trait).
     std::pair<ASR::ttype_t*, ASR::symbol_t*> generic_type_argument(
             AST::decl_attribute_t *argument, const std::string &parameter,
-            const Location &loc) {
+            const Location &loc, ASR::symbol_t *binder = nullptr) {
+        bool trait_binder = binder && ASRUtils::trait_parameter_binder(binder);
+        if (trait_binder && !AST::is_a<AST::AttrName_t>(*argument)) {
+            trait_call_error("generic type parameter '" + parameter + "' is a trait "
+                "parameter, whose argument must name a trait", loc);
+        }
         if (AST::is_a<AST::AttrName_t>(*argument)) {
             std::string name = to_lower(AST::down_cast<AST::AttrName_t>(argument)->m_name);
             ASR::symbol_t *symbol = current_scope->resolve_symbol(name);
             ASR::symbol_t *definition = symbol ? ASRUtils::symbol_get_past_external(symbol)
                 : nullptr;
+            if (definition && ASR::is_a<ASR::Trait_t>(*definition)) {
+                if (!trait_binder) {
+                    trait_call_error("'" + name + "' is a trait, but generic type "
+                        "parameter '" + parameter + "' is a type parameter; a trait "
+                        "argument requires a trait parameter `Trait :: " + parameter +
+                        "`", loc);
+                }
+                auto *contract = checked_runtime_trait_contract(symbol, name, loc);
+                return {runtime_trait_type(contract, loc, false, false, false), symbol};
+            }
+            // A parameter of the enclosing generic procedure, which makes the
+            // instance symbolic (see symbolic_generic_instance); not yet one
+            // of a generic derived type.
+            if (definition && ASR::is_a<ASR::Variable_t>(*definition) &&
+                    ASR::is_a<ASR::TypeParameter_t>(*ASRUtils::symbol_type(definition)) &&
+                    ASRUtils::generic_type_package(ASRUtils::get_asr_owner(definition))) {
+                trait_call_error("generic type arguments that are generic type parameters "
+                    "are not implemented yet", loc);
+            }
+            if (auto *forwarded = ASRUtils::trait_parameter_binder(symbol)) {
+                if (!trait_binder) {
+                    trait_call_error("'" + name + "' is a trait parameter, but generic "
+                        "type parameter '" + parameter + "' is a type parameter", loc);
+                }
+                return {ASRUtils::duplicate_type(al, ASRUtils::symbol_type(forwarded)),
+                    forwarded};
+            }
+            if (trait_binder) {
+                trait_call_error("generic type parameter '" + parameter + "' is a trait "
+                    "parameter, but '" + name + "' is not a trait", loc);
+            }
+            if (definition && ASR::is_a<ASR::Variable_t>(*definition) &&
+                    ASR::is_a<ASR::TypeParameter_t>(*ASRUtils::symbol_type(definition))) {
+                ASR::symbol_t *binder = declared_trait_parameter(name, current_scope);
+                if (binder && actual_trait_parameter(ASRUtils::EXPR(ASR::make_Var_t(al,
+                        loc, symbol))) == binder) {
+                    return {ASRUtils::duplicate_type(al, ASRUtils::symbol_type(binder)),
+                        binder};
+                }
+            }
             if (ASRUtils::generic_type_package(symbol) || (definition &&
                     ASR::is_a<ASR::Struct_t>(*definition) &&
                     ASRUtils::generic_type_definition_metadata(
@@ -37242,7 +37289,7 @@ public:
         std::vector<std::pair<ASR::ttype_t*, ASR::symbol_t*>> arguments;
         for (size_t i = 0; i < ordered.size(); i++) {
             arguments.push_back(generic_type_argument(ordered[i], package->m_args[i],
-                ordered[i]->base.loc));
+                ordered[i]->base.loc, package->m_symtab->get_symbol(package->m_args[i])));
         }
         return instantiate_generic_type(*package, arguments, loc);
     }
@@ -37735,9 +37782,14 @@ public:
             argument.loc = loc;
             argument.m_type_declaration = arguments[i].second
                 ? ASRUtils::import_nested_symbol(al, arguments[i].second, scope) : nullptr;
-            argument.m_type = argument.m_type_declaration
+            // The type references the trait contracts it names, those of a
+            // trait argument and of the components of a derived type,
+            // through imports of the instance's scope.
+            argument.m_type = ASRUtils::import_trait_type(al, argument.m_type_declaration &&
+                    ASR::is_a<ASR::Struct_t>(
+                        *ASRUtils::symbol_get_past_external(argument.m_type_declaration))
                 ? ASRUtils::make_StructType_t_util(al, loc, argument.m_type_declaration, true)
-                : ASRUtils::duplicate_type(al, arguments[i].first);
+                : ASRUtils::duplicate_type(al, arguments[i].first), scope);
             if (auto *module = arguments[i].second ? ASRUtils::get_sym_module0(
                     ASRUtils::symbol_get_past_external(arguments[i].second)) : nullptr) {
                 add_unit_dependency(owner, module->m_name);
@@ -38532,7 +38584,8 @@ public:
             ASR::symbol_t *declaration = metadata->m_arguments[i].m_type_declaration
                 ? ASRUtils::import_nested_symbol(al,
                     metadata->m_arguments[i].m_type_declaration, owner) : nullptr;
-            type_subs[package->m_args[i]] = {declaration
+            type_subs[package->m_args[i]] = {declaration && ASR::is_a<ASR::Struct_t>(
+                    *ASRUtils::symbol_get_past_external(declaration))
                 ? ASRUtils::make_StructType_t_util(al, loc, declaration, true)
                 : metadata->m_arguments[i].m_type, declaration};
         }

@@ -186,8 +186,8 @@ end module continue_compilation_traits_trait_param_m11
 
 module continue_compilation_traits_trait_param_m12
     implicit none
-    ! Trait parameters of generic derived types.
-    type :: Holder{Trait :: P}
+    ! Conformance constraints of generic derived types.
+    type :: Holder{Trait :: P, P :: U}
         integer :: n = 0
     end type Holder
 end module continue_compilation_traits_trait_param_m12

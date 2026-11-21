@@ -10281,6 +10281,11 @@ std::string generic_type_spelling(const ASR::Struct_t &x)
             ? symbol_get_past_external(argument.m_type_declaration) : nullptr;
         if (declaration && ASR::is_a<ASR::Struct_t>(*declaration)) {
             result += generic_type_spelling(*ASR::down_cast<ASR::Struct_t>(declaration));
+        } else if (declaration && (ASR::is_a<ASR::Trait_t>(*declaration) ||
+                ASR::is_a<ASR::TypeParameter_t>(*argument.m_type))) {
+            // A trait argument of a trait parameter, or a binder of a
+            // generic procedure in a symbolic instance.
+            result += symbol_name(declaration);
         } else {
             result += type_to_str_fortran_symbol(argument.m_type, nullptr, true);
         }
