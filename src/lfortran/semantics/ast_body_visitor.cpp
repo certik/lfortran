@@ -4437,7 +4437,18 @@ public:
         ASR::ttype_t* target_type = ASRUtils::expr_type(target);
         current_variable_type_ = target_type;
         current_struct_type_var_expr = target;
-        this->visit_expr(*(x.m_value));
+        std::string type_spelling;
+        if (ASR::symbol_t *type = type_designator(x.m_value, type_spelling)) {
+            // `p => T` designates T's initializer or structure constructor (E3).
+            std::string error;
+            ASR::expr_t *designated = designate_type(type, type_spelling, target,
+                type_designator_what(target, "procedure pointer"), nullptr,
+                x.m_value->base.loc, error);
+            if (!designated) trait_call_error(error, x.m_value->base.loc);
+            tmp = &designated->base;
+        } else {
+            this->visit_expr(*(x.m_value));
+        }
         ASR::expr_t* value = ASRUtils::EXPR(tmp);
         // Inside a `select rank (arr)` block the selector keeps its assumed-rank
         // type, but the rank is fixed by the enclosing `rank (N)` case. Cast it

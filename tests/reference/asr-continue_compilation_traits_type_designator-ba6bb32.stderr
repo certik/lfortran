@@ -1,0 +1,105 @@
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+  --> tests/errors/continue_compilation_traits_type_designator.f90:17:5 - 22:1
+   |
+17 |        abstract interface :: ILogger
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+   |
+22 |    
+   | ...^ LFortran extension
+
+semantic error: type name 'two' as an initial procedure target is not implemented yet; associate the pointer with it in an executable statement
+   --> tests/errors/continue_compilation_traits_type_designator.f90:195:41
+    |
+195 |     procedure(mk_two), pointer :: q3 => Two
+    |                                         ^^^ 
+
+semantic error: type name 'two' is ambiguous as a procedure designator for dummy procedure 'f': its initializers 'two_a' and 'two_b' both match the interface
+   --> tests/errors/continue_compilation_traits_type_designator.f90:200:18
+    |
+200 |     call use_two(Two)
+    |                  ^^^ 
+
+semantic error: type name 'secret' does not designate a procedure for dummy procedure 'f': no initializer of 'secret' matches its interface, and the structure constructor 'secret(...)' with 0 component values is not valid here: component 'n' is private and has no default initialization
+   --> tests/errors/continue_compilation_traits_type_designator.f90:203:21
+    |
+203 |     call use_secret(Secret)
+    |                     ^^^^^^ 
+
+semantic error: type name 'given' does not designate a procedure for dummy procedure 'f': the structure constructor 'given(...)' with 1 component value is not valid here: component 'n' is private
+   --> tests/errors/continue_compilation_traits_type_designator.f90:205:20
+    |
+205 |     call use_given(Given)
+    |                    ^^^^^ 
+
+semantic error: type name 'linked' does not designate a procedure for dummy procedure 'f': the structure constructor 'linked(...)' with 1 component value is not valid here: component 'p' is a pointer
+   --> tests/errors/continue_compilation_traits_type_designator.f90:207:21
+    |
+207 |     call use_linked(Linked)
+    |                     ^^^^^^ 
+
+semantic error: type name 'plain' does not designate a procedure for dummy procedure 'f': the structure constructor 'plain(...)' with 1 component value does not match the interface: dummy argument 'v' has type integer(4), which does not match real(4) of the interface
+   --> tests/errors/continue_compilation_traits_type_designator.f90:209:20
+    |
+209 |     call use_plain(Plain)
+    |                    ^^^^^ 
+
+semantic error: type name 'plain' does not designate a procedure for dummy procedure 'f': the structure constructor 'plain(...)' with 3 component values is not valid here: the interface has 3 dummy arguments, but the type has 1 component
+   --> tests/errors/continue_compilation_traits_type_designator.f90:211:21
+    |
+211 |     call use_plain3(Plain)
+    |                     ^^^^^ 
+
+semantic error: type name 'plain' does not designate a procedure for dummy procedure 'f': the structure constructor 'plain(...)' with 0 component values does not match the interface: the result has type plain, which does not match integer(4) of the interface
+   --> tests/errors/continue_compilation_traits_type_designator.f90:213:18
+    |
+213 |     call use_int(Plain)
+    |                  ^^^^^ 
+
+semantic error: type name 'plain' does not designate a procedure for dummy procedure 'f': the interface is a subroutine, but a structure constructor is a function
+   --> tests/errors/continue_compilation_traits_type_designator.f90:215:18
+    |
+215 |     call use_sub(Plain)
+    |                  ^^^^^ 
+
+semantic error: type name 'plain' cannot be associated with dummy argument 'x', which is not a procedure
+   --> tests/errors/continue_compilation_traits_type_designator.f90:217:19
+    |
+217 |     call take_int(Plain)
+    |                   ^^^^^ 
+
+semantic error: type name 'two' as an actual argument of generic interface 'gen' is not implemented yet; reference a specific procedure
+   --> tests/errors/continue_compilation_traits_type_designator.f90:219:14
+    |
+219 |     call gen(Two)
+    |              ^^^ 
+
+semantic error: generic type 'box' needs explicit type arguments to designate a procedure, as in 'box{...}'
+   --> tests/errors/continue_compilation_traits_type_designator.f90:221:20
+    |
+221 |     call use_plain(Box)
+    |                    ^^^ 
+
+semantic error: Variable 'hidden' is not declared
+   --> tests/errors/continue_compilation_traits_type_designator.f90:223:20
+    |
+223 |     call use_plain(Hidden)
+    |                    ^^^^^^ 'hidden' is undeclared
+
+semantic error: type name 'plain' does not designate a procedure for procedure pointer 'q': the structure constructor 'plain(...)' with 1 component value does not match the interface: dummy argument 'v' has type integer(4), which does not match real(4) of the interface
+   --> tests/errors/continue_compilation_traits_type_designator.f90:225:10
+    |
+225 |     q => Plain
+    |          ^^^^^ 
+
+semantic error: type name 'plain' does not designate a procedure for procedure pointer 'q2': the structure constructor 'plain(...)' with 0 component values does not match the interface: the result has type plain, which does not match integer(4) of the interface
+   --> tests/errors/continue_compilation_traits_type_designator.f90:226:11
+    |
+226 |     q2 => Plain
+    |           ^^^^^ 
+
+semantic error: type name 'plain' does not designate a procedure for dummy procedure 'ctor': the structure constructor 'plain(...)' with 1 component value does not match the interface: dummy argument 'v' has type integer(4), which does not match class(t1) of the interface
+   --> tests/errors/continue_compilation_traits_type_designator.f90:228:10
+    |
+228 |     pl = build1(Plain, lg)
+    |          ^^^^^^^^^^^^^^^^^ 

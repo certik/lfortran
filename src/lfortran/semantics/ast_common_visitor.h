@@ -11819,6 +11819,17 @@ public:
                                 continue;
                             }
                         }
+                        std::string type_spelling;
+                        if (type_designator(s.m_initializer, type_spelling)) {
+                            diag.semantic_error_label("type name '" + type_spelling +
+                                "' as an initial procedure target is not implemented yet; "
+                                "associate the pointer with it in an executable statement",
+                                {s.m_initializer->base.loc}, "");
+                            if (!compiler_options.continue_compilation) {
+                                throw SemanticAbort();
+                            }
+                            continue;
+                        }
                         std::string init_name = to_lower(
                             AST::down_cast<AST::Name_t>(s.m_initializer)->m_id);
                         ASR::symbol_t *init_sym = current_scope->resolve_symbol(init_name);
@@ -15590,7 +15601,14 @@ public:
             ASR::expr_t* prev_struct_type_var_expr = current_struct_type_var_expr;
             set_null_context_to_component(member, args[i].m_end->base.loc);
             declare_forward_procedure_target(member, args[i].m_end);
-            if (ASR::expr_t* null_value = reject_internal_initial_component_target(
+            if (ASR::expr_t* designated = type_designator_component_value(
+                    args[i].m_end, member)) {
+                ASR::call_arg_t designated_arg;
+                designated_arg.loc = args[i].loc;
+                designated_arg.m_value = designated;
+                val.reserve(al, 1);
+                val.push_back(al, designated_arg);
+            } else if (ASR::expr_t* null_value = reject_internal_initial_component_target(
                     member, args[i].m_end)) {
                 ASR::call_arg_t null_arg;
                 null_arg.loc = args[i].loc;
@@ -18485,7 +18503,7 @@ public:
                 AST::keyword_t* m_kwargs, size_t n_kwargs,
                 ASR::symbol_t *v, ASR::expr_t *v_expr) {
         Vec<ASR::call_arg_t> args;
-        visit_expr_list(m_args, n_args, args);
+        visit_expr_list(m_args, n_args, args, v);
         ASR::StructMethodDeclaration_t *v_class_proc = ASR::down_cast<ASR::StructMethodDeclaration_t>(ASRUtils::symbol_get_past_external(v));
         ASR::ttype_t *type = nullptr;
         ASR::Function_t* func = ASR::down_cast<ASR::Function_t>(
@@ -28469,6 +28487,8 @@ public:
     // Why the last inference through a dummy procedure failed, for the
     // diagnostic of the call; empty if it did not fail there.
     std::string procedure_inference_mismatch;
+    // The difference alone, without the names of the procedures.
+    std::string procedure_inference_reason;
 
     static std::string dummy_intent_name(ASR::intentType intent) {
         switch (intent) {
@@ -28498,6 +28518,7 @@ public:
                     actual_expr)->m_m) : "";
         auto mismatch = [&](const std::string &reason) {
             if (procedure_inference_mismatch.empty()) {
+                procedure_inference_reason = reason;
                 procedure_inference_mismatch = (actual_name.empty() ? std::string(
                     "the actual argument") : "procedure '" + actual_name + "'") +
                     " does not match the interface of dummy procedure '" + formal_name +
@@ -28719,6 +28740,477 @@ public:
             : nullptr, actual_expr);
     }
 
+    // Type names as procedure designators (DI extension E3). A type name
+    // as an actual argument associated with a dummy procedure, or as the
+    // target of a procedure-pointer assignment, designates the type's
+    // initializer whose interface matches, or else its structure
+    // constructor, for which a procedure is synthesized.
+
+    // The procedures synthesized for structure constructors, by the unit
+    // that holds them, the type and the number of component values.
+    std::map<std::tuple<SymbolTable*, ASR::symbol_t*, size_t>, ASR::symbol_t*>
+        type_designator_constructors;
+
+    // The derived type that the expression `e` names, if it is the name of a
+    // type, `T`, or of an instance of a generic type, `Box{real}`: the symbol
+    // it resolves to here. `spelling` is the type as a diagnostic writes it.
+    ASR::symbol_t *type_designator(AST::expr_t *e, std::string &spelling) {
+        const Location &loc = e->base.loc;
+        if (AST::is_a<AST::Name_t>(*e)) {
+            auto *name = AST::down_cast<AST::Name_t>(e);
+            if (name->n_member) return nullptr;
+            std::string id = to_lower(name->m_id);
+            ASR::symbol_t *symbol = current_scope->resolve_symbol(id);
+            if (!symbol) return nullptr;
+            ASR::symbol_t *past = ASRUtils::symbol_get_past_external(symbol);
+            if (ASRUtils::generic_type_package(symbol) || (ASR::is_a<ASR::Struct_t>(*past) &&
+                    ASRUtils::generic_type_definition_metadata(
+                        *ASR::down_cast<ASR::Struct_t>(past)))) {
+                trait_call_error("generic type '" + id + "' needs explicit type arguments "
+                    "to designate a procedure, as in '" + id + "{...}'", loc);
+            }
+            if (!ASR::is_a<ASR::Struct_t>(*past)) return nullptr;
+            spelling = id;
+            return symbol;
+        }
+        if (AST::is_a<AST::GenericProcedureValue_t>(*e)) {
+            auto *x = AST::down_cast<AST::GenericProcedureValue_t>(e);
+            ASR::symbol_t *symbol = current_scope->resolve_symbol(to_lower(x->m_name));
+            if (!symbol || !ASRUtils::generic_type_package(symbol)) return nullptr;
+            ASR::symbol_t *instance = resolve_generic_type_application(x->m_name,
+                x->m_args, x->n_args, loc);
+            spelling = ASRUtils::generic_type_spelling(*ASR::down_cast<ASR::Struct_t>(
+                ASRUtils::symbol_get_past_external(instance)));
+            return instance;
+        }
+        return nullptr;
+    }
+
+    // A placeholder for the type name `type` as an actual argument of a
+    // generic procedure, which inference replaces by the designated
+    // procedure once the dummy's interface is known.
+    static bool is_type_designator_placeholder(ASR::expr_t *e) {
+        return e && ASR::is_a<ASR::Var_t>(*e) && ASR::is_a<ASR::Struct_t>(
+            *ASRUtils::symbol_get_past_external(ASR::down_cast<ASR::Var_t>(e)->m_v));
+    }
+
+    // `symbol`, visible in `scope`: as it is accessible there by its name, or
+    // imported.
+    ASR::symbol_t *type_designator_visible(ASR::symbol_t *symbol, SymbolTable *scope) {
+        ASR::symbol_t *past = ASRUtils::symbol_get_past_external(symbol);
+        for (const std::string &name : {std::string(ASRUtils::symbol_name(symbol)),
+                std::string(ASRUtils::symbol_name(past))}) {
+            ASR::symbol_t *found = scope->resolve_symbol(name);
+            if (found && ASRUtils::symbol_get_past_external(found) == past) return found;
+        }
+        return make_operator_proc_visible(past, "designator", scope);
+    }
+
+    // The unit that holds the procedures synthesized for the structure
+    // constructors of `structure` designated in the current scope: the
+    // program unit, or the procedure declaring the type.
+    SymbolTable *type_designator_home(ASR::Struct_t *structure) {
+        SymbolTable *tu = ASRUtils::get_tu_symtab(current_scope);
+        SymbolTable *declaring = structure->m_symtab->parent;
+        SymbolTable *home = current_scope;
+        while (home->parent && home->parent != tu && home != declaring) home = home->parent;
+        return home;
+    }
+
+    // Why the reference `type(a1, ..., an)` with `n` positional component
+    // values would not be valid here, or an empty string: the components
+    // given are accessible and not pointers, and each one omitted has
+    // default initialization or is allocatable (F2023 7.5.10).
+    std::string type_designator_inadmissible(ASR::symbol_t *type, size_t n) {
+        auto *structure = ASR::down_cast<ASR::Struct_t>(ASRUtils::symbol_get_past_external(type));
+        if (structure->m_is_abstract) return "the type is abstract";
+        StructConstructorInfo info = get_struct_constructor_info(type);
+        if (!info.kind_indices.empty()) return "the type has type parameters";
+        if (n > info.members.size()) {
+            return "the interface has " + std::to_string(n) + " dummy argument" +
+                (n == 1 ? "" : "s") + ", but the type has " +
+                std::to_string(info.members.size()) + " component" +
+                (info.members.size() == 1 ? "" : "s");
+        }
+        auto accessible = [&](ASR::Variable_t *component) {
+            if (component->m_access != ASR::accessType::Private) return true;
+            auto *owner = ASR::down_cast<ASR::Struct_t>(
+                ASR::down_cast<ASR::symbol_t>(component->m_parent_symtab->asr_owner));
+            ASR::GenericTypeInstance_t *instance = ASRUtils::generic_type_instance(*owner);
+            ASR::Module_t *module = ASRUtils::get_sym_module0(instance
+                ? &ASRUtils::generic_instance_definition(*instance)->base : &component->base);
+            return module == nullptr || is_in_module_or_descendant(current_scope, module);
+        };
+        for (size_t i = 0; i < info.members.size(); i++) {
+            if (!info.members[i] || !ASR::is_a<ASR::Variable_t>(*info.members[i])) {
+                return "it has a component that is not a data component";
+            }
+            auto *component = ASR::down_cast<ASR::Variable_t>(info.members[i]);
+            std::string name = "component '" + std::string(component->m_name) + "'";
+            if (i < n) {
+                if (!accessible(component)) return name + " is private";
+                if (ASRUtils::is_pointer(component->m_type) || ASR::is_a<ASR::FunctionType_t>(
+                        *ASRUtils::type_get_past_pointer(component->m_type))) {
+                    return name + " is a pointer";
+                }
+                continue;
+            }
+            if (!component->m_value && !component->m_symbolic_value &&
+                    !ASRUtils::is_allocatable(component->m_type)) {
+                return name + (accessible(component) ? "" : " is private and") +
+                    " has no default initialization";
+            }
+        }
+        return "";
+    }
+
+    // The interface of the procedure synthesized for the structure
+    // constructor of `type` with `n` positional component values, in `home`:
+    // a function whose dummy arguments are intent(in) and have the declared
+    // type, kind and rank of the components, and whose result is a scalar
+    // of the type. Its body is made by `define_type_designator_constructor`.
+    ASR::Function_t *declare_type_designator_constructor(ASR::symbol_t *type, size_t n,
+            SymbolTable *home, const Location &loc) {
+        auto *structure = ASR::down_cast<ASR::Struct_t>(ASRUtils::symbol_get_past_external(type));
+        StructConstructorInfo info = get_struct_constructor_info(type);
+        SymbolTable *scope = al.make_new<SymbolTable>(home);
+        ASR::symbol_t *type_symbol = type_designator_visible(type, scope);
+        ASRUtils::ASRBuilder b(al, loc);
+        Vec<ASR::expr_t*> args;
+        args.reserve(al, n);
+        for (size_t i = 0; i < n; i++) {
+            auto *component = ASR::down_cast<ASR::Variable_t>(info.members[i]);
+            ASR::ttype_t *element = ASRUtils::extract_type(component->m_type);
+            if (ASR::is_a<ASR::String_t>(*element)) {
+                auto *string = ASR::down_cast<ASR::String_t>(element);
+                int64_t length = 0;
+                if (!string->m_len || !ASRUtils::extract_value(
+                        ASRUtils::expr_value(string->m_len), length)) {
+                    element = ASRUtils::TYPE(ASR::make_String_t(al, loc, string->m_kind,
+                        nullptr, ASR::string_length_kindType::AssumedLength,
+                        ASR::string_physical_typeType::DescriptorString));
+                }
+            }
+            element = ASRUtils::duplicate_type(al, element);
+            size_t rank = ASRUtils::extract_n_dims_from_ttype(component->m_type);
+            ASR::ttype_t *dummy_type = rank
+                ? ASRUtils::create_array_type_with_empty_dims(al, rank, element) : element;
+            dummy_type = ASRUtils::import_trait_type(al, dummy_type, scope);
+            ASR::symbol_t *declaration = component->m_type_declaration
+                ? type_designator_visible(component->m_type_declaration, scope) : nullptr;
+            std::string name = component->m_name;
+            if (scope->resolve_symbol(name)) name = scope->get_unique_name(name, false);
+            args.push_back(al, b.Variable(scope, name, dummy_type, ASR::intentType::In,
+                declaration));
+        }
+        std::string result = scope->resolve_symbol("res")
+            ? scope->get_unique_name("res", false) : "res";
+        ASR::ttype_t *result_type = ASRUtils::import_trait_type(al,
+            ASRUtils::make_StructType_t_util(al, loc, type_symbol, true), scope);
+        ASR::expr_t *return_var = b.Variable(scope, result, result_type,
+            ASR::intentType::ReturnVar, type_symbol);
+        std::string name = to_lower(home->get_unique_name("__ctor_" +
+            std::string(structure->m_name) + "_" + std::to_string(n), false));
+        return ASR::down_cast2<ASR::Function_t>(ASRUtils::make_Function_t_util(al, loc,
+            scope, s2c(al, name), nullptr, 0, args.p, args.size(), nullptr, 0, return_var,
+            ASR::abiType::Source, ASR::accessType::Private, ASR::deftypeType::Implementation,
+            nullptr, false, true, false, false, false, nullptr, 0, false, false, true));
+    }
+
+    // Gives the synthesized `constructor` of `type` its body,
+    // `res = type(a1, ..., an)`, built like the structure constructor
+    // written in its unit, and adds it to `home`.
+    void define_type_designator_constructor(ASR::Function_t *constructor, ASR::symbol_t *type,
+            SymbolTable *home, const Location &loc) {
+        SymbolTable *saved_scope = current_scope;
+        SetChar saved_dependencies = current_function_dependencies;
+        current_scope = constructor->m_symtab;
+        current_function_dependencies.reserve(al, 1);
+        try {
+            Vec<AST::fnarg_t> args;
+            args.reserve(al, constructor->n_args);
+            for (size_t i = 0; i < constructor->n_args; i++) {
+                AST::fnarg_t arg;
+                arg.loc = loc;
+                arg.m_start = nullptr;
+                arg.m_step = nullptr;
+                arg.m_label = 0;
+                arg.m_end = AST::down_cast<AST::expr_t>(AST::make_Name_t(al, loc,
+                    ASRUtils::symbol_name(ASR::down_cast<ASR::Var_t>(
+                        constructor->m_args[i])->m_v), nullptr, 0));
+                args.push_back(al, arg);
+            }
+            ASR::symbol_t *type_symbol = type_designator_visible(type, current_scope);
+            AST::ast_t *call = AST::make_FuncCallOrArray_t(al, loc,
+                s2c(al, ASRUtils::symbol_name(type_symbol)), nullptr, 0, args.p, args.size(),
+                nullptr, 0, nullptr, 0, nullptr, 0);
+            ASR::expr_t *value = ASRUtils::EXPR(create_DerivedTypeConstructor(
+                *AST::down_cast2<AST::FuncCallOrArray_t>(call), type_symbol));
+            Vec<ASR::stmt_t*> body;
+            body.reserve(al, 1);
+            body.push_back(al, ASRUtils::STMT(ASR::make_Assignment_t(al, loc,
+                constructor->m_return_var, value, nullptr, false, false, false, false)));
+            constructor->m_body = body.p;
+            constructor->n_body = body.size();
+            constructor->m_dependencies = current_function_dependencies.p;
+            constructor->n_dependencies = current_function_dependencies.size();
+        } catch (const SemanticAbort &) {
+            current_scope = saved_scope;
+            current_function_dependencies = saved_dependencies;
+            throw;
+        }
+        current_scope = saved_scope;
+        current_function_dependencies = saved_dependencies;
+        home->add_symbol(constructor->m_name, &constructor->base);
+    }
+
+    // Whether the procedure `actual` matches the interface of the dummy
+    // procedure or procedure pointer `formal`, binding the generic
+    // parameters that it mentions in `types`; `reason` says why not.
+    bool type_designator_matches(ASR::expr_t *formal, ASR::symbol_t *actual,
+            std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &types,
+            std::string &reason, const Location &loc) {
+        std::string saved_mismatch = procedure_inference_mismatch;
+        std::string saved_reason = procedure_inference_reason;
+        procedure_inference_mismatch.clear();
+        procedure_inference_reason.clear();
+        bool matches = bind_type_parameters_from_procedure(formal,
+            ASRUtils::EXPR(ASR::make_Var_t(al, loc, actual)), types);
+        reason = procedure_inference_reason;
+        procedure_inference_mismatch = saved_mismatch;
+        procedure_inference_reason = saved_reason;
+        return matches;
+    }
+
+    // The procedure that the type name `type`, written `spelling`, designates
+    // as an actual argument associated with the dummy procedure `formal`, or
+    // as the target of the procedure pointer `formal`; `what` names it. With
+    // `types`, the interface of `formal` may mention generic parameters,
+    // which the designated procedure binds there. Returns a reference to it
+    // here, or nullptr with the reason in `error`.
+    //  1. The type's initializer whose interface matches: an `initial ::`
+    //     binding or a specific of a generic interface with the type's name.
+    //     More than one match is ambiguous.
+    //  2. Otherwise its structure constructor, if the reference
+    //     `type(a1, ..., an)` with as many component values as the interface
+    //     has dummy arguments would be valid here. A procedure for it is
+    //     synthesized once per unit, type and number of values.
+    ASR::expr_t *designate_type(ASR::symbol_t *type, const std::string &spelling,
+            ASR::expr_t *formal, const std::string &what,
+            std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> *types,
+            const Location &loc, std::string &error) {
+        std::string prefix = "type name '" + spelling + "' does not designate a procedure "
+            "for " + what + ": ";
+        ASR::ttype_t *formal_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(formal));
+        if (!ASR::is_a<ASR::FunctionType_t>(*formal_type)) {
+            error = "type name '" + spelling + "' cannot be associated with " + what +
+                ", which is not a procedure";
+            return nullptr;
+        }
+        ASR::Function_t *interface = procedure_interface(formal);
+        if (!interface || ASRUtils::is_bare_implicit_interface(*interface) ||
+                ASRUtils::is_opaque_procedure_type(formal_type) ||
+                ASRUtils::is_bare_implicit_interface(
+                    *ASR::down_cast<ASR::FunctionType_t>(formal_type))) {
+            error = prefix + "its interface is not explicit";
+            return nullptr;
+        }
+        std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> none;
+        auto &bound = types ? *types : none;
+        auto *structure = ASR::down_cast<ASR::Struct_t>(ASRUtils::symbol_get_past_external(type));
+        // Rule 1: the initializers.
+        ASR::symbol_t *generic = current_scope->resolve_symbol(
+            "~" + std::string(ASRUtils::symbol_name(type)));
+        if (!generic || !ASR::is_a<ASR::GenericProcedure_t>(
+                *ASRUtils::symbol_get_past_external(generic))) {
+            generic = type_initializer_generic(type);
+        }
+        std::vector<std::pair<ASR::Function_t*,
+            std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>>>> matches;
+        size_t n_initializers = 0;
+        if (generic) {
+            auto *initializers = ASR::down_cast<ASR::GenericProcedure_t>(
+                ASRUtils::symbol_get_past_external(generic));
+            for (size_t i = 0; i < initializers->n_procs; i++) {
+                ASR::Function_t *initializer = ASRUtils::trait_method_function(
+                    ASRUtils::symbol_get_past_external(initializers->m_procs[i]));
+                if (!initializer || ASRUtils::trait_method_template(*initializer)) continue;
+                bool seen = false;
+                for (const auto &match : matches) seen |= match.first == initializer;
+                if (seen) continue;
+                n_initializers++;
+                auto trial = bound;
+                std::string reason;
+                if (type_designator_matches(formal, &initializer->base, trial, reason, loc)) {
+                    matches.push_back({initializer, trial});
+                }
+            }
+        }
+        ASR::symbol_t *designated = nullptr;
+        if (matches.size() > 1) {
+            std::string names;
+            for (size_t i = 0; i < matches.size(); i++) {
+                names += (i == 0 ? "" : i + 1 == matches.size() ? " and " : ", ") +
+                    std::string("'") + matches[i].first->m_name + "'";
+            }
+            error = "type name '" + spelling + "' is ambiguous as a procedure designator "
+                "for " + what + ": its initializers " + names + (matches.size() == 2
+                ? " both" : " all") + " match the interface";
+            return nullptr;
+        }
+        if (matches.size() == 1) {
+            bound = matches[0].second;
+            designated = &matches[0].first->base;
+        } else {
+            // Rule 2: the structure constructor.
+            std::string because = n_initializers
+                ? "no initializer of '" + spelling + "' matches its interface, and " : "";
+            if (!interface->m_return_var) {
+                error = prefix + because + "the interface is a subroutine, but a "
+                    "structure constructor is a function";
+                return nullptr;
+            }
+            size_t n = interface->n_args;
+            std::string reference = "'" + spelling + "(...)' with " + std::to_string(n) +
+                " component value" + (n == 1 ? "" : "s");
+            std::string inadmissible = type_designator_inadmissible(type, n);
+            if (!inadmissible.empty()) {
+                error = prefix + because + "the structure constructor " + reference +
+                    " is not valid here: " + inadmissible;
+                return nullptr;
+            }
+            SymbolTable *home = type_designator_home(structure);
+            auto key = std::make_tuple(home, &structure->base, n);
+            auto cached = type_designator_constructors.find(key);
+            ASR::Function_t *constructor = cached != type_designator_constructors.end()
+                ? ASR::down_cast<ASR::Function_t>(cached->second)
+                : declare_type_designator_constructor(type, n, home, loc);
+            auto trial = bound;
+            std::string reason;
+            if (!type_designator_matches(formal, &constructor->base, trial, reason, loc)) {
+                error = prefix + because + "the structure constructor " + reference +
+                    " does not match the interface: " + reason;
+                return nullptr;
+            }
+            if (cached == type_designator_constructors.end()) {
+                define_type_designator_constructor(constructor, type, home, loc);
+                type_designator_constructors[key] = &constructor->base;
+            }
+            bound = trial;
+            designated = &constructor->base;
+        }
+        ASR::symbol_t *visible = type_designator_visible(designated, current_scope);
+        ASRUtils::insert_module_dependency(visible, al, current_module_dependencies);
+        return ASRUtils::EXPR(ASR::make_Var_t(al, loc, visible));
+    }
+
+    // The dummy argument of the procedure `proc` that the `i`-th actual
+    // argument of a call corresponds to, with `offset` leading dummies that
+    // have no actual; nullptr if it cannot be determined, as for a generic
+    // interface. A type-bound procedure skips its passed object.
+    ASR::expr_t *type_designator_dummy(ASR::symbol_t *proc, size_t i, size_t offset) {
+        if (!proc) return nullptr;
+        proc = ASRUtils::symbol_get_past_external(proc);
+        size_t pass = std::string::npos;
+        if (ASR::is_a<ASR::StructMethodDeclaration_t>(*proc)) {
+            auto *method = ASR::down_cast<ASR::StructMethodDeclaration_t>(proc);
+            proc = ASRUtils::symbol_get_past_external(method->m_proc);
+            offset = 0;
+            if (!method->m_is_nopass && ASR::is_a<ASR::Function_t>(*proc)) {
+                auto *f = ASR::down_cast<ASR::Function_t>(proc);
+                pass = 0;
+                for (size_t j = 0; method->m_self_argument && j < f->n_args; j++) {
+                    if (ASR::is_a<ASR::Var_t>(*f->m_args[j]) && std::string(
+                            ASRUtils::symbol_name(ASR::down_cast<ASR::Var_t>(
+                                f->m_args[j])->m_v)) == method->m_self_argument) pass = j;
+                }
+            }
+        }
+        if (ASR::is_a<ASR::Variable_t>(*proc)) {
+            proc = procedure_interface(proc) ? &procedure_interface(proc)->base : nullptr;
+        }
+        if (!proc || !ASR::is_a<ASR::Function_t>(*proc)) return nullptr;
+        auto *f = ASR::down_cast<ASR::Function_t>(proc);
+        size_t index = i + offset;
+        if (pass != std::string::npos && index >= pass) index++;
+        return index < f->n_args ? f->m_args[index] : nullptr;
+    }
+
+    // The value of the actual argument `ast`, associated with the dummy
+    // argument `dummy` of the procedure `proc`, when it is a type name:
+    // the procedure it designates, or a placeholder for a generic
+    // procedure, which inference resolves. nullptr if `ast` is no type name.
+    ASR::expr_t *type_designator_argument(AST::expr_t *ast, ASR::symbol_t *proc,
+            ASR::expr_t *dummy) {
+        std::string spelling;
+        ASR::symbol_t *type = type_designator(ast, spelling);
+        if (!type) return nullptr;
+        const Location &loc = ast->base.loc;
+        ASR::symbol_t *callee = proc ? ASRUtils::symbol_get_past_external(proc) : nullptr;
+        if (callee && ASR::is_a<ASR::StructMethodDeclaration_t>(*callee)) {
+            callee = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::StructMethodDeclaration_t>(callee)->m_proc);
+        }
+        if (callee && ASR::is_a<ASR::Function_t>(*callee) &&
+                ASRUtils::trait_method_template(*ASR::down_cast<ASR::Function_t>(callee))) {
+            if (!dummy) {
+                trait_call_error("type name '" + spelling + "' has no corresponding "
+                    "dummy procedure", loc);
+            }
+            return ASRUtils::EXPR(ASR::make_Var_t(al, loc, type));
+        }
+        if (!dummy && callee && ASR::is_a<ASR::GenericProcedure_t>(*callee)) {
+            trait_call_error("type name '" + spelling + "' as an actual argument of generic "
+                "interface '" + std::string(ASRUtils::symbol_name(callee)) + "' is not "
+                "implemented yet; reference a specific procedure", loc);
+        }
+        if (!dummy) {
+            trait_call_error("type name '" + spelling + "' designates a procedure only as "
+                "an actual argument associated with a dummy procedure of a specific "
+                "procedure, or as a procedure-pointer target", loc);
+        }
+        std::string error;
+        ASR::expr_t *designated = designate_type(type, spelling, dummy,
+            type_designator_what(dummy, "dummy argument"), nullptr, loc, error);
+        if (!designated) trait_call_error(error, loc);
+        return designated;
+    }
+
+    // The value of the procedure pointer component `member` in a structure
+    // constructor that the type name `ast` designates (E3), or nullptr if
+    // `ast` is no type name or `member` no procedure pointer.
+    ASR::expr_t *type_designator_component_value(AST::expr_t *ast, ASR::symbol_t *member) {
+        if (!member || !ASR::is_a<ASR::Variable_t>(*member) || !ASR::is_a<ASR::FunctionType_t>(
+                *ASRUtils::type_get_past_pointer(ASRUtils::symbol_type(member)))) {
+            return nullptr;
+        }
+        std::string spelling;
+        ASR::symbol_t *type = type_designator(ast, spelling);
+        if (!type) return nullptr;
+        ASR::expr_t *formal = ASRUtils::EXPR(ASR::make_Var_t(al, ast->base.loc, member));
+        std::string error;
+        ASR::expr_t *designated = designate_type(type, spelling, formal,
+            type_designator_what(formal, "procedure pointer component"), nullptr,
+            ast->base.loc, error);
+        if (!designated) trait_call_error(error, ast->base.loc);
+        return designated;
+    }
+
+    // How a diagnostic names the dummy argument or procedure pointer
+    // `formal`.
+    static std::string type_designator_what(ASR::expr_t *formal, const std::string &kind) {
+        std::string name = ASR::is_a<ASR::Var_t>(*formal)
+            ? ASRUtils::symbol_name(ASR::down_cast<ASR::Var_t>(formal)->m_v)
+            : ASR::is_a<ASR::StructInstanceMember_t>(*formal)
+                ? ASRUtils::symbol_name(ASR::down_cast<ASR::StructInstanceMember_t>(
+                    formal)->m_m) : "";
+        bool procedure = ASR::is_a<ASR::FunctionType_t>(*ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(formal)));
+        std::string noun = kind == "dummy argument" && procedure ? "dummy procedure" : kind;
+        return name.empty() ? noun : noun + " '" + name + "'";
+    }
+
     // `offset` leading dummies of `f` (a normalized receiver) have no actual,
     // and neither has the explicit receiver of a trait message.
     bool infer_template_type_substitutions_from_call(ASR::Function_t *f,
@@ -28726,17 +29218,36 @@ public:
             std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &type_subs,
             size_t offset = 0) {
         procedure_inference_mismatch.clear();
+        procedure_inference_reason.clear();
         if (!f || call_args == nullptr) return false;
         std::vector<size_t> formals = ASRUtils::trait_compared_arguments(*f, offset);
         if (call_args->size() > formals.size()) return false;
         for (size_t i = 0; i < call_args->size(); i++) {
-            if ((*call_args)[i].m_value == nullptr) {
+            if ((*call_args)[i].m_value == nullptr ||
+                    is_type_designator_placeholder((*call_args)[i].m_value)) {
                 continue;
             }
             if (!bind_type_parameter_from_actual(ASRUtils::expr_type(f->m_args[formals[i]]),
                     (*call_args)[i].m_value, type_subs, f->m_args[formals[i]])) {
                 return false;
             }
+        }
+        // A type name designates the procedure that matches the dummy's
+        // interface with the parameters the other arguments bind (E3).
+        for (size_t i = 0; i < call_args->size(); i++) {
+            ASR::expr_t *placeholder = (*call_args)[i].m_value;
+            if (!is_type_designator_placeholder(placeholder)) continue;
+            ASR::symbol_t *type = ASR::down_cast<ASR::Var_t>(placeholder)->m_v;
+            ASR::expr_t *formal = f->m_args[formals[i]];
+            std::string error;
+            ASR::expr_t *designated = designate_type(type, ASRUtils::symbol_name(type),
+                formal, type_designator_what(formal, "dummy argument"), &type_subs,
+                placeholder->base.loc, error);
+            if (!designated) {
+                procedure_inference_mismatch = error;
+                return false;
+            }
+            (*call_args).p[i].m_value = designated;
         }
         if (f->m_return_var != nullptr) {
             ASR::ttype_t *return_type = ASRUtils::expr_type(f->m_return_var);
@@ -39680,6 +40191,17 @@ public:
                 call_args.push_back(al, nil_arg);
                 continue;
             }
+            if (proc) {
+                // A type name designates a procedure (E3).
+                if (ASR::expr_t *designated = type_designator_argument(ast_list[i].m_end,
+                        proc, type_designator_dummy(proc, i, dummy_offset))) {
+                    ASR::call_arg_t call_arg;
+                    call_arg.loc = designated->base.loc;
+                    call_arg.m_value = designated;
+                    call_args.push_back(al, call_arg);
+                    continue;
+                }
+            }
             ASR::Variable_t* null_dummy = nullptr;
             if( is_bare_null_intrinsic(ast_list[i].m_end) ) {
                 null_dummy = get_dummy_argument(proc, i + dummy_offset);
@@ -39819,7 +40341,22 @@ public:
             // absent optional argument is carried (15.5.2.3)
             bool is_nil = AST::is_a<AST::Nil_t>(*kwargs[i].m_value);
             ASR::expr_t *expr = nullptr;
+            ASR::expr_t *designated = nullptr;
             if (!is_nil) {
+                // A type name designates a procedure (E3).
+                std::string keyword = to_lower(kwargs[i].m_arg);
+                ASR::expr_t *dummy = nullptr;
+                for (size_t j = 0; j < fn_n_args; j++) {
+                    if (ASR::is_a<ASR::Var_t>(*fn_args[j]) && keyword ==
+                            ASRUtils::symbol_name(ASR::down_cast<ASR::Var_t>(fn_args[j])->m_v)) {
+                        dummy = fn_args[j];
+                    }
+                }
+                designated = type_designator_argument(kwargs[i].m_value, &fn->base, dummy);
+            }
+            if (designated) {
+                expr = designated;
+            } else if (!is_nil) {
                 this->visit_expr(*kwargs[i].m_value);
                 expr = ASRUtils::EXPR(tmp);
                 if (ASRUtils::is_intrinsic_symbol(&fn->base)) {
@@ -40266,7 +40803,10 @@ public:
                 kwargs[i].m_value->base.loc);
             declare_forward_procedure_target(constructor_arg_syms[idx],
                 kwargs[i].m_value);
-            if (ASR::expr_t* null_value = reject_internal_initial_component_target(
+            if (ASR::expr_t* designated = type_designator_component_value(
+                    kwargs[i].m_value, constructor_arg_syms[idx])) {
+                tmp = &designated->base;
+            } else if (ASR::expr_t* null_value = reject_internal_initial_component_target(
                     constructor_arg_syms[idx], kwargs[i].m_value)) {
                 tmp = &null_value->base;
             } else {

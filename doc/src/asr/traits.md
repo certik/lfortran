@@ -1073,6 +1073,84 @@ See `integration_tests/traits_generic_interface_01.f90`,
 `integration_tests/traits_generic_interface_02.f90` and the diagnostics in
 `tests/errors/continue_compilation_traits_generic_interface.f90`.
 
+### Type names as procedure designators
+
+A type name can be an actual argument associated with a dummy procedure, or
+the target of a procedure-pointer assignment (DI extension E3). It then
+designates a procedure that constructs the type, the counterpart of Swift's
+`DoubleLogger.init`:
+
+```fortran
+call cont%register1{IClient}(Client)   ! Client's initializer
+p => Logger                            ! the same, as a pointer target
+n = use_counter(Counter)               ! Counter(), the structure constructor
+```
+
+The dummy procedure or pointer must have an explicit interface, which
+determines the procedure designated (`designate_type`):
+
+1. The type's initializer whose interface matches: an `initial ::` binding
+   in the type or an implements block, or a specific of a standard generic
+   interface with the type's name, both of which are specifics of the
+   `~Type` generic. "Matches" is the exact match of characteristics of an
+   actual procedure (`bind_type_parameters_from_procedure`, previous
+   section), so when the interface mentions generic parameters, such as
+   `procedure(ctor1{T1,U})`, it is that inference succeeds, given the
+   parameters that the other arguments and the explicit type arguments
+   bind. More than one match is ambiguous. The initializer may be private:
+   the designation depends only on the accessibility of the type name.
+2. Otherwise the structure constructor, if the reference `T(a1, ..., an)`,
+   with as many positional component values as the interface has dummy
+   arguments, would be valid here (`type_designator_inadmissible`): the
+   first `n` components are accessible and not pointers, and every other
+   one has default initialization or is allocatable, even if it is private.
+   The type is not abstract and has no type parameters. A function
+   `__ctor_<type>_<n>` is synthesized: its dummy arguments are
+   `intent(in)` and have the declared type, kind and rank of the components
+   (assumed shape for an array, assumed length for a character of
+   nonconstant length), its result is a scalar of the type, and its body is
+   `res = T(a1, ..., an)`, built like that reference
+   (`create_DerivedTypeConstructor`), so omitted components get their
+   default values or stay unallocated. It must also match the interface. It
+   is a private procedure of the program unit that designates it (the
+   module, program or external procedure, or the procedure declaring the
+   type), created once per unit, type and `n`, so it lives for the whole
+   execution and a separately compiled module's `.mod` file never changes.
+
+Otherwise the reference is an error that names the type, the dummy or
+pointer and the reason, for example "type name 'secret' does not designate a
+procedure for dummy procedure 'f': no initializer of 'secret' matches its
+interface, and the structure constructor 'secret(...)' with 0 component
+values is not valid here: component 'n' is private and has no default
+initialization". A generic type needs its type arguments, `Box{real}`.
+
+A type name is recognized as an actual argument of a specific procedure,
+also a type-bound one with or without a passed object, positionally or by
+keyword, as the target of `p => T` and `obj%p => T`, and as the value of a
+procedure-pointer component in a structure constructor, `Holder(make=T)`.
+For a specific procedure the dummy is known when the argument is visited,
+and the designated procedure replaces it. For a generic procedure the
+argument is a placeholder, a `Var` of the type's symbol, which
+`infer_template_type_substitutions_from_call` replaces after the other
+arguments have bound their parameters, so the designated procedure then
+binds the parameters that its interface mentions:
+
+```fortran
+subroutine register1{Trait :: P, Trait :: T1, P :: U}(self, ctor, a)
+    procedure(ctor1{T1,U}) :: ctor
+    ...
+call reg%register1{IClient}(Client, lg)   ! T1 = ILogger, U = Client
+```
+
+No standard program changes meaning: a type name was never a valid actual
+argument. A type name associated with a data dummy, an argument of a
+standard generic interface (overloading of generic specifics is not
+implemented yet) and an initial procedure target (`procedure(mk), pointer ::
+p => T`) are errors. Generic initializers (E8) are not designated yet.
+
+See `integration_tests/traits_type_designator_01.f90` and the diagnostics in
+`tests/errors/continue_compilation_traits_type_designator.f90`.
+
 ### Explicit procedure values
 
 Without an ordinary actual-argument list, braces select a procedure itself,
