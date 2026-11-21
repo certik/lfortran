@@ -5242,6 +5242,7 @@ RUN(NAME traits_generic_interface_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-
 RUN(NAME traits_generic_interface_02 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_type_designator_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_generic_overload_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
+RUN(NAME traits_generic_init_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_implements_generic_type_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_implements_generic_type_02 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_type_sets_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)

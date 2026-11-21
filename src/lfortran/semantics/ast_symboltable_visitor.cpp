@@ -4540,7 +4540,9 @@ public:
                     trait_error("initializer '" + binding.procedure_name +
                         "' is declared more than once", binding.loc);
                 }
-                if (ASRUtils::trait_method_template(*procedure) || structure->n_kind_params) {
+                // A generic initializer has type parameters of its own (E8),
+                // which every reference infers.
+                if (structure->n_kind_params) {
                     trait_error("parameterized initializer bindings are not implemented yet",
                         binding.loc);
                 }
@@ -7814,7 +7816,8 @@ public:
                 [&](size_t j) {
                     return j < proc.second.size() ? proc.second[j].loc
                         : symbols[j]->base.loc;
-                });
+                }, sym_name_str[0] == '~' && ASR::is_a<ASR::Struct_t>(
+                    *current_scope->get_symbol(proc.first)));
         }
         current_scope = current_scope_copy;
         generic_procedures.clear();

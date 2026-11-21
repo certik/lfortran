@@ -26291,6 +26291,7 @@ public:
         }
         if (type_name_intrinsic(x)) return;
         if (type_set_conversion(x)) return;
+        if (handle_generic_initializer_call(x)) return;
         if (handle_trait_call(to_lower(x.m_func), x.m_member, x.n_member,
                 x.m_args, x.n_args, x.m_keywords, x.n_keywords,
                 x.m_temp_args, x.n_temp_args, true, x.base.base.loc)) {
@@ -29034,13 +29035,23 @@ public:
         std::vector<std::pair<ASR::Function_t*,
             std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>>>> matches;
         size_t n_initializers = 0;
+        // The generic initializers (E8), which are not designated yet.
+        std::vector<std::string> generic_initializers;
         if (generic) {
             auto *initializers = ASR::down_cast<ASR::GenericProcedure_t>(
                 ASRUtils::symbol_get_past_external(generic));
             for (size_t i = 0; i < initializers->n_procs; i++) {
                 ASR::Function_t *initializer = ASRUtils::trait_method_function(
                     ASRUtils::symbol_get_past_external(initializers->m_procs[i]));
-                if (!initializer || ASRUtils::trait_method_template(*initializer)) continue;
+                if (!initializer) continue;
+                if (ASRUtils::trait_method_template(*initializer)) {
+                    std::string name = "'" + std::string(initializer->m_name) + "'";
+                    if (std::find(generic_initializers.begin(), generic_initializers.end(),
+                            name) == generic_initializers.end()) {
+                        generic_initializers.push_back(name);
+                    }
+                    continue;
+                }
                 bool seen = false;
                 for (const auto &match : matches) seen |= match.first == initializer;
                 if (seen) continue;
@@ -29067,6 +29078,21 @@ public:
         if (matches.size() == 1) {
             bound = matches[0].second;
             designated = &matches[0].first->base;
+        } else if (!generic_initializers.empty()) {
+            // Whether a generic initializer matches is not determined, so
+            // rule 2 does not apply either.
+            std::string names;
+            for (size_t i = 0; i < generic_initializers.size(); i++) {
+                names += (i == 0 ? "" : i + 1 == generic_initializers.size() ? " and "
+                    : ", ") + generic_initializers[i];
+            }
+            error = prefix + (n_initializers
+                ? "no non-generic initializer of '" + spelling + "' matches its interface, "
+                    "and its generic initializer"
+                : "its generic initializer") + (generic_initializers.size() == 1
+                ? " " + names + " is not designated as a procedure yet"
+                : "s " + names + " are not designated as procedures yet");
+            return nullptr;
         } else {
             // Rule 2: the structure constructor.
             std::string because = n_initializers
@@ -34684,11 +34710,19 @@ public:
     //     constraints hold. The single viable specific is returned.
     //  3. If none is viable, the error names each specific and why it fails.
     // `receiver` is the object of a reference to a generic binding.
+    // For the initializers `~T` of a derived type `T` (E9), the reference is
+    // to the structure constructor when no initializer is viable:
+    // `structure_constructor` returns why it is not valid, or an empty
+    // string when it is, and nullptr is then returned.
     ASR::symbol_t *select_overloaded_specific(ASR::GenericProcedure_t &generic,
             AST::fnarg_t *actuals, size_t n_actuals,
             AST::keyword_t *keywords, size_t n_keywords,
             AST::decl_attribute_t **explicit_args, size_t n_explicit_args,
-            bool is_function, ASR::expr_t *receiver, const Location &loc) {
+            bool is_function, ASR::expr_t *receiver, const Location &loc,
+            const std::function<std::string()> &structure_constructor = nullptr) {
+        // The initializers of a type are named by the type.
+        bool initializers = generic.m_name[0] == '~';
+        std::string generic_name = initializers ? generic.m_name + 1 : generic.m_name;
         std::vector<std::pair<std::string, std::string>> rejected;
         bool non_generic = false;
         for (size_t i = 0; i < generic.n_procs; i++) {
@@ -34823,16 +34857,27 @@ public:
                     "'" + ASRUtils::symbol_name(ASRUtils::symbol_get_past_external(viable[k])) +
                     "'";
             }
-            trait_call_error("ambiguous reference to generic procedure '" +
-                std::string(generic.m_name) + "': its generic specific procedures " + names +
-                " all accept these arguments", loc);
+            trait_call_error(initializers
+                ? "ambiguous reference to type '" + generic_name + "': its generic "
+                    "initializers " + names + " all accept these arguments"
+                : "ambiguous reference to generic procedure '" + generic_name +
+                    "': its generic specific procedures " + names +
+                    " all accept these arguments", loc);
+        }
+        if (structure_constructor) {
+            std::string reason = structure_constructor();
+            if (reason.empty()) return nullptr;
+            rejected.push_back({"structure constructor", reason});
         }
         std::string reasons;
         for (const auto &entry : rejected) {
             reasons += "\n    " + entry.first + ": " + entry.second;
         }
-        trait_call_error("no specific procedure of generic '" + std::string(generic.m_name) +
-            "' accepts this reference:" + reasons, loc);
+        trait_call_error(initializers
+            ? "no initializer of type '" + generic_name + "' accepts this reference, "
+                "nor does its structure constructor:" + reasons
+            : "no specific procedure of generic '" + generic_name +
+                "' accepts this reference:" + reasons, loc);
     }
 
     // Distinguishability of the generic specifics of a generic interface or
@@ -35034,9 +35079,11 @@ public:
     // not distinguishable. A non-generic specific may overlap a generic one:
     // resolution prefers it. Pairs of non-generic specifics are not checked.
     // `where(j)` is the location of the declaration of the `j`-th specific.
+    // `initializers` tells that they are the initializers of the type `name`
+    // (E9).
     void check_generic_specifics_distinguishable(const std::string &name,
             ASR::symbol_t **procs, size_t n_procs,
-            const std::function<Location (size_t)> &where) {
+            const std::function<Location (size_t)> &where, bool initializers = false) {
         for (size_t i = 0; i < n_procs; i++) {
             if (!ASRUtils::is_generic_specific(procs[i])) continue;
             for (size_t j = i + 1; j < n_procs; j++) {
@@ -35046,11 +35093,12 @@ public:
                 ASR::Function_t *fb = generic_specific_procedure(procs[j], pb);
                 if (!fa || !fb || fa == fb ||
                         generic_procedures_distinguishable(fa, pa, fb, pb)) continue;
-                diag.add(diag::Diagnostic("generic specific procedures '" +
-                    std::string(ASRUtils::symbol_name(ASRUtils::symbol_get_past_external(
-                        procs[i]))) + "' and '" +
+                diag.add(diag::Diagnostic(std::string(initializers
+                    ? "generic initializers '" : "generic specific procedures '") +
+                    ASRUtils::symbol_name(ASRUtils::symbol_get_past_external(procs[i])) +
+                    "' and '" +
                     ASRUtils::symbol_name(ASRUtils::symbol_get_past_external(procs[j])) +
-                    "' of generic '" + name +
+                    (initializers ? "' of type '" : "' of generic '") + name +
                     "' are not distinguishable: some types that their generic parameters "
                     "admit make a reference match both",
                     diag::Level::Error, diag::Stage::Semantic, {diag::Label("", {where(j)})}));
@@ -35120,6 +35168,56 @@ public:
             }
         }
         return false;
+    }
+
+    // A constructor reference `T(args)` of a derived type `T` that is not
+    // generic, when its initializers include generic ones (E8, E9): the
+    // non-generic initializers are tried first by the standard rules, then
+    // the generic ones, whose own type parameters are inferred only, then
+    // the structure constructor. Returns false when the reference takes the
+    // standard path, to a non-generic initializer or the structure
+    // constructor. Braces after the name of a type that is not generic are
+    // an error: they give a type's arguments, never an initializer's.
+    bool handle_generic_initializer_call(const AST::FuncCallOrArray_t &x) {
+        if (x.n_member != 0) return false;
+        const Location &loc = x.base.base.loc;
+        std::string name = to_lower(x.m_func);
+        ASR::symbol_t *type = current_scope->resolve_symbol(name);
+        ASR::symbol_t *structure = type ? ASRUtils::symbol_get_past_external(type) : nullptr;
+        if (!structure || !ASR::is_a<ASR::Struct_t>(*structure)) return false;
+        auto *definition = ASR::down_cast<ASR::Struct_t>(structure);
+        if (ASRUtils::generic_type_definition_metadata(*definition) ||
+                ASRUtils::generic_type_instance(*definition) ||
+                ASRUtils::generic_type_package(type)) {
+            return false;
+        }
+        if (x.n_temp_args) {
+            trait_call_error("type '" + name + "' is not generic: braces after a type "
+                "name give the type's arguments, and the type parameters of its "
+                "initializers are inferred from the actual arguments", loc);
+        }
+        auto *initializers = overloaded_generic(current_scope->resolve_symbol("~" + name));
+        if (!initializers) return false;
+        ASR::symbol_t *selected = select_overloaded_specific(*initializers, x.m_args,
+            x.n_args, x.m_keywords, x.n_keywords, nullptr, 0, true, nullptr, loc,
+            [&]() {
+                return trait_trial([&]() {
+                    tmp = create_DerivedTypeConstructor(x, type);
+                });
+            });
+        if (!selected) return false;
+        ASR::Function_t *signature = ASRUtils::trait_method_function(selected);
+        ASR::Template_t *generic = ASRUtils::trait_method_template(*signature);
+        LCOMPILERS_ASSERT(generic);
+        Vec<ASR::call_arg_t> args;
+        trait_call_arguments(signature, x.m_args, x.n_args, x.m_keywords, x.n_keywords,
+            args, loc);
+        ASR::symbol_t *callee = prepare_trait_procedure_call(generic, signature, args,
+            nullptr, 0, loc);
+        callee = make_operator_proc_visible(callee, "trait", current_scope);
+        ASRUtils::insert_module_dependency(callee, al, current_module_dependencies);
+        tmp = create_FunctionCall(loc, callee, args);
+        return true;
     }
 
     bool handle_trait_call(const std::string &name, AST::struct_member_t *members,
@@ -37789,7 +37887,8 @@ public:
             ? initializers : nullptr;
     }
 
-    // The procedures of the initializer generic of the derived type `type`.
+    // The procedures of the initializer generic of the derived type `type`,
+    // other than generic initializers (E8), which no requirement binds.
     static std::vector<ASR::symbol_t*> type_initializers(ASR::symbol_t *type) {
         std::vector<ASR::symbol_t*> result;
         ASR::symbol_t *generic = type_initializer_generic(type);
@@ -37799,6 +37898,7 @@ public:
             ASR::symbol_t *procedure = ASRUtils::symbol_get_past_external(
                 initializers->m_procs[i]);
             if (ASRUtils::trait_method_function(procedure) &&
+                    !ASRUtils::is_generic_specific(procedure) &&
                     std::find(result.begin(), result.end(), procedure) == result.end()) {
                 result.push_back(procedure);
             }

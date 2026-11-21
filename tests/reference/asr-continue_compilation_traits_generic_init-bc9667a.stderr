@@ -1,0 +1,60 @@
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+  --> tests/errors/continue_compilation_traits_generic_init.f90:14:5 - 19:1
+   |
+14 |        abstract interface :: IPrinter
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+   |
+19 |    
+   | ...^ LFortran extension
+
+semantic error: generic initializers 'holder_a' and 'holder_b' of type 'holder' are not distinguishable: some types that their generic parameters admit make a reference match both
+  --> tests/errors/continue_compilation_traits_generic_init.f90:74:9
+   |
+74 |         initial :: holder_a, holder_b
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: generic initializers 'pair_a' and 'pair_b' of type 'pair' are not distinguishable: some types that their generic parameters admit make a reference match both
+  --> tests/errors/continue_compilation_traits_generic_init.f90:65:9
+   |
+65 |         initial :: pair_a, pair_b
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: no initializer of type 'factory' accepts this reference, nor does its structure constructor:
+    init0: the actual argument does not match the interface of dummy procedure 'ctor': it is not a procedure
+    init1: the actual argument does not match the interface of dummy procedure 'ctor': it is not a procedure
+    structure constructor: component 'arity' of type 'factory' is private and cannot be specified in a structure constructor outside module 'continue_compilation_traits_generic_init_m'
+   --> tests/errors/continue_compilation_traits_generic_init.f90:151:9
+    |
+151 |     f = Factory("text")
+    |         ^^^^^^^^^^^^^^^ 
+
+semantic error: no initializer of type 'factory' accepts this reference, nor does its structure constructor:
+    init0: procedure 'make_num' does not match the interface of dummy procedure 'ctor': it has 1 dummy argument, but the interface has 0
+    init1: no visible nominal implementation of trait 'iprinter' for generic type parameter 'u'
+    structure constructor: component 'arity' of type 'factory' is private and cannot be specified in a structure constructor outside module 'continue_compilation_traits_generic_init_m'
+   --> tests/errors/continue_compilation_traits_generic_init.f90:153:9
+    |
+153 |     f = Factory(make_num)
+    |         ^^^^^^^^^^^^^^^^^ 
+
+semantic error: type 'num' is not generic: braces after a type name give the type's arguments, and the type parameters of its initializers are inferred from the actual arguments
+   --> tests/errors/continue_compilation_traits_generic_init.f90:155:9
+    |
+155 |     a = Num{real}(1.5)
+    |         ^^^^^^^^^^^^^^ 
+
+semantic error: no initializer of type 'num' accepts this reference, nor does its structure constructor:
+    num_from_int: its dummy arguments do not match the actual arguments
+    num_from: too many arguments to trait procedure 'num_from'
+    structure constructor: too many arguments in derived type constructor
+   --> tests/errors/continue_compilation_traits_generic_init.f90:158:9
+    |
+158 |     a = Num(1, 2)
+    |         ^^^^^^^^^ 
+
+semantic error: type name 'factory' does not designate a procedure for dummy procedure 'f': its generic initializers 'init0' and 'init1' are not designated as procedures yet
+   --> tests/errors/continue_compilation_traits_generic_init.f90:160:19
+    |
+160 |     n = use_ctor0(Factory)
+    |                   ^^^^^^^ 

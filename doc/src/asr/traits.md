@@ -182,8 +182,9 @@ the `initial ::` syntax. `initial` remains usable as an ordinary identifier.
 
 An `initial ::` binding in an `implements` statement for a type of the same
 module overloads the type's constructor in the same way, whether the statement
-precedes or follows the type definition. Parameterized initializer bindings
-remain separate work.
+precedes or follows the type definition. An initializer may have generic
+parameters of its own (see "Generic initializers"); initializer bindings of
+parameterized derived types remain separate work.
 
 ## Binding procedures without traits
 
@@ -1148,7 +1149,10 @@ generic interface whose specifics are all non-generic and an initial
 procedure target (`procedure(mk), pointer :: p => T`) are errors. As an
 argument of a generic interface with generic specifics, each generic
 specific designates it for its own dummy (next section). Generic
-initializers (E8) are not designated yet.
+initializers (E8) are not designated yet: a type name designates one of its
+non-generic initializers that matches, and otherwise, when the type has
+generic initializers, the reference is an error rather than a designation of
+the structure constructor, whose admissibility depends on them.
 
 See `integration_tests/traits_type_designator_01.f90` and the diagnostics in
 `tests/errors/continue_compilation_traits_type_designator.f90`.
@@ -1246,6 +1250,90 @@ selected; it is a private procedure of the unit and is otherwise unused.
 
 See `integration_tests/traits_generic_overload_01.f90` and the diagnostics in
 `tests/errors/continue_compilation_traits_generic_overload.f90`.
+
+### Generic initializers
+
+An initializer, a procedure bound to a type with `initial ::` in the type or
+in an implements statement, may have generic parameters of its own (DI
+extension E8), and generic and non-generic initializers can overload the
+type's constructor together (E9):
+
+```fortran
+type :: Factory
+    private
+    character(:), allocatable :: kind
+contains
+    initial :: init0, init1, init2
+end type Factory
+
+function init1{Trait :: T1, U}(ctor) result(self)
+    procedure(ctor1{T1,U}) :: ctor
+    type(Factory) :: self
+    self%kind = type_name{U}() // "(" // type_name{T1}() // ")"
+end function init1
+
+f = Factory(make_client)   ! init1{ILogger, Client}
+```
+
+The type is not generic; its initializers' parameters are independent of
+it. They are inferred only, from the actual arguments, also through dummy
+procedures (E4) and type names (E3): braces after a type name give the
+type's arguments, so `Num{real}(1.5)` is an error for a type `Num` that is
+not generic. The result is the type, and the constraints of the
+initializer's parameters, also conformance constraints, are checked at the
+reference.
+
+In the ASR nothing is new: the `~Type` generic that overloads the
+constructor lists the `Template` of a generic initializer like any generic
+specific of a generic interface (previous section).
+`check_type_initializers` accepts it, and `type_initializers`, the
+initializers that can bind an initializer requirement of a trait, leaves it
+out. A reference `T(args)` of a type that is not generic whose initializers
+include generic ones is resolved by `handle_generic_initializer_call`,
+through `select_overloaded_specific`:
+
+1. The non-generic initializers are tried by the standard rules. If one
+   matches, it is called.
+2. Otherwise each generic initializer is tried as a trial; the one viable
+   generic initializer is instantiated and called. A non-generic initializer
+   may overlap a generic one, so `Num(3)` calls `num_from_int(x)` and
+   `Num(2.5)` calls `num_from{INumeric :: T}(x)`.
+3. Otherwise the reference is to the structure constructor, if it is valid
+   here (also a trial). If it is not, the error lists each initializer and
+   the structure constructor with the reason it fails:
+
+   ```
+   no initializer of type 'factory' accepts this reference, nor does its structure constructor:
+       init0: ...
+       init1: ...
+       structure constructor: ...
+   ```
+
+The declaration rule of the previous section applies to `~Type`: its generic
+initializers must be pairwise distinguishable, with generic parameters as
+wildcards and dummy procedures distinguished by their interfaces, so
+`Factory`'s `init0`, `init1` and `init2` are distinguishable by the arity of
+`ctor`'s interface.
+
+Inside a generic procedure, a dummy procedure whose interface is an instance
+with the procedure's own parameters, such as `procedure(ctor1{T1,U}) ::
+ctor` of `register1{Trait :: P, Trait :: T1, P :: U}`, selects and binds a
+generic initializer like a concrete procedure: `Factory(ctor)` selects
+`init1` and binds its parameters to `register1`'s `T1` and `U`, and each
+instance of `register1` instantiates `init1` for its own arguments. So
+`call cont%register{IClient}(Client)` resolves `register` to `register1`
+(E6), designates `Client`'s initializer (E3), infers `T1 = ILogger` and
+`U = Client` (E4), and its instance selects `init1{ILogger, Client}` (E8,
+E9), as in Sect. 4.8 of the extension.
+
+Not implemented yet: generic initializers of a generic type, which inherit
+the type's parameters and declare none of their own (see "Generic derived
+types"), the designation of a generic initializer by a type name (E3 with
+inference of the initializer's parameters against the dummy's
+interface).
+
+See `integration_tests/traits_generic_init_01.f90` and the diagnostics in
+`tests/errors/continue_compilation_traits_generic_init.f90`.
 
 ### Explicit procedure values
 
