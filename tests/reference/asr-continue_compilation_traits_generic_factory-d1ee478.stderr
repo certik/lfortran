@@ -1,0 +1,63 @@
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+  --> tests/errors/continue_compilation_traits_generic_factory.f90:16:5 - 21:1
+   |
+16 |        abstract interface :: ILogger
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+   |
+21 |    
+   | ...^ LFortran extension
+
+semantic error: calling type-bound procedure 'get' of 'runner{u}', whose type arguments are generic parameters, is not implemented yet
+  --> tests/errors/continue_compilation_traits_generic_factory.f90:71:13
+   |
+71 |         y = r%get()
+   |             ^^^^^^^ 
+
+semantic error: no visible nominal implementation of trait 'ilogger' for type 'holder{ilogger, u}'
+  --> tests/errors/continue_compilation_traits_generic_factory.f90:87:14
+   |
+87 |         lg = Holder{ILogger, U}(ctor)
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: cannot infer generic type parameter 't1' of 'holder'; provide it explicitly
+   --> tests/errors/continue_compilation_traits_generic_factory.f90:104:9
+    |
+104 |     h = Holder(make_client)
+    |         ^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: procedure 'make_wrong' does not match the interface of procedure component 'ctor': dummy argument 'logger' has intent(inout), but the interface requires intent(in)
+   --> tests/errors/continue_compilation_traits_generic_factory.f90:106:9
+    |
+106 |     p = Pair(make_wrong)
+    |         ^^^^^^^^^^^^^^^^ 
+
+semantic error: generic type parameter 't1' is a trait parameter, but 'client' is not a trait
+   --> tests/errors/continue_compilation_traits_generic_factory.f90:108:25
+    |
+108 |     print *, size([Pair{Client, Client}(make_logger_client)])
+    |                         ^^^^^^ 
+
+semantic error: 'ilogger' is a trait, but generic type parameter 'u' is a type parameter; a trait argument requires a trait parameter `Trait :: u`
+   --> tests/errors/continue_compilation_traits_generic_factory.f90:109:34
+    |
+109 |     print *, size([Pair{ILogger, ILogger}(make_logger_client)])
+    |                                  ^^^^^^^ 
+
+semantic error: component 'ctor' of type 'sealed1{ilogger, client}' is private and cannot be specified in a structure constructor outside module 'continue_compilation_traits_generic_factory_m'
+   --> tests/errors/continue_compilation_traits_generic_factory.f90:111:17
+    |
+111 |     s = Sealed1(make_logger_client)
+    |                 ^^^^^^^^^^^^^^^^^^ 
+    |
+ 47 |         procedure(ctor1{T1, U}), pointer, nopass :: ctor => null()
+    |                                                     ~~~~~~~~~~~~~~ 'ctor' is declared here
+
+semantic error: component 'ctor' of type 'sealed1{ilogger, client}' is private and cannot be specified in a structure constructor outside module 'continue_compilation_traits_generic_factory_m'
+   --> tests/errors/continue_compilation_traits_generic_factory.f90:112:34
+    |
+112 |     s = Sealed1{ILogger, Client}(make_logger_client)
+    |                                  ^^^^^^^^^^^^^^^^^^ 
+    |
+ 47 |         procedure(ctor1{T1, U}), pointer, nopass :: ctor => null()
+    |                                                     ~~~~~~~~~~~~~~ 'ctor' is declared here
