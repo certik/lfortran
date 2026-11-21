@@ -7131,6 +7131,10 @@ filename = "errors/continue_compilation_traits_type_name.f90"
 semantics_only_cc = true
 
 [[test]]
+filename = "errors/continue_compilation_traits_partial_type_args.f90"
+semantics_only_cc = true
+
+[[test]]
 filename = "errors/continue_compilation_traits_kind_sets_internal_name.f90"
 semantics_only_cc = true
 

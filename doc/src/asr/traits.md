@@ -775,6 +775,66 @@ See `integration_tests/traits_trait_param_01.f90`,
 `integration_tests/traits_trait_param_02.f90` and the diagnostics in
 `tests/errors/continue_compilation_traits_trait_param.f90`.
 
+### Partially explicit and mixed type arguments
+
+The leading type arguments of a generic procedure can be given and the call
+infers the others from its actual arguments (DI extension E5):
+
+```fortran
+r = pair{integer}(1, 2.5)          ! T given, U inferred as real
+call cont%register{ILogger}(x)     ! P given, U inferred from x
+```
+
+This holds for generic functions and subroutines and for type-bound generic
+procedures. A trait parameter that is used only in the body cannot be
+inferred, so such parameters come first and are given. Too many type
+arguments, "too many generic type arguments: 'pair' has 2 generic
+parameters, but 3 type arguments are given", and a parameter that remains
+undetermined, "cannot infer generic type parameter 'u'; provide it
+explicitly", are errors. Keyword type arguments name the parameters as
+before.
+
+Inside a generic, the type arguments of a call can mix binders of the
+enclosing generic, forwarded, with concrete types, explicit or inferred:
+
+```fortran
+function make{Trait :: P}(n) result(r)
+    integer, intent(in) :: n
+    class(P), allocatable :: r
+    r = wrap{P}(A(n))              ! P forwarded, U = A
+end function make
+
+function nested{INum :: T}(x) result(r)
+    type(T), intent(in) :: x
+    real :: r
+    r = pair{T, real}(x, 1.25) + pair(x, 2.5)
+end function nested
+```
+
+The call is checked where it is made: a concrete argument must satisfy its
+constraints, and a forwarded binder's declared constraints must imply those
+it is passed to. As for a call that only forwards, its specialization belongs
+to the enclosing generic; when an instance of the enclosing generic binds it,
+its requirements are resolved again with every type argument known and its
+body is instantiated. A concrete argument keeps the conformances selected
+where the call was checked; a forwarded one has those of the instance's own
+type argument. With `U` forwarded and `P` concrete, a nominal constraint of
+`U`'s binder must imply the trait.
+
+A conformance constraint `P :: U` with `P` forwarded and `U` concrete is
+checked only when the enclosing generic is instantiated, against the
+conformances of `U` visible at the call: `make{IShow}()` with
+`wrap{P}(Plain())` reports "type 'plain' does not implement trait 'ishow', as
+required for generic parameter 'u' of 'wrap'" at that call. Until then the
+specialization is only its signature, a `Function` with deftype `Interface`.
+Such a generic is instantiated in the unit that defines it; instantiating it
+from a separately compiled unit is an error, not implemented yet. Calls
+through trait objects and generic messages called through a constrained type
+parameter still require all type arguments to be forwarded or all concrete.
+
+See `integration_tests/traits_partial_type_args_01.f90` and the diagnostics in
+`tests/errors/continue_compilation_traits_partial_type_args.f90`.
+
 ### The `type_name` intrinsic
 
 `type_name{P}()` is the name of the type or trait `P` (DI extension E7), a

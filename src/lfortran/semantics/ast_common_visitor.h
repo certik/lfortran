@@ -2665,6 +2665,11 @@ public:
         std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> types;
         std::vector<TraitEvidence> evidence;
         ASR::symbol_t *procedure;
+        // The conformances selected, or for a deferred conformance constraint
+        // the ones visible, for each concrete binder where it was checked.
+        std::map<std::string, std::vector<ASR::TraitImplementation_t*>> conformances = {};
+        // The call that a mixed forwarding specialization was made for.
+        Location loc = {};
     };
     std::vector<TraitSpecialization> trait_specializations;
     // The names, with the letter case of their declarations, of the program
@@ -32461,13 +32466,51 @@ public:
         return target->get_unique_name(name);
     }
 
+    // Whether `types` mixes binders of the caller, forwarded, with concrete
+    // type arguments.
+    static bool mixed_trait_type_arguments(
+            const std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &types) {
+        bool forwarded = false, concrete = false;
+        for (const auto &entry : types) {
+            if (ASR::is_a<ASR::TypeParameter_t>(*entry.second.first)) {
+                forwarded = true;
+            } else {
+                concrete = true;
+            }
+        }
+        return forwarded && concrete;
+    }
+
+    // Whether a conformance constraint `P :: U` of `generic` has P forwarded
+    // and U concrete for `types`: the conformance is known only where the
+    // caller is instantiated.
+    static bool deferred_trait_conformance(ASR::Template_t &generic,
+            const std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &types) {
+        for (const auto &entry : generic.m_symtab->get_scope()) {
+            if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
+            auto *constraint = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
+            auto *binder = ASRUtils::conformance_constraint_binder(*constraint);
+            if (!binder) continue;
+            auto trait = types.find(ASRUtils::symbol_name(binder));
+            auto type = types.find(ASRUtils::symbol_name(constraint->m_parameter));
+            if (trait != types.end() && type != types.end() &&
+                    ASR::is_a<ASR::TypeParameter_t>(*trait->second.first) &&
+                    !ASR::is_a<ASR::TypeParameter_t>(*type->second.first)) return true;
+        }
+        return false;
+    }
+
+    // A mixed specialization inside its caller's generic whose conformance
+    // is deferred is only a signature, an interface: it is instantiated when
+    // an instance of the caller binds it (bind_pending_body), where every
+    // type argument is known.
     ASR::symbol_t *instantiate_trait_signature(SymbolTable *target,
             ASR::Template_t *generic,
             const std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &types,
             const std::vector<TraitEvidence> &evidence,
             std::map<std::string, ASR::symbol_t*> symbols,
             const std::map<std::string, std::vector<ASR::TraitImplementation_t*>>
-                &conformances) {
+                &conformances, const Location &loc = {}) {
         ASR::symbol_t *procedure = generic->m_symtab->get_symbol(generic->m_name);
         std::string name = trait_specialization_name(target, "__instantiated_" +
             std::string(generic->m_name));
@@ -32479,8 +32522,15 @@ public:
             erase_failed_instantiation(target, previous);
             throw SemanticAbort();
         }
-        trait_specializations.push_back({target, generic, types, evidence, specialization});
-        queue_body_instantiation(types, symbols, {{specialization, procedure}}, conformances);
+        trait_specializations.push_back({target, generic, types, evidence, specialization,
+            conformances, loc});
+        if (mixed_trait_type_arguments(types) && deferred_trait_conformance(*generic, types)) {
+            ASRUtils::get_FunctionType(specialization)->m_deftype =
+                ASR::deftypeType::Interface;
+        } else {
+            queue_body_instantiation(types, symbols, {{specialization, procedure}},
+                conformances);
+        }
         return specialization;
     }
 
@@ -32529,8 +32579,17 @@ public:
         // Leading positional arguments may be given alone; the call infers
         // the others (E5).
         bool positional = n_explicit_args < generic->n_args;
+        bool keywords = false;
         for (size_t i = 0; i < n_explicit_args; i++) {
-            if (AST::is_a<AST::AttrKeyword_t>(*explicit_args[i])) positional = false;
+            if (AST::is_a<AST::AttrKeyword_t>(*explicit_args[i])) keywords = true;
+        }
+        if (keywords) positional = false;
+        if (!keywords && n_explicit_args > generic->n_args) {
+            trait_call_error("too many generic type arguments: '" +
+                trait_generic_display_name(*generic) + "' has " +
+                std::to_string(generic->n_args) + " generic parameter" +
+                (generic->n_args == 1 ? "" : "s") + ", but " +
+                std::to_string(n_explicit_args) + " type arguments are given", loc);
         }
         Vec<AST::decl_attribute_t*> ordered;
         if (positional) {
@@ -32686,10 +32745,14 @@ public:
     // implements the trait bound to P, by a conformance visible here (or
     // recorded), which is reported in `selected`. Forwarded, U must be a
     // binder with the conformance constraint to the binder P is forwarded to.
+    // With P forwarded and U concrete, the trait is known only where the
+    // caller is instantiated: every conformance of U visible here is
+    // reported, and the instance checks them. With U forwarded and P
+    // concrete, a nominal constraint of U's binder must imply the trait.
     void check_conformance_constraint(ASR::Template_t &generic,
             ASR::TraitConstraint_t &constraint,
             std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &types,
-            bool forwarding, const Location &loc,
+            const Location &loc,
             std::vector<std::pair<ASR::TraitConstraint_t*, ASR::TraitImplementation_t*>>
                 *selected,
             const std::map<std::string, std::vector<ASR::TraitImplementation_t*>> *recorded) {
@@ -32701,7 +32764,41 @@ public:
         std::string requirement = "as required for generic parameter '" +
             trait_binder_display_name(generic, parameter) + "' of '" +
             trait_generic_display_name(generic) + "'";
-        if (forwarding) {
+        bool type_forwarded = ASR::is_a<ASR::TypeParameter_t>(*type_argument.first);
+        bool trait_forwarded = ASR::is_a<ASR::TypeParameter_t>(*trait_argument.first);
+        if (trait_forwarded && !type_forwarded) {
+            if (selected && !ASR::is_a<ASR::TraitObjectType_t>(*type_argument.first)) {
+                for (auto *implementation : trait_implementations_for_type(
+                        type_argument.second, loc, type_argument.first)) {
+                    selected->push_back({&constraint, implementation});
+                }
+            }
+            return;
+        }
+        if (type_forwarded && !trait_forwarded) {
+            auto *source_parameter = ASRUtils::symbol_get_past_external(type_argument.second);
+            auto *contract = ASRUtils::trait_runtime_contract(trait_argument.first);
+            LCOMPILERS_ASSERT(contract);
+            auto *required = ASRUtils::symbol_get_past_external(contract->m_trait);
+            for (const auto &entry :
+                    ASRUtils::symbol_parent_symtab(source_parameter)->get_scope()) {
+                if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
+                auto *source = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
+                if (ASRUtils::symbol_get_past_external(source->m_parameter) !=
+                        source_parameter ||
+                        ASRUtils::conformance_constraint_binder(*source)) continue;
+                auto *source_trait = ASRUtils::trait_constraint_trait(*source);
+                if (!source_trait) continue;
+                for (auto *provided : checked_trait_hierarchy(*source_trait, loc).traits) {
+                    if (&provided->base == required) return;
+                }
+            }
+            trait_call_error("generic type parameter '" +
+                std::string(ASRUtils::symbol_name(source_parameter)) + "' is not "
+                "constrained by trait '" + std::string(ASRUtils::symbol_name(required)) +
+                "', " + requirement, loc);
+        }
+        if (type_forwarded) {
             auto *source_parameter = ASRUtils::symbol_get_past_external(type_argument.second);
             auto *source_trait = ASRUtils::symbol_get_past_external(trait_argument.second);
             for (const auto &entry :
@@ -32762,7 +32859,7 @@ public:
     // recorded for it instead of those visible here.
     std::vector<ResolvedRequirement> resolve_trait_requirements(ASR::Template_t *generic,
             std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &types,
-            bool forwarding, const Location &loc,
+            const Location &loc,
             std::vector<std::pair<ASR::TraitConstraint_t*, ASR::TraitImplementation_t*>>
                 *selected = nullptr,
             const std::map<std::string, std::vector<ASR::TraitImplementation_t*>>
@@ -32796,14 +32893,17 @@ public:
         for (auto *constraint : trait_constraints(generic)) {
             std::string parameter = ASRUtils::symbol_name(constraint->m_parameter);
             if (ASRUtils::conformance_constraint_binder(*constraint)) {
-                check_conformance_constraint(*generic, *constraint, types, forwarding, loc,
+                check_conformance_constraint(*generic, *constraint, types, loc,
                     selected, recorded);
                 continue;
             }
+            // A binder of the caller is forwarded; each binder is resolved on
+            // its own, so a call can mix forwarded and concrete arguments.
+            bool forwarded = ASR::is_a<ASR::TypeParameter_t>(*types.at(parameter).first);
             auto *trait = ASR::down_cast<ASR::Trait_t>(
                 ASRUtils::symbol_get_past_external(constraint->m_trait));
             if (trait->m_kind == ASR::trait_kindType::IntrinsicTypeSet) {
-                if (forwarding) {
+                if (forwarded) {
                     auto *source_parameter = ASRUtils::symbol_get_past_external(
                         types.at(parameter).second);
                     bool matched = false;
@@ -32861,7 +32961,7 @@ public:
                 }
                 continue;
             }
-            if (!forwarding && !available.count(parameter)) {
+            if (!forwarded && !available.count(parameter)) {
                 if (recorded) {
                     auto evidence = recorded->find(parameter);
                     available.emplace(parameter, evidence == recorded->end()
@@ -32873,7 +32973,7 @@ public:
                 }
             }
             bool matched = false;
-            if (forwarding) {
+            if (forwarded) {
                 ASR::symbol_t *source_parameter =
                     ASRUtils::symbol_get_past_external(types.at(parameter).second);
                 LCOMPILERS_ASSERT(source_parameter);
@@ -32974,10 +33074,14 @@ public:
             return cached;
         }
         std::map<std::string, ASR::symbol_t*> symbols;
+        bool signature_only = mixed_trait_type_arguments(types) &&
+            deferred_trait_conformance(*generic, types);
         for (const auto &requirement : requirements) {
             // A generic requirement is bound per published specialization when
             // the body is instantiated.
             if (ASRUtils::trait_generic_requirement(requirement.requirement)) continue;
+            // A signature without a body yet; its instance adapts.
+            if (signature_only && !requirement.forwarded) continue;
             auto type = types.at(ASRUtils::symbol_name(requirement.constraint->m_parameter));
             auto *trait = ASR::down_cast<ASR::Trait_t>(ASRUtils::symbol_get_past_external(
                 requirement.constraint->m_trait));
@@ -32998,7 +33102,7 @@ public:
             }
         }
         return instantiate_trait_signature(target, generic, types, evidence, symbols,
-            conformances);
+            conformances, loc);
     }
 
     // The dictionary of each dictionary binder of `generic`, after the
@@ -33075,17 +33179,16 @@ public:
                     + std::string(generic->m_args[i]) + "'; provide it explicitly", loc);
             }
         }
-        bool forwarding = false, concrete = false;
+        // A call that forwards binders of the enclosing generic, alone or
+        // mixed with concrete type arguments, is specialized in that generic
+        // and instantiated with each of its instances.
+        bool forwarding = false;
         for (const auto &entry : types) {
-            if (ASR::is_a<ASR::TypeParameter_t>(*entry.second.first)) {
-                forwarding = true;
-            } else {
-                concrete = true;
-            }
+            if (ASR::is_a<ASR::TypeParameter_t>(*entry.second.first)) forwarding = true;
         }
-        if (forwarding && concrete) {
+        if (forwarding && runtime_signature && mixed_trait_type_arguments(types)) {
             trait_call_error("mixing concrete and deferred generic type arguments "
-                "in a forwarded trait call is not implemented yet", loc);
+                "in a call through a trait object is not implemented yet", loc);
         }
         SymbolTable *target = current_scope;
         if (forwarding) {
@@ -33097,6 +33200,12 @@ public:
             }
             LCOMPILERS_ASSERT(target);
             for (const auto &entry : types) {
+                if (target == generic->m_symtab &&
+                        generic->m_symtab->get_symbol(entry.first) != entry.second.second) {
+                    trait_call_error("recursive trait forwarding with different type "
+                        "parameters is not implemented yet", loc);
+                }
+                if (!ASR::is_a<ASR::TypeParameter_t>(*entry.second.first)) continue;
                 auto *parameter = ASR::down_cast<ASR::TypeParameter_t>(entry.second.first);
                 if (declared_trait_parameter(parameter->m_param, target)
                         != ASRUtils::symbol_get_past_external(entry.second.second)) {
@@ -33107,15 +33216,10 @@ public:
                     trait_call_error("forwarding across nested generic parameter scopes "
                         "is not implemented yet", loc);
                 }
-                if (target == generic->m_symtab &&
-                        generic->m_symtab->get_symbol(entry.first) != entry.second.second) {
-                    trait_call_error("recursive trait forwarding with different type "
-                        "parameters is not implemented yet", loc);
-                }
             }
         }
         std::vector<std::pair<ASR::TraitConstraint_t*, ASR::TraitImplementation_t*>> conformances;
-        auto requirements = resolve_trait_requirements(generic, types, forwarding, loc,
+        auto requirements = resolve_trait_requirements(generic, types, loc,
             &conformances);
         if (runtime_signature) {
             if (closed_members) {
@@ -33425,7 +33529,7 @@ public:
         // whether or not this generic is ever instantiated. The conformances
         // selected here for concrete type arguments are their evidence.
         std::vector<std::pair<ASR::TraitConstraint_t*, ASR::TraitImplementation_t*>> evidence;
-        resolve_trait_requirements(generic, types, forwarding, loc, &evidence);
+        resolve_trait_requirements(generic, types, loc, &evidence);
         return publish_trait_requirement_specialization(constraint, index, types, evidence, loc);
     }
 
@@ -34441,7 +34545,31 @@ public:
                 // checked, or, forwarded, the caller's constraint.
                 auto trait = p.type_subs.at(ASRUtils::symbol_name(binder));
                 ASR::symbol_t *evidence = nullptr;
-                if (ASR::is_a<ASR::TypeParameter_t>(*actual.first)) {
+                if (ASR::is_a<ASR::TypeParameter_t>(*actual.first) &&
+                        !ASR::is_a<ASR::TypeParameter_t>(*trait.first)) {
+                    // A forwarded U packed as a concrete trait: a nominal
+                    // constraint of the caller's binder implies the trait.
+                    auto *parameter = ASRUtils::symbol_get_past_external(actual.second);
+                    auto *required = ASRUtils::symbol_get_past_external(
+                        ASRUtils::trait_runtime_contract(trait.first)->m_trait);
+                    for (const auto &entry :
+                            ASRUtils::symbol_parent_symtab(parameter)->get_scope()) {
+                        if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
+                        auto *source_constraint =
+                            ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
+                        if (ASRUtils::symbol_get_past_external(
+                                source_constraint->m_parameter) != parameter ||
+                                ASRUtils::conformance_constraint_binder(*source_constraint)) {
+                            continue;
+                        }
+                        auto *source_trait = ASRUtils::trait_constraint_trait(*source_constraint);
+                        if (!source_trait) continue;
+                        for (auto *provided : checked_trait_hierarchy(*source_trait,
+                                pack->base.base.loc).traits) {
+                            if (&provided->base == required) evidence = &source_constraint->base;
+                        }
+                    }
+                } else if (ASR::is_a<ASR::TypeParameter_t>(*actual.first)) {
                     auto *parameter = ASRUtils::symbol_get_past_external(actual.second);
                     for (const auto &entry :
                             ASRUtils::symbol_parent_symtab(parameter)->get_scope()) {
@@ -34580,7 +34708,7 @@ public:
             std::vector<std::pair<ASR::TraitConstraint_t*, ASR::TraitImplementation_t*>>
                 conformances;
             auto requirements = resolve_trait_requirements(generic, implementation_types,
-                false, loc, &conformances, recorded_witnesses.empty() ? nullptr : &recorded);
+                loc, &conformances, recorded_witnesses.empty() ? nullptr : &recorded);
             // A recorded conformance can belong to a module this unit does not use.
             for (const auto &resolved : requirements) {
                 if (!resolved.binding) continue;
@@ -34744,6 +34872,49 @@ public:
         }
     }
 
+    // The specialization, for the bound type arguments `types`, of a mixed
+    // forwarding specialization `source` of the generic whose instance `p`
+    // binds in `target`. Its requirements are resolved again there: a
+    // concrete binder of the call has the conformances recorded where the
+    // call was checked, and a forwarded one those selected for the binder of
+    // the instance that it names, so a deferred `P :: U` is checked now.
+    ASR::symbol_t *instantiate_mixed_trait_specialization(const TraitSpecialization &source,
+            std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> types,
+            const PendingBodyInstantiation &p, SymbolTable *target) {
+        const Location &loc = source.loc;
+        auto *saved_scope = current_scope;
+        current_scope = target;
+        try {
+            std::map<std::string, std::vector<ASR::TraitImplementation_t*>> recorded =
+                source.conformances;
+            for (const auto &entry : source.types) {
+                const auto &actual = types.at(entry.first);
+                if (ASR::is_a<ASR::TraitErasedType_t>(*actual.first)) {
+                    trait_call_error("mixing concrete and erased generic type arguments "
+                        "is not implemented yet", loc);
+                }
+                if (!ASR::is_a<ASR::TypeParameter_t>(*entry.second.first) ||
+                        ASR::is_a<ASR::TypeParameter_t>(*actual.first)) continue;
+                auto selected = p.conformances.find(
+                    ASR::down_cast<ASR::TypeParameter_t>(entry.second.first)->m_param);
+                recorded[entry.first] = selected != p.conformances.end()
+                    ? selected->second
+                    : trait_implementations_for_type(actual.second, loc, actual.first);
+            }
+            std::vector<std::pair<ASR::TraitConstraint_t*, ASR::TraitImplementation_t*>>
+                selected;
+            auto requirements = resolve_trait_requirements(source.generic, types, loc,
+                &selected, &recorded);
+            ASR::symbol_t *specialization = specialize_trait_generic(target, source.generic,
+                types, requirements, selected, loc);
+            current_scope = saved_scope;
+            return specialization;
+        } catch (const SemanticAbort &) {
+            current_scope = saved_scope;
+            throw;
+        }
+    }
+
     void bind_pending_body(PendingBodyInstantiation &p) {
         // Forwarded procedures belong to the caller's template, not to its
         // local function scope. Bind all of them before copying bodies so a
@@ -34768,11 +34939,26 @@ public:
             }
             std::vector<ASR::symbol_t*> procedures;
             for (const auto &entry : generic->m_symtab->get_scope()) {
-                if (entry.second != selection.second &&
-                        ASR::is_a<ASR::Function_t>(*entry.second) &&
-                        !is_type_set_witness(entry.second) &&
-                        ASRUtils::get_FunctionType(entry.second)->m_deftype ==
-                            ASR::deftypeType::Implementation) {
+                if (entry.second == selection.second ||
+                        !ASR::is_a<ASR::Function_t>(*entry.second) ||
+                        is_type_set_witness(entry.second)) continue;
+                auto *signature = ASRUtils::get_FunctionType(entry.second);
+                if (signature->m_deftype == ASR::deftypeType::Implementation) {
+                    procedures.push_back(entry.second);
+                } else if (!signature->m_is_restriction) {
+                    // The signature of a mixed call whose conformance is
+                    // deferred, made where the generic was compiled.
+                    bool recorded = false;
+                    for (const auto &cached : trait_specializations) {
+                        if (cached.procedure == entry.second) recorded = true;
+                    }
+                    if (!recorded) {
+                        trait_call_error("generic '" + std::string(generic->m_name) +
+                            "' calls a generic with a forwarded trait parameter and a "
+                            "concrete type that must conform to it; instantiating it "
+                            "outside the unit that defines it is not implemented yet",
+                            entry.second->base.loc);
+                    }
                     procedures.push_back(entry.second);
                 }
             }
@@ -34800,6 +34986,12 @@ public:
                         auto actual = p.type_subs.find(parameter->m_param);
                         LCOMPILERS_ASSERT(actual != p.type_subs.end());
                         entry.second = actual->second;
+                    }
+                    if (mixed_trait_type_arguments(source.types)) {
+                        p.symbol_subs[ASRUtils::symbol_name(procedure)] =
+                            instantiate_mixed_trait_specialization(source, types, p, target);
+                        forwarded = true;
+                        break;
                     }
                     std::vector<TraitEvidence> evidence;
                     std::map<std::string, ASR::symbol_t*> symbols;
@@ -36654,7 +36846,7 @@ public:
                 std::vector<std::pair<ASR::TraitConstraint_t*, ASR::TraitImplementation_t*>>
                     conformances;
                 auto requirements = resolve_trait_requirements(generic, implementation_types,
-                    true, loc, &conformances);
+                    loc, &conformances);
                 ASR::symbol_t *forwarded = specialize_trait_generic(copy.m_symtab, generic,
                     implementation_types, requirements, conformances, loc);
                 std::map<std::string, ASR::symbol_t*> symbols;

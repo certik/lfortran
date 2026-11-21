@@ -2320,7 +2320,7 @@ semantic error: cannot infer generic type parameter 't'; provide it explicitly
 3950 |         p => total{}
      |              ^^^^^^^ 
 
-semantic error: incorrect number of generic type arguments
+semantic error: too many generic type arguments: 'total' has 1 generic parameter, but 2 type arguments are given
     --> tests/errors/continue_compilation_traits_01.f90:3954:14
      |
 3954 |         p => total{integer, integer}

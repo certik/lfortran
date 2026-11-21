@@ -50,7 +50,7 @@ semantic error: cannot infer generic type parameter 't'; provide it explicitly
 123 |         r = x + a%zero()
     |                 ^^^^^^^^ 
 
-semantic error: incorrect number of generic type arguments
+semantic error: too many generic type arguments: 'sum' has 1 generic parameter, but 2 type arguments are given
    --> tests/errors/continue_compilation_traits_generic_requirement_01.f90:135:13
     |
 135 |         r = a%sum{E, E}(x)

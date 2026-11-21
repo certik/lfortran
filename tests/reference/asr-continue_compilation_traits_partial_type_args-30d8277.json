@@ -1,0 +1,13 @@
+{
+    "basename": "asr-continue_compilation_traits_partial_type_args-30d8277",
+    "cmd": "lfortran --semantics-only --continue-compilation --no-color {infile}",
+    "infile": "tests/errors/continue_compilation_traits_partial_type_args.f90",
+    "infile_hash": "da978694b1bfd6e50d76f8914a676c795ef09d36e3916b7313a036cc",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": "asr-continue_compilation_traits_partial_type_args-30d8277.stderr",
+    "stderr_hash": "0bfa60594b4e54e15bfa86da1b8d0c13ed3f765eeba0169a2594d603",
+    "returncode": 2
+}

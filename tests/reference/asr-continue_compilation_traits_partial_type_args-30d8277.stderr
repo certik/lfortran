@@ -1,0 +1,69 @@
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+  --> tests/errors/continue_compilation_traits_partial_type_args.f90:8:5 - 13:1
+   |
+ 8 |        abstract interface :: IShow
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+   |
+13 |    
+   | ...^ LFortran extension
+
+semantic error: too many generic type arguments: 'pair' has 2 generic parameters, but 3 type arguments are given
+  --> tests/errors/continue_compilation_traits_partial_type_args.f90:65:13
+   |
+65 |         r = pair{T, integer, real}(x, 2)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: cannot infer generic type parameter 'u'; provide it explicitly
+  --> tests/errors/continue_compilation_traits_partial_type_args.f90:67:13
+   |
+67 |         r = pick{T}(x)
+   |             ^^^^^^^^^^ 
+
+semantic error: logical(4) is not a member of type-set trait 'inum'
+  --> tests/errors/continue_compilation_traits_partial_type_args.f90:69:13
+   |
+69 |         r = pair{T, logical}(x, .true.)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: generic type parameter 'v' is not constrained by trait 'ishow', as required for generic parameter 'u' of 'wrap'
+  --> tests/errors/continue_compilation_traits_partial_type_args.f90:76:13
+   |
+76 |         r = wrap{IShow}(x)
+   |             ^^^^^^^^^^^^^^ 
+
+semantic error: too many generic type arguments: 'pair' has 2 generic parameters, but 3 type arguments are given
+  --> tests/errors/continue_compilation_traits_partial_type_args.f90:93:14
+   |
+93 |     print *, pair{integer, real, real}(1, 2.5)
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: too many generic type arguments: 'combine' has 2 generic parameters, but 3 type arguments are given
+  --> tests/errors/continue_compilation_traits_partial_type_args.f90:94:14
+   |
+94 |     print *, b%combine{integer, real, integer}(1)
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: cannot infer generic type parameter 'u'; provide it explicitly
+  --> tests/errors/continue_compilation_traits_partial_type_args.f90:95:14
+   |
+95 |     print *, pick{integer}(1)
+   |              ^^^^^^^^^^^^^^^^ 
+
+semantic error: cannot infer generic type parameter 'u'; provide it explicitly
+  --> tests/errors/continue_compilation_traits_partial_type_args.f90:96:14
+   |
+96 |     print *, b%combine(1)
+   |              ^^^^^^^^^^^^ 
+
+semantic error: cannot infer generic type parameter 'p'; provide it explicitly
+  --> tests/errors/continue_compilation_traits_partial_type_args.f90:97:5
+   |
+97 |     call named(n)
+   |     ^^^^^^^^^^^^^ 
+
+semantic error: type 'plain' does not implement trait 'ishow', as required for generic parameter 'u' of 'wrap'
+  --> tests/errors/continue_compilation_traits_partial_type_args.f90:82:13
+   |
+82 |         r = wrap{P}(Plain())
+   |             ^^^^^^^^^^^^^^^^ 
