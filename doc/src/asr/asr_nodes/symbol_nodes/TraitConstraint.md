@@ -20,7 +20,7 @@ TraitConstraint(symbol_table parent_symtab, identifier name, symbol parameter,
 | `parent_symtab` | The generic scope containing this constraint. |
 | `name` | Internal name of the constraint symbol. |
 | `parameter` | Variable representing the deferred type parameter. |
-| `trait` | Required nominal trait, using a visible import when necessary. |
+| `trait` | Required nominal trait, using a visible import when necessary; for a conformance constraint `P :: U`, the binder of the earlier trait parameter `P` of the same generic, and then the constraint has no requirements. |
 | `requirements` | Mappings to normalized abstract procedures used by the generic body; for a generic message, a generic requirement `Template` followed by its published specializations. |
 | `intrinsic_requirements` | Complete all-member capability proofs for a finite type set; empty for universal traits. |
 | `same_types` | Explicit associated-type equalities of this constraint, with scalar RHS types and their declaration metadata. |

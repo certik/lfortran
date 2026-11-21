@@ -3461,7 +3461,8 @@ public:
 
     ASR::asr_t *duplicate_TraitDeferredPack(ASR::TraitDeferredPack_t *x) {
         auto *payload = duplicate_expr(x->m_payload);
-        auto *type = ASRUtils::import_trait_type(al, x->m_type, new_scope);
+        auto *type = ASRUtils::import_trait_type(al, substitute_trait_parameter_object(
+            al, x->m_type, type_subs, new_scope), new_scope);
         auto selected = symbol_subs.find(ASRUtils::trait_deferred_pack_key(*x));
         LCOMPILERS_ASSERT(selected != symbol_subs.end());
         [[maybe_unused]] auto *evidence = ASRUtils::symbol_get_past_external(selected->second);

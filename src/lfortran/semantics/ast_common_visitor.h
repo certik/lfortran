@@ -27512,9 +27512,8 @@ public:
             if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
             auto *constraint = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
             if (ASRUtils::symbol_get_past_external(constraint->m_parameter) != parameter) continue;
-            auto *trait = ASR::down_cast<ASR::Trait_t>(
-                ASRUtils::symbol_get_past_external(constraint->m_trait));
-            if (trait->m_kind == ASR::trait_kindType::IntrinsicTypeSet) return constraint;
+            auto *trait = ASRUtils::trait_constraint_trait(*constraint);
+            if (trait && trait->m_kind == ASR::trait_kindType::IntrinsicTypeSet) return constraint;
         }
         return nullptr;
     }
@@ -27868,9 +27867,8 @@ public:
             if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
             auto *constraint = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
             if (ASRUtils::symbol_get_past_external(constraint->m_parameter) != binder) continue;
-            auto *trait = ASR::down_cast<ASR::Trait_t>(
-                ASRUtils::symbol_get_past_external(constraint->m_trait));
-            if (trait->m_kind == ASR::trait_kindType::UniversalTrait) {
+            auto *trait = ASRUtils::trait_constraint_trait(*constraint);
+            if (trait && trait->m_kind == ASR::trait_kindType::UniversalTrait) {
                 constraints.push_back(constraint);
             }
         }
@@ -28192,7 +28190,9 @@ public:
             // class(P): a trait object binds the trait parameter P to its
             // named trait, or forwards the caller's trait parameter.
             auto &bound = type_subs[ASRUtils::symbol_name(binder)];
-            if (ASR::is_a<ASR::StructType_t>(*actual_type)) return true;
+            // type(U) with `P :: U` converts to class(P) once P is bound.
+            if (ASR::is_a<ASR::StructType_t>(*actual_type) ||
+                    ASR::is_a<ASR::TypeParameter_t>(*actual_type)) return true;
             if (!ASR::is_a<ASR::TraitObjectType_t>(*actual_type)) return false;
             ASR::symbol_t *forwarded = ASRUtils::trait_object_binder(actual_type);
             auto *contract = ASRUtils::trait_runtime_contract(actual_type);
@@ -30378,6 +30378,7 @@ public:
             if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
             auto *constraint = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
             if (ASRUtils::symbol_get_past_external(constraint->m_parameter) != binder) continue;
+            if (ASRUtils::conformance_constraint_binder(*constraint)) continue;
             auto hierarchy = checked_trait_hierarchy(*ASR::down_cast<ASR::Trait_t>(
                 ASRUtils::symbol_get_past_external(constraint->m_trait)), loc);
             for (auto *provided : hierarchy.traits) {
@@ -31811,12 +31812,34 @@ public:
             ASRUtils::trait_runtime_contract(target), value->base.loc);
     }
 
-    // The trait bound to the trait parameter `binder` P is unknown in the
-    // generic, so no value of a type converts to class(P).
-    void make_trait_parameter_view(ASR::expr_t *&actual, ASR::ttype_t * /*target*/,
+    // A value of type(U) borrowed as class(P), the trait object of the trait
+    // parameter `binder` P, which the conformance constraint `P :: U`
+    // guarantees: its evidence is selected where the generic is instantiated.
+    // The trait bound to P is unknown in the generic, so no other value
+    // converts to class(P).
+    void make_trait_parameter_view(ASR::expr_t *&actual, ASR::ttype_t *target,
             ASR::symbol_t *binder) {
         auto *source = ASRUtils::expr_type(actual);
         std::string name = ASRUtils::symbol_name(binder);
+        if (ASR::is_a<ASR::TypeParameter_t>(*source)) {
+            if (ASR::symbol_t *parameter = actual_trait_parameter(actual)) {
+                for (const auto &entry :
+                        ASRUtils::symbol_parent_symtab(parameter)->get_scope()) {
+                    if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
+                    auto *constraint = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
+                    if (ASRUtils::symbol_get_past_external(constraint->m_parameter) !=
+                            parameter ||
+                            ASRUtils::conformance_constraint_binder(*constraint) != binder) {
+                        continue;
+                    }
+                    actual = ASRUtils::EXPR(ASR::make_TraitDeferredPack_t(al,
+                        actual->base.loc, actual, &constraint->base,
+                        ASRUtils::TYPE(ASR::make_TraitObjectType_t(al, actual->base.loc,
+                            binder))));
+                    return;
+                }
+            }
+        }
         std::string description = ASR::is_a<ASR::TypeParameter_t>(*source)
             ? "type(" + std::string(ASR::down_cast<ASR::TypeParameter_t>(source)->m_param) + ")"
             : ASR::is_a<ASR::StructType_t>(*source) && !ASRUtils::is_class_type(source)
@@ -31825,7 +31848,8 @@ public:
                 : ASRUtils::type_to_str_fortran_expr(source, actual);
         trait_call_error("a value of " + description + " cannot be converted to class(" +
             name + "): the trait bound to trait parameter '" + name + "' is not known in "
-            "the generic", actual->base.loc);
+            "the generic, so only a value of a type parameter constrained by `" + name +
+            " :: U` conforms to it", actual->base.loc);
     }
 
     void project_runtime_trait_view(ASR::expr_t *&value, ASR::ttype_t *target) {
@@ -32090,6 +32114,7 @@ public:
             return nullptr;
         }
         if (auto *binder = ASRUtils::trait_object_binder(target)) {
+            // Only type(U) with `P :: U` converts to class(P).
             make_trait_parameter_view(value, target, binder);
             return nullptr;
         }
@@ -32341,9 +32366,23 @@ public:
             AST::decl_attribute_t **explicit_args, size_t n_explicit_args,
             std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &types,
             const Location &loc) {
-        auto ordered = match_instantiation_args(explicit_args, n_explicit_args,
-            names, generic->n_args,
-            "incorrect number of generic type arguments", loc);
+        // Leading positional arguments may be given alone; the call infers
+        // the others (E5).
+        bool positional = n_explicit_args < generic->n_args;
+        for (size_t i = 0; i < n_explicit_args; i++) {
+            if (AST::is_a<AST::AttrKeyword_t>(*explicit_args[i])) positional = false;
+        }
+        Vec<AST::decl_attribute_t*> ordered;
+        if (positional) {
+            ordered.reserve(al, n_explicit_args);
+            for (size_t i = 0; i < n_explicit_args; i++) {
+                ordered.push_back(al, explicit_args[i]);
+            }
+        } else {
+            ordered = match_instantiation_args(explicit_args, n_explicit_args,
+                names, generic->n_args,
+                "incorrect number of generic type arguments", loc);
+        }
         for (size_t i = 0; i < ordered.size(); i++) {
             ASR::ttype_t *type = nullptr;
             ASR::symbol_t *declaration = nullptr;
@@ -32483,6 +32522,77 @@ public:
         }
     }
 
+    // A conformance constraint `P :: U` (E2) of `generic`: the type bound to U
+    // implements the trait bound to P, by a conformance visible here (or
+    // recorded), which is reported in `selected`. Forwarded, U must be a
+    // binder with the conformance constraint to the binder P is forwarded to.
+    void check_conformance_constraint(ASR::Template_t &generic,
+            ASR::TraitConstraint_t &constraint,
+            std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &types,
+            bool forwarding, const Location &loc,
+            std::vector<std::pair<ASR::TraitConstraint_t*, ASR::TraitImplementation_t*>>
+                *selected,
+            const std::map<std::string, std::vector<ASR::TraitImplementation_t*>> *recorded) {
+        std::string parameter = ASRUtils::symbol_name(constraint.m_parameter);
+        std::string trait_parameter = ASRUtils::symbol_name(
+            ASRUtils::conformance_constraint_binder(constraint));
+        const auto &type_argument = types.at(parameter);
+        const auto &trait_argument = types.at(trait_parameter);
+        std::string requirement = "as required for generic parameter '" +
+            trait_binder_display_name(generic, parameter) + "' of '" +
+            trait_generic_display_name(generic) + "'";
+        if (forwarding) {
+            auto *source_parameter = ASRUtils::symbol_get_past_external(type_argument.second);
+            auto *source_trait = ASRUtils::symbol_get_past_external(trait_argument.second);
+            for (const auto &entry :
+                    ASRUtils::symbol_parent_symtab(source_parameter)->get_scope()) {
+                if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
+                auto *source = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
+                if (ASRUtils::symbol_get_past_external(source->m_parameter) ==
+                        source_parameter &&
+                        ASRUtils::conformance_constraint_binder(*source) == source_trait) {
+                    return;
+                }
+            }
+            trait_call_error("generic type parameter '" +
+                std::string(ASRUtils::symbol_name(source_parameter)) + "' is not "
+                "constrained by trait parameter '" +
+                std::string(ASRUtils::symbol_name(source_trait)) + "', " + requirement, loc);
+        }
+        auto *contract = ASRUtils::trait_runtime_contract(trait_argument.first);
+        LCOMPILERS_ASSERT(contract);
+        auto *trait = ASR::down_cast<ASR::Trait_t>(
+            ASRUtils::symbol_get_past_external(contract->m_trait));
+        if (ASR::is_a<ASR::TraitObjectType_t>(*type_argument.first)) {
+            auto *source = ASRUtils::trait_runtime_contract(type_argument.first);
+            if (source && ASRUtils::trait_contract_implies(*source, *contract)) return;
+        } else {
+            std::vector<ASR::TraitImplementation_t*> available;
+            if (recorded) {
+                auto evidence = recorded->find(parameter);
+                if (evidence != recorded->end()) available = evidence->second;
+            } else {
+                available = trait_implementations_for_type(type_argument.second, loc,
+                    type_argument.first);
+            }
+            for (auto *implementation : available) {
+                auto hierarchy = checked_trait_hierarchy(*ASR::down_cast<ASR::Trait_t>(
+                    ASRUtils::symbol_get_past_external(implementation->m_trait)), loc);
+                if (std::find(hierarchy.traits.begin(), hierarchy.traits.end(), trait)
+                        == hierarchy.traits.end()) continue;
+                if (selected) selected->push_back({&constraint, implementation});
+                return;
+            }
+        }
+        std::string type_name = type_argument.second && ASR::is_a<ASR::StructType_t>(
+                *ASRUtils::extract_type(type_argument.first))
+            ? std::string(ASRUtils::symbol_name(
+                ASRUtils::symbol_get_past_external(type_argument.second)))
+            : ASRUtils::type_to_str_fortran_symbol(type_argument.first, nullptr, true);
+        trait_call_error("type '" + type_name + "' does not implement trait '" +
+            std::string(trait->m_name) + "', " + requirement, loc);
+    }
+
     // The evidence of each requirement of `generic` for `types`: a nominal
     // binding of a concrete type, or the caller's requirement for a forwarded
     // binder. Published specializations of a generic requirement are not
@@ -32525,6 +32635,11 @@ public:
         };
         for (auto *constraint : trait_constraints(generic)) {
             std::string parameter = ASRUtils::symbol_name(constraint->m_parameter);
+            if (ASRUtils::conformance_constraint_binder(*constraint)) {
+                check_conformance_constraint(*generic, *constraint, types, forwarding, loc,
+                    selected, recorded);
+                continue;
+            }
             auto *trait = ASR::down_cast<ASR::Trait_t>(
                 ASRUtils::symbol_get_past_external(constraint->m_trait));
             if (trait->m_kind == ASR::trait_kindType::IntrinsicTypeSet) {
@@ -32608,6 +32723,7 @@ public:
                     auto *source = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
                     if (ASRUtils::symbol_get_past_external(source->m_parameter)
                             != source_parameter) continue;
+                    if (ASRUtils::conformance_constraint_binder(*source)) continue;
                     auto hierarchy = checked_trait_hierarchy(*ASR::down_cast<ASR::Trait_t>(
                         ASRUtils::symbol_get_past_external(source->m_trait)), loc);
                     if (std::find(hierarchy.traits.begin(), hierarchy.traits.end(), trait)
@@ -32778,9 +32894,8 @@ public:
             ASR::ttype_t **runtime_result = nullptr, bool open_slot = false) {
         if (!is_body_visitor) {
             for (auto *constraint : trait_constraints(generic)) {
-                auto *trait = ASR::down_cast<ASR::Trait_t>(
-                    ASRUtils::symbol_get_past_external(constraint->m_trait));
-                if (trait->m_kind == ASR::trait_kindType::IntrinsicTypeSet) {
+                auto *trait = ASRUtils::trait_constraint_trait(*constraint);
+                if (trait && trait->m_kind == ASR::trait_kindType::IntrinsicTypeSet) {
                     trait_call_error("type-set generic calls in specification expressions "
                         "are not implemented yet", loc);
                 }
@@ -32873,6 +32988,7 @@ public:
                         if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
                         auto *constraint = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
                         if (ASRUtils::symbol_get_past_external(constraint->m_parameter) != parameter) continue;
+                        if (ASRUtils::conformance_constraint_binder(*constraint)) continue;
                         auto hierarchy = checked_trait_hierarchy(*ASR::down_cast<ASR::Trait_t>(
                             ASRUtils::symbol_get_past_external(constraint->m_trait)), loc);
                         for (auto *trait : hierarchy.traits) {
@@ -34159,6 +34275,40 @@ public:
             auto *constraint = ASR::down_cast<ASR::TraitConstraint_t>(
                 ASRUtils::symbol_get_past_external(pack->m_constraint));
             auto actual = p.type_subs.at(ASRUtils::symbol_name(constraint->m_parameter));
+            if (auto *binder = ASRUtils::conformance_constraint_binder(*constraint)) {
+                // type(U) packed as class(P) by the conformance constraint
+                // `P :: U`: the conformance selected where the instance was
+                // checked, or, forwarded, the caller's constraint.
+                auto trait = p.type_subs.at(ASRUtils::symbol_name(binder));
+                ASR::symbol_t *evidence = nullptr;
+                if (ASR::is_a<ASR::TypeParameter_t>(*actual.first)) {
+                    auto *parameter = ASRUtils::symbol_get_past_external(actual.second);
+                    for (const auto &entry :
+                            ASRUtils::symbol_parent_symtab(parameter)->get_scope()) {
+                        if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
+                        auto *source_constraint =
+                            ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
+                        if (ASRUtils::symbol_get_past_external(
+                                source_constraint->m_parameter) == parameter &&
+                                ASRUtils::conformance_constraint_binder(*source_constraint) ==
+                                    ASRUtils::symbol_get_past_external(trait.second)) {
+                            evidence = &source_constraint->base;
+                        }
+                    }
+                } else if (ASR::is_a<ASR::TraitObjectType_t>(*actual.first)) {
+                    evidence = ASR::down_cast<ASR::TraitObjectType_t>(actual.first)->m_contract;
+                } else {
+                    auto selected = p.conformances.find(
+                        ASRUtils::symbol_name(constraint->m_parameter));
+                    const std::vector<ASR::TraitImplementation_t*> none;
+                    evidence = select_runtime_trait_witness(trait.first, actual.second,
+                        pack->base.base.loc, false,
+                        selected != p.conformances.end() ? &selected->second : &none);
+                }
+                LCOMPILERS_ASSERT(evidence);
+                p.symbol_subs[ASRUtils::trait_deferred_pack_key(*pack)] = evidence;
+                continue;
+            }
             auto *contract = ASRUtils::trait_runtime_contract(pack->m_type);
             ASR::symbol_t *evidence = nullptr;
             if (ASR::is_a<ASR::TypeParameter_t>(*actual.first)) {

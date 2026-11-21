@@ -703,7 +703,7 @@ generic procedure, so a `deferred type :: t` statement in it is an error.
 
 See `integration_tests/traits_anytype_01.f90`.
 
-### Trait parameters
+### Trait parameters and conformance constraints
 
 A generic parameter declared with the predefined meta-trait `Trait` ranges
 over traits, not types (DI extension E1). Its argument is a trait, given
@@ -740,8 +740,29 @@ trait is not a type, so `type(P)` and `type is (P)` are errors, as are a type
 argument for a trait parameter and a trait argument for a type parameter.
 `Trait` is not reserved, and a variable may be named `trait`.
 
+The constraint of a parameter can be an earlier trait parameter of the same
+list (E2):
+
+```fortran
+function wrap{Trait :: P, P :: U}(x) result(r)
+    type(U), intent(in) :: x
+    class(P), allocatable :: r
+    r = x
+end function wrap
+```
+
+`P :: U` requires the type bound to `U` to implement the trait bound to `P`,
+which is checked where the generic is instantiated:
+`wrap{ILogger}(Printer())` is an error, "type 'printer' does not implement
+trait 'ilogger', as required for generic parameter 'u' of 'wrap'". In the
+generic, `U` has no operations, but a `type(U)` value converts to `class(P)`,
+in an assignment or as an actual argument. Leading explicit type arguments can
+be given alone and the call infers the others, so `wrap{IShow}(A(3))` infers
+`U`.
+
 Not yet implemented: trait combinations such as `IA + IB` as arguments of a
-trait parameter, trait parameters of generic derived types, arrays and associate names of
+trait parameter, a constraint combining `P` with other traits, trait
+parameters of generic derived types, arrays and associate names of
 `class(P)` objects, `select type` on a `class(P)` selector, a `class is (P)`
 guard together with other trait guards in one `select type`, and generic
 messages with trait parameters in generic constraints. Calling such a generic
@@ -750,7 +771,8 @@ one, such as `IResolver` with `resolve{Trait :: P}`, cannot be used in
 `class(IResolver)` yet, although a type can implement it and its instances
 can be called statically.
 
-See `integration_tests/traits_trait_param_01.f90` and the diagnostics in
+See `integration_tests/traits_trait_param_01.f90`,
+`integration_tests/traits_trait_param_02.f90` and the diagnostics in
 `tests/errors/continue_compilation_traits_trait_param.f90`.
 
 ### Explicit procedure values
@@ -3715,7 +3737,11 @@ witnesses. The shared instantiator binds `P` to the `TraitObjectType` of the
 argument trait's runtime contract and replaces the binder in these types and
 queries with that contract, adding the retroactive witnesses that the
 semantic phase records for the instance; a forwarded `P` is replaced by the
-caller's binder. This representation leaves room for erasing `P` with a trait descriptor
+caller's binder. A conformance constraint `P :: U` is a `TraitConstraint` of
+`U` whose trait is the binder `P` and which has no requirements. A `type(U)`
+value converted to `class(P)` is a `TraitDeferredPack` of that constraint,
+which the instance packs with the conformance selected where it was checked.
+This representation leaves room for erasing `P` with a trait descriptor
 instead of instantiating it.
 
 Constrained generic procedures use the existing `Template` carrier and shared

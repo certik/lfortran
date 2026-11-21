@@ -1,93 +1,105 @@
 warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
-  --> tests/errors/continue_compilation_traits_trait_param.f90:5:5 - 10:1
+  --> tests/errors/continue_compilation_traits_trait_param.f90:7:5 - 12:1
    |
- 5 |        abstract interface :: IShow
+ 7 |        abstract interface :: IShow
    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^...
 ...
    |
-10 |    
+12 |    
    | ...^ LFortran extension
 
 semantic error: trait parameter 'p' cannot be used in type(p): a trait is not a type; use class(p) for a trait object
-  --> tests/errors/continue_compilation_traits_trait_param.f90:51:9
+  --> tests/errors/continue_compilation_traits_trait_param.f90:61:9
    |
-51 |         type(P) :: x
+61 |         type(P) :: x
    |         ^^^^^^^^^^^^ 
 
-semantic error: the meta-trait Trait cannot be combined with other constraints
-   --> tests/errors/continue_compilation_traits_trait_param.f90:103:25
+semantic error: generic parameter 'u' constrains 'v' but is not an earlier trait parameter: only a parameter declared earlier as `Trait :: u` can be a constraint
+   --> tests/errors/continue_compilation_traits_trait_param.f90:101:22
     |
-103 |     subroutine combined{Trait + IShow :: P}()
+101 |     subroutine later{U :: V, Trait :: U}()
+    |                      ^^^^^^ 
+
+semantic error: the meta-trait Trait cannot be combined with other constraints
+   --> tests/errors/continue_compilation_traits_trait_param.f90:132:25
+    |
+132 |     subroutine combined{Trait + IShow :: P}()
     |                         ^^^^^^^^^^^^^^^^^^ 
 
 semantic error: calling generic message 'resolve' of trait 'iresolver', which has the trait parameter 'p', through trait objects is not implemented yet
-   --> tests/errors/continue_compilation_traits_trait_param.f90:145:9
+   --> tests/errors/continue_compilation_traits_trait_param.f90:174:9
     |
-145 |         class(IResolver), allocatable :: c
+174 |         class(IResolver), allocatable :: c
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
 semantic error: trait parameters of generic derived types are not implemented yet
-   --> tests/errors/continue_compilation_traits_trait_param.f90:152:20
+   --> tests/errors/continue_compilation_traits_trait_param.f90:181:20
     |
-152 |     type :: Holder{Trait :: P}
+181 |     type :: Holder{Trait :: P}
     |                    ^^^^^^^^^^ 
 
 semantic error: generic parameter 'p' of 'none' is a trait parameter, but 'a' is not a trait
-  --> tests/errors/continue_compilation_traits_trait_param.f90:61:9
+  --> tests/errors/continue_compilation_traits_trait_param.f90:71:9
    |
-61 |         call none{A}()
+71 |         call none{A}()
    |         ^^^^^^^^^^^^^^ 
 
 semantic error: 'ishow' is a trait, but generic parameter 't' of 'first' is a type parameter; a trait argument requires a trait parameter `Trait :: t`
-  --> tests/errors/continue_compilation_traits_trait_param.f90:72:13
+  --> tests/errors/continue_compilation_traits_trait_param.f90:82:13
    |
-72 |         n = first{IShow}(A())
+82 |         n = first{IShow}(A())
    |             ^^^^^^^^^^^^^^^^^ 
 
-semantic error: a value of type(a) cannot be converted to class(p): the trait bound to trait parameter 'p' is not known in the generic
-  --> tests/errors/continue_compilation_traits_trait_param.f90:83:13
+semantic error: type 'printer' does not implement trait 'ishow', as required for generic parameter 'u' of 'register0'
+  --> tests/errors/continue_compilation_traits_trait_param.f90:92:9
    |
-83 |         r = A()
-   |             ^^^ 
+92 |         call register0{IShow}(Printer())
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: a value of type(a) cannot be converted to class(p): the trait bound to trait parameter 'p' is not known in the generic, so only a value of a type parameter constrained by `p :: U` conforms to it
+   --> tests/errors/continue_compilation_traits_trait_param.f90:112:13
+    |
+112 |         r = A()
+    |             ^^^ 
 
 semantic error: method 'code' is not provided by trait parameter 'p': the trait bound to it is not known in the generic, so its objects have no messages there
-  --> tests/errors/continue_compilation_traits_trait_param.f90:94:13
-   |
-94 |         r = view%code()
-   |             ^^^^^^^^^^^ 
+   --> tests/errors/continue_compilation_traits_trait_param.f90:123:13
+    |
+123 |         r = view%code()
+    |             ^^^^^^^^^^^ 
 
 semantic error: trait parameter 'p' is not a type; class is (p) queries conformance to the trait bound to it
-   --> tests/errors/continue_compilation_traits_trait_param.f90:116:9 - 117:24
+   --> tests/errors/continue_compilation_traits_trait_param.f90:145:9 - 146:24
     |
-116 |            type is (P)
+145 |            type is (P)
     |            ^^^^^^^^^^^...
 ...
     |
-117 |                ok = .true.
+146 |                ok = .true.
     | ...^^^^^^^^^^^^^^^^^^^^^^^^ 
 
 warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
-   --> tests/errors/continue_compilation_traits_trait_param.f90:133:9 - 134:18
+   --> tests/errors/continue_compilation_traits_trait_param.f90:162:9 - 163:18
     |
-133 |            class is (IOther)
+162 |            class is (IOther)
     |            ^^^^^^^^^^^^^^^^^...
 ...
     |
-134 |                r = 2
+163 |                r = 2
     | ...^^^^^^^^^^^^^^^^^^ LFortran extension
 
 semantic error: a select type with a `class is` guard of a trait parameter and other trait guards is not implemented yet
-   --> tests/errors/continue_compilation_traits_trait_param.f90:131:9 - 132:18
+   --> tests/errors/continue_compilation_traits_trait_param.f90:160:9 - 161:18
     |
-131 |            class is (P)
+160 |            class is (P)
     |            ^^^^^^^^^^^^...
 ...
     |
-132 |                r = 1
+161 |                r = 1
     | ...^^^^^^^^^^^^^^^^^^ 
 
 semantic error: generic parameter 'p' of 'none' is a trait parameter, whose argument must name a trait; trait combinations as arguments of trait parameters are not implemented yet
-   --> tests/errors/continue_compilation_traits_trait_param.f90:163:9
+   --> tests/errors/continue_compilation_traits_trait_param.f90:192:9
     |
-163 |         call none{IShow + IOther}()
+192 |         call none{IShow + IOther}()
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ 

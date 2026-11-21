@@ -1,5 +1,7 @@
-! Trait parameters `{Trait :: P}` (E1): a trait is not a type, and the
-! arguments of trait and type parameters are checked.
+! Trait parameters `{Trait :: P}` (E1) and conformance constraints
+! `{P :: U}` (E2): a trait is not a type, the arguments of trait and type
+! parameters are checked, and the type bound to U must implement the trait
+! bound to P.
 module continue_compilation_traits_trait_param_m0
     implicit none
     abstract interface :: IShow
@@ -27,6 +29,10 @@ module continue_compilation_traits_trait_param_m0
         procedure :: code => a_code
     end type A
 
+    type :: Printer
+        integer :: w = 2
+    end type Printer
+
 contains
 
     integer function a_code(self)
@@ -41,6 +47,10 @@ contains
         type(T), intent(in) :: x
         r = x%code()
     end function first
+
+    subroutine register0{Trait :: P, P :: U}(x)
+        type(U), intent(in) :: x
+    end subroutine register0
 end module continue_compilation_traits_trait_param_m0
 
 module continue_compilation_traits_trait_param_m1
@@ -72,6 +82,25 @@ contains
         n = first{IShow}(A())
     end subroutine trait_for_type
 end module continue_compilation_traits_trait_param_m3
+
+module continue_compilation_traits_trait_param_m4
+    use continue_compilation_traits_trait_param_m0
+    implicit none
+contains
+    ! The type bound to U does not implement the trait bound to P.
+    subroutine not_conforming()
+        call register0{IShow}(Printer())
+    end subroutine not_conforming
+end module continue_compilation_traits_trait_param_m4
+
+module continue_compilation_traits_trait_param_m5
+    use continue_compilation_traits_trait_param_m0
+    implicit none
+contains
+    ! Only an earlier trait parameter can constrain another parameter.
+    subroutine later{U :: V, Trait :: U}()
+    end subroutine later
+end module continue_compilation_traits_trait_param_m5
 
 module continue_compilation_traits_trait_param_m6
     use continue_compilation_traits_trait_param_m0

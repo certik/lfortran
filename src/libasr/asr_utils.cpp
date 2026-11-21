@@ -6712,6 +6712,18 @@ ASR::symbol_t *trait_object_binder(ASR::ttype_t *type)
     return trait_parameter_binder(ASR::down_cast<ASR::TraitObjectType_t>(type)->m_contract);
 }
 
+ASR::Trait_t *trait_constraint_trait(const ASR::TraitConstraint_t &constraint)
+{
+    auto *trait = symbol_get_past_external(constraint.m_trait);
+    return trait && ASR::is_a<ASR::Trait_t>(*trait) ? ASR::down_cast<ASR::Trait_t>(trait)
+        : nullptr;
+}
+
+ASR::symbol_t *conformance_constraint_binder(const ASR::TraitConstraint_t &constraint)
+{
+    return trait_parameter_binder(constraint.m_trait);
+}
+
 ASR::symbol_t *trait_type_parameter(ASR::expr_t *value)
 {
     if (!value) return nullptr;
@@ -6831,7 +6843,8 @@ std::vector<ASR::symbol_t*> trait_parameter_traits(ASR::symbol_t *parameter)
     for (const auto &entry : scope->get_scope()) {
         if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
         auto *constraint = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
-        if (symbol_get_past_external(constraint->m_parameter) == parameter) {
+        if (symbol_get_past_external(constraint->m_parameter) == parameter &&
+                trait_constraint_trait(*constraint)) {
             traits.push_back(constraint->m_trait);
         }
     }
@@ -7040,8 +7053,8 @@ bool trait_erased_signature_matches(const ASR::Function_t &generic,
 
 std::string trait_deferred_pack_key(const ASR::TraitDeferredPack_t &pack)
 {
-    return nominal_symbol_name(pack.m_constraint) + ":" +
-        nominal_symbol_name(&trait_runtime_contract(pack.m_type)->base);
+    return nominal_symbol_name(pack.m_constraint) + ":" + nominal_symbol_name(
+        ASR::down_cast<ASR::TraitObjectType_t>(extract_type(pack.m_type))->m_contract);
 }
 
 std::string trait_guard_witness_key(const std::string &binder, size_t index)
@@ -7070,7 +7083,8 @@ std::string trait_generic_correspondence(const ASR::Function_t &left,
                 !ASR::is_a<ASR::TypeParameter_t>(*symbol_type(bp))) {
             return "generic type parameter declarations are missing";
         }
-        // Trait parameters correspond to trait parameters.
+        // Trait parameters correspond to trait parameters, and conformance
+        // constraints `P :: U` to those of corresponding trait parameters.
         if (bool(trait_parameter_binder(ap)) != bool(trait_parameter_binder(bp))) {
             return "generic type parameter constraints must be nominally equivalent";
         }
@@ -7078,7 +7092,28 @@ std::string trait_generic_correspondence(const ASR::Function_t &left,
             parameters.emplace(ap, bp);
             continue;
         }
+        auto conformance = [](ASR::Template_t &generic, ASR::symbol_t *binder) {
+            for (const auto &entry : generic.m_symtab->get_scope()) {
+                if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
+                auto *constraint = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
+                if (symbol_get_past_external(constraint->m_parameter) == binder &&
+                        conformance_constraint_binder(*constraint)) {
+                    return conformance_constraint_binder(*constraint);
+                }
+            }
+            return (ASR::symbol_t*)nullptr;
+        };
+        auto *aconf = conformance(*a, ap), *bconf = conformance(*b, bp);
         auto ac = trait_parameter_traits(ap), bc = trait_parameter_traits(bp);
+        if (aconf || bconf) {
+            auto mapped = aconf ? parameters.find(aconf) : parameters.end();
+            if (!aconf || !bconf || mapped == parameters.end() ||
+                    mapped->second != bconf || ac != bc) {
+                return "generic type parameter constraints must be nominally equivalent";
+            }
+            parameters.emplace(ap, bp);
+            continue;
+        }
         if (ac.empty() || ac != bc) {
             return "generic type parameter constraints must be nominally equivalent";
         }

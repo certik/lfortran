@@ -4769,6 +4769,11 @@ ASR::symbol_t *trait_parameter_binder(ASR::symbol_t *symbol);
 // The binder P of `class(P)`: of a TraitObjectType (past arrays, pointers
 // and allocatables) whose contract is still a trait parameter, or nullptr.
 ASR::symbol_t *trait_object_binder(ASR::ttype_t *type);
+// The trait of a nominal or type-set constraint, or nullptr for a
+// conformance constraint `P :: U` (E2), whose trait is the binder P.
+ASR::Trait_t *trait_constraint_trait(const ASR::TraitConstraint_t &constraint);
+// The binder P of a conformance constraint `P :: U`, or nullptr.
+ASR::symbol_t *conformance_constraint_binder(const ASR::TraitConstraint_t &constraint);
 std::vector<ASR::symbol_t*> trait_parameter_traits(ASR::symbol_t *parameter);
 // The runtime contract that erases a binder: that of its single nominal
 // trait, unless the trait has requirements without a receiver, which no view

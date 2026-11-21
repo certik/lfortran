@@ -132,6 +132,11 @@ symbol
     -- (TypeSetConversion) and operator requirements. Every other member is an
     -- ordinary message; its receiver, if any, is its dummy with pass_attr Pass.
     | Trait(symbol_table symtab, identifier name, symbol* parents, access access, trait_kind kind, ttype* member_types, trait_operation* operations)
+    -- trait is a Trait, or, for a conformance constraint `P :: U` (E2), the
+    -- binder of an earlier trait parameter P of the same generic: the type
+    -- bound to the parameter must implement the trait bound to P. A
+    -- conformance constraint has no requirements: its parameter has no
+    -- operations in the generic.
     | TraitConstraint(symbol_table parent_symtab, identifier name, symbol parameter, symbol trait, trait_requirement* requirements, type_set_requirement* intrinsic_requirements, trait_same_type_requirement* same_types)
     -- A dependent type of a constrained binder. associated_type is the
     -- declaration in the trait; type_parameter is a fresh Variable of this

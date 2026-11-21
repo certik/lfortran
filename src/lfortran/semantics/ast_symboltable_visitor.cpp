@@ -5569,8 +5569,14 @@ public:
         std::set<std::string> parameters;
         std::vector<std::vector<ASR::symbol_t*>> parameter_traits(x.n_parameters);
         std::vector<Vec<ASR::ttype_t*>> parameter_members(x.n_parameters);
-        // `{Trait :: P}` declares a trait parameter (E1).
+        // `{Trait :: P}` declares a trait parameter (E1); `{P :: U}`, with P
+        // an earlier trait parameter, a conformance constraint (E2).
         std::set<std::string> trait_parameters;
+        std::vector<std::string> conformance_to(x.n_parameters);
+        std::set<std::string> all_parameters;
+        for (size_t i = 0; i < x.n_parameters; i++) {
+            all_parameters.insert(to_lower(x.m_parameters[i].m_name));
+        }
         for (size_t i = 0; i < x.n_parameters; i++) {
             const auto &parameter = x.m_parameters[i];
             std::string name = to_lower(parameter.m_name);
@@ -5584,9 +5590,19 @@ public:
                     parameter.m_member_types, parameter.n_member_types, name);
                 continue;
             }
-            bool meta = false;
+            bool meta = false, conformance = false;
             for (size_t j = 0; j < parameter.n_traits; j++) {
-                if (is_trait_meta_constraint(parameter.m_traits[j].m_name)) meta = true;
+                std::string trait_name = to_lower(parameter.m_traits[j].m_name);
+                if (is_trait_meta_constraint(trait_name)) {
+                    meta = true;
+                } else if (trait_parameters.count(trait_name)) {
+                    conformance = true;
+                } else if (all_parameters.count(trait_name)) {
+                    trait_error("generic parameter '" + trait_name + "' constrains '" +
+                        name + "' but is not an earlier trait parameter: only a "
+                        "parameter declared earlier as `Trait :: " + trait_name +
+                        "` can be a constraint", parameter.loc);
+                }
             }
             if (meta) {
                 if (parameter.n_traits != 1 || parameter.m_traits[0].n_bindings) {
@@ -5594,6 +5610,14 @@ public:
                         "constraints", parameter.loc);
                 }
                 trait_parameters.insert(name);
+                continue;
+            }
+            if (conformance) {
+                if (parameter.n_traits != 1 || parameter.m_traits[0].n_bindings) {
+                    trait_error("a conformance constraint combined with other "
+                        "constraints is not implemented yet", parameter.loc);
+                }
+                conformance_to[i] = to_lower(parameter.m_traits[0].m_name);
                 continue;
             }
             // An unconstrained parameter, `{U}` or `{AnyType :: U}`, admits
@@ -5647,6 +5671,19 @@ public:
             const auto &parameter = x.m_parameters[i];
             ASR::symbol_t *type_symbol = generic->m_symtab->get_symbol(
                 to_lower(parameter.m_name));
+            if (!conformance_to[i].empty()) {
+                // `P :: U`: the type bound to U implements the trait bound
+                // to P, checked where the generic is instantiated.
+                std::string parameter_name = ASRUtils::symbol_name(type_symbol);
+                std::string constraint_name = generic->m_symtab->get_unique_name(
+                    "__constraint_" + parameter_name);
+                generic->m_symtab->add_symbol(constraint_name, ASR::down_cast<ASR::symbol_t>(
+                    ASR::make_TraitConstraint_t(al, parameter.loc, generic->m_symtab,
+                        s2c(al, constraint_name), type_symbol,
+                        generic->m_symtab->get_symbol(conformance_to[i]),
+                        nullptr, 0, nullptr, 0, nullptr, 0)));
+                continue;
+            }
             if (parameter_members[i].size()) {
                 std::string name = generic->m_symtab->get_unique_name(
                     "__type_set_" + to_lower(parameter.m_name));

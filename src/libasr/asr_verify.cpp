@@ -2311,6 +2311,17 @@ public:
                 "asr.verify.trait_constraint.parameter_is_type_parameter",
                 "TraitConstraint parameter must have a TypeParameter type");
         }
+        if (trait && ASRUtils::trait_parameter_binder(trait)) {
+            // A conformance constraint `P :: U` names an earlier trait
+            // parameter of the same generic and has no operations.
+            require_id(ASRUtils::symbol_parent_symtab(trait) == x.m_parent_symtab &&
+                    trait != parameter && x.n_requirements == 0 &&
+                    x.n_intrinsic_requirements == 0 && x.n_same_types == 0,
+                "asr.verify.trait_constraint.conformance",
+                "A conformance constraint names a trait parameter of its own generic "
+                "and has no requirements");
+            return;
+        }
         require_id(trait != nullptr && ASR::is_a<ASR::Trait_t>(*trait),
             "asr.verify.trait_constraint.trait_is_trait",
             "TraitConstraint trait must be a Trait, not " +
@@ -4163,6 +4174,13 @@ public:
         require_id(in_generic,
             "asr.verify.trait_deferred_pack.scope",
             "A deferred pack may exist only within its checked generic definition");
+        if (auto *binder = ASRUtils::conformance_constraint_binder(*constraint)) {
+            // A value of type(U) packed as class(P) by `P :: U`.
+            require_id(ASRUtils::trait_object_binder(x.m_type) == binder,
+                "asr.verify.trait_deferred_pack.implication",
+                "The binder's declared constraints must guarantee the requested runtime operations");
+            return;
+        }
         auto *trait = ASRUtils::symbol_get_past_external(constraint->m_trait);
         require_id(trait && ASR::is_a<Trait_t>(*trait) &&
                 ASR::down_cast<Trait_t>(trait)->m_kind == trait_kindType::UniversalTrait,
