@@ -104,9 +104,9 @@ contains
     end subroutine use_view
 end module cc_traits_kind_sets_character_slot
 
-! E08: the intrinsic module generics provides INumeric only.
+! E08: the intrinsic module generics provides INumeric only, not AnyType.
 module cc_traits_kind_sets_any_type
-    use, intrinsic :: generics, only: IAnyType
+    use, intrinsic :: generics, only: AnyType
     implicit none
 end module cc_traits_kind_sets_any_type
 

@@ -1602,7 +1602,8 @@ specification action, that is, what the paper should say.
 - **Status:** Open question; implementation choice.
 - **What the paper says.** The language "should ideally" supply predefined
   traits in an intrinsic module, "tentatively" called `generics`, possibly
-  including `IAnyType`, numeric traits and traits for relational operators;
+  including `IAnyType` (renamed `AnyType` by the DI extension), numeric traits
+  and traits for relational operators;
   inline-20 uses `use, intrinsic :: generics, only: INumeric` (lines
   1911-1948).
 - **Why it is not tight.** The module's name is tentative, and its contents and
@@ -1615,7 +1616,8 @@ specification action, that is, what the paper should say.
   `lfortran_intrinsic_generics`, built and installed with the other intrinsic
   modules, exports only the type set `INumeric`,
   `integer(*) | real(*) | complex(*)` (TD-17), not the operation trait of the
-  same name of `ocp.f90`, and no `IAnyType` (TD-19). A USE follows the module
+  same name of `ocp.f90`, and not `AnyType`, which is predefined (TD-19). A
+  USE follows the module
   nature rules of standard Fortran (F2018 14.2.2): `INTRINSIC` accesses the
   runtime module, `NON_INTRINSIC` only a module of the program, and a USE
   without a nature the program's module `generics` when one is accessible,
@@ -1633,7 +1635,7 @@ specification action, that is, what the paper should say.
 
 - **Status:** Implementation choice; open question.
 - **What the paper says.** An omitted constraint means the empty trait
-  `IAnyType` (lines 1722-1724), which "matches all types (since any type has at
+  `IAnyType`, renamed `AnyType` by the DI extension (lines 1722-1724), which "matches all types (since any type has at
   least zero methods)" (lines 1830-1839). `vector.f90` declares `Vector{U}`
   without a constraint, stores `U` values in an allocatable array, builds
   arrays with `[item]` and `[self%elements, item]`, and prints them with
@@ -1642,7 +1644,7 @@ specification action, that is, what the paper should say.
 - **Why it is not tight.**
   - Is a declared empty abstract interface a nominal trait that a type must
     adopt, like every other universal trait, or does it match every type
-    structurally, as the quoted sentence suggests for `IAnyType`?
+    structurally, as the quoted sentence suggests for `AnyType`?
   - Which operations does an unconstrained parameter allow: intrinsic
     assignment, allocation, array constructors, list-directed input and output?
     "Zero methods" suggests none, yet the paper's own `Vector` uses all of
@@ -1652,14 +1654,17 @@ specification action, that is, what the paper should say.
 - **Current rule.** An unconstrained parameter admits any type and its
   instances record no conformance. Its body may use storage, assignment, array
   constructors and input/output; input/output is checked per instance (TD-27).
-  The prototype represents `IAnyType` by an unconstrained parameter; it does
-  not define a structurally matching empty trait.
-- **Implementation status.** The current rule is implemented. The gap it
-  leaves is not closed: an empty trait that a program declares is still a
-  nominal contract that a type must adopt, so no trait matches every type as
-  the paper describes `IAnyType`, and the candidate `generics` module (TD-18)
-  does not export one.
-- **Specification action.** Define `IAnyType` precisely, the operations
+  The DI extension (Sect. 3.2) makes `AnyType` a predefined name, always
+  available like an intrinsic type name and not reserved: `{AnyType :: T}`
+  means `{T}`, for generic types and procedures alike.
+- **Implementation status.** The current rule is implemented, and `AnyType`
+  is recognized in the constraint position of every generic parameter list
+  as the unconstrained parameter; in a combination it is the identity. It is
+  not a trait symbol: an empty trait that a program declares is still a
+  nominal contract that a type must adopt, and the candidate `generics` module
+  (TD-18) does not export `AnyType`. A derived type or trait cannot be named
+  `AnyType` or `Trait`.
+- **Specification action.** Define `AnyType` precisely, the operations
   available on every type parameter, and when they are checked.
 
 #### TD-20: Associated types
@@ -2413,7 +2418,7 @@ names the entries with the details.
 | OQ-08 | Type sets: the exact common operations and their result types, mixed-mode operations, intrinsic procedures, identity of inline type sets, composition with `+`. | TD-23 |
 | OQ-09 | The member set of kind wildcards and its processor dependence. | TD-17 |
 | OQ-10 | Name, contents and definitions of the intrinsic `generics` module. | TD-18 |
-| OQ-11 | `IAnyType` and the operations of unconstrained parameters; when unused bindings of generic types are checked; defined input/output in generic code. | TD-19, TD-27 |
+| OQ-11 | `AnyType` and the operations of unconstrained parameters; when unused bindings of generic types are checked; defined input/output in generic code. | TD-19, TD-27 |
 | OQ-12 | Generic methods: whether implementations may have weaker constraints; overloaded generic messages that differ only in their generic parameter lists (a commented-out paragraph of the paper source, lines 1737-1742, would allow them). | TD-23 |
 | OQ-13 | Generic derived types: `implements` headers and conditional conformance, binder scopes, ownership of parameter-dependent procedures, binding of procedures that do not use the parameters, retroactive conformance from other modules, instance identity across program units, extension and overriding (decided for the prototype in TD-44 and TD-45), and the accessibility of instance components (decided for the prototype in TD-37). Finite explicit recursive pairing is separate from same-type constraints; implicit recursive bare-family inference is not approved (TD-43). | TD-24, TD-25, TD-37, TD-43, TD-44, TD-45 |
 | OQ-14 | Which separate-compilation properties are normative. For example: must adding a conformance for a new type work without recompiling a separately compiled generic provider (the OCP discussion, lines 2686-2699, only says no code needs to be modified), and must a constraint by a child trait forward to a callee constrained by its parent in separately compiled code? Dispatch tables, member entries and other mechanisms should remain processor details. | TD-15, TD-16 |

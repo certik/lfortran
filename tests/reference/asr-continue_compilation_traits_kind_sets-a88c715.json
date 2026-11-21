@@ -2,12 +2,12 @@
     "basename": "asr-continue_compilation_traits_kind_sets-a88c715",
     "cmd": "lfortran --semantics-only --continue-compilation --no-color {infile}",
     "infile": "tests/errors/continue_compilation_traits_kind_sets.f90",
-    "infile_hash": "826605cab02f7b9ba66a74bbb362d914da6f1ac295b08c71fa7a614e",
+    "infile_hash": "4cf0a0fea4183c251e275fb135eaaa1ad2158e1d2080e834ac3777fe",
     "outfile": null,
     "outfile_hash": null,
     "stdout": null,
     "stdout_hash": null,
     "stderr": "asr-continue_compilation_traits_kind_sets-a88c715.stderr",
-    "stderr_hash": "5b05a127e3c9ad745bc8a3707f164e617ce4019c7820807c4ac6daed",
+    "stderr_hash": "393928cf9bfa7483d3ef76a376a6c0388f6b7fb02c040204e2c6fffb",
     "returncode": 1
 }

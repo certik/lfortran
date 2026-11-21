@@ -3,7 +3,7 @@
 ! associated type Element is inferred per implementation (U for the generic
 ! Bag{U}, character(len=4) for Word, integer for Counter) and consistently
 ! for both messages, including a result of type Element. Bag{U} has no
-! constraint (IAnyType) and stores an allocatable array of U; instances are
+! constraint (AnyType) and stores an allocatable array of U; instances are
 ! inferred from initializer arguments or named explicitly, for real(real64),
 ! logical, character(len=5), character(len=2), integer and a derived type.
 ! The ordinary (non-trait) push binding reallocates repeatedly; character

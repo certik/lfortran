@@ -1855,14 +1855,14 @@ end module
 
 ! A templated subprogram carries TEMPLATE in its prefix (C1609), with the
 ! deferred argument list in braces as J3 paper 26-158 corrects R1611 and R1612.
-! LFortran used to accept the deferred argument list with no TEMPLATE in the
-! prefix at all; one case per removed grammar production. See
+! Without TEMPLATE the braces declare the parameters of a generic procedure of
+! the traits extension, which a DEFERRED TYPE statement cannot redeclare. See
 ! integration_tests/template_prefix_01.f90 for the accepted spellings.
 module templated_subp_syntax_1a
     implicit none
 contains
-    subroutine swap{t}(x, y)  ! {Error} Token '}' is unexpected here
-        deferred type :: t
+    subroutine swap{t}(x, y)
+        deferred type :: t  ! {Error} 't' is a generic parameter, declared by its parameter list; a templated procedure with a deferred type declaration needs the TEMPLATE prefix
         type(t), intent(inout) :: x, y
     end subroutine
 end module
@@ -1872,8 +1872,8 @@ end module
 module templated_subp_syntax_1b
     implicit none
 contains
-    pure subroutine copy_into{t}(x, y)  ! {Error} Token '}' is unexpected here
-        deferred type :: t
+    pure subroutine copy_into{t}(x, y)
+        deferred type :: t  ! {Error} 't' is a generic parameter, declared by its parameter list; a templated procedure with a deferred type declaration needs the TEMPLATE prefix
         type(t), intent(in) :: x
         type(t), intent(out) :: y
     end subroutine
@@ -1882,8 +1882,8 @@ end module
 module templated_subp_syntax_1c
     implicit none
 contains
-    function pick_last{t}(x, y) result(res)  ! {Error} Token '}' is unexpected here
-        deferred type :: t
+    function pick_last{t}(x, y) result(res)
+        deferred type :: t  ! {Error} 't' is a generic parameter, declared by its parameter list; a templated procedure with a deferred type declaration needs the TEMPLATE prefix
         type(t), intent(in) :: x, y
         type(t) :: res
     end function
@@ -1892,8 +1892,8 @@ end module
 module templated_subp_syntax_1d
     implicit none
 contains
-    pure function pick_second{t}(x, y) result(res)  ! {Error} Token '}' is unexpected here
-        deferred type :: t
+    pure function pick_second{t}(x, y) result(res)
+        deferred type :: t  ! {Error} 't' is a generic parameter, declared by its parameter list; a templated procedure with a deferred type declaration needs the TEMPLATE prefix
         type(t), intent(in) :: x, y
         type(t) :: res
     end function
@@ -2189,7 +2189,7 @@ contains
     subroutine use_inline_expr_for_type()
         integer :: y
         y = 1
-        call inline_const_arg{2}(y)  ! {Error} the instantiation argument for 't' is an expression, but 't' is not a deferred constant
+        call inline_const_arg{2}(y)  ! {Error} a generic type argument must name a type
     end subroutine
 
 end module

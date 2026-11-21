@@ -654,6 +654,55 @@ cannot determine a type parameter, provide it explicitly.
 See `integration_tests/traits_static_01.f90` for a complete example with two
 unrelated implementing types and checked runtime results.
 
+### Unconstrained parameters and `AnyType`
+
+A generic parameter without a constraint admits every type, intrinsic or
+derived. `AnyType` is the predefined empty trait, which every type satisfies,
+so `{AnyType :: T}` means the same as `{T}`:
+
+```fortran
+function id{U}(x) result(r)
+    type(U), intent(in) :: x
+    type(U) :: r
+    r = x
+end function id
+
+subroutine scaled_copy{INum :: T, AnyType :: U}(x, y, sx, sy)
+    type(T), intent(in) :: x
+    type(U), intent(in) :: y
+    type(T), intent(out) :: sx
+    type(U), intent(out) :: sy
+    sx = x + x
+    sy = y
+end subroutine scaled_copy
+```
+
+Both `id(p)` and `id{Pair}(p)` call the instance for `type(Pair)`; a
+procedure may mix constrained and unconstrained parameters, and a generic
+binding of a derived type may have unconstrained parameters. An unconstrained
+parameter has no operations: its values are only declared, assigned and
+passed on, as for an unconstrained parameter of a generic type. Its arguments
+carry no evidence. In a trait combination, `AnyType` is the identity:
+`AnyType + INum :: T` is `INum :: T`, and `AnyType` has no associated types.
+
+Like an intrinsic type name, `AnyType` and the meta-trait name `Trait` need no
+USE and are not reserved: a variable or a procedure may be named `anytype` or
+`trait`. Before `::` in a generic parameter list, `AnyType` always denotes the
+predefined trait. A derived type or a trait cannot be named `AnyType` or
+`Trait` (as F2023 7.5.2.1 forbids naming a derived type after an intrinsic
+type). The intrinsic module `generics` does not export `AnyType`.
+
+A templated procedure whose deferred arguments are all types and which has no
+requirements, `template function g{t}` with `deferred type :: t`, has the same
+representation, so a reference to it also infers its type arguments from the
+actual arguments. Inside any other template (a TEMPLATE construct, or a
+templated procedure with requirements or deferred constants or procedures),
+whose deferred types are not generic parameters, such a procedure is still
+instantiated as a templated procedure. Without the TEMPLATE prefix, `subroutine swap{t}(x, y)` declares a
+generic procedure, so a `deferred type :: t` statement in it is an error.
+
+See `integration_tests/traits_anytype_01.f90`.
+
 ### Explicit procedure values
 
 Without an ordinary actual-argument list, braces select a procedure itself,
@@ -1707,9 +1756,9 @@ The runtime builds and installs it like the other intrinsic modules, from
 operation trait of the same name of the OCP example. Every client names this
 one declaration, so generics constrained by it, under any local name and in
 separately compiled modules, forward to each other. The empty trait
-`IAnyType` is not provided: an empty trait is a nominal contract that a type
-adopts, while an unconstrained binder `{T}` already admits every type, the
-current rule for unconstrained type parameters (TD-19). The module's name and
+`AnyType` is not in the module: it is predefined and always available, without
+a USE, like an intrinsic type name (see "Unconstrained parameters and
+`AnyType`"). The module's name and
 its contents, `INumeric` only, are a candidate catalog for the open question
 of the predefined traits (TD-18), not approved language; only the lookup
 below is standard Fortran.
@@ -1770,7 +1819,7 @@ otherwise it denotes the intrinsic singleton. Ordinary variables with those
 names do not shadow the intrinsic constraint. An explicit kind (`integer(4)`)
 or a union (`integer | real(8)`) unambiguously specifies intrinsic members,
 even when a same-named trait is visible. Fortran keywords are not reserved.
-The older unconstrained-template syntax `{T}` keeps its existing meaning.
+A binder without a constraint, `{T}`, is unconstrained (`{AnyType :: T}`).
 
 Each inline constraint belongs to one binder of one generic definition.
 Repeated explicit and inferred calls, self-recursion, imports, renaming, and
@@ -1825,8 +1874,9 @@ procedure, another type at each call, is diagnosed, since an associated type is
 one type for each implementation. A type parameter of a generic type's package,
 `U` of `Vector{U}`, is fixed for each instance and binds it as above.
 
-An unconstrained generic type parameter, `Vector{U}`, admits any type (the
-paper's empty trait `IAnyType`): it has no constraint and its instances record
+An unconstrained generic type parameter, `Vector{U}` or
+`Vector{AnyType :: U}`, admits any type (the empty trait `AnyType`): it has
+no constraint and its instances record
 no evidence. A character type argument is the complete type, including its
 constant length: `Vector("John ")` is `Vector{character(len=5)}`, and
 `Vector{character(len=2)}` is another instance.

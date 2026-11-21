@@ -442,7 +442,6 @@ void yyerror(YYLTYPE *yyloc, LCompilers::LFortran::Parser &p,
 %type <ast> unit_require
 %type <trait_parameter> trait_parameter
 %type <vec_trait_parameter> trait_parameter_block_opt
-%type <vec_trait_parameter> trait_parameter_list
 %type <trait_parameter> generic_type_parameter
 %type <vec_trait_parameter> generic_type_parameter_list
 %type <vec_ast> trait_name_list
@@ -967,8 +966,9 @@ trait_parameter
         $$ = TRAIT_TYPE_PARAMETER(p.m_a, $3, $1, @$); }
     ;
 
-// A generic type parameter may omit its constraint (`Vector{U}`): it is then
-// unconstrained, as if constrained by the empty trait IAnyType.
+// A generic parameter of a type or procedure may omit its constraint
+// (`Vector{U}`, `f{U}`): it is then unconstrained, as if constrained by the
+// empty trait AnyType.
 generic_type_parameter
     : trait_parameter { $$ = $1; }
     | id { Vec<trait_spec_t> traits; LIST_NEW(traits);
@@ -981,14 +981,9 @@ generic_type_parameter_list
     | generic_type_parameter { LIST_NEW($$); PLIST_ADD($$, $1); }
     ;
 
-trait_parameter_list
-    : trait_parameter_list "," trait_parameter { $$ = $1; PLIST_ADD($$, $3); }
-    | trait_parameter { LIST_NEW($$); PLIST_ADD($$, $1); }
-    ;
-
 trait_parameter_block_opt
     : %empty { LIST_NEW($$); }
-    | "{" trait_parameter_list "}" { $$ = $2; }
+    | "{" generic_type_parameter_list "}" { $$ = $2; }
     ;
 
 enum_decl

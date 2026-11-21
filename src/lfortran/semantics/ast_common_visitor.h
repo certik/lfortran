@@ -12709,6 +12709,24 @@ public:
         throw SemanticAbort();
     }
 
+    // `AnyType` is the predefined empty trait, which every type satisfies.
+    // It is not reserved: in a constraint, before `::`, the name always
+    // denotes the predefined trait, whatever entity it names in scope.
+    static bool is_any_type_constraint(const std::string &name) {
+        return to_lower(name) == "anytype";
+    }
+
+    // Like an intrinsic type name (F2023 7.5.2.1), the predefined names of
+    // the traits extension cannot name a derived type or a trait.
+    void check_predefined_trait_name(const std::string &name, const std::string &entity,
+            const Location &loc) {
+        std::string lower = to_lower(name);
+        if (lower != "anytype" && lower != "trait") return;
+        diag.semantic_error_label("a " + entity + " cannot be named '" + name +
+            "', the name of the predefined " + (lower == "trait"
+                ? "meta-trait Trait" : "trait AnyType"), {loc}, "");
+    }
+
     ASR::Trait_t *resolve_trait(const std::string &name, const Location &loc) {
         ASR::symbol_t *symbol = current_scope->resolve_symbol(to_lower(name));
         if (!symbol || !ASR::is_a<ASR::Trait_t>(
@@ -25994,7 +26012,7 @@ public:
             trait_call_error("'" + name + "' is not a generic procedure", loc);
         }
         ASR::symbol_t* specialization = nullptr;
-        if (!trait_constraints(generic).empty()) {
+        if (trait_generic_reference(generic)) {
             Vec<ASR::call_arg_t> no_actuals;
             no_actuals.reserve(al, 0);
             specialization = prepare_trait_procedure_call(generic,
@@ -27464,6 +27482,9 @@ public:
                     ASRUtils::symbol_get_past_external(constraint->m_parameter);
                 if (name == ASRUtils::symbol_name(parameter)) return parameter;
             }
+            if (auto *binder = ASRUtils::unconstrained_type_parameter(scope, name)) {
+                return binder;
+            }
         }
         return nullptr;
     }
@@ -28697,6 +28718,45 @@ public:
             }
         }
         return result;
+    }
+
+    // Whether the generic procedure `generic` takes the trait path: it has
+    // trait constraints, or all its parameters are unconstrained types
+    // (`{U}`, `{AnyType :: U}`). A templated procedure whose deferred
+    // arguments are all types and which has no requirements is the same
+    // generic procedure.
+    bool is_trait_generic_procedure(ASR::Template_t *generic) {
+        ASR::symbol_t *procedure = generic->m_symtab->get_symbol(generic->m_name);
+        if (!procedure || !ASR::is_a<ASR::Function_t>(*procedure)) return false;
+        if (!trait_constraints(generic).empty()) return true;
+        if (generic->n_requires || generic->n_args == 0) return false;
+        for (size_t i = 0; i < generic->n_args; i++) {
+            ASR::symbol_t *arg = generic->m_symtab->get_symbol(generic->m_args[i]);
+            if (!arg || !ASR::is_a<ASR::Variable_t>(*arg) ||
+                    !ASR::is_a<ASR::TypeParameter_t>(*ASRUtils::symbol_type(arg))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Whether a reference to the generic procedure `generic` from the current
+    // scope takes the trait path. Inside a template of the J3 generics (a
+    // Template that is neither a generic procedure nor a generic type), whose
+    // deferred types are not generic parameters, a generic procedure without
+    // constraints keeps the instantiation of templated procedures.
+    bool trait_generic_reference(ASR::Template_t *generic) {
+        if (!is_trait_generic_procedure(generic)) return false;
+        if (!trait_constraints(generic).empty()) return true;
+        for (SymbolTable *scope = current_scope; scope; scope = scope->parent) {
+            if (!scope->asr_owner || !ASR::is_a<ASR::symbol_t>(*scope->asr_owner)) continue;
+            auto *owner = ASR::down_cast<ASR::symbol_t>(scope->asr_owner);
+            if (!ASR::is_a<ASR::Template_t>(*owner)) continue;
+            auto *enclosing = ASR::down_cast<ASR::Template_t>(owner);
+            if (!ASRUtils::generic_type_definition(*enclosing) &&
+                    !is_trait_generic_procedure(enclosing)) return false;
+        }
+        return true;
     }
 
     // The constraints whose arguments carry evidence: a type-set constraint
@@ -33142,7 +33202,7 @@ public:
             generic = ASR::down_cast<ASR::Template_t>(symbol);
             // A generic derived type's constructor is resolved by its caller.
             if (ASRUtils::generic_type_definition(*generic)) return false;
-            if (trait_constraints(generic).empty()) return false;
+            if (!trait_generic_reference(generic)) return false;
             signature = ASR::down_cast<ASR::Function_t>(
                 generic->m_symtab->get_symbol(generic->m_name));
         } else if (resolved_receiver || (n_members == 1 && members[0].n_args == 0)) {
@@ -34130,7 +34190,7 @@ public:
             ASR::symbol_t *owner = ASRUtils::get_asr_owner(selection.second);
             if (!owner || !ASR::is_a<ASR::Template_t>(*owner)) continue;
             auto *generic = ASR::down_cast<ASR::Template_t>(owner);
-            if (trait_constraints(generic).empty()) continue;
+            if (!is_trait_generic_procedure(generic)) continue;
             SymbolTable *target = ASRUtils::symbol_parent_symtab(selection.first);
             bind_type_set_requirements(p, generic, target);
             std::map<ASR::symbol_t*, TraitEvidence> bound_evidence;
@@ -34393,7 +34453,7 @@ public:
             // are separate selections, not bodies copied with this procedure.
             auto *generic = ASR::down_cast<ASR::Template_t>(
                 ASR::down_cast<ASR::symbol_t>(parent->asr_owner));
-            if (trait_constraints(generic).empty()) source_symtab = parent;
+            if (!is_trait_generic_procedure(generic)) source_symtab = parent;
         }
         if (source_symtab == nullptr) return false;
         for (SymbolTable *t = ASRUtils::symbol_parent_symtab(target);

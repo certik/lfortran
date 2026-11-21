@@ -1,0 +1,77 @@
+semantic error: a derived type cannot be named 'AnyType', the name of the predefined trait AnyType
+ --> tests/errors/continue_compilation_traits_anytype.f90:5:5 - 7:21
+  |
+5 |        type :: AnyType
+  |        ^^^^^^^^^^^^^^^...
+...
+  |
+7 |        end type AnyType
+  | ...^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: a derived type cannot be named 'trait', the name of the predefined meta-trait Trait
+  --> tests/errors/continue_compilation_traits_anytype.f90:12:5 - 14:19
+   |
+12 |        type :: trait
+   |        ^^^^^^^^^^^^^...
+...
+   |
+14 |        end type trait
+   | ...^^^^^^^^^^^^^^^^^^^ 
+
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+  --> tests/errors/continue_compilation_traits_anytype.f90:19:5 - 23:26
+   |
+19 |        abstract interface :: AnyType
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+   |
+23 |        end interface AnyType
+   | ...^^^^^^^^^^^^^^^^^^^^^^^^^^ LFortran extension
+
+semantic error: a trait cannot be named 'AnyType', the name of the predefined trait AnyType
+  --> tests/errors/continue_compilation_traits_anytype.f90:19:5 - 23:26
+   |
+19 |        abstract interface :: AnyType
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+   |
+23 |        end interface AnyType
+   | ...^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: a trait cannot be named 'Trait', the name of the predefined meta-trait Trait
+  --> tests/errors/continue_compilation_traits_anytype.f90:28:5 - 29:24
+   |
+28 |        abstract interface :: Trait
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+   |
+29 |        end interface Trait
+   | ...^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: a derived type cannot be named 'AnyType', the name of the predefined trait AnyType
+  --> tests/errors/continue_compilation_traits_anytype.f90:34:5 - 36:21
+   |
+34 |        type :: AnyType{U}
+   |        ^^^^^^^^^^^^^^^^^^...
+...
+   |
+36 |        end type AnyType
+   | ...^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: unknown associated type 'element' in trait 'anytype'
+  --> tests/errors/continue_compilation_traits_anytype.f90:62:27
+   |
+62 |     function pick{AnyType(Element = integer) :: T}(x) result(r)
+   |                           ^^^^^^^^^^^^^^^^^ 
+
+semantic error: Operator `+` undefined for the types in the expression `u + u`
+  --> tests/errors/continue_compilation_traits_anytype.f90:45:13
+   |
+45 |         r = x + x
+   |             ^^^^^ 
+
+semantic error: Operator `*` undefined for the types in the expression `t * t`
+  --> tests/errors/continue_compilation_traits_anytype.f90:55:13
+   |
+55 |         r = x * x
+   |             ^^^^^ 

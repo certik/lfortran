@@ -6661,6 +6661,30 @@ ASR::intentType trait_member_receiver_intent(ASR::symbol_t *member)
     return receiver ? receiver->m_intent : ASR::intentType::Local;
 }
 
+ASR::symbol_t *unconstrained_type_parameter(SymbolTable *scope, const std::string &name)
+{
+    if (!scope || !scope->asr_owner || !ASR::is_a<ASR::symbol_t>(*scope->asr_owner)) {
+        return nullptr;
+    }
+    auto *owner = ASR::down_cast<ASR::symbol_t>(scope->asr_owner);
+    if (!ASR::is_a<ASR::Template_t>(*owner)) return nullptr;
+    auto *generic = ASR::down_cast<ASR::Template_t>(owner);
+    if (generic->n_requires) return nullptr;
+    for (size_t i = 0; i < generic->n_args; i++) {
+        if (name != generic->m_args[i]) continue;
+        ASR::symbol_t *binder = scope->get_symbol(name);
+        if (!binder || !ASR::is_a<ASR::Variable_t>(*binder) ||
+                !ASR::is_a<ASR::TypeParameter_t>(*symbol_type(binder))) return nullptr;
+        for (const auto &entry : scope->get_scope()) {
+            if (ASR::is_a<ASR::TraitConstraint_t>(*entry.second) && symbol_get_past_external(
+                    ASR::down_cast<ASR::TraitConstraint_t>(entry.second)->m_parameter)
+                    == binder) return nullptr;
+        }
+        return binder;
+    }
+    return nullptr;
+}
+
 ASR::symbol_t *trait_type_parameter(ASR::expr_t *value)
 {
     if (!value) return nullptr;
@@ -6748,6 +6772,11 @@ ASR::symbol_t *trait_type_parameter(ASR::expr_t *value)
             auto *binder = symbol_get_past_external(constraint->m_parameter);
             if (binder && parameter->m_param &&
                     std::string(symbol_name(binder)) == parameter->m_param) return binder;
+        }
+        if (parameter->m_param) {
+            if (auto *binder = unconstrained_type_parameter(scope, parameter->m_param)) {
+                return binder;
+            }
         }
     }
     if (ASR::is_a<ASR::FunctionCall_t>(*value)) {

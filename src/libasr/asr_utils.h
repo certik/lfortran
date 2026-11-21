@@ -4757,6 +4757,11 @@ bool same_trait_operation(const ASR::type_set_operation_t &left,
 bool trait_operation_signatures_equal(const ASR::Function_t &left,
     const ASR::Function_t &right);
 ASR::symbol_t *trait_type_parameter(ASR::expr_t *value);
+// The binder `name` of the generic whose scope is `scope` when it is an
+// unconstrained type parameter (the empty trait AnyType), or nullptr. A
+// generic with requirements is a template, whose deferred types are not
+// binders.
+ASR::symbol_t *unconstrained_type_parameter(SymbolTable *scope, const std::string &name);
 std::vector<ASR::symbol_t*> trait_parameter_traits(ASR::symbol_t *parameter);
 // The runtime contract that erases a binder: that of its single nominal
 // trait, unless the trait has requirements without a receiver, which no view

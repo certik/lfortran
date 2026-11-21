@@ -4234,6 +4234,7 @@ public:
 
     void visit_DerivedType(const AST::DerivedType_t &x) {
         const std::string name = to_lower(x.m_name);
+        check_predefined_trait_name(x.m_name, "derived type", x.base.base.loc);
         dt_name = name;
         binding_dflt_access = ASR::accessType::Public;
         std::string deferred_name = name;
@@ -5224,6 +5225,7 @@ public:
             trait_error("trait declarations currently require a module scope", x.base.base.loc);
         }
         std::string name = to_lower(x.m_name);
+        check_predefined_trait_name(x.m_name, "trait", x.base.base.loc);
         ASR::symbol_t *previous = current_scope->get_symbol(name);
         // An access statement does not declare an entity, so with implicit
         // typing it leaves behind an implicitly typed variable that the trait
@@ -5580,19 +5582,19 @@ public:
                     parameter.m_member_types, parameter.n_member_types, name);
                 continue;
             }
-            if (parameter.n_traits == 0) {
-                trait_error("unconstrained generic parameters are not implemented yet",
-                    parameter.loc);
-            }
+            // An unconstrained parameter, `{U}` or `{AnyType :: U}`, admits
+            // any type: it has no constraint and its arguments no evidence.
+            size_t n_traits = constraint_trait_count(parameter);
             for (size_t j = 0; j < parameter.n_traits; j++) {
                 std::string trait_name = to_lower(parameter.m_traits[j].m_name);
+                if (is_any_type_constraint(trait_name)) continue;
                 ASR::symbol_t *symbol = current_scope->resolve_symbol(trait_name);
                 // Bare intrinsic keywords remain names in the AST. A visible
                 // trait wins; an explicit kind or union takes the type-set path.
                 if (!symbol || !ASR::is_a<ASR::Trait_t>(
                         *ASRUtils::symbol_get_past_external(symbol))) {
                     if (auto *member = bare_type_set_member(trait_name, parameter.loc)) {
-                        if (parameter.n_traits != 1) {
+                        if (n_traits != 1) {
                             trait_error("type-set trait composition is not implemented yet",
                                 parameter.loc);
                         }
@@ -5602,13 +5604,14 @@ public:
                 }
                 auto *trait = resolve_trait(trait_name, parameter.loc);
                 if (trait->m_kind == ASR::trait_kindType::IntrinsicTypeSet &&
-                        parameter.n_traits != 1) {
+                        n_traits != 1) {
                     trait_error("type-set trait composition is not implemented yet",
                         parameter.loc);
                 }
                 parameter_traits[i].push_back(symbol);
             }
         }
+        check_trait_procedure_deferred_types(x, parameters);
         AST::program_unit_t *lowered = lower_trait_procedure(al, x);
         visit_program_unit(*lowered);
         const char *name = AST::is_a<AST::Function_t>(*lowered)
@@ -5652,6 +5655,49 @@ public:
         tmp = &generic->base.base;
     }
 
+    // A generic procedure declares its parameters in its parameter list; a
+    // DEFERRED TYPE statement of one of them belongs to a templated procedure,
+    // which has the TEMPLATE prefix (C1609).
+    void check_trait_procedure_deferred_types(const AST::TraitProcedure_t &x,
+            const std::set<std::string> &parameters) {
+        AST::decl_stmt_t **items = nullptr;
+        size_t n_items = 0;
+        if (AST::is_a<AST::Function_t>(*x.m_procedure)) {
+            auto *function = AST::down_cast<AST::Function_t>(x.m_procedure);
+            items = function->m_items;
+            n_items = function->n_items;
+        } else {
+            auto *subroutine = AST::down_cast<AST::Subroutine_t>(x.m_procedure);
+            items = subroutine->m_items;
+            n_items = subroutine->n_items;
+        }
+        for (size_t i = 0; i < n_items; i++) {
+            if (!AST::is_a<AST::DerivedType_t>(*items[i])) continue;
+            auto *type = AST::down_cast<AST::DerivedType_t>(items[i]);
+            if (!parameters.count(to_lower(type->m_name))) continue;
+            for (size_t j = 0; j < type->n_attrtype; j++) {
+                if (AST::is_a<AST::SimpleAttribute_t>(*type->m_attrtype[j]) &&
+                        AST::down_cast<AST::SimpleAttribute_t>(type->m_attrtype[j])->m_attr ==
+                            AST::simple_attributeType::AttrDeferred) {
+                    trait_error("'" + to_lower(type->m_name) + "' is a generic parameter "
+                        "of '" + to_lower(program_unit_name(*x.m_procedure)) + "', declared "
+                        "by its parameter list; a templated procedure with a deferred type "
+                        "declaration needs the TEMPLATE prefix", items[i]->base.loc);
+                }
+            }
+        }
+    }
+
+    // The number of traits that constrain `parameter`: `AnyType` is the
+    // identity of a trait combination and does not count.
+    static size_t constraint_trait_count(const AST::trait_parameter_t &parameter) {
+        size_t count = 0;
+        for (size_t i = 0; i < parameter.n_traits; i++) {
+            if (!is_any_type_constraint(parameter.m_traits[i].m_name)) count++;
+        }
+        return count;
+    }
+
     ASRUtils::TraitAssociatedTypes resolve_trait_same_types(SymbolTable *scope,
             const AST::trait_parameter_t &parameter) {
         ASRUtils::TraitAssociatedTypes result;
@@ -5661,6 +5707,11 @@ public:
             for (size_t i = 0; i < parameter.n_traits; i++) {
                 const auto &spec = parameter.m_traits[i];
                 if (!spec.n_bindings) continue;
+                if (is_any_type_constraint(spec.m_name)) {
+                    trait_error("unknown associated type '" + to_lower(
+                        spec.m_bindings[0].m_name) + "' in trait 'anytype'",
+                        spec.m_bindings[0].loc);
+                }
                 auto *trait = resolve_trait(spec.m_name, spec.loc);
                 auto hierarchy = checked_trait_hierarchy(*trait, spec.loc);
                 std::set<std::string> names;
@@ -9722,6 +9773,7 @@ public:
         auto resolved = [&](const AST::trait_parameter_t &parameter) {
             std::set<ASR::symbol_t*> traits;
             for (size_t i = 0; i < parameter.n_traits; i++) {
+                if (is_any_type_constraint(parameter.m_traits[i].m_name)) continue;
                 ASR::symbol_t *symbol = current_scope->resolve_symbol(
                     to_lower(parameter.m_traits[i].m_name));
                 traits.insert(symbol ? ASRUtils::symbol_get_past_external(symbol) : nullptr);
@@ -9937,17 +9989,19 @@ public:
                     members = resolve_type_set_members(parameter.m_member_types,
                         parameter.n_member_types, to_lower(parameter.m_name));
                 }
-                // An unconstrained parameter admits any type (the empty trait
-                // IAnyType): it has no constraint and its arguments no evidence.
+                // An unconstrained parameter, `{U}` or `{AnyType :: U}`, admits
+                // any type: it has no constraint and its arguments no evidence.
+                size_t n_traits = constraint_trait_count(parameter);
                 for (size_t j = 0; !parameter.n_member_types && j < parameter.n_traits; j++) {
                     std::string trait_name = to_lower(parameter.m_traits[j].m_name);
+                    if (is_any_type_constraint(trait_name)) continue;
                     ASR::symbol_t *symbol = scope->resolve_symbol(trait_name);
                     // Bare intrinsic keywords remain names in the AST. A
                     // visible trait wins; an explicit kind takes the type-set path.
                     if (!symbol || !ASR::is_a<ASR::Trait_t>(
                             *ASRUtils::symbol_get_past_external(symbol))) {
                         if (auto *member = bare_type_set_member(trait_name, parameter.loc)) {
-                            if (parameter.n_traits != 1) {
+                            if (n_traits != 1) {
                                 trait_error("type-set trait composition is not implemented "
                                     "yet", parameter.loc);
                             }
@@ -9958,7 +10012,7 @@ public:
                     }
                     auto *trait = resolve_trait(parameter.m_traits[j].m_name, parameter.loc);
                     if (trait->m_kind == ASR::trait_kindType::IntrinsicTypeSet &&
-                            parameter.n_traits != 1) {
+                            n_traits != 1) {
                         trait_error("type-set trait composition is not implemented yet",
                             parameter.loc);
                     }

@@ -132,54 +132,6 @@ syntax error: import statement must appear before implicit and declaration state
 1797 | import :: y
      | ^^^^^^^^^^^^ 
 
-syntax error: Token '}' is unexpected here
-    --> tests/errors/continue_compilation_templates_01.f90:1864:22
-     |
-1864 |     subroutine swap{t}(x, y)  ! {Error} Token '}' is unexpected here
-     |                      ^ 
-
-syntax error: Token 'end subroutine' is unexpected here
-    --> tests/errors/continue_compilation_templates_01.f90:1867:5
-     |
-1867 |     end subroutine
-     |     ^^^^^^^^^^^^^^ 
-
-syntax error: Token '}' is unexpected here
-    --> tests/errors/continue_compilation_templates_01.f90:1875:32
-     |
-1875 |     pure subroutine copy_into{t}(x, y)  ! {Error} Token '}' is unexpected here
-     |                                ^ 
-
-syntax error: Token 'end subroutine' is unexpected here
-    --> tests/errors/continue_compilation_templates_01.f90:1879:5
-     |
-1879 |     end subroutine
-     |     ^^^^^^^^^^^^^^ 
-
-syntax error: Token '}' is unexpected here
-    --> tests/errors/continue_compilation_templates_01.f90:1885:25
-     |
-1885 |     function pick_last{t}(x, y) result(res)  ! {Error} Token '}' is unexpected here
-     |                         ^ 
-
-syntax error: Token 'end function' is unexpected here
-    --> tests/errors/continue_compilation_templates_01.f90:1889:5
-     |
-1889 |     end function
-     |     ^^^^^^^^^^^^ 
-
-syntax error: Token '}' is unexpected here
-    --> tests/errors/continue_compilation_templates_01.f90:1895:32
-     |
-1895 |     pure function pick_second{t}(x, y) result(res)  ! {Error} Token '}' is unexpected here
-     |                                ^ 
-
-syntax error: Token 'end function' is unexpected here
-    --> tests/errors/continue_compilation_templates_01.f90:1899:5
-     |
-1899 |     end function
-     |     ^^^^^^^^^^^^ 
-
 syntax error: Token '(' is unexpected here
     --> tests/errors/continue_compilation_templates_01.f90:1912:26
      |
@@ -1060,71 +1012,39 @@ semantic error: Template argument n4 has not been declared in template specifica
 1853 |    
      | ...^ 
 
-semantic error: a deferred type can only be declared in a requirement, a template or a templated procedure
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+    --> tests/errors/continue_compilation_templates_01.f90:1864:5 - 1867:18
+     |
+1864 |        subroutine swap{t}(x, y)
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+     |
+1867 |        end subroutine
+     | ...^^^^^^^^^^^^^^^^^^ LFortran extension
+
+semantic error: 't' is a generic parameter of 'swap', declared by its parameter list; a templated procedure with a deferred type declaration needs the TEMPLATE prefix
     --> tests/errors/continue_compilation_templates_01.f90:1865:26
      |
-1865 |         deferred type :: t
+1865 |         deferred type :: t  ! {Error} 't' is a generic parameter, declared by its parameter list; a templated procedure with a deferred type declaration needs the TEMPLATE prefix
      |                          ^ 
 
-semantic error: Intent attribute can only be applied to procedure arguments
-    --> tests/errors/continue_compilation_templates_01.f90:1866:18
-     |
-1866 |         type(t), intent(inout) :: x, y
-     |                  ^^^^^^^^^^^^^ 
-
-semantic error: a deferred type can only be declared in a requirement, a template or a templated procedure
+semantic error: 't' is a generic parameter of 'copy_into', declared by its parameter list; a templated procedure with a deferred type declaration needs the TEMPLATE prefix
     --> tests/errors/continue_compilation_templates_01.f90:1876:26
      |
-1876 |         deferred type :: t
+1876 |         deferred type :: t  ! {Error} 't' is a generic parameter, declared by its parameter list; a templated procedure with a deferred type declaration needs the TEMPLATE prefix
      |                          ^ 
 
-semantic error: Intent attribute can only be applied to procedure arguments
-    --> tests/errors/continue_compilation_templates_01.f90:1877:18
-     |
-1877 |         type(t), intent(in) :: x
-     |                  ^^^^^^^^^^ 
-
-semantic error: Intent attribute can only be applied to procedure arguments
-    --> tests/errors/continue_compilation_templates_01.f90:1878:18
-     |
-1878 |         type(t), intent(out) :: y
-     |                  ^^^^^^^^^^^ 
-
-semantic error: a deferred type can only be declared in a requirement, a template or a templated procedure
+semantic error: 't' is a generic parameter of 'pick_last', declared by its parameter list; a templated procedure with a deferred type declaration needs the TEMPLATE prefix
     --> tests/errors/continue_compilation_templates_01.f90:1886:26
      |
-1886 |         deferred type :: t
+1886 |         deferred type :: t  ! {Error} 't' is a generic parameter, declared by its parameter list; a templated procedure with a deferred type declaration needs the TEMPLATE prefix
      |                          ^ 
 
-semantic error: Intent attribute can only be applied to procedure arguments
-    --> tests/errors/continue_compilation_templates_01.f90:1887:18
-     |
-1887 |         type(t), intent(in) :: x, y
-     |                  ^^^^^^^^^^ 
-
-semantic error: Derived type `t` is not defined
-    --> tests/errors/continue_compilation_templates_01.f90:1888:9
-     |
-1888 |         type(t) :: res
-     |         ^^^^^^^ Type used here is not defined in any scope
-
-semantic error: a deferred type can only be declared in a requirement, a template or a templated procedure
+semantic error: 't' is a generic parameter of 'pick_second', declared by its parameter list; a templated procedure with a deferred type declaration needs the TEMPLATE prefix
     --> tests/errors/continue_compilation_templates_01.f90:1896:26
      |
-1896 |         deferred type :: t
+1896 |         deferred type :: t  ! {Error} 't' is a generic parameter, declared by its parameter list; a templated procedure with a deferred type declaration needs the TEMPLATE prefix
      |                          ^ 
-
-semantic error: Intent attribute can only be applied to procedure arguments
-    --> tests/errors/continue_compilation_templates_01.f90:1897:18
-     |
-1897 |         type(t), intent(in) :: x, y
-     |                  ^^^^^^^^^^ 
-
-semantic error: Derived type `t` is not defined
-    --> tests/errors/continue_compilation_templates_01.f90:1898:9
-     |
-1898 |         type(t) :: res
-     |         ^^^^^^^ Type used here is not defined in any scope
 
 semantic error: a deferred type can only be declared in a requirement, a template or a templated procedure
     --> tests/errors/continue_compilation_templates_01.f90:1913:26
@@ -1576,11 +1496,11 @@ semantic error: Operator `==` undefined for the types in the expression `t == t`
 535 |             prop = bin(x,y) == bin(y,x)
     |                    ^^^^^^^^^^^^^^^^^^^^ 
 
-semantic error: the instantiation argument for 't' is an expression, but 't' is not a deferred constant
-    --> tests/errors/continue_compilation_templates_01.f90:2192:31
+semantic error: a generic type argument must name a type
+    --> tests/errors/continue_compilation_templates_01.f90:2192:9
      |
-2192 |         call inline_const_arg{2}(y)  ! {Error} the instantiation argument for 't' is an expression, but 't' is not a deferred constant
-     |                               ^ 
+2192 |         call inline_const_arg{2}(y)  ! {Error} a generic type argument must name a type
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
 semantic error: Function 'g1' not found (not user defined nor intrinsic)
     --> tests/errors/continue_compilation_templates_01.f90:2229:17

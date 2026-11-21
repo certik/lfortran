@@ -440,7 +440,7 @@ argstar = (expr? value)
 arg = (identifier? arg)
 
 -- A parameter with neither traits nor member types is unconstrained, as if
--- constrained by the empty trait (IAnyType).
+-- constrained by the empty trait (AnyType).
 associated_type_binding = (identifier name, decl_attribute type)
 trait_spec = (identifier name, associated_type_binding* bindings)
 trait_parameter = (identifier name, trait_spec* traits, decl_attribute* member_types)
