@@ -896,6 +896,7 @@
                                     IntrinsicTypeSet
                                     [(Integer 4)]
                                     []
+                                    traits_numeric_03_m::IIntegerOnly
                                 ),
                             singleton_value:
                                 (Template

@@ -366,6 +366,7 @@
                                     .false.
                                     []
                                     ()
+                                    kwargs_02_stdlib_logger::logger_type
                                 )
                         })
                     kwargs_02_stdlib_logger

@@ -4831,6 +4831,7 @@
                                                     IntrinsicTypeSet
                                                     [(Integer 4)]
                                                     []
+                                                    ()
                                                 ),
                                             bare_integer:
                                                 (Function
@@ -5513,6 +5514,7 @@
                                                     IntrinsicTypeSet
                                                     [(Real 4)]
                                                     []
+                                                    ()
                                                 ),
                                             bare_real:
                                                 (Function
@@ -6662,6 +6664,7 @@
                                                     IntrinsicTypeSet
                                                     [(Integer 4)]
                                                     []
+                                                    ()
                                                 ),
                                             __type_set_u:
                                                 (Trait
@@ -6676,6 +6679,7 @@
                                                     IntrinsicTypeSet
                                                     [(Integer 4)]
                                                     []
+                                                    ()
                                                 ),
                                             bump_two:
                                                 (Function
@@ -7481,6 +7485,7 @@
                                                     IntrinsicTypeSet
                                                     [(Integer 8)]
                                                     []
+                                                    ()
                                                 ),
                                             t:
                                                 (Variable
@@ -8013,6 +8018,7 @@
                                     .false.
                                     []
                                     ()
+                                    traits_numeric_09_shadow_m::Box
                                 ),
                             box_value:
                                 (Function
@@ -8615,6 +8621,7 @@
                                                     IntrinsicTypeSet
                                                     [(Integer 4)]
                                                     []
+                                                    ()
                                                 ),
                                             explicit_integer:
                                                 (Function
@@ -9031,6 +9038,7 @@
                                                     IntrinsicTypeSet
                                                     [(Real 8)]
                                                     []
+                                                    ()
                                                 ),
                                             explicit_real:
                                                 (Function
@@ -9919,6 +9927,7 @@
                                                     [(Integer 4)
                                                     (Real 8)]
                                                     []
+                                                    ()
                                                 ),
                                             explicit_union:
                                                 (Function
@@ -10249,6 +10258,7 @@
                                     UniversalTrait
                                     []
                                     []
+                                    traits_numeric_09_shadow_m::integer
                                 ),
                             named_integer:
                                 (Template
@@ -11220,6 +11230,7 @@
                                     IntrinsicTypeSet
                                     [(Integer 8)]
                                     []
+                                    traits_numeric_09_shadow_m::real
                                 )
                         })
                     traits_numeric_09_shadow_m

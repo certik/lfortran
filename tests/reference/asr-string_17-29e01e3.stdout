@@ -401,6 +401,7 @@
                                     .false.
                                     []
                                     ()
+                                    string_17_string_module::string_type
                                 )
                         })
                     string_17_string_module

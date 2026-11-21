@@ -137,6 +137,7 @@
                                     .false.
                                     []
                                     ()
+                                    tomlf_structure_base::toml_ordered
                                 ),
                             toml_structure:
                                 (Struct
@@ -179,6 +180,7 @@
                                     .false.
                                     []
                                     ()
+                                    tomlf_structure_base::toml_structure
                                 )
                         })
                     tomlf_structure_base
@@ -584,6 +586,7 @@
                                     .false.
                                     []
                                     ()
+                                    tomlf_type_array::toml_array
                                 ),
                             toml_ordered:
                                 (ExternalSymbol
@@ -763,6 +766,7 @@
                                     .false.
                                     []
                                     ()
+                                    tomlf_type_value::toml_value
                                 )
                         })
                     tomlf_type_value

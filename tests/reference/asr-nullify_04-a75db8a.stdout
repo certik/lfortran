@@ -77,6 +77,7 @@
                                     .false.
                                     []
                                     ()
+                                    module_nullify_04::scaled_data_structure
                                 )
                         })
                     module_nullify_04

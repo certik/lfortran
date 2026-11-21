@@ -4878,6 +4878,15 @@ std::string trait_generic_correspondence(const ASR::Function_t &left,
     const ASR::Function_t &right,
     std::map<ASR::symbol_t*, ASR::symbol_t*> &parameters);
 
+// The `type_name` of a type argument (type, declaration): a derived type or a
+// trait with the letter case of its declaration, prefixed by the scoping
+// units that contain it if `qualified`, or an intrinsic type with its kind.
+// Empty if the argument is still a generic parameter or names no type.
+std::string type_argument_name(ASR::ttype_t *type, ASR::symbol_t *declaration,
+    bool qualified);
+// The character constant `name` that `type_name` evaluates to.
+ASR::expr_t *type_name_constant(Allocator &al, const Location &loc,
+    const std::string &name);
 ASR::TraitRuntimeContract_t *trait_runtime_contract(ASR::symbol_t *trait);
 ASR::TraitRuntimeContract_t *trait_runtime_contract(ASR::ttype_t *view_type);
 // The open conformance-dictionary layout of a protocol trait, if it has one.

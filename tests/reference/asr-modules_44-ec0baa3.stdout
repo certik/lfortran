@@ -305,6 +305,7 @@
                                     .false.
                                     []
                                     ()
+                                    modules_44_fpm_cmd_new::fpm_cmd_settings
                                 ),
                             fpm_new_settings:
                                 (Struct
@@ -364,6 +365,7 @@
                                     .false.
                                     []
                                     ()
+                                    modules_44_fpm_cmd_new::fpm_new_settings
                                 ),
                             warnwrite:
                                 (ExternalSymbol

@@ -2,7 +2,7 @@
     "basename": "asr-struct_constructor_cyclic_parent-b184864",
     "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
     "infile": "tests/asr/verify/struct_constructor_cyclic_parent.asr",
-    "infile_hash": "093defe537462838956a1fdabd2496ede3f321d56a358445b1a91cf5",
+    "infile_hash": "73e3070d87470e7f2471e88886f6b5f51be212406f62035ac02b2793",
     "outfile": null,
     "outfile_hash": null,
     "stdout": null,

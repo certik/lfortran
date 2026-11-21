@@ -338,6 +338,7 @@
                                     .false.
                                     []
                                     ()
+                                    modules_45_fpm_manifest_profile::file_scope_flag
                                 ),
                             get_flags:
                                 (Function
@@ -2529,6 +2530,7 @@
                                     .false.
                                     []
                                     ()
+                                    modules_45_fpm_manifest_profile::profile_config_t
                                 )
                         })
                     modules_45_fpm_manifest_profile

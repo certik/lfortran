@@ -289,6 +289,7 @@
                                     .false.
                                     []
                                     ()
+                                    gFTL2_Integer32Complex32OrderedMap::Integer32Complex32OrderedMap
                                 ),
                             integer_kinds:
                                 (ExternalSymbol
@@ -612,6 +613,7 @@
                                     .false.
                                     []
                                     ()
+                                    gFTL2_Integer32Complex32OrderedMap::omap_I_Set
                                 ),
                             omap_insert_key_value:
                                 (Function
@@ -1143,6 +1145,7 @@
                                     .false.
                                     []
                                     ()
+                                    gFTL2_Integer32Complex32OrderedMap::omap_Map
                                 ),
                             output_unit:
                                 (ExternalSymbol

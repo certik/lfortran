@@ -465,6 +465,7 @@
                                     .false.
                                     []
                                     ()
+                                    derived_types_05_stdlib_string_type::string_type
                                 ),
                             ~string_type:
                                 (GenericProcedure

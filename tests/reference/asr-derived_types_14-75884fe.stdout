@@ -201,6 +201,7 @@
                                     .false.
                                     []
                                     ()
+                                    derived_types_14_module::enum_type
                                 ),
                             toml_type:
                                 (Variable

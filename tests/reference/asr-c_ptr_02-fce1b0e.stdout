@@ -684,6 +684,7 @@
                                     .false.
                                     []
                                     ()
+                                    test_c_ptr_02::test_obj
                                 )
                         })
                     test_c_ptr_02

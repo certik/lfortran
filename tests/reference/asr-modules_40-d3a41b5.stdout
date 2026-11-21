@@ -474,6 +474,7 @@
                                     .false.
                                     []
                                     ()
+                                    modules_40_tomlf_de_tokenizer::toml_key
                                 ),
                             toml_tokenizer:
                                 (Struct
@@ -516,6 +517,7 @@
                                     .false.
                                     []
                                     ()
+                                    modules_40_tomlf_de_tokenizer::toml_tokenizer
                                 )
                         })
                     modules_40_tomlf_de_tokenizer

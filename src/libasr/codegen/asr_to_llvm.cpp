@@ -29975,6 +29975,11 @@ public:
             "before code generation", x.base.base.loc);
     }
 
+    void visit_DeferredTypeName(const ASR::DeferredTypeName_t &x) {
+        throw CodeGenError("type_name of a generic parameter must be instantiated "
+            "before code generation", x.base.base.loc);
+    }
+
     llvm::Value *trait_owner_slot(ASR::expr_t *owner) {
         int64_t saved_loads = ptr_loads;
         ptr_loads = 0;

@@ -83,6 +83,7 @@
                                     .false.
                                     []
                                     ()
+                                    derived_type1::enum_escape
                                 ),
                             nl:
                                 (Variable

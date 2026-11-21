@@ -9634,6 +9634,7 @@
                                     [(Integer 4)
                                     (Real 8)]
                                     []
+                                    traits_generic_requirement_01_m::INumeric
                                 ),
                             isum:
                                 (Trait
@@ -9904,6 +9905,7 @@
                                     UniversalTrait
                                     []
                                     []
+                                    traits_generic_requirement_01_m::ISum
                                 ),
                             real64:
                                 (ExternalSymbol
@@ -11655,6 +11657,7 @@
                                     .true.
                                     [2 isum]
                                     ()
+                                    traits_generic_requirement_01_m::ScaledSum
                                 ),
                             simple_sum:
                                 (Template
@@ -12712,6 +12715,7 @@
                                     .true.
                                     [2 isum]
                                     ()
+                                    traits_generic_requirement_01_m::SimpleSum
                                 ),
                             twice_sum:
                                 (Template

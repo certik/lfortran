@@ -123,6 +123,7 @@
                                     .false.
                                     []
                                     ()
+                                    Complex_module::ComplexType
                                 ),
                             integer_add_subrout:
                                 (Function

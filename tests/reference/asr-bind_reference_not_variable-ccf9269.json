@@ -2,7 +2,7 @@
     "basename": "asr-bind_reference_not_variable-ccf9269",
     "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
     "infile": "tests/asr/verify/bind_reference_not_variable.asr",
-    "infile_hash": "7d7c981ec1ebb9a7af3d773b6ae33f2f72ff438d2ac26b0dc23f0eb7",
+    "infile_hash": "17ce81b3b9be7b9069a01c350795b9fb063f4469b499261d639e1c2b",
     "outfile": null,
     "outfile_hash": null,
     "stdout": null,

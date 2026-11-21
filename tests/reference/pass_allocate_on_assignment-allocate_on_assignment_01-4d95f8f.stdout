@@ -409,6 +409,7 @@
                                     .false.
                                     []
                                     ()
+                                    allocate_on_assignment_01_m::item
                                 ),
                             point:
                                 (Struct
@@ -464,6 +465,7 @@
                                     .false.
                                     []
                                     ()
+                                    allocate_on_assignment_01_m::point
                                 )
                         })
                     allocate_on_assignment_01_m

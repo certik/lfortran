@@ -89,6 +89,7 @@
                                     .false.
                                     []
                                     ()
+                                    derived_type_collection::point
                                 )
                         })
                     derived_type_collection
@@ -198,6 +199,7 @@
                                     .false.
                                     []
                                     ()
+                                    select_type_02::color_point
                                 ),
                             cp:
                                 (Variable
@@ -391,6 +393,7 @@
                                     .false.
                                     []
                                     ()
+                                    select_type_02::point_3d
                                 ),
                             ~select_type_block_:
                                 (Block

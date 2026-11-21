@@ -182,6 +182,7 @@
                                     .false.
                                     []
                                     ()
+                                    derived_types_11::y
                                 )
                         })
                     derived_types_11

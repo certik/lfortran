@@ -367,6 +367,7 @@
                                     .false.
                                     []
                                     ()
+                                    operator_overloading_08_mod1::custom_int
                                 ),
                             ~div:
                                 (CustomOperator

@@ -114,6 +114,7 @@
                                     .false.
                                     []
                                     ()
+                                    class_circle2::Circle
                                 ),
                             circle_area:
                                 (Function

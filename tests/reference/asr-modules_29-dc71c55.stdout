@@ -279,6 +279,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_git1::git_target_t
                                 )
                         })
                     fpm_git1
@@ -436,6 +437,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_manifest_dependency1::dependency_config_t
                                 ),
                             error_t:
                                 (Struct
@@ -495,6 +497,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_manifest_dependency1::error_t
                                 ),
                             git_target_branch:
                                 (ExternalSymbol
@@ -1079,6 +1082,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_manifest_dependency1::toml_table
                                 )
                         })
                     fpm_manifest_dependency1
@@ -1326,6 +1330,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_manifest_executable::executable_config_t
                                 ),
                             new_dependencies:
                                 (ExternalSymbol

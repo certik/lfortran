@@ -8,7 +8,8 @@ A nominal contract or an explicitly categorized finite intrinsic type set.
 
 ```text
 Trait(symbol_table symtab, identifier name, symbol* parents, access access,
-    trait_kind kind, ttype* member_types, trait_operation* operations)
+    trait_kind kind, ttype* member_types, trait_operation* operations,
+    identifier? qualified_name)
 ```
 
 ### Arguments
@@ -22,6 +23,7 @@ Trait(symbol_table symtab, identifier name, symbol* parents, access access,
 | `kind` | `UniversalTrait` or `IntrinsicTypeSet`. |
 | `member_types` | Nonempty, unique, concrete scalar intrinsic types for a finite set; empty for universal traits. |
 | `operations` | The directly declared members that are initializer or operator requirements, each with its operation; empty for type sets. |
+| `qualified_name` | The name with the letter case of its declaration, prefixed by its module, as in `ILoggerMod::ILogger` (see [Struct](Struct.md)); `nil` for a compiler-made trait such as an inline type set or a trait combination. It is what the `type_name` intrinsic returns. |
 
 ### Return values
 

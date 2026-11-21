@@ -81,6 +81,7 @@
                                     .false.
                                     []
                                     ()
+                                    select_type_01::base
                                 ),
                             base_target:
                                 (Variable
@@ -210,6 +211,7 @@
                                     .false.
                                     []
                                     ()
+                                    select_type_01::child
                                 ),
                             child_target:
                                 (Variable

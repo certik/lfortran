@@ -322,6 +322,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_dependency::dependency_config_t
                                 ),
                             dependency_node_t:
                                 (Struct
@@ -481,6 +482,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_dependency::dependency_node_t
                                 ),
                             dependency_tree_t:
                                 (Struct
@@ -764,6 +766,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_dependency::dependency_tree_t
                                 ),
                             find_dependency:
                                 (Function

@@ -300,6 +300,7 @@
                                     .false.
                                     []
                                     ()
+                                    derived_types_17_module_1::t_1
                                 )
                         })
                     derived_types_17_module_1

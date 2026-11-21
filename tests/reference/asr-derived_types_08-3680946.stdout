@@ -697,6 +697,7 @@
                                     .false.
                                     []
                                     ()
+                                    shape_mod::rectangle
                                 ),
                             shape:
                                 (Struct
@@ -849,6 +850,7 @@
                                     .false.
                                     []
                                     ()
+                                    shape_mod::shape
                                 )
                         })
                     shape_mod

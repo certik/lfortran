@@ -2,7 +2,7 @@
     "basename": "asr-select_type_unrelated_guard-f129a15",
     "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
     "infile": "tests/asr/verify/select_type_unrelated_guard.asr",
-    "infile_hash": "e03a6f0ca3b7b62c962ab289a5dda13b64844db8b90735fe51d1e8af",
+    "infile_hash": "74af9a154336cf3e6b8236713b2ab8468c3ee35ee1f7428c63ead051",
     "outfile": null,
     "outfile_hash": null,
     "stdout": null,

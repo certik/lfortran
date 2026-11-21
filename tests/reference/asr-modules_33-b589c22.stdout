@@ -561,6 +561,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_dependency_modules_33::dependency_config_t
                                 ),
                             dependency_node_t:
                                 (Struct
@@ -720,6 +721,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_dependency_modules_33::dependency_node_t
                                 ),
                             dependency_tree_t:
                                 (Struct
@@ -1017,6 +1019,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_dependency_modules_33::dependency_tree_t
                                 ),
                             error_t:
                                 (Struct
@@ -1076,6 +1079,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_dependency_modules_33::error_t
                                 ),
                             package_config_t:
                                 (Struct
@@ -1135,6 +1139,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_dependency_modules_33::package_config_t
                                 ),
                             update_dependency:
                                 (Function
@@ -1707,6 +1712,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_model_modules_33::fpm_model_t
                                 )
                         })
                     fpm_model_modules_33

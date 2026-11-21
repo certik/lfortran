@@ -2,7 +2,7 @@
     "basename": "asr-host_associated_type_mismatch-32e3bc2",
     "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
     "infile": "tests/asr/verify/host_associated_type_mismatch.asr",
-    "infile_hash": "a8b0a2da72920516c60415c61913060cf0e50614e85508ab851fd167",
+    "infile_hash": "016e0afec2a9a92649b63b6660c8104f01e5b34c2a87ad61e5878f37",
     "outfile": null,
     "outfile_hash": null,
     "stdout": null,

@@ -204,6 +204,7 @@
                                     .false.
                                     []
                                     ()
+                                    structure_constructor_parent_02::der2_t
                                 ),
                             der3_t:
                                 (ExternalSymbol
@@ -447,6 +448,7 @@
                                     .false.
                                     []
                                     ()
+                                    structure_constructor_parent_02_a::base_t
                                 )
                         })
                     structure_constructor_parent_02_a
@@ -516,6 +518,7 @@
                                     .false.
                                     []
                                     ()
+                                    structure_constructor_parent_02_b::der_t
                                 ),
                             p_t:
                                 (ExternalSymbol
@@ -595,6 +598,7 @@
                                     .false.
                                     []
                                     ()
+                                    structure_constructor_parent_02_c::der3_t
                                 ),
                             p_t:
                                 (ExternalSymbol

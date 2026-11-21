@@ -438,6 +438,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_cmd_update_modules_31::fpm_cmd_settings
                                 ),
                             fpm_update_settings:
                                 (Struct
@@ -565,6 +566,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_cmd_update_modules_31::fpm_update_settings
                                 )
                         })
                     fpm_cmd_update_modules_31
@@ -670,6 +672,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_dependency_modules_31::dependency_config_t
                                 ),
                             dependency_node_t:
                                 (Struct
@@ -829,6 +832,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_dependency_modules_31::dependency_node_t
                                 ),
                             dependency_tree_t:
                                 (Struct
@@ -1092,6 +1096,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_dependency_modules_31::dependency_tree_t
                                 ),
                             error_t:
                                 (Struct
@@ -1151,6 +1156,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_dependency_modules_31::error_t
                                 ),
                             update_dependency:
                                 (Function

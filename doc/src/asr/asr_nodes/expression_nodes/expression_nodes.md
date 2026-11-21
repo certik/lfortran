@@ -34,6 +34,7 @@ TraitDeferredCall
 TraitDictionaryValue
 TraitDeferredDictionary
 TraitRecover
+DeferredTypeName
 CLoc
 CoarrayRef
 CompilerOptions

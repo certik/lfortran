@@ -117,6 +117,7 @@
                                     .false.
                                     []
                                     ()
+                                    fortuno_types::dict_item
                                 ),
                             ~unlimited_polymorphic_type:
                                 (Struct
@@ -146,6 +147,7 @@
                                     []
                                     .false.
                                     []
+                                    ()
                                     ()
                                 )
                         })

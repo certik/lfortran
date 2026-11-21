@@ -3840,7 +3840,7 @@ static inline ASR::expr_t* expr_value0(ASR::expr_t *f)
                       "TraitProject", "TraitInspect", "TraitConforms",
                       "TraitDiscover", "TraitDeferredPack",
                       "TraitDeferredCall", "DeferredMethodCall", "TraitDictionaryValue",
-                      "TraitDeferredDictionary", "TraitRecover"):
+                      "TraitDeferredDictionary", "TraitRecover", "DeferredTypeName"):
             self.emit("case ASR::exprType::%s: { return nullptr; }"
                     % name, 2, new_line=False)
         else:

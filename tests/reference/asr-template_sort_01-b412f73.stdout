@@ -3660,6 +3660,7 @@
                                     .false.
                                     []
                                     ()
+                                    template_sort_01_type::my_type
                                 )
                         })
                     template_sort_01_type

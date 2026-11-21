@@ -1015,6 +1015,7 @@ public:
 
     template <typename T, typename R>
     void visit_ModuleSubmoduleCommon(const T &x, std::string parent_name="") {
+        DeclaredUnitName declared_unit_name(declared_unit_names, x.m_name);
         ScopingUnitScope scoping_unit_scope(*this,
             x.class_type == AST::modType::Submodule
                 ? ScopingUnitKind::Submodule : ScopingUnitKind::Module);
@@ -1600,6 +1601,7 @@ public:
     }
 
     void visit_Program(const AST::Program_t &x) {
+        DeclaredUnitName declared_unit_name(declared_unit_names, x.m_name);
         // Check for multiple program units in the same file 
         program_count++;
         if (program_count == 1) {
@@ -2523,6 +2525,7 @@ public:
 
     void visit_Subroutine(const AST::Subroutine_t &x) {
         ProcedureScopeRecovery procedure_scope_recovery(*this);
+        DeclaredUnitName declared_unit_name(declared_unit_names, x.m_name);
         // Restored on exit: a subroutine nested in a template (e.g. a deferred
         // interface body) must not end the enclosing template's context.
         bool is_template_copy = is_template;
@@ -3196,6 +3199,7 @@ public:
 
     void visit_Function(const AST::Function_t &x) {
         ProcedureScopeRecovery procedure_scope_recovery(*this);
+        DeclaredUnitName declared_unit_name(declared_unit_names, x.m_name);
         // Restored on exit, as in visit_Subroutine, so that a templated
         // function does not leave the template context set for the program
         // units that follow it.
@@ -5245,7 +5249,8 @@ public:
             ASR::make_Trait_t(al, x.base.base.loc, current_scope,
                 s2c(al, name), nullptr, 0,
                 assgnd_access.count(name) ? assgnd_access[name] : saved_access,
-                ASR::trait_kindType::UniversalTrait, nullptr, 0, nullptr, 0));
+                ASR::trait_kindType::UniversalTrait, nullptr, 0, nullptr, 0,
+                s2c(al, declared_qualified_name(x.m_name))));
         parent->add_or_overwrite_symbol(name, trait);
         dflt_access = ASR::accessType::Public;
         try {
@@ -5691,7 +5696,7 @@ public:
                 auto *trait = ASR::down_cast<ASR::symbol_t>(ASR::make_Trait_t(
                     al, parameter.loc, scope, s2c(al, name), nullptr, 0,
                     ASR::accessType::Private, ASR::trait_kindType::IntrinsicTypeSet,
-                    parameter_members[i].p, parameter_members[i].size(), nullptr, 0));
+                    parameter_members[i].p, parameter_members[i].size(), nullptr, 0, nullptr));
                 generic->m_symtab->add_symbol(name, trait);
                 parameter_traits[i].push_back(trait);
             }
@@ -6051,7 +6056,7 @@ public:
                     auto *copy = ASR::down_cast<ASR::symbol_t>(ASR::make_Trait_t(al, loc,
                         al.make_new<SymbolTable>(requirement_scope), s2c(al, set_name),
                         nullptr, 0, ASR::accessType::Private, trait->m_kind,
-                        members.p, members.size(), nullptr, 0));
+                        members.p, members.size(), nullptr, 0, nullptr));
                     requirement_scope->add_symbol(set_name, copy);
                     traits.push_back(copy);
                 } else {
@@ -10098,7 +10103,7 @@ public:
                     ASR::symbol_t *trait = ASR::down_cast<ASR::symbol_t>(ASR::make_Trait_t(
                         al, parameter.loc, trait_scope, s2c(al, trait_name), nullptr, 0,
                         ASR::accessType::Private, ASR::trait_kindType::IntrinsicTypeSet,
-                        members.p, members.size(), nullptr, 0));
+                        members.p, members.size(), nullptr, 0, nullptr));
                     scope->add_symbol(trait_name, trait);
                     parameter_traits[i].push_back(trait);
                 }

@@ -93,6 +93,7 @@
                                     .false.
                                     []
                                     ()
+                                    class_default_select_type::enum_stat
                                 ),
                             toml_stat:
                                 (Variable
@@ -663,6 +664,7 @@
                                     .false.
                                     []
                                     ()
+                                    class_default_select_type_user::toml_table
                                 ),
                             toml_value:
                                 (Struct
@@ -746,6 +748,7 @@
                                     .false.
                                     []
                                     ()
+                                    class_default_select_type_user::toml_value
                                 )
                         })
                     class_default_select_type_user

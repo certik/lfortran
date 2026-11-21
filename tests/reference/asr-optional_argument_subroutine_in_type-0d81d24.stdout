@@ -214,6 +214,7 @@
                                     .false.
                                     []
                                     ()
+                                    test_module::test_type
                                 )
                         })
                     test_module

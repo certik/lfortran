@@ -86,7 +86,10 @@ symbol
     -- abstract types may defer missing methods without a deferred ordinary TBP.
     -- generic is present only for the definition of a generic derived type
     -- and for each of its instances.
-    | Struct(symbol_table symtab, identifier name, ttype struct_signature, identifier* dependencies, identifier* members, identifier* member_functions, abi abi, access access, bool is_packed, bool is_abstract, bool is_sequence, call_arg* initializers, expr? alignment, symbol? parent, identifier* kind_params, bool is_sealed, symbol* trait_obligations, struct_generic? generic)
+    -- qualified_name is the name with the letter case of its declaration,
+    -- prefixed by the scoping units that contain the declaration, as in
+    -- `Mod::Name` (`type_name` intrinsic); absent for a compiler-made type.
+    | Struct(symbol_table symtab, identifier name, ttype struct_signature, identifier* dependencies, identifier* members, identifier* member_functions, abi abi, access access, bool is_packed, bool is_abstract, bool is_sequence, call_arg* initializers, expr? alignment, symbol? parent, identifier* kind_params, bool is_sealed, symbol* trait_obligations, struct_generic? generic, identifier? qualified_name)
     | Enum(symbol_table symtab, identifier name, identifier* dependencies, identifier* members, abi abi, access access, enumtype enum_value_type, ttype type, symbol? parent)
     | Union(symbol_table symtab, identifier name, identifier* dependencies, identifier* members, abi abi, access access, call_arg* initializers, symbol? parent)
     -- A Local integer Variable of Default storage whose symbolic_value is not
@@ -131,7 +134,8 @@ symbol
     -- operations are the members, in declaration order, that are initializer
     -- (TypeSetConversion) and operator requirements. Every other member is an
     -- ordinary message; its receiver, if any, is its dummy with pass_attr Pass.
-    | Trait(symbol_table symtab, identifier name, symbol* parents, access access, trait_kind kind, ttype* member_types, trait_operation* operations)
+    -- qualified_name is as for Struct.
+    | Trait(symbol_table symtab, identifier name, symbol* parents, access access, trait_kind kind, ttype* member_types, trait_operation* operations, identifier? qualified_name)
     -- trait is a Trait, or, for a conformance constraint `P :: U` (E2), the
     -- binder of an earlier trait parameter P of the same generic: the type
     -- bound to the parameter must implement the trait bound to P. A
@@ -484,6 +488,11 @@ expr
     -- The concrete value stored in erased storage; only the dictionary's own
     -- adapters may recover it.
     | TraitRecover(expr value, symbol dictionary, ttype type)
+    -- Template-only: `type_name{P}()` of a generic parameter P, whose
+    -- type_argument is P's TypeParameter. Instantiation replaces it with the
+    -- StringConstant naming the type or trait bound to P; qualified selects
+    -- the qualified_name form. type is a deferred-length String.
+    | DeferredTypeName(ttype type_argument, bool qualified, ttype type)
     | GpuAtomicFetchAdd(expr target, expr increment, ttype type, expr? value)
     | GpuLaneIndex(ttype type, expr? value)
     | GpuLaneBroadcast(expr arg, ttype type, expr? value)

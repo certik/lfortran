@@ -119,6 +119,7 @@
                                     .false.
                                     []
                                     ()
+                                    array_item_in_bounds_02::t
                                 ),
                             v:
                                 (Struct
@@ -208,6 +209,7 @@
                                     .false.
                                     []
                                     ()
+                                    array_item_in_bounds_02::v
                                 ),
                             zz:
                                 (Variable

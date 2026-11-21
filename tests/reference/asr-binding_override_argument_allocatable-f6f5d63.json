@@ -2,7 +2,7 @@
     "basename": "asr-binding_override_argument_allocatable-f6f5d63",
     "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
     "infile": "tests/asr/verify/binding_override_argument_allocatable.asr",
-    "infile_hash": "29b0aaf8e45ad9aed4fbada18c6573bcc9288a1d7ef1801dd3ace049",
+    "infile_hash": "f4407304546c7066f4b7bb414bce206c3333c47f36b97a8bfd298798",
     "outfile": null,
     "outfile_hash": null,
     "stdout": null,

@@ -6621,7 +6621,7 @@ public:
                     s2c(al, current_scope->get_unique_name("~inspection_type")), instance_type,
                     nullptr, 0, nullptr, 0, nullptr, 0, ASR::abiType::Source,
                     ASR::accessType::Private, false, true, false, nullptr, 0,
-                    nullptr, nullptr, nullptr, 0, false, nullptr, 0, nullptr));
+                    nullptr, nullptr, nullptr, 0, false, nullptr, 0, nullptr, nullptr));
                 current_scope->add_symbol(ASRUtils::symbol_name(poly_symbol), poly_symbol);
                 auto *inspection = ASRUtils::EXPR(ASR::make_TraitInspect_t(al,
                     x.base.base.loc, view, poly_symbol, poly_type));
@@ -7590,6 +7590,7 @@ public:
 
     template <typename T>
     void visit_SubmoduleModuleCommon(const T& x) {
+        DeclaredUnitName declared_unit_name(declared_unit_names, x.m_name);
         ImplicitNoneExternalScope implicit_none_external_scope(*this,
             x.m_items, x.n_items, true);
         SymbolTable *old_scope = current_scope;
@@ -7721,6 +7722,7 @@ public:
         this->import_use_symbols(m, x);
     }
     void visit_Program(const AST::Program_t &x) {
+        DeclaredUnitName declared_unit_name(declared_unit_names, x.m_name);
         ImplicitNoneExternalScope implicit_none_external_scope(*this,
             x.m_items, x.n_items, true);
         program_count++;
@@ -8531,6 +8533,7 @@ public:
     }
 
     void visit_Subroutine(const AST::Subroutine_t &x) {
+        DeclaredUnitName declared_unit_name(declared_unit_names, x.m_name);
         ImplicitNoneExternalScope implicit_none_external_scope(*this,
             x.m_items, x.n_items, true);
     // TODO: add SymbolTable::lookup_symbol(), which will automatically return
@@ -8649,6 +8652,7 @@ public:
     }
 
     void visit_Function(const AST::Function_t &x) {
+        DeclaredUnitName declared_unit_name(declared_unit_names, x.m_name);
         ImplicitNoneExternalScope implicit_none_external_scope(*this,
             x.m_items, x.n_items, true);
         starting_m_body = x.m_items;

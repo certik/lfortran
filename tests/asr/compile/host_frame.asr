@@ -147,6 +147,7 @@
                     :is_sealed false
                     :trait_obligations []
                     :generic nil
+                    :qualified_name nil
                   )
                   "inner" (Function
                     :symtab (SymbolTable

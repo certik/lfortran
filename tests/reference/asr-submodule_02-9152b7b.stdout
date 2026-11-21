@@ -91,6 +91,7 @@
                                     .false.
                                     []
                                     ()
+                                    points::point
                                 ),
                             point_dist_func:
                                 (Function

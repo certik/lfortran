@@ -1,0 +1,51 @@
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+  --> tests/errors/continue_compilation_traits_type_name.f90:5:5 - 10:1
+   |
+ 5 |        abstract interface :: IShow
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+   |
+10 |    
+   | ...^ LFortran extension
+
+semantic error: type_name requires exactly one type argument, as in type_name{T}()
+  --> tests/errors/continue_compilation_traits_type_name.f90:23:14
+   |
+23 |     print *, type_name()
+   |              ^^^^^^^^^^^ no type argument given
+
+semantic error: type_name requires exactly one type argument, as in type_name{T}()
+  --> tests/errors/continue_compilation_traits_type_name.f90:25:14
+   |
+25 |     print *, type_name{A, IShow}()
+   |              ^^^^^^^^^^^^^^^^^^^^^ 2 type arguments given
+
+semantic error: the type argument of type_name must name a type or a trait
+  --> tests/errors/continue_compilation_traits_type_name.f90:27:24
+   |
+27 |     print *, type_name{x}()
+   |                        ^ 'x' is not a type or a trait
+
+semantic error: the `qualified` argument of type_name must be a logical constant expression
+  --> tests/errors/continue_compilation_traits_type_name.f90:29:37
+   |
+29 |     print *, type_name{A}(qualified=flag)
+   |                                     ^^^^ 
+
+semantic error: the `qualified` argument of type_name must be a logical constant expression
+  --> tests/errors/continue_compilation_traits_type_name.f90:30:37
+   |
+30 |     print *, type_name{A}(qualified=1)
+   |                                     ^ 
+
+semantic error: 'kind' is not an argument of type_name; its only argument is `qualified`
+  --> tests/errors/continue_compilation_traits_type_name.f90:32:27
+   |
+32 |     print *, type_name{A}(kind=1)
+   |                           ^^^^^^ 
+
+semantic error: type_name takes at most one argument, `qualified`
+  --> tests/errors/continue_compilation_traits_type_name.f90:33:14
+   |
+33 |     print *, type_name{A}(.true., .false.)
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 

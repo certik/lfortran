@@ -2667,6 +2667,27 @@ public:
         ASR::symbol_t *procedure;
     };
     std::vector<TraitSpecialization> trait_specializations;
+    // The names, with the letter case of their declarations, of the program
+    // units and procedures being visited, outermost first. A derived type or
+    // trait records them in its qualified_name (`type_name` intrinsic).
+    std::vector<std::string> declared_unit_names;
+    struct DeclaredUnitName {
+        std::vector<std::string> &names;
+        DeclaredUnitName(std::vector<std::string> &names, const char *name)
+                : names(names) {
+            // A compiler-made name, as of a main program without a PROGRAM
+            // statement, does not qualify.
+            names.push_back(name && std::string(name).rfind("__", 0) != 0 ? name : "");
+        }
+        ~DeclaredUnitName() { names.pop_back(); }
+    };
+    std::string declared_qualified_name(const char *name) const {
+        std::string result;
+        for (const auto &unit : declared_unit_names) {
+            if (!unit.empty()) result += unit + "::";
+        }
+        return result + name;
+    }
     std::map<uint32_t, std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>>> &instantiate_types;
     std::map<uint32_t, std::map<std::string, ASR::symbol_t*>> &instantiate_symbols;
     std::map<uint32_t, std::vector<ASR::stmt_t*>> &data_structure;
@@ -13149,7 +13170,8 @@ public:
                 is_sequence,
                 nullptr, 0, nullptr, parent_sym,
                 kind_params.p, kind_params.size(), is_sealed,
-                obligations.p, obligations.size(), nullptr);
+                obligations.p, obligations.size(), nullptr,
+                s2c(al, declared_qualified_name(x.m_name)));
             ASR::symbol_t* derived_type_sym = ASR::down_cast<ASR::symbol_t>(tmp);
             parent_scope_pdt->add_symbol(dt_name, derived_type_sym);
 
@@ -13213,7 +13235,7 @@ public:
             is_bindc ? ASR::abiType::BindC : ASR::abiType::Source,
             struct_access, false, is_abstract, false, nullptr, 0, nullptr,
             parent_sym, nullptr, 0, is_sealed, obligations.p, obligations.size(),
-            nullptr));
+            nullptr, s2c(al, declared_qualified_name(x.m_name))));
         ASR::symbol_t *derived_type_sym = &struct_->base;
         if (compiler_options.implicit_typing) {
             parent_scope->add_or_overwrite_symbol(sym_name, derived_type_sym);
@@ -13997,7 +14019,8 @@ public:
             ASR::abiType::Source, dflt_access, false, pdt_struct->m_is_abstract,
             pdt_struct->m_is_sequence,
             nullptr, 0, nullptr, new_parent, nullptr, 0, pdt_struct->m_is_sealed,
-            pdt_struct->m_trait_obligations, pdt_struct->n_trait_obligations, nullptr);
+            pdt_struct->m_trait_obligations, pdt_struct->n_trait_obligations, nullptr,
+            pdt_struct->m_qualified_name);
 
         ASR::symbol_t* struct_sym = ASR::down_cast<ASR::symbol_t>(tmp);
         ASR::ttype_t* struct_signature = ASRUtils::make_StructType_t_util(
@@ -14584,7 +14607,7 @@ public:
                         ASR::asr_t* dtype = ASR::make_Struct_t(al, loc, current_scope,
                                                         s2c(al, to_lower(derived_type_name)), nullptr, nullptr, 0, nullptr, 0,
                                                         nullptr, 0, ASR::abiType::Source, dflt_access, false, true, false,
-                                                        nullptr, 0, nullptr, nullptr, nullptr, 0, false, nullptr, 0, nullptr);
+                                                        nullptr, 0, nullptr, nullptr, nullptr, 0, false, nullptr, 0, nullptr, nullptr);
                         ASR::symbol_t* struct_symbol = ASR::down_cast<ASR::symbol_t>(dtype);
                         ASR::ttype_t* struct_type = ASRUtils::make_StructType_t_util(al, loc, struct_symbol, true);
                         ASR::Struct_t* struct_ = ASR::down_cast<ASR::Struct_t>(struct_symbol);
@@ -14986,7 +15009,7 @@ public:
                         ASR::asr_t* dtype = ASR::make_Struct_t(al, loc, struct_symtab,
                                                         s2c(al, to_lower(derived_type_name)), nullptr, nullptr, 0, nullptr, 0,
                                                         nullptr, 0, ASR::abiType::Source, dflt_access, false, true, false,
-                                                        nullptr, 0, nullptr, nullptr, nullptr, 0, false, nullptr, 0, nullptr);
+                                                        nullptr, 0, nullptr, nullptr, nullptr, 0, false, nullptr, 0, nullptr, nullptr);
                         ASR::symbol_t* struct_symbol = ASR::down_cast<ASR::symbol_t>(dtype);
                         ASR::ttype_t* struct_type = ASRUtils::make_StructType_t_util(al, loc, struct_symbol, true);
                         ASR::Struct_t* struct_ = ASR::down_cast<ASR::Struct_t>(struct_symbol);
@@ -26074,6 +26097,7 @@ public:
         if (handle_conditional_arg_function(x)) {
             return;
         }
+        if (type_name_intrinsic(x)) return;
         if (type_set_conversion(x)) return;
         if (handle_trait_call(to_lower(x.m_func), x.m_member, x.n_member,
                 x.m_args, x.n_args, x.m_keywords, x.n_keywords,
@@ -28103,6 +28127,116 @@ public:
         return true;
     }
 
+    // `type_name{P}([qualified])` (E7): the name of the type or trait P, an
+    // intrinsic function in every scoping unit unless an entity named
+    // `type_name` hides it. A known P gives a character constant; a generic
+    // parameter P gives a DeferredTypeName that instantiation replaces.
+    bool type_name_intrinsic(const AST::FuncCallOrArray_t &x) {
+        if (x.n_member || to_lower(x.m_func) != "type_name" ||
+                current_scope->resolve_symbol("type_name")) return false;
+        const Location &loc = x.base.base.loc;
+        if (x.n_temp_args != 1) {
+            diag.semantic_error_label("type_name requires exactly one type argument, "
+                "as in type_name{T}()", {loc}, x.n_temp_args
+                    ? std::to_string(x.n_temp_args) + " type arguments given"
+                    : "no type argument given");
+            throw SemanticAbort();
+        }
+        if (x.n_subargs) {
+            diag.semantic_error_label("a type_name reference cannot be subscripted",
+                {loc}, "");
+            throw SemanticAbort();
+        }
+        AST::expr_t *qualified_arg = nullptr;
+        if (x.n_args + x.n_keywords > 1) {
+            diag.semantic_error_label("type_name takes at most one argument, `qualified`",
+                {loc}, "");
+            throw SemanticAbort();
+        }
+        if (x.n_args == 1) {
+            if (!x.m_args[0].m_end || x.m_args[0].m_start || x.m_args[0].m_step) {
+                diag.semantic_error_label("the `qualified` argument of type_name must be "
+                    "a logical constant expression", {loc}, "");
+                throw SemanticAbort();
+            }
+            qualified_arg = x.m_args[0].m_end;
+        } else if (x.n_keywords == 1) {
+            if (!x.m_keywords[0].m_arg ||
+                    to_lower(x.m_keywords[0].m_arg) != "qualified") {
+                diag.semantic_error_label("'" + (x.m_keywords[0].m_arg
+                    ? to_lower(x.m_keywords[0].m_arg) : std::string()) +
+                    "' is not an argument of type_name; its only argument is `qualified`",
+                    {x.m_keywords[0].loc}, "");
+                throw SemanticAbort();
+            }
+            qualified_arg = x.m_keywords[0].m_value;
+        }
+        bool qualified = false;
+        if (qualified_arg) {
+            this->visit_expr(*qualified_arg);
+            ASR::expr_t *value = ASRUtils::expr_value(ASRUtils::EXPR(tmp));
+            if (!value || !ASR::is_a<ASR::LogicalConstant_t>(*value)) {
+                diag.semantic_error_label("the `qualified` argument of type_name must be "
+                    "a logical constant expression", {qualified_arg->base.loc}, "");
+                throw SemanticAbort();
+            }
+            qualified = ASR::down_cast<ASR::LogicalConstant_t>(value)->m_value;
+        }
+        AST::decl_attribute_t *argument = x.m_temp_args[0];
+        const Location &arg_loc = argument->base.loc;
+        ASR::ttype_t *type = nullptr;
+        ASR::symbol_t *declaration = nullptr;
+        if (AST::is_a<AST::AttrName_t>(*argument)) {
+            std::string name = to_lower(AST::down_cast<AST::AttrName_t>(argument)->m_name);
+            declaration = current_scope->resolve_symbol(name);
+            ASR::symbol_t *resolved = declaration
+                ? ASRUtils::symbol_get_past_external(declaration) : nullptr;
+            if (auto *binder = ASRUtils::trait_parameter_binder(declaration)) {
+                type = ASRUtils::symbol_type(binder);
+            } else if (resolved && (ASR::is_a<ASR::Struct_t>(*resolved) ||
+                    ASR::is_a<ASR::Trait_t>(*resolved))) {
+                type = nullptr;
+            } else if (resolved && ASR::is_a<ASR::Variable_t>(*resolved) &&
+                    declared_trait_parameter(name, current_scope) &&
+                    ASR::is_a<ASR::TypeParameter_t>(*ASRUtils::symbol_type(resolved)) &&
+                    ASR::down_cast<ASR::TypeParameter_t>(
+                        ASRUtils::symbol_type(resolved))->m_param == name) {
+                // A type parameter of the enclosing generic.
+                type = ASRUtils::symbol_type(resolved);
+            } else {
+                diag.semantic_error_label("the type argument of type_name must name a "
+                    "type or a trait", {arg_loc}, "'" + name + "' is not a type or a trait");
+                throw SemanticAbort();
+            }
+        } else if (AST::is_a<AST::AttrType_t>(*argument)) {
+            Vec<ASR::dimension_t> dimensions;
+            dimensions.reserve(al, 0);
+            std::string parameter = "type_name";
+            type = determine_type(arg_loc, parameter, argument, false, false,
+                dimensions, nullptr, declaration, current_procedure_abi_type);
+        } else {
+            diag.semantic_error_label("the type argument of type_name must name a "
+                "type or a trait", {arg_loc}, "");
+            throw SemanticAbort();
+        }
+        if (type && ASR::is_a<ASR::TypeParameter_t>(*ASRUtils::extract_type(type))) {
+            tmp = ASR::make_DeferredTypeName_t(al, loc,
+                ASRUtils::duplicate_type(al, ASRUtils::extract_type(type)), qualified,
+                ASRUtils::TYPE(ASR::make_String_t(al, loc, 1, nullptr,
+                    ASR::string_length_kindType::DeferredLength,
+                    ASR::string_physical_typeType::DescriptorString)));
+            return true;
+        }
+        std::string name = ASRUtils::type_argument_name(type, declaration, qualified);
+        if (name.empty()) {
+            diag.semantic_error_label("the type argument of type_name must name a "
+                "type or a trait", {arg_loc}, "");
+            throw SemanticAbort();
+        }
+        tmp = &ASRUtils::type_name_constant(al, loc, name)->base;
+        return true;
+    }
+
     bool type_set_conversion(const AST::FuncCallOrArray_t &x) {
         if (x.n_member) return false;
         std::string name = to_lower(x.m_func);
@@ -28717,7 +28851,7 @@ public:
         auto *trait = ASR::down_cast2<ASR::Trait_t>(ASR::make_Trait_t(al, loc,
             al.make_new<SymbolTable>(scope), s2c(al, name), parents.p, parents.size(),
             ASR::accessType::Private, ASR::trait_kindType::UniversalTrait, nullptr, 0,
-            nullptr, 0));
+            nullptr, 0, nullptr));
         scope->add_symbol(name, &trait->base);
         try {
             auto *contract = create_runtime_trait_contract(trait, true);
@@ -35947,13 +36081,24 @@ public:
             }
             parent = instantiate_generic_type(*parent_package, parent_arguments, loc);
         }
+        // The instance is named by its definition and its unqualified type
+        // arguments, as in `Mod::Box{integer(4)}`.
+        std::string qualified_name = ASRUtils::type_argument_name(nullptr,
+            &definition->base, true) + "{";
+        for (size_t i = 0; i < instance_arguments.size(); i++) {
+            if (i) qualified_name += ",";
+            qualified_name += ASRUtils::type_argument_name(instance_arguments[i].m_type,
+                instance_arguments[i].m_type_declaration, false);
+        }
+        qualified_name += "}";
         // The instance is an implementation detail of its unit: only the
         // unit's own entities that use it export it.
         auto *instance = ASR::down_cast2<ASR::Struct_t>(ASR::make_Struct_t(al, loc, scope,
             s2c(al, name), nullptr, nullptr, 0, members.p, members.size(), nullptr, 0,
             definition->m_abi, ASR::accessType::Private, definition->m_is_packed,
             definition->m_is_abstract, definition->m_is_sequence, nullptr, 0, nullptr,
-            parent, nullptr, 0, definition->m_is_sealed, nullptr, 0, metadata));
+            parent, nullptr, 0, definition->m_is_sealed, nullptr, 0, metadata,
+            s2c(al, qualified_name)));
         owner->add_symbol(name, &instance->base);
         std::map<std::string, ASR::symbol_t*> symbol_subs;
         symbol_subs[definition->m_name] = &instance->base;

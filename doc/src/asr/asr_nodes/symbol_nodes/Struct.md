@@ -13,7 +13,7 @@ Struct(symbol_table symtab, identifier name, ttype struct_signature,
     bool is_packed, bool is_abstract, bool is_sequence,
     call_arg* initializers, expr? alignment, symbol? parent,
     identifier* kind_params, bool is_sealed, symbol* trait_obligations,
-    struct_generic? generic)
+    struct_generic? generic, identifier? qualified_name)
 ```
 
 ### Arguments
@@ -38,6 +38,7 @@ Struct(symbol_table symtab, identifier name, ttype struct_signature,
 | `is_sealed` | `true` when this type cannot be extended; incompatible with `is_abstract`. |
 | `trait_obligations` | canonical nominal traits adopted by this declaration, including inherited obligations; not storage parents. |
 | `generic` | for the definition of a generic derived type, its parameters; for an instance of one, its definition and type arguments ([struct_generic](../helper_nodes/struct_generic.md)); `nil` for any other type. |
+| `qualified_name` | the name with the letter case of its declaration, prefixed by the names of the scoping units (module, submodule, program, procedures) that contain the declaration, each followed by `::`, as in `ShapesMod::SquareBox`; an instance of a generic derived type appends its unqualified type arguments, `ShapesMod::Holder{integer(4)}`. `nil` for a type that the compiler made. It is what the `type_name` intrinsic returns. |
 
 ### Return values
 

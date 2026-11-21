@@ -67,6 +67,7 @@
               :is_sealed false
               :trait_obligations []
               :generic nil
+              :qualified_name nil
             )
             "vec_add" (Function
               :symtab (SymbolTable

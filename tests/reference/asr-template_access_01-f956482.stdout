@@ -416,6 +416,7 @@
                                     .false.
                                     []
                                     ()
+                                    template_access_01_tmpl_m::box
                                 ),
                             rmk:
                                 (Function
@@ -739,6 +740,7 @@
                                                     .false.
                                                     []
                                                     ()
+                                                    template_access_01_tmpl_m::box
                                                 ),
                                             f:
                                                 (Function

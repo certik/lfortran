@@ -143,6 +143,7 @@
                                     .false.
                                     []
                                     ()
+                                    mod_submodule_04::open_hashmap_type
                                 )
                         })
                     mod_submodule_04

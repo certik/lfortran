@@ -1108,6 +1108,7 @@
                                     [(Integer 4)
                                     (Real 8)]
                                     []
+                                    traits_numeric_04_m::INumeric
                                 ),
                             real64:
                                 (ExternalSymbol

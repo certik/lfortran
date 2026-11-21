@@ -1228,6 +1228,7 @@
                                     .false.
                                     []
                                     ()
+                                    traits_runtime_01_m::DirectValue
                                 ),
                             ivalue:
                                 (Trait
@@ -1362,6 +1363,7 @@
                                     UniversalTrait
                                     []
                                     []
+                                    traits_runtime_01_m::IValue
                                 ),
                             observe:
                                 (Function
@@ -1700,6 +1702,7 @@
                                     .false.
                                     []
                                     ()
+                                    traits_runtime_01_m::ScaledValue
                                 )
                         })
                     traits_runtime_01_m

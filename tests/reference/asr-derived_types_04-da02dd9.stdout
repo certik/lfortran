@@ -1626,6 +1626,7 @@
                                     .false.
                                     []
                                     ()
+                                    tomlf_datetime::toml_date
                                 ),
                             toml_datetime:
                                 (Struct
@@ -1777,6 +1778,7 @@
                                     .false.
                                     []
                                     ()
+                                    tomlf_datetime::toml_datetime
                                 ),
                             toml_time:
                                 (Struct
@@ -1972,6 +1974,7 @@
                                     .false.
                                     []
                                     ()
+                                    tomlf_datetime::toml_time
                                 ),
                             ~toml_time:
                                 (GenericProcedure

@@ -340,6 +340,7 @@
                                     .false.
                                     []
                                     ()
+                                    derived_types_41_mod::mytype
                                 ),
                             mytype_instance:
                                 (Variable

@@ -179,6 +179,7 @@
                                     .false.
                                     []
                                     ()
+                                    derived_types_04_bitset::bitset_type
                                 )
                         })
                     derived_types_04_bitset

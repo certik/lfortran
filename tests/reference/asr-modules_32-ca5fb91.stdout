@@ -110,6 +110,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_targets::build_target_ptr
                                 ),
                             build_target_t:
                                 (Struct
@@ -201,6 +202,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_targets::build_target_t
                                 ),
                             func:
                                 (Function

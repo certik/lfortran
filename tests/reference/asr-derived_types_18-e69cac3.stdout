@@ -274,6 +274,7 @@
                                     .false.
                                     []
                                     ()
+                                    derived_types_18_module_1::t_1
                                 ),
                             t_2:
                                 (Struct
@@ -329,6 +330,7 @@
                                     .false.
                                     []
                                     ()
+                                    derived_types_18_module_1::t_2
                                 )
                         })
                     derived_types_18_module_1

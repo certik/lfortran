@@ -2,7 +2,7 @@
     "basename": "asr-dtio_callback_arity-4d5ace9",
     "cmd": "lfortran --show-asr --no-color {infile} -o {outfile}",
     "infile": "tests/asr/verify/dtio_callback_arity.asr",
-    "infile_hash": "ef5aaf30c029b69e14840709893c83e2666b3bf49058620a54b16e65",
+    "infile_hash": "87d422ab0e1021894a68bb40bb4520f3ff93d4cb58c10751cf4f86f7",
     "outfile": null,
     "outfile_hash": null,
     "stdout": null,

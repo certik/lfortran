@@ -595,6 +595,7 @@
                                     .false.
                                     []
                                     ()
+                                    modules_37_fpm_backend::build_target_ptr
                                 ),
                             build_target_t:
                                 (Struct
@@ -654,6 +655,7 @@
                                     .false.
                                     []
                                     ()
+                                    modules_37_fpm_backend::build_target_t
                                 ),
                             cmd_build:
                                 (Function
@@ -851,6 +853,7 @@
                                     .false.
                                     []
                                     ()
+                                    modules_37_fpm_backend::fpm_build_settings
                                 ),
                             fpm_cmd_settings:
                                 (Struct
@@ -912,6 +915,7 @@
                                     .false.
                                     []
                                     ()
+                                    modules_37_fpm_backend::fpm_cmd_settings
                                 ),
                             fpm_model_t:
                                 (Struct
@@ -942,6 +946,7 @@
                                     .false.
                                     []
                                     ()
+                                    modules_37_fpm_backend::fpm_model_t
                                 ),
                             string_t:
                                 (Struct
@@ -1001,6 +1006,7 @@
                                     .false.
                                     []
                                     ()
+                                    modules_37_fpm_backend::string_t
                                 )
                         })
                     modules_37_fpm_backend

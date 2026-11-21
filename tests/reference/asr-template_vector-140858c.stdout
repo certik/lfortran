@@ -793,6 +793,7 @@
                                                     .false.
                                                     []
                                                     ()
+                                                    template_vector_m::Vector
                                                 ),
                                             v:
                                                 (Variable
@@ -1772,6 +1773,7 @@
                                                     .false.
                                                     []
                                                     ()
+                                                    template_vector_m::Vector
                                                 )
                                         })
                                     vector_t

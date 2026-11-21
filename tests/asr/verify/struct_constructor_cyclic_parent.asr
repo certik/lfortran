@@ -63,7 +63,7 @@
               []
               nil
               (SymbolRef 1 "b")
-              [] false [] nil
+              [] false [] nil nil
             )
             "b" (Struct
               (SymbolTable
@@ -122,7 +122,7 @@
               []
               nil
               (SymbolRef 1 "a")
-              [] false [] nil
+              [] false [] nil nil
             )
             "q" (Variable
               1

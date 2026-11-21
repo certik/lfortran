@@ -393,6 +393,7 @@
                                     .false.
                                     []
                                     ()
+                                    gFTL2_Integer32Complex32Map::map_SetIterator
                                 ),
                             ~eq:
                                 (CustomOperator

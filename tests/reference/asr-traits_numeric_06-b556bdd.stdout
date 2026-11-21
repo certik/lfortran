@@ -4438,6 +4438,7 @@
                                                     [(Integer 4)
                                                     (Real 8)]
                                                     []
+                                                    ()
                                                 ),
                                             advance:
                                                 (Function
@@ -5473,6 +5474,7 @@
                                                     [(Integer 4)
                                                     (Real 8)]
                                                     []
+                                                    ()
                                                 ),
                                             inline_shift:
                                                 (Function
@@ -6803,6 +6805,7 @@
                                                     [(Integer 4)
                                                     (Real 8)]
                                                     []
+                                                    ()
                                                 ),
                                             mean:
                                                 (Function

@@ -111,7 +111,7 @@
               nil
               nil
               []
-             false [] nil)
+             false [] nil nil)
           }
         )
         "bind_reference_not_variable"

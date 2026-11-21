@@ -775,6 +775,61 @@ See `integration_tests/traits_trait_param_01.f90`,
 `integration_tests/traits_trait_param_02.f90` and the diagnostics in
 `tests/errors/continue_compilation_traits_trait_param.f90`.
 
+### The `type_name` intrinsic
+
+`type_name{P}()` is the name of the type or trait `P` (DI extension E7), a
+`character` value with the letter case of the declaration:
+
+```fortran
+key := type_name{P}(qualified=.true.)   ! "ILoggerMod::ILogger"
+error stop "No registration available for " // type_name{P}() // "!"
+```
+
+`P` is one type argument: a derived type, a trait, an intrinsic type, an
+instance of a generic derived type, or a generic parameter. The optional
+logical argument `qualified`, a constant expression, prefixes the names of
+the scoping units that contain the declaration, each followed by `::`:
+
+| Argument | `type_name{P}()` | `type_name{P}(qualified=.true.)` |
+| --- | --- | --- |
+| type `SquareBox` of module `ShapesMod` | `SquareBox` | `ShapesMod::SquareBox` |
+| trait `ILogger` of module `ILoggerMod` | `ILogger` | `ILoggerMod::ILogger` |
+| type `Point` of program `Main` | `Point` | `Main::Point` |
+| type `Local` of procedure `f` of module `M` | `Local` | `M::f::Local` |
+| `Holder{SquareBox}` of `Holder` in module `G` | `Holder{SquareBox}` | `G::Holder{SquareBox}` |
+| `real(8)`, `integer`, `character(len=3)` | `real(8)`, `integer(4)`, `character(len=3)` | the same |
+
+A use-renamed type has its declared name. A main program without a PROGRAM
+statement adds no prefix. The qualified name is unique within a program, so
+the container of the DI extension uses it as its key.
+
+Like other intrinsic procedures, `type_name` needs no USE and is not
+reserved: a variable or a procedure named `type_name` hides it in its scope.
+Where `P` is known, the reference is a character constant, which can initialize
+a named constant: `character(*), parameter :: n = type_name{SquareBox}()`.
+Inside a generic, where `P` is a type or trait parameter, it is a
+`DeferredTypeName` that the instantiator replaces with the constant of each
+instance, also when `P` is passed on to another generic. It is then not a
+constant expression of the generic body. Its type there is a deferred-length
+character, so `key := type_name{P}()` declares `character(:), allocatable`
+(see below).
+
+The derived type and trait record their declared spelling in
+`Struct`/`Trait` `qualified_name`, which separately compiled modules keep.
+`type_name` without exactly one type argument, with an argument that is not a
+type or a trait, or with a `qualified` argument that is not a logical
+constant is an error.
+
+`:=` declares a variable of the type of its value. For a character value whose
+length is known only at run time (a deferred-length function result, `trim`,
+an assumed-length dummy, or a length computed from variables), the variable is
+`character(:), allocatable`, so later assignments reallocate it; a constant
+length stays constant, as for `c := "abc"`.
+
+See `integration_tests/traits_type_name_01.f90`,
+`integration_tests/infer_walrus_string_01.f90` and the diagnostics in
+`tests/errors/continue_compilation_traits_type_name.f90`.
+
 ### Explicit procedure values
 
 Without an ordinary actual-argument list, braces select a procedure itself,

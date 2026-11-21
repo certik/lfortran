@@ -92,6 +92,7 @@
                                     .false.
                                     []
                                     ()
+                                    derived_types_03::X
                                 ),
                             y:
                                 (Function
@@ -152,6 +153,7 @@
                                                     .false.
                                                     []
                                                     ()
+                                                    derived_types_03::Y::A
                                                 ),
                                             b:
                                                 (Variable
@@ -269,6 +271,7 @@
                                                     .false.
                                                     []
                                                     ()
+                                                    derived_types_03::Z::A
                                                 ),
                                             b:
                                                 (Variable

@@ -382,6 +382,7 @@
                                     UniversalTrait
                                     []
                                     []
+                                    traits_dependent_result_01_m::IText
                                 ),
                             unused:
                                 (Template

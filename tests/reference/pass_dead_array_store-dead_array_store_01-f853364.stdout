@@ -1463,6 +1463,7 @@
                                     .false.
                                     []
                                     ()
+                                    dead_array_store_01_m::workspace_t
                                 )
                         })
                     dead_array_store_01_m

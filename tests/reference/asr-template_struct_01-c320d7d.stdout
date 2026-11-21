@@ -521,6 +521,7 @@
                                                     .false.
                                                     []
                                                     ()
+                                                    template_struct_01_m::tuple
                                                 )
                                         })
                                     struct_t
@@ -1128,6 +1129,7 @@
                                                     .false.
                                                     []
                                                     ()
+                                                    template_struct_01_m::tuple
                                                 ),
                                             real_tuple:
                                                 (Struct
@@ -1210,6 +1212,7 @@
                                                     .false.
                                                     []
                                                     ()
+                                                    template_struct_01_m::tuple
                                                 ),
                                             ti:
                                                 (Variable

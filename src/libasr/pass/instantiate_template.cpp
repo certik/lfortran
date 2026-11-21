@@ -390,7 +390,8 @@ public:
             x->m_abi, x->m_access, x->m_is_packed, x->m_is_abstract,
             x->m_is_sequence,
             nullptr, 0, m_alignment, nullptr, nullptr, 0, x->m_is_sealed,
-            x->m_trait_obligations, x->n_trait_obligations, nullptr);
+            x->m_trait_obligations, x->n_trait_obligations, nullptr,
+            x->m_qualified_name);
         ASR::symbol_t* struct_sym = ASR::down_cast<ASR::symbol_t>(result);
         ASR::ttype_t* struct_signature = ASRUtils::make_StructType_t_util(al, x->base.base.loc, struct_sym, true);
         ASR::Struct_t* struct_ = ASR::down_cast<ASR::Struct_t>(struct_sym);
@@ -1572,7 +1573,8 @@ public:
         }
         ASR::symbol_t* result = ASR::down_cast<ASR::symbol_t>(ASR::make_Trait_t(al,
             x->base.base.loc, al.make_new<SymbolTable>(target_scope), s2c(al, new_sym_name),
-            nullptr, 0, x->m_access, x->m_kind, members.p, members.size(), nullptr, 0));
+            nullptr, 0, x->m_access, x->m_kind, members.p, members.size(), nullptr, 0,
+            x->m_qualified_name));
         target_scope->add_symbol(new_sym_name, result);
         return result;
     }
@@ -2465,7 +2467,8 @@ public:
             new_scope, s2c(al, new_sym_name), nullptr, nullptr, 0, data_member_names.p,
             data_member_names.size(), nullptr, 0, x->m_abi, x->m_access, x->m_is_packed,
             x->m_is_abstract, x->m_is_sequence, nullptr, 0, m_alignment, parent, nullptr, 0,
-            x->m_is_sealed, x->m_trait_obligations, x->n_trait_obligations, nullptr);
+            x->m_is_sealed, x->m_trait_obligations, x->n_trait_obligations, nullptr,
+            x->m_qualified_name);
         ASR::symbol_t* struct_sym = ASR::down_cast<ASR::symbol_t>(result);
         ASR::ttype_t* struct_type = ASRUtils::make_StructType_t_util(al, x->base.base.loc, struct_sym, true);
         ASR::Struct_t* struct_ = ASR::down_cast<ASR::Struct_t>(struct_sym);
@@ -3457,6 +3460,27 @@ public:
             BaseExprStmtDuplicator<BodyInstantiator>::duplicate_TraitDiscover(x));
         substitute_trait_parameter_query(query, x->m_contract);
         return &query->base.base;
+    }
+
+    // `type_name{P}()` names the type or trait bound to P. A binder of a
+    // still-generic caller, or an erased one, keeps the name deferred.
+    ASR::asr_t *duplicate_DeferredTypeName(ASR::DeferredTypeName_t *x) {
+        ASR::ttype_t *argument = x->m_type_argument;
+        if (ASR::is_a<ASR::TypeParameter_t>(*argument)) {
+            auto bound = type_subs.find(
+                ASR::down_cast<ASR::TypeParameter_t>(argument)->m_param);
+            if (bound != type_subs.end() && bound->second.first) {
+                std::string name = ASRUtils::type_argument_name(bound->second.first,
+                    bound->second.second, x->m_qualified);
+                if (!name.empty()) {
+                    return &ASRUtils::type_name_constant(al, x->base.base.loc, name)->base;
+                }
+                argument = bound->second.first;
+            }
+        }
+        return ASR::make_DeferredTypeName_t(al, x->base.base.loc,
+            ASRUtils::duplicate_type(al, ASRUtils::extract_type(argument)), x->m_qualified,
+            ASRUtils::duplicate_type(al, x->m_type));
     }
 
     ASR::asr_t *duplicate_TraitDeferredPack(ASR::TraitDeferredPack_t *x) {

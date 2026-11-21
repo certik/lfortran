@@ -427,6 +427,7 @@
                                     .false.
                                     []
                                     ()
+                                    module_function_call1::softmax
                                 )
                         })
                     module_function_call1

@@ -328,6 +328,7 @@
                                     .false.
                                     []
                                     ()
+                                    string_14_stdlib_string_type::string_type
                                 ),
                             write_formatted:
                                 (Function

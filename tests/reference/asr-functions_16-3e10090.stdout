@@ -1753,6 +1753,7 @@
                                     .false.
                                     []
                                     ()
+                                    tomlf_utils_sort::toml_key
                                 )
                         })
                     tomlf_utils_sort

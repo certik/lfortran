@@ -75,6 +75,7 @@
                                     .false.
                                     []
                                     ()
+                                    write7_mod::person
                                 ),
                             pwf:
                                 (Function

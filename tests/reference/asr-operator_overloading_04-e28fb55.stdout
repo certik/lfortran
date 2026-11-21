@@ -189,6 +189,7 @@
                                     .false.
                                     []
                                     ()
+                                    operator_overloading_04_stdlib_string_type::string_type
                                 ),
                             trim_string:
                                 (Function

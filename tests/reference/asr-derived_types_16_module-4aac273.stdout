@@ -308,6 +308,7 @@
                                     .false.
                                     []
                                     ()
+                                    fpm_command_line::fpm_run_settings
                                 ),
                             get_command_line_settings:
                                 (Function

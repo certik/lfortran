@@ -203,6 +203,7 @@
                                     .false.
                                     []
                                     ()
+                                    tomlf_de_character::toml_character_tokenizer
                                 ),
                             toml_tokenizer:
                                 (ExternalSymbol
@@ -540,6 +541,7 @@
                                     .false.
                                     []
                                     ()
+                                    tomlf_de_tokenizer_25::toml_table
                                 ),
                             toml_tokenizer:
                                 (Struct
@@ -642,6 +644,7 @@
                                     .false.
                                     []
                                     ()
+                                    tomlf_de_tokenizer_25::toml_tokenizer
                                 ),
                             toml_tokenizer_:
                                 (Struct
@@ -672,6 +675,7 @@
                                     .false.
                                     []
                                     ()
+                                    tomlf_de_tokenizer_25::toml_tokenizer_
                                 )
                         })
                     tomlf_de_tokenizer_25

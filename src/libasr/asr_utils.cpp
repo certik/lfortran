@@ -7188,6 +7188,61 @@ ASR::TraitRuntimeContract_t *trait_runtime_contract(ASR::symbol_t *trait)
     return nullptr;
 }
 
+std::string type_argument_name(ASR::ttype_t *type, ASR::symbol_t *declaration,
+    bool qualified)
+{
+    ASR::symbol_t *named = declaration ? symbol_get_past_external(declaration) : nullptr;
+    if (named && (ASR::is_a<ASR::Struct_t>(*named) || ASR::is_a<ASR::Trait_t>(*named))) {
+        // Named by its declaration.
+    } else if (!type) {
+        return "";
+    } else if (ASR::is_a<ASR::TraitObjectType_t>(*(type = extract_type(type)))) {
+        // A trait bound to a trait parameter, or a trait object type argument.
+        auto *contract = trait_runtime_contract(type);
+        if (!contract) return "";
+        named = symbol_get_past_external(contract->m_trait);
+    } else if (ASR::is_a<ASR::TypeParameter_t>(*type) ||
+            ASR::is_a<ASR::TraitErasedType_t>(*type)) {
+        return "";
+    } else if (!ASR::is_a<ASR::StructType_t>(*type)) {
+        return type_to_str_fortran_symbol(type, nullptr, true);
+    }
+    if (!named) return "";
+    char *spelling = nullptr;
+    if (ASR::is_a<ASR::Struct_t>(*named)) {
+        spelling = ASR::down_cast<ASR::Struct_t>(named)->m_qualified_name;
+    } else if (ASR::is_a<ASR::Trait_t>(*named)) {
+        spelling = ASR::down_cast<ASR::Trait_t>(named)->m_qualified_name;
+    } else {
+        return "";
+    }
+    std::string name;
+    if (spelling) {
+        name = spelling;
+    } else {
+        // A compiler-made type: its name, qualified by its module.
+        name = symbol_name(named);
+        ASR::Module_t *module = get_sym_module0(named);
+        if (module) name = std::string(module->m_name) + "::" + name;
+    }
+    if (!qualified) {
+        size_t separator = name.rfind("::");
+        if (separator != std::string::npos) name = name.substr(separator + 2);
+    }
+    return name;
+}
+
+ASR::expr_t *type_name_constant(Allocator &al, const Location &loc,
+    const std::string &name)
+{
+    ASR::ttype_t *type = ASRUtils::TYPE(ASR::make_String_t(al, loc, 1,
+        ASRUtils::EXPR(ASR::make_IntegerConstant_t(al, loc, name.size(),
+            ASRUtils::TYPE(ASR::make_Integer_t(al, loc, 4)))),
+        ASR::string_length_kindType::ExpressionLength,
+        ASR::string_physical_typeType::DescriptorString));
+    return ASRUtils::EXPR(ASR::make_StringConstant_t(al, loc, s2c(al, name), type));
+}
+
 ASR::TraitRuntimeContract_t *trait_runtime_contract(ASR::ttype_t *view_type)
 {
     auto *contract = symbol_get_past_external(
@@ -16020,7 +16075,7 @@ ASR::symbol_t* import_struct_type(Allocator& al, ASR::symbol_t* struct_sym,
             upt_symtab, s2c(al, struct_name), nullptr, nullptr, 0,
             nullptr, 0, nullptr, 0, ASR::abiType::Source,
             ASR::accessType::Public, false, true, false, nullptr, 0,
-            nullptr, nullptr, nullptr, 0, false, nullptr, 0, nullptr);
+            nullptr, nullptr, nullptr, 0, false, nullptr, 0, nullptr, nullptr);
         ASR::symbol_t* new_sym = ASR::down_cast<ASR::symbol_t>(dtype);
         ASR::ttype_t* sig = ASRUtils::make_StructType_t_util(
             al, struct_sym->base.loc, new_sym, true);
@@ -19732,7 +19787,7 @@ ASR::symbol_t* SymbolDuplicator::duplicate_Struct(ASR::Struct_t* struct_type_t,
         struct_type_t->m_kind_params, struct_type_t->n_kind_params,
         struct_type_t->m_is_sealed,
         struct_type_t->m_trait_obligations, struct_type_t->n_trait_obligations,
-        struct_type_t->m_generic));
+        struct_type_t->m_generic, struct_type_t->m_qualified_name));
 }
 
 ASR::symbol_t* SymbolDuplicator::duplicate_StructMethodDeclaration(

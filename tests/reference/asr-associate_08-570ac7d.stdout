@@ -961,6 +961,7 @@
                                     .false.
                                     []
                                     ()
+                                    associate_08_module_1::t_1
                                 ),
                             t_2:
                                 (Struct
@@ -1042,6 +1043,7 @@
                                     .false.
                                     []
                                     ()
+                                    associate_08_module_1::t_2
                                 )
                         })
                     associate_08_module_1

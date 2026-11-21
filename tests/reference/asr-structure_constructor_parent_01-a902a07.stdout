@@ -91,6 +91,7 @@
                                     .false.
                                     []
                                     ()
+                                    structure_constructor_parent_01::base_t
                                 ),
                             e:
                                 (Variable
@@ -208,6 +209,7 @@
                                     .false.
                                     []
                                     ()
+                                    structure_constructor_parent_01::e2_t
                                 ),
                             e_t:
                                 (Struct
@@ -263,6 +265,7 @@
                                     .false.
                                     []
                                     ()
+                                    structure_constructor_parent_01::e_t
                                 )
                         })
                     structure_constructor_parent_01

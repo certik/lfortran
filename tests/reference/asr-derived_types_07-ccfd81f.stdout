@@ -316,6 +316,7 @@
                                     .false.
                                     []
                                     ()
+                                    derived_types_07_stdlib_logger::logger_type
                                 )
                         })
                     derived_types_07_stdlib_logger

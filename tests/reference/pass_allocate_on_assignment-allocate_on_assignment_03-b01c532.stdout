@@ -198,6 +198,7 @@
                                     .false.
                                     []
                                     ()
+                                    ()
                                 )
                         })
                     allocate_on_assignment_03
@@ -515,6 +516,7 @@
                                     .false.
                                     []
                                     ()
+                                    allocate_on_assignment_03_m::t
                                 ),
                             t2:
                                 (Struct
@@ -570,6 +572,7 @@
                                     .false.
                                     []
                                     ()
+                                    allocate_on_assignment_03_m::t2
                                 )
                         })
                     allocate_on_assignment_03_m
