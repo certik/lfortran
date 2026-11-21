@@ -28519,12 +28519,17 @@ public:
             : ASR::is_a<ASR::StructInstanceMember_t>(*actual_expr)
                 ? ASRUtils::symbol_name(ASR::down_cast<ASR::StructInstanceMember_t>(
                     actual_expr)->m_m) : "";
+        // The formal of a constructor reference is a procedure component (E8b).
+        ASR::symbol_t *formal_owner = ASR::is_a<ASR::Var_t>(*formal_expr)
+            ? ASRUtils::get_asr_owner(ASR::down_cast<ASR::Var_t>(formal_expr)->m_v) : nullptr;
+        std::string formal_kind = formal_owner && ASR::is_a<ASR::Struct_t>(*formal_owner)
+            ? "procedure component" : "dummy procedure";
         auto mismatch = [&](const std::string &reason) {
             if (procedure_inference_mismatch.empty()) {
                 procedure_inference_reason = reason;
                 procedure_inference_mismatch = (actual_name.empty() ? std::string(
                     "the actual argument") : "procedure '" + actual_name + "'") +
-                    " does not match the interface of dummy procedure '" + formal_name +
+                    " does not match the interface of " + formal_kind + " '" + formal_name +
                     "': " + reason;
             }
             return false;
@@ -38027,7 +38032,8 @@ public:
             const std::vector<ASR::expr_t*> &positional,
             const std::vector<std::pair<std::string, ASR::expr_t*>> &keywords,
             std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &types,
-            const std::vector<ASR::Struct_t*> &parents = {}) {
+            const std::vector<ASR::Struct_t*> &parents = {},
+            const std::vector<ASR::expr_t*> &formal_exprs = {}) {
         if (positional.size() > dummies.size()) return false;
         std::vector<ASR::expr_t*> actuals(dummies.size(), nullptr);
         for (size_t i = 0; i < positional.size(); i++) actuals[i] = positional[i];
@@ -38049,7 +38055,11 @@ public:
                 }
                 continue;
             }
-            if (binding[i] && !bind_type_parameter_from_actual(formals[i], actuals[i], types)) {
+            // A procedure component is matched against the interface of
+            // the actual procedure (E8b, by the rules of E4).
+            ASR::expr_t *formal_expr = i < formal_exprs.size() ? formal_exprs[i] : nullptr;
+            if (binding[i] && !bind_type_parameter_from_actual(formals[i], actuals[i], types,
+                    formal_expr, formal_expr != nullptr)) {
                 return false;
             }
         }
@@ -38084,10 +38094,11 @@ public:
         auto add = [&](const std::vector<std::string> &dummies,
                 const std::vector<ASR::ttype_t*> &formals, const std::vector<bool> &optional,
                 const std::vector<bool> &binding,
-                const std::vector<ASR::Struct_t*> &parents = {}) {
+                const std::vector<ASR::Struct_t*> &parents = {},
+                const std::vector<ASR::expr_t*> &formal_exprs = {}) {
             GenericTypeBindings types;
             if (!bind_generic_constructor(dummies, formals, optional, binding, positional,
-                    keywords, types, parents)) return;
+                    keywords, types, parents, formal_exprs)) return;
             for (size_t i = 0; i < package.n_args; i++) {
                 auto found = types.find(package.m_args[i]);
                 if (found == types.end() || !found->second.first) {
@@ -38125,6 +38136,9 @@ public:
             // component takes its value as in an ordinary structure
             // constructor, with the usual conversions.
             std::vector<bool> binding;
+            // A procedure-pointer component whose interface mentions the
+            // parameters binds them from the actual procedure (E8b).
+            std::vector<ASR::expr_t*> formal_exprs;
             // An ancestor's component has the type that the parents' type
             // arguments give it (TD-45).
             auto components = [&](ASR::Struct_t &type) {
@@ -38138,8 +38152,12 @@ public:
                     formals.push_back(formal);
                     optional.push_back(component->m_symbolic_value != nullptr ||
                         ASRUtils::is_allocatable(formal) || ASRUtils::is_pointer(formal));
-                    binding.push_back(ASR::is_a<ASR::TypeParameter_t>(
+                    bool procedure = &type == definition &&
+                        generic_procedure_component(*component);
+                    binding.push_back(procedure || ASR::is_a<ASR::TypeParameter_t>(
                         *ASRUtils::extract_type(formal)));
+                    formal_exprs.push_back(procedure ? ASRUtils::EXPR(ASR::make_Var_t(al,
+                        component->base.base.loc, &component->base)) : nullptr);
                 }
             };
             // The ancestors of a generic type that extends generic types,
@@ -38153,7 +38171,7 @@ public:
             }
             for (auto *ancestor : ancestors) components(*ancestor);
             components(*definition);
-            add(dummies, formals, optional, binding);
+            add(dummies, formals, optional, binding, {}, formal_exprs);
             bool parent_keyword = false;
             for (const auto &keyword : keywords) {
                 parent_keyword |= !ancestors.empty() &&
@@ -38167,12 +38185,33 @@ public:
                 formals.assign(1, nullptr);
                 optional.assign(1, false);
                 binding.assign(1, false);
+                formal_exprs.assign(1, nullptr);
                 components(*definition);
                 std::vector<ASR::Struct_t*> parents(dummies.size(), nullptr);
                 parents[0] = definition;
-                add(dummies, formals, optional, binding, parents);
+                add(dummies, formals, optional, binding, parents, formal_exprs);
             }
         }
+    }
+
+    // Whether `component`, of a generic type's definition, is a procedure
+    // pointer whose interface mentions the type's parameters (E8b).
+    static bool generic_procedure_component(const ASR::Variable_t &component) {
+        if (!ASR::is_a<ASR::FunctionType_t>(*ASRUtils::type_get_past_pointer(
+                component.m_type)) || !component.m_type_declaration) return false;
+        ASR::symbol_t *interface = ASRUtils::symbol_get_past_external(
+            component.m_type_declaration);
+        if (!ASR::is_a<ASR::Function_t>(*interface)) return false;
+        auto *function = ASR::down_cast<ASR::Function_t>(interface);
+        auto parametric = [](ASR::expr_t *e) {
+            ASR::ttype_t *type = ASRUtils::expr_type(e);
+            return type && (ASR::is_a<ASR::TypeParameter_t>(*ASRUtils::extract_type(type)) ||
+                ASRUtils::trait_object_binder(type));
+        };
+        for (size_t i = 0; i < function->n_args; i++) {
+            if (parametric(function->m_args[i])) return true;
+        }
+        return function->m_return_var && parametric(function->m_return_var);
     }
 
     ASR::symbol_t *infer_generic_type_constructor(ASR::Template_t &package,
@@ -38180,7 +38219,11 @@ public:
         const Location &loc = x.base.base.loc;
         ASR::Struct_t *definition = ASRUtils::generic_type_definition(package);
         std::vector<GenericTypeBindings> viable, partial;
+        procedure_inference_mismatch.clear();
         generic_constructor_candidates(package, x, viable, partial);
+        if (viable.empty() && partial.empty() && !procedure_inference_mismatch.empty()) {
+            trait_call_error(procedure_inference_mismatch, loc);
+        }
         if (viable.empty()) {
             for (const auto &types : partial) {
                 for (size_t i = 0; i < package.n_args; i++) {
