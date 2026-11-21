@@ -762,8 +762,10 @@ be given alone and the call infers the others, so `wrap{IShow}(A(3))` infers
 `U`.
 
 Not yet implemented: trait combinations such as `IA + IB` as arguments of a
-trait parameter, a constraint combining `P` with other traits, trait
-parameters of generic derived types, arrays and associate names of
+trait parameter, a constraint combining `P` with other traits, conformance
+constraints `P :: U` of generic derived types (their trait parameters are
+described under "Trait parameters and procedure components of generic
+types"), arrays and associate names of
 `class(P)` objects, `select type` on a `class(P)` selector, a `class is (P)`
 guard together with other trait guards in one `select type`, and generic
 messages with trait parameters in generic constraints. A generic message with
@@ -1066,9 +1068,9 @@ result converts to `class(P)` under `P :: U`, as any value of type(U) does.
 A procedure-pointer component of a generic derived type can have an instance
 of a generic interface with the type's parameters,
 `procedure(map1{T,U}), pointer, nopass :: f`; each instance of the type has
-the substituted interface. Inference of a generic type's parameters from a
-procedure argument of its constructor (E8b) and trait parameters of generic
-derived types are not implemented yet.
+the substituted interface. A constructor reference infers the type's
+parameters from the actual procedure given for such a component (E8b, see
+"Trait parameters and procedure components of generic types").
 
 See `integration_tests/traits_generic_interface_01.f90`,
 `integration_tests/traits_generic_interface_02.f90` and the diagnostics in
@@ -1989,16 +1991,18 @@ the diagnostics, and `traits_generic_private_component_01` a private
 component of a generic type loaded from its module file.
 
 These are boundaries of the current prototype, diagnosed where they apply:
-generic types are declared in modules and instantiated in other modules or
-in main programs; an `implements` statement repeats the type's parameter list
-exactly; initializers have no generic parameters of their own, and a method's
-parameters do not reuse the type's parameter names; a procedure that uses the
-type's parameters is bound to that type only and is reached only through its
-bindings and constructors, not by name; parameters are constrained by
-universal traits; type arguments are concrete, not parameters of an
-enclosing generic; and a generic type extends only a generic type, and a
-type that is not generic extends an instance only in a module (see
-"Extending generic types").
+generic types are declared in modules and instantiated in modules, also the
+one that defines them, or in main programs; an `implements` statement
+repeats the type's parameter list exactly; initializers have no generic
+parameters of their own, and a method's parameters do not reuse the type's
+parameter names; a procedure that uses the type's parameters is bound to that
+type only and is reached only through its bindings and constructors, not by
+name; parameters are constrained by universal traits or are trait
+parameters; type arguments are concrete or parameters of the innermost
+enclosing generic procedure (see "Trait parameters and procedure components
+of generic types"), not of a generic type; and a generic type extends only a
+generic type, and a type that is not generic extends an instance only in a
+module (see "Extending generic types").
 A generic type binds only procedures that use its parameters, and has no
 FINAL procedures and no GENERIC or DEFERRED bindings. A method calls a
 generic method through a parameter only with its own parameters as type
@@ -2118,6 +2122,126 @@ the same with a separately compiled parent; `traits_interop_static` and
 `traits_interop_concrete` the colleague's corrected `static.f90` variants;
 `continue_compilation_traits_03` and `continue_compilation_traits_09` the
 diagnostics.
+
+### Trait parameters and procedure components of generic types
+
+A generic derived type can have trait parameters (DI extension E1) and
+procedure-pointer components whose interfaces are instances of generic
+abstract interfaces over its parameters (E4). The factory types of the DI
+container are of this kind:
+
+```fortran
+type, sealed, implements(IFactory) :: Factory1{Trait :: T1, U}
+    private
+    procedure(ctor1{T1,U}), pointer, nopass :: ctor => null()
+contains
+    procedure :: create => create1
+end type Factory1
+...
+function create1(self, c) result(res)
+    type(Factory1{T1,U}), intent(in) :: self
+    class(IResolver), intent(in) :: c
+    class(*), allocatable :: res
+    res = self%ctor(c%resolve{T1}())
+end function create1
+```
+
+**Trait parameters.** The binder of `{Trait :: T1}` is a `TypeParameter`
+with deferred_attr `TraitParameter`, as for a generic procedure: `class(T1)`
+in a component, a method or an interface instance is a trait object of the
+trait bound to `T1`, and `type(T1)` is an error. The argument of a trait
+parameter is a trait, `Factory1{ILogger, Client}`; the instance records it
+as a `GenericTypeInstance` argument whose type is the `TraitObjectType` of
+the trait's runtime contract and whose declaration is the trait, without
+evidence. A type argument for a trait parameter, a trait argument for a type
+parameter and a conformance constraint `P :: U` of a generic type (not
+implemented yet) are diagnosed. In an instance's method copy, `class(T1)`
+is a trait object of the bound trait, so `c%resolve{T1}()` passes that
+trait's descriptor through the trait object `c` (E10), and `self%ctor(...)`
+calls the component with the substituted interface. A generic type with
+trait parameters can implement a trait, here `IFactory`, and its instances
+convert to `class(IFactory)` trait objects like those of any generic type:
+`box = Factory1{ILogger, Client}(make_client)` followed by
+`x = box%create(c)` dispatches to the instance's copy of `create1`.
+
+**Inference through procedure components (E8b).** A structure constructor
+binds the type's parameters from the actual arguments given for its
+components. A data component of a parameter type binds as before; a
+procedure-pointer component whose interface mentions the parameters binds
+them from the actual procedure by the rules of E4
+(`bind_type_parameters_from_procedure`, exact match): `Factory1(make_client)`
+with `make_client(logger)` taking `class(ILogger), intent(in)` and returning
+`type(Client)` is `Factory1{ILogger, Client}`. With explicit type arguments
+the actual procedure must agree with them. A parameter that no actual
+argument determines is "cannot infer generic type parameter 't1' of
+'holder'; provide it explicitly", and an actual procedure that does not match
+the interface is diagnosed with the difference, as for a dummy procedure. The
+accessibility rules of structure constructors are unchanged: `Factory1`'s
+`ctor` component is private, so its structure constructor is usable only in
+the module that defines it, which instantiates the type there.
+
+**Instances in the defining module.** The module that defines a generic type
+can instantiate it, in declarations and in constructor references of its own
+procedures. Such an instance is an ordinary instance owned by that module.
+Its procedure copies need the bodies of the type's package, so the body
+visitor completes a module's instances after visiting its packages. The
+module file of a module that owns instances must resolve every trait contract
+they name: the instance's type arguments, the default initialization of its
+procedure components and the types its procedure copies substitute for the
+parameters reference the contracts that a derived type argument's components
+name, as well as that of a trait argument, through imports of the module
+(`import_trait_type`).
+
+**Type arguments that are parameters of a generic procedure.** Inside a
+generic procedure, a generic type can be applied to the procedure's
+parameters, in a declaration, `type(Holder{T1, U}) :: h`, or by a
+constructor reference whose actual arguments are forwarded, as in
+`f = Factory1(ctor)` with the dummy `procedure(ctor1{T1,U}) :: ctor`:
+
+```fortran
+function make_factory1{Trait :: T1, U}(ctor) result(f)
+    procedure(ctor1{T1,U}) :: ctor
+    class(IFactory), allocatable :: f
+    f = Factory1(ctor)
+end function make_factory1
+```
+
+The type then denotes a *symbolic instance*, `factory1{t1,u}`, a `Struct` in
+the scope of the generic (its `Template`) with `GenericTypeInstance`
+metadata whose arguments are the generic's binders: it has the definition's
+components with the binders substituted, but no bindings, conformances or
+procedure copies. The generic's body is checked with it: its components
+can be referenced and called, and a value of it converts to a trait object
+of a trait its definition implements as a `TraitDeferredPack` whose
+constraint is that conformance of the definition. Each specialization of the
+generic (`instantiate_trait_signature`) replaces every symbolic instance of
+its scope with the instance of the bound type arguments, created in the unit
+that instantiates the generic (`bind_symbolic_generic_instances`): its
+structure constructors and the types of its values become those of the
+instance, and the deferred pack becomes the instance's witness. A
+specialization whose arguments are again forwarded binders creates a
+symbolic instance in the scope of that generic. A forwarded binder's declared
+constraints must imply those of the type's parameter; in declarations,
+which precede the generic's constraints, the instance of each
+specialization checks the bound type. Calling a binding of a symbolic
+instance, `h%run(a)`, is not implemented yet and diagnosed; a type argument
+that is a parameter of a generic type, inside its package, stays
+unimplemented as before.
+
+`traits_generic_factory_01` is the DI container of the extension without
+overloaded generic initializers (E6, E9): `Factory0{U}`, `Factory1{Trait ::
+T1, U}` and `Factory2{Trait :: T1, Trait :: T2, U}` with private procedure
+components, constructed by the generic helpers `make_factory0/1/2` of their
+module with inferred type arguments, stored as `class(IFactory)` trait
+objects in a hand-written container whose `resolve{Trait :: P}` resolves
+the object graph recursively through `create`. `traits_generic_factory_02`
+covers E8b with data and procedure components, explicit and inferred type
+arguments in the defining module, in a program and inside generic
+procedures, and local declarations of symbolic instances;
+`traits_generic_factory_03` the container of `traits_generic_factory_01`
+with its modules compiled separately from the program, which instantiates
+the generic helpers and factory types from module files;
+`continue_compilation_traits_generic_factory` the diagnostics.
 
 ## Inheritance and composed constraints
 
