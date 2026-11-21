@@ -890,6 +890,101 @@ See `integration_tests/traits_type_name_01.f90`,
 `integration_tests/infer_walrus_string_01.f90` and the diagnostics in
 `tests/errors/continue_compilation_traits_type_name.f90`.
 
+### Generic abstract interfaces and inference through dummy procedures
+
+An abstract interface body can have a generic parameter list, exactly like a
+generic procedure (DI extension E4):
+
+```fortran
+abstract interface
+    function ctor1{Trait :: T1, U}(a) result(res)
+        class(T1), intent(in) :: a
+        type(U) :: res
+    end function ctor1
+end interface
+```
+
+Its parameters can be constrained, unconstrained or trait parameters, and
+the body can be a function or a subroutine. An *instance*, `ctor1{T1,U}` or
+`ctor1{ILogger,Client}`, can be used wherever an abstract interface name can
+be: `procedure(ctor1{T1,U}) :: ctor` for a dummy procedure,
+`procedure(ctor1{ILogger,Client}), pointer :: p` for a procedure pointer and
+`procedure(ctor1{ILogger,Client}), pointer, nopass :: make => null()` for a
+procedure-pointer component. Every type argument is given, positionally or
+by keyword; it is a concrete type or trait, or a parameter of the innermost
+enclosing generic procedure or generic derived type. The generic name alone,
+`procedure(ctor1)`, is an error, "generic interface 'ctor1' needs type
+arguments", as is a wrong number of type arguments.
+
+With concrete type arguments the instance is the ordinary specialization of
+the generic, with the usual constraint checks, a `Function` with deftype
+`Interface` in the scope that declares the entity (for a component, the
+scope that hosts its type). With parameters of an enclosing generic, which
+is still being declared when its dummies are, the instance is instantiated
+directly into the declaring scope, as `__instance_ctor1_t1_u`, and copied
+with that scope when the enclosing generic is instantiated, like an
+interface body there. Its constraints are checked once those of the
+enclosing generic exist: a forwarded parameter's declared constraints must
+imply those of the interface's parameter.
+
+When a generic procedure has a dummy procedure whose interface mentions its
+parameters, a call infers them from the actual procedure:
+
+```fortran
+function build1{Trait :: T1, U}(ctor, a) result(r)
+    procedure(ctor1{T1,U}) :: ctor
+    class(T1), intent(in) :: a
+    type(U) :: r
+    r = ctor(a)
+end function build1
+
+function make_client(logger) result(self)
+    class(ILogger), intent(in) :: logger
+    type(Client) :: self
+    ...
+
+c = build1(make_client, lg)           ! T1 = ILogger, U = Client
+cl = register1{IClient}(make_client, lg)  ! P given, T1 and U inferred (E5)
+```
+
+`bind_type_parameter_from_actual` walks the interface of the dummy and that
+of the actual procedure (`bind_type_parameters_from_procedure`): the dummy
+arguments by position, and the result. `class(T)` of a trait parameter binds
+the trait of the actual's `class(ITrait)` dummy, `type(U)` binds the derived
+type, and an intrinsic type binds the type and kind. The characteristics must
+agree exactly after substitution, as for any actual procedure (F2023
+15.5.2.9): both are functions or both subroutines, with the same number of
+dummy arguments, and each has the same intent, optional and value
+attributes, rank, allocatable and pointer attributes and type, without
+passed-object adaptation or conversion to a trait object. A mismatch names
+the procedure, the dummy procedure and the difference, for example
+"procedure 'half_inout' does not match the interface of dummy procedure 'f':
+dummy argument 'x' has intent(inout), but the interface requires
+intent(in)". A parameter that the actual procedure does not determine is
+"cannot infer generic type parameter".
+
+The actual procedure can be a module procedure, an external procedure with an
+explicit interface, a procedure pointer or procedure-pointer component, or
+a dummy procedure. A dummy procedure or procedure pointer whose interface is
+an instance such as `ctor1{T1,U}` of the enclosing generic forwards its
+parameters, so `build1(ctor, a)` inside another generic with
+`procedure(ctor1{T1,U}) :: ctor` binds build1's `T1` and `U` to that
+generic's. Calls through the dummy or the pointer, `r = ctor(a)` or
+`r = p(a)`, are ordinary calls: in the generic they use its parameters, and
+an instance's copy of the dummy has the substituted interface. A `type(U)`
+result converts to `class(P)` under `P :: U`, as any value of type(U) does.
+
+A procedure-pointer component of a generic derived type can have an instance
+of a generic interface with the type's parameters,
+`procedure(map1{T,U}), pointer, nopass :: f`; each instance of the type has
+the substituted interface. Inference of a generic type's parameters from a
+procedure argument of its constructor (E8b) and trait parameters of generic
+derived types are not implemented yet.
+
+See `integration_tests/traits_generic_interface_01.f90`,
+`integration_tests/traits_generic_interface_02.f90` and the diagnostics in
+`tests/errors/continue_compilation_traits_generic_interface.f90`.
+
 ### Explicit procedure values
 
 Without an ordinary actual-argument list, braces select a procedure itself,

@@ -28466,12 +28466,161 @@ public:
         return true;
     }
 
-    bool bind_type_parameter_from_actual(ASR::ttype_t *formal_type,
+    // Why the last inference through a dummy procedure failed, for the
+    // diagnostic of the call; empty if it did not fail there.
+    std::string procedure_inference_mismatch;
+
+    static std::string dummy_intent_name(ASR::intentType intent) {
+        switch (intent) {
+            case ASR::intentType::In: return "intent(in)";
+            case ASR::intentType::Out: return "intent(out)";
+            case ASR::intentType::InOut: return "intent(inout)";
+            default: return "no intent";
+        }
+    }
+
+    // Binds the generic parameters that the interface of the dummy procedure
+    // `formal_expr` mentions from the characteristics of the actual procedure
+    // `actual_expr` (DI extension E4): its dummy arguments, matched by
+    // position, and its result. The characteristics must agree exactly after
+    // substitution, as for any actual procedure (F2023 15.5.2.9), without
+    // conversions.
+    bool bind_type_parameters_from_procedure(ASR::expr_t *formal_expr,
             ASR::expr_t *actual_expr,
             std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &type_subs) {
+        ASR::Function_t *formal = procedure_interface(formal_expr);
+        std::string formal_name = ASR::is_a<ASR::Var_t>(*formal_expr)
+            ? ASRUtils::symbol_name(ASR::down_cast<ASR::Var_t>(formal_expr)->m_v) : "";
+        std::string actual_name = ASR::is_a<ASR::Var_t>(*actual_expr)
+            ? ASRUtils::symbol_name(ASR::down_cast<ASR::Var_t>(actual_expr)->m_v)
+            : ASR::is_a<ASR::StructInstanceMember_t>(*actual_expr)
+                ? ASRUtils::symbol_name(ASR::down_cast<ASR::StructInstanceMember_t>(
+                    actual_expr)->m_m) : "";
+        auto mismatch = [&](const std::string &reason) {
+            if (procedure_inference_mismatch.empty()) {
+                procedure_inference_mismatch = (actual_name.empty() ? std::string(
+                    "the actual argument") : "procedure '" + actual_name + "'") +
+                    " does not match the interface of dummy procedure '" + formal_name +
+                    "': " + reason;
+            }
+            return false;
+        };
+        ASR::ttype_t *actual_type = ASRUtils::type_get_past_allocatable_pointer(
+            ASRUtils::expr_type(actual_expr));
+        if (!ASR::is_a<ASR::FunctionType_t>(*actual_type)) {
+            return mismatch("it is not a procedure");
+        }
+        ASR::Function_t *actual = procedure_interface(actual_expr);
+        if (!actual || ASRUtils::is_bare_implicit_interface(*actual) ||
+                ASRUtils::is_opaque_procedure_type(actual_type) ||
+                ASRUtils::is_bare_implicit_interface(
+                    *ASR::down_cast<ASR::FunctionType_t>(actual_type))) {
+            return mismatch("its interface is implicit");
+        }
+        if (!formal) return false;
+        if (bool(formal->m_return_var) != bool(actual->m_return_var)) {
+            return mismatch(formal->m_return_var
+                ? "it is a subroutine, but the interface is a function"
+                : "it is a function, but the interface is a subroutine");
+        }
+        if (formal->n_args != actual->n_args) {
+            return mismatch("it has " + std::to_string(actual->n_args) + " dummy argument" +
+                (actual->n_args == 1 ? "" : "s") + ", but the interface has " +
+                std::to_string(formal->n_args));
+        }
+        auto match_data = [&](ASR::expr_t *f, ASR::expr_t *a, const std::string &what) {
+            ASR::ttype_t *f_type = ASRUtils::expr_type(f);
+            ASR::ttype_t *a_type = ASRUtils::expr_type(a);
+            if (ASRUtils::extract_n_dims_from_ttype(f_type) !=
+                    ASRUtils::extract_n_dims_from_ttype(a_type)) {
+                return mismatch(what + " has rank " + std::to_string(
+                    ASRUtils::extract_n_dims_from_ttype(a_type)) +
+                    ", but the interface requires rank " + std::to_string(
+                    ASRUtils::extract_n_dims_from_ttype(f_type)));
+            }
+            if (ASRUtils::is_allocatable(f_type) != ASRUtils::is_allocatable(a_type) ||
+                    ASRUtils::is_pointer(f_type) != ASRUtils::is_pointer(a_type)) {
+                return mismatch(what + " differs from the interface in the allocatable "
+                    "or pointer attribute");
+            }
+            if (!bind_type_parameter_from_actual(f_type, a, type_subs, f, true)) {
+                std::string expected = ASRUtils::type_to_str_with_kind(f_type, f);
+                ASR::ttype_t *parameter = ASRUtils::type_get_past_array(
+                    ASRUtils::type_get_past_allocatable_pointer(f_type));
+                if (ASR::is_a<ASR::TypeParameter_t>(*parameter)) {
+                    std::string name = ASR::down_cast<ASR::TypeParameter_t>(parameter)->m_param;
+                    auto bound = type_subs.find(name);
+                    expected = bound != type_subs.end() && bound->second.first &&
+                            !ASR::is_a<ASR::TypeParameter_t>(*bound->second.first)
+                        ? ASRUtils::type_to_str_fortran_symbol(bound->second.first,
+                            bound->second.second, true) + ", the type of generic "
+                            "parameter '" + name + "'"
+                        : "type(" + name + ")";
+                }
+                return mismatch(what + " has type " +
+                    ASRUtils::type_to_str_with_kind(a_type, a) +
+                    ", which does not match " + expected + " of the interface");
+            }
+            return true;
+        };
+        for (size_t i = 0; i < formal->n_args; i++) {
+            if (!ASR::is_a<ASR::Var_t>(*formal->m_args[i]) ||
+                    !ASR::is_a<ASR::Var_t>(*actual->m_args[i])) return mismatch(
+                "its dummy arguments differ from the interface");
+            ASR::symbol_t *f = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(formal->m_args[i])->m_v);
+            ASR::symbol_t *a = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(actual->m_args[i])->m_v);
+            std::string what = "dummy argument '" + std::string(ASRUtils::symbol_name(a)) + "'";
+            if (ASR::is_a<ASR::Function_t>(*f) || ASR::is_a<ASR::Function_t>(*a) ||
+                    ASR::is_a<ASR::FunctionType_t>(*ASRUtils::type_get_past_pointer(
+                        ASRUtils::symbol_type(f)))) {
+                if (!bind_type_parameters_from_procedure(formal->m_args[i],
+                        actual->m_args[i], type_subs)) {
+                    return mismatch(what + " does not match the interface");
+                }
+                continue;
+            }
+            if (!ASR::is_a<ASR::Variable_t>(*f) || !ASR::is_a<ASR::Variable_t>(*a)) {
+                return mismatch(what + " differs from the interface");
+            }
+            auto *fv = ASR::down_cast<ASR::Variable_t>(f);
+            auto *av = ASR::down_cast<ASR::Variable_t>(a);
+            if (fv->m_intent != av->m_intent) {
+                return mismatch(what + " has " + dummy_intent_name(av->m_intent) +
+                    ", but the interface requires " + dummy_intent_name(fv->m_intent));
+            }
+            if (fv->m_presence != av->m_presence) {
+                return mismatch(what + " differs from the interface in the optional "
+                    "attribute");
+            }
+            if (fv->m_value_attr != av->m_value_attr) {
+                return mismatch(what + " differs from the interface in the value attribute");
+            }
+            if (!match_data(formal->m_args[i], actual->m_args[i], what)) return false;
+        }
+        if (formal->m_return_var &&
+                !match_data(formal->m_return_var, actual->m_return_var, "the result")) {
+            return false;
+        }
+        return true;
+    }
+
+    // `exact` matches the characteristics of a dummy argument or result of
+    // an actual procedure: no passed-object adaptation or conversion to a
+    // trait object applies.
+    bool bind_type_parameter_from_actual(ASR::ttype_t *formal_type,
+            ASR::expr_t *actual_expr,
+            std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &type_subs,
+            ASR::expr_t *formal_expr = nullptr, bool exact = false) {
         if (!formal_type || !actual_expr) return false;
         ASR::ttype_t *actual_type = ASRUtils::expr_type(actual_expr);
         if (!actual_type) return false;
+        if (formal_expr && ASR::is_a<ASR::FunctionType_t>(
+                *ASRUtils::type_get_past_allocatable_pointer(formal_type)) &&
+                procedure_interface(formal_expr)) {
+            return bind_type_parameters_from_procedure(formal_expr, actual_expr, type_subs);
+        }
         if (ASRUtils::extract_n_dims_from_ttype(formal_type)
                 != ASRUtils::extract_n_dims_from_ttype(actual_type)) {
             return false;
@@ -28482,8 +28631,13 @@ public:
         actual_type = ASRUtils::type_get_past_array(
             ASRUtils::type_get_past_allocatable(
                 ASRUtils::type_get_past_pointer(actual_type)));
+        if (exact && ASRUtils::is_class_type(formal_type) !=
+                ASRUtils::is_class_type(actual_type)) {
+            return false;
+        }
         if (ASR::is_a<ASR::TypeParameter_t>(*formal_type)) {
             ASR::TypeParameter_t *tp = ASR::down_cast<ASR::TypeParameter_t>(formal_type);
+            if (exact && ASR::is_a<ASR::TraitObjectType_t>(*actual_type)) return false;
             auto &bound = type_subs[tp->m_param];
             ASR::symbol_t *actual_parameter = nullptr;
             if (ASR::is_a<ASR::TypeParameter_t>(*actual_type)) {
@@ -28518,7 +28672,7 @@ public:
         }
         // Ordinary passed-object adaptation is checked by call construction,
         // after the independent generic type parameters have been inferred.
-        if (ASRUtils::is_class_type(formal_type) &&
+        if (!exact && ASRUtils::is_class_type(formal_type) &&
                 ASR::is_a<ASR::StructType_t>(*actual_type)) return true;
         if (auto *binder = ASRUtils::trait_object_binder(formal_type)) {
             // class(P): a trait object binds the trait parameter P to its
@@ -28526,7 +28680,7 @@ public:
             auto &bound = type_subs[ASRUtils::symbol_name(binder)];
             // type(U) with `P :: U` converts to class(P) once P is bound.
             if (ASR::is_a<ASR::StructType_t>(*actual_type) ||
-                    ASR::is_a<ASR::TypeParameter_t>(*actual_type)) return true;
+                    ASR::is_a<ASR::TypeParameter_t>(*actual_type)) return !exact;
             if (!ASR::is_a<ASR::TraitObjectType_t>(*actual_type)) return false;
             ASR::symbol_t *forwarded = ASRUtils::trait_object_binder(actual_type);
             auto *contract = ASRUtils::trait_runtime_contract(actual_type);
@@ -28550,16 +28704,19 @@ public:
             return true;
         }
         if (ASR::is_a<ASR::TraitObjectType_t>(*formal_type)) {
-            if (ASR::is_a<ASR::StructType_t>(*actual_type)) return true;
+            if (ASR::is_a<ASR::StructType_t>(*actual_type)) return !exact;
             if (ASR::is_a<ASR::TraitObjectType_t>(*actual_type)) {
                 if (ASRUtils::trait_object_binder(actual_type)) return false;
-                return ASRUtils::trait_contract_implies(
-                    *ASRUtils::trait_runtime_contract(actual_type),
-                    *ASRUtils::trait_runtime_contract(formal_type));
+                auto *actual_contract = ASRUtils::trait_runtime_contract(actual_type);
+                auto *formal_contract = ASRUtils::trait_runtime_contract(formal_type);
+                return ASRUtils::trait_contract_implies(*actual_contract, *formal_contract) &&
+                    (!exact || ASRUtils::trait_contract_implies(*formal_contract,
+                        *actual_contract));
             }
         }
-        return ASRUtils::check_equal_type(formal_type, actual_type, nullptr,
-            actual_expr);
+        if (exact && ASR::is_a<ASR::TraitObjectType_t>(*actual_type)) return false;
+        return ASRUtils::check_equal_type(formal_type, actual_type, exact ? formal_expr
+            : nullptr, actual_expr);
     }
 
     // `offset` leading dummies of `f` (a normalized receiver) have no actual,
@@ -28568,6 +28725,7 @@ public:
             Vec<ASR::call_arg_t> *call_args,
             std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &type_subs,
             size_t offset = 0) {
+        procedure_inference_mismatch.clear();
         if (!f || call_args == nullptr) return false;
         std::vector<size_t> formals = ASRUtils::trait_compared_arguments(*f, offset);
         if (call_args->size() > formals.size()) return false;
@@ -28576,7 +28734,7 @@ public:
                 continue;
             }
             if (!bind_type_parameter_from_actual(ASRUtils::expr_type(f->m_args[formals[i]]),
-                    (*call_args)[i].m_value, type_subs)) {
+                    (*call_args)[i].m_value, type_subs, f->m_args[formals[i]])) {
                 return false;
             }
         }
@@ -33340,6 +33498,9 @@ public:
                 explicit_args, n_explicit_args, types, loc);
         }
         if (!infer_template_type_substitutions_from_call(procedure, &args, types)) {
+            if (!procedure_inference_mismatch.empty()) {
+                trait_call_error(procedure_inference_mismatch, loc);
+            }
             trait_call_error("actual arguments conflict with the generic procedure's types", loc);
         }
         for (size_t i = 0; i < generic->n_args; i++) {

@@ -1,0 +1,99 @@
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+  --> tests/errors/continue_compilation_traits_generic_interface.f90:11:5 - 16:1
+   |
+11 |        abstract interface :: ILogger
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+   |
+16 |    
+   | ...^ LFortran extension
+
+semantic error: trait parameter 'p' cannot be used in type(p): a trait is not a type; use class(p) for a trait object
+   --> tests/errors/continue_compilation_traits_generic_interface.f90:105:13
+    |
+105 |             type(P), intent(in) :: a
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: Dummy argument 'a' not defined
+   --> tests/errors/continue_compilation_traits_generic_interface.f90:104:9 - 107:30
+    |
+104 |            function bad_trait{Trait :: P}(a) result(res)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+    |
+107 |            end function bad_trait
+    | ...^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: generic interface 'map1' needs type arguments
+   --> tests/errors/continue_compilation_traits_generic_interface.f90:111:9
+    |
+111 |         procedure(map1) :: f
+    |         ^^^^^^^^^^^^^^^ use `procedure(map1{...})`
+
+semantic error: Dummy argument 'f' not defined
+   --> tests/errors/continue_compilation_traits_generic_interface.f90:110:5 - 115:25
+    |
+110 |        function unbraced{T, U}(f, x) result(r)
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+    |
+115 |        end function unbraced
+    | ...^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: declared constraints of generic type parameter 't' do not imply trait 'ilogger' required by generic 'log_map'
+   --> tests/errors/continue_compilation_traits_generic_interface.f90:118:9
+    |
+118 |         procedure(log_map{T}) :: f
+    |         ^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: generic interface 'map1' has 2 generic parameters, but 1 type argument is given
+   --> tests/errors/continue_compilation_traits_generic_interface.f90:125:9
+    |
+125 |         procedure(map1{T}) :: f
+    |         ^^^^^^^^^^^^^^^^^^ 
+
+semantic error: Dummy argument 'f' not defined
+   --> tests/errors/continue_compilation_traits_generic_interface.f90:124:5 - 128:24
+    |
+124 |        function too_few{T, U}(f, x) result(r)
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+    |
+128 |        end function too_few
+    | ...^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: procedure 'half_inout' does not match the interface of dummy procedure 'f': dummy argument 'x' has intent(inout), but the interface requires intent(in)
+  --> tests/errors/continue_compilation_traits_generic_interface.f90:85:13
+   |
+85 |         r = apply(half_inout, 3)
+   |             ^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: procedure 'half_rank1' does not match the interface of dummy procedure 'f': dummy argument 'x' has rank 1, but the interface requires rank 0
+  --> tests/errors/continue_compilation_traits_generic_interface.f90:86:13
+   |
+86 |         r = apply(half_rank1, 3)
+   |             ^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: procedure 'half_single' does not match the interface of dummy procedure 'f': the result has type real(4), which does not match real(8), the type of generic parameter 'u' of the interface
+  --> tests/errors/continue_compilation_traits_generic_interface.f90:87:13
+   |
+87 |         r = apply{integer, real(8)}(half_single, 3)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: procedure 'not_a_function' does not match the interface of dummy procedure 'f': it is a subroutine, but the interface is a function
+  --> tests/errors/continue_compilation_traits_generic_interface.f90:88:13
+   |
+88 |         r = apply(not_a_function, 3)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: procedure 'two_args' does not match the interface of dummy procedure 'f': it has 2 dummy arguments, but the interface has 1
+  --> tests/errors/continue_compilation_traits_generic_interface.f90:89:13
+   |
+89 |         r = apply(two_args, 3)
+   |             ^^^^^^^^^^^^^^^^^^ 
+
+semantic error: cannot infer generic type parameter 'u'; provide it explicitly
+  --> tests/errors/continue_compilation_traits_generic_interface.f90:90:9
+   |
+90 |         call only_t(same)
+   |         ^^^^^^^^^^^^^^^^^ 

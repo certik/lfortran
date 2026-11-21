@@ -1,9 +1,11 @@
 ! Procedure-pointer components whose interfaces are instances of generic
 ! abstract interfaces (DI extension E4) with concrete type arguments, in a
 ! non-generic derived type: set by pointer assignment and in a structure
-! constructor, and called through the component. A generic derived type has
-! a component whose interface is an instance with the type's parameters,
-! called through it in a type-bound procedure.
+! constructor, called through the component, and passed on as an actual
+! procedure from which a generic procedure infers its parameters. A generic
+! derived type has a component whose interface is an instance with the
+! type's parameters, called through it in a type-bound procedure and passed
+! on as an actual procedure.
 ! GFortran does not accept this LFortran extension.
 module traits_generic_interface_02_m
     implicit none
@@ -137,11 +139,17 @@ program traits_generic_interface_02
     c = fac2%make1(lg)
     if (c%n /= 22) error stop 5
 
+    ! A component as the actual procedure of a generic.
+    c = build1(fac%make1, lg)
+    if (c%n /= 22) error stop 6
+    if (abs(apply_map(fac2%f, 3) - 1.5d0) > 1d-12) error stop 7
+
     m%f => half
     if (abs(m%f(3) - 1.5d0) > 1d-12) error stop 8
     if (abs(m%run(5) - 2.5d0) > 1d-12) error stop 9
     m2%f => twice
     if (m2%run(1.5) /= 3) error stop 10
+    if (abs(apply_map(m%f, 9) - 4.5d0) > 1d-12) error stop 11
 
     print '(a)', 'traits_generic_interface_02 ok'
 end program traits_generic_interface_02
