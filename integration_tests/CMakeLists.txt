@@ -5248,6 +5248,7 @@ RUN(NAME traits_generic_factory_02 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-al
 RUN(NAME traits_generic_factory_03 LABELS llvm llvm2 NO_STD_F23 ISOLATE_MODULES
     EXTRA_ARGS --verify-all-passes
     EXTRAFILES traits_generic_factory_03_lib.f90)
+RUN(NAME traits_generic_factory_04 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_implements_generic_type_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_implements_generic_type_02 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_type_sets_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)

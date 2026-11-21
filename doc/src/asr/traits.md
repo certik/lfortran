@@ -1328,6 +1328,17 @@ instance of `register1` instantiates `init1` for its own arguments. So
 `U = Client` (E4), and its instance selects `init1{ILogger, Client}` (E8,
 E9), as in Sect. 4.8 of the extension.
 
+A generic initializer is a generic procedure, so its body can construct a
+generic type from its own parameters: `self%box = Factory1(ctor)` in
+`init1{Trait :: T1, U}` creates the symbolic instance `factory1{t1,u}` (see
+"Trait parameters and procedure components of generic types"), and each
+instance of `init1`, which `instantiate_trait_signature` specializes like
+any generic procedure, replaces it with the instance of its arguments, also
+when `init1` is itself instantiated for the forwarded parameters of
+`register1` and then for each instance of `register1`.
+`integration_tests/traits_generic_factory_04.f90` is the `Factory` of
+Sect. 4.4 of the extension with such a container.
+
 Not implemented yet: generic initializers of a generic type, which inherit
 the type's parameters and declare none of their own (see "Generic derived
 types"), the designation of a generic initializer by a type name (E3 with
@@ -2241,6 +2252,8 @@ procedures, and local declarations of symbolic instances;
 `traits_generic_factory_03` the container of `traits_generic_factory_01`
 with its modules compiled separately from the program, which instantiates
 the generic helpers and factory types from module files;
+`traits_generic_factory_04` the type-erasing `Factory` whose generic
+initializers box them (see "Generic initializers");
 `continue_compilation_traits_generic_factory` the diagnostics.
 
 ## Inheritance and composed constraints
