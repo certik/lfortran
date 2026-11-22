@@ -8852,6 +8852,32 @@ ASR::intentType trait_binding_receiver_intent(const ASR::trait_binding_t &bindin
     return ASR::intentType::Local;
 }
 
+// The interface of the dummy procedure `dummy`, or nullptr.
+static ASR::Function_t *dummy_procedure_interface(ASR::expr_t *dummy)
+{
+    ASR::Variable_t *variable = dummy ? expr_to_variable_or_null(dummy) : nullptr;
+    ASR::symbol_t *declaration = variable && variable->m_type_declaration
+        ? symbol_get_past_external(variable->m_type_declaration) : nullptr;
+    return declaration && ASR::is_a<ASR::Function_t>(*declaration)
+        ? ASR::down_cast<ASR::Function_t>(declaration) : nullptr;
+}
+
+// Whether the interfaces of two dummy procedures agree: the same dummies,
+// compared by `same`, and results.
+static bool dummy_procedure_interfaces_equal(ASR::Function_t &fa, ASR::Function_t &fb,
+    const std::function<bool(ASR::expr_t*, ASR::expr_t*)> &same)
+{
+    if (fa.n_args != fb.n_args || bool(fa.m_return_var) != bool(fb.m_return_var)) return false;
+    for (size_t i = 0; i < fa.n_args; i++) {
+        ASR::Variable_t *x = expr_to_variable_or_null(fa.m_args[i]);
+        ASR::Variable_t *y = expr_to_variable_or_null(fb.m_args[i]);
+        if (!x || !y || x->m_intent != y->m_intent || x->m_presence != y->m_presence ||
+                x->m_value_attr != y->m_value_attr ||
+                !same(fa.m_args[i], fb.m_args[i])) return false;
+    }
+    return !fa.m_return_var || same(fa.m_return_var, fb.m_return_var);
+}
+
 static bool trait_types_equal_impl(ASR::expr_t *left, ASR::expr_t *right,
     const std::map<ASR::symbol_t*, ASR::symbol_t*> &parameters,
     TraitAssociatedTypes *associated)
@@ -8877,6 +8903,19 @@ static bool trait_types_equal_impl(ASR::expr_t *left, ASR::expr_t *right,
     a = extract_type(a);
     b = extract_type(b);
     if (a->type != b->type) return false;
+    if (ASR::is_a<ASR::FunctionType_t>(*a)) {
+        // Dummy procedures: their interfaces, whose dummies and results may
+        // use the corresponding generic parameters, such as
+        // `procedure(ctor1{T1,U})` of two generic procedures.
+        ASR::Function_t *fa = dummy_procedure_interface(left);
+        ASR::Function_t *fb = dummy_procedure_interface(right);
+        if (fa && fb) {
+            return dummy_procedure_interfaces_equal(*fa, *fb,
+                [&](ASR::expr_t *x, ASR::expr_t *y) {
+                    return trait_types_equal_impl(x, y, parameters, associated);
+                });
+        }
+    }
     if (ASR::is_a<ASR::TypeParameter_t>(*a)) {
         auto *ap = trait_type_parameter(left), *bp = trait_type_parameter(right);
         if (!ap || !bp) return false;
@@ -9068,6 +9107,34 @@ static bool trait_requirement_type_matches(ASR::expr_t *generic, ASR::expr_t *in
     ASR::ttype_t *a = typed_expr_type(generic), *b = typed_expr_type(instance);
     if (!a || !b) return false;
     auto *element = extract_type(a);
+    if (ASR::is_a<ASR::FunctionType_t>(*element) &&
+            ASR::is_a<ASR::FunctionType_t>(*extract_type(b))) {
+        // A dummy procedure whose interface uses the binders.
+        ASR::Function_t *fa = dummy_procedure_interface(generic);
+        ASR::Function_t *fb = dummy_procedure_interface(instance);
+        if (fa && fb) {
+            return dummy_procedure_interfaces_equal(*fa, *fb,
+                [&](ASR::expr_t *x, ASR::expr_t *y) {
+                    return trait_requirement_type_matches(x, y, types, arguments);
+                });
+        }
+    }
+    if (ASR::symbol_t *binder = trait_object_binder(element)) {
+        // class(P) of a trait parameter: a trait object of its argument.
+        auto bound = types.find(symbol_name(binder));
+        if (bound != types.end()) {
+            ASR::ttype_t *expected = extract_type(bound->second.first);
+            ASR::ttype_t *actual = extract_type(b);
+            if (is_pointer(a) != is_pointer(b) || is_allocatable(a) != is_allocatable(b) ||
+                    !trait_shapes_equal(a, b, arguments)) return false;
+            if (ASR::is_a<ASR::TypeParameter_t>(*expected)) {
+                ASR::symbol_t *forwarded = trait_object_binder(actual);
+                return forwarded && std::string(symbol_name(forwarded)) ==
+                    ASR::down_cast<ASR::TypeParameter_t>(expected)->m_param;
+            }
+            return types_equal(expected, actual, nullptr, nullptr);
+        }
+    }
     auto found = ASR::is_a<ASR::TypeParameter_t>(*element)
         ? types.find(ASR::down_cast<ASR::TypeParameter_t>(element)->m_param) : types.end();
     if (found == types.end()) return trait_types_equal(generic, instance, arguments);
@@ -9276,6 +9343,39 @@ std::string trait_generic_requirement_mismatch(const ASR::Template_t &message,
                 x->m_deferred_attr != y->m_deferred_attr || x->m_is_class != y->m_is_class) {
             return "its generic type parameter declarations do not correspond to the message's";
         }
+        // A trait parameter is unconstrained; a conformance constraint
+        // `P :: U` names the corresponding trait parameter.
+        auto conformance = [](const ASR::Template_t &owner, ASR::symbol_t *binder) {
+            for (const auto &entry : owner.m_symtab->get_scope()) {
+                if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
+                auto *constraint = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
+                if (symbol_get_past_external(constraint->m_parameter) == binder) {
+                    if (auto *p = conformance_constraint_binder(*constraint)) return p;
+                }
+            }
+            return (ASR::symbol_t*)nullptr;
+        };
+        if (trait_parameter_binder(a) || trait_parameter_binder(b)) {
+            if (!trait_parameter_binder(a) || !trait_parameter_binder(b)) {
+                return "its generic type parameter declarations do not correspond to the "
+                    "message's";
+            }
+            types[message.m_args[i]] = {&y->base, b};
+            continue;
+        }
+        auto *left_conformance = conformance(message, a);
+        auto *right_conformance = conformance(requirement, b);
+        if (left_conformance || right_conformance) {
+            auto mapped = left_conformance
+                ? types.find(symbol_name(left_conformance)) : types.end();
+            if (!left_conformance || !right_conformance || mapped == types.end() ||
+                    mapped->second.second != right_conformance) {
+                return "the constraints of generic type parameter '" +
+                    std::string(message.m_args[i]) + "' are not nominally equivalent";
+            }
+            types[message.m_args[i]] = {&y->base, b};
+            continue;
+        }
         // Named traits by identity; an inline type set by its exact members.
         auto left = trait_binder_constraints(a), right = trait_binder_constraints(b);
         bool equivalent = !left.empty() && left.size() == right.size();
@@ -9324,6 +9424,11 @@ std::string trait_generic_requirement_mismatch(const ASR::Template_t &message,
         return "its leading argument is not the message's receiver";
     }
     std::map<ASR::symbol_t*, ASR::symbol_t*> arguments;
+    // The binders correspond too, for the interfaces of dummy procedures.
+    for (size_t i = 0; i < message.n_args; i++) {
+        arguments.emplace(message.m_symtab->get_symbol(message.m_args[i]),
+            requirement.m_symtab->get_symbol(requirement.m_args[i]));
+    }
     for (size_t i = 0; i < method_args.size(); i++) {
         auto *method_arg = method->m_args[method_args[i]];
         if (!method_arg || !generic->m_args[i + 1] ||
@@ -9408,7 +9513,53 @@ std::string trait_requirement_evidence_mismatch(const ASR::Template_t &requireme
     }
     if (n_evidence && !evidence) return "its evidence is missing";
     std::set<ASR::symbol_t*> covered;
+    // The trait that implementation `selected` must provide, in its hierarchy.
+    auto provides = [](ASR::symbol_t *selected, ASR::symbol_t *required) {
+        auto *provided = symbol_get_past_external(
+            ASR::down_cast<ASR::TraitImplementation_t>(selected)->m_trait);
+        if (!provided || !required || !ASR::is_a<ASR::Trait_t>(*provided)) return false;
+        auto hierarchy = trait_hierarchy(*ASR::down_cast<ASR::Trait_t>(provided));
+        if (hierarchy.error != TraitHierarchyError::None) return false;
+        for (auto *trait : hierarchy.traits) {
+            if (&trait->base == required) return true;
+        }
+        return false;
+    };
     for (size_t i = 0; i < n_evidence; i++) {
+        // A conformance constraint `P :: U`: the conformance of the type
+        // argument of U to the trait argument of P.
+        auto *conformance = symbol_get_past_external(evidence[i].m_constraint);
+        if (conformance && ASR::is_a<ASR::TraitConstraint_t>(*conformance) &&
+                symbol_parent_symtab(conformance) == requirement.m_symtab &&
+                conformance_constraint_binder(
+                    *ASR::down_cast<ASR::TraitConstraint_t>(conformance))) {
+            auto *constraint = ASR::down_cast<ASR::TraitConstraint_t>(conformance);
+            size_t position = trait_binder_position(requirement, constraint->m_parameter);
+            size_t bound = trait_binder_position(requirement,
+                conformance_constraint_binder(*constraint));
+            if (position >= requirement.n_args || bound >= requirement.n_args ||
+                    !trait_concrete_type_argument(types[position]) ||
+                    !trait_concrete_type_argument(types[bound])) {
+                return "a deferred type argument takes its caller's evidence";
+            }
+            if (!covered.insert(conformance).second) {
+                return "evidence must not repeat a constraint";
+            }
+            auto *selected = symbol_get_past_external(evidence[i].m_implementation);
+            if (!selected || !ASR::is_a<ASR::TraitImplementation_t>(*selected) ||
+                    !trait_implementation_matches_type(
+                        *ASR::down_cast<ASR::TraitImplementation_t>(selected),
+                        types[position].second, types[position].first)) {
+                return "evidence must be a conformance of its constraint's type argument";
+            }
+            auto *contract = trait_runtime_contract(types[bound].first);
+            if (!provides(selected, contract
+                    ? symbol_get_past_external(contract->m_trait) : nullptr)) {
+                return "evidence must be a conformance to the trait argument of its "
+                    "conformance constraint";
+            }
+            continue;
+        }
         size_t position = 0;
         auto *constraint = trait_nominal_requirement_constraint(requirement,
             evidence[i].m_constraint, position);

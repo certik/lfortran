@@ -767,13 +767,38 @@ constraints `P :: U` of generic derived types (their trait parameters are
 described under "Trait parameters and procedure components of generic
 types"), arrays and associate names of
 `class(P)` objects, `select type` on a `class(P)` selector, a `class is (P)`
-guard together with other trait guards in one `select type`, and generic
-messages with trait parameters in generic constraints. A generic message with
-trait parameters can be called through a trait object (see the next section).
+guard together with other trait guards in one `select type`. A generic
+message with trait parameters can be called through a trait object (see the
+next section).
+
+A generic message with trait parameters can also be called through a generic
+parameter that its trait constrains, `reg%add{ILogger}(make_logger)` for
+`setup{IRegistry :: R}(reg)`. Its generic requirement copies the message's
+trait parameters and conformance constraints `P :: U` with fresh binders
+(`create_generic_trait_requirement`); a call is checked against them where
+the generic is defined, and the conformance selected for the concrete type
+argument of `U` is recorded as the evidence of the specialization. A
+generic that forwards its constrained parameter, `nested{IRegistry :: R}`
+calling `setup(reg)`, binds the specialization to the same specialization of
+its own requirement, and the recorded conformances to its constraints of
+the same binders: a conformance constraint `P :: U` names its trait by a
+binder of the requirement, so it takes the caller's conformance constraint
+whose parameter and trait binder have the same positions
+(`bind_trait_requirement_specializations`). The specialization records a trait argument as an unused local trait object of
+the trait, since the instantiation does not copy a trait parameter's
+declaration. Dummy procedures whose interfaces use the generic parameters,
+`procedure(ctor1{T1,U})`, correspond when their interfaces do with the
+parameters mapped (`trait_types_equal`), for conformance and for the
+requirement's copy. The call of a requirement in a generic body keeps the
+function form of its dummy procedures' interfaces when
+`subroutine_from_function` lowers an actual function returning a derived
+type to a subroutine; the generic body is never code-generated, so the
+verifier does not compare these interfaces.
 
 See `integration_tests/traits_trait_param_01.f90`,
-`integration_tests/traits_trait_param_02.f90` and the diagnostics in
-`tests/errors/continue_compilation_traits_trait_param.f90`.
+`integration_tests/traits_trait_param_02.f90`,
+`integration_tests/traits_trait_param_03.f90` (a generic constraint) and the
+diagnostics in `tests/errors/continue_compilation_traits_trait_param.f90`.
 
 ### Generic messages with trait parameters through trait objects
 

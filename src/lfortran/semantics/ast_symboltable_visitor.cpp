@@ -5997,14 +5997,6 @@ public:
     ASR::symbol_t *create_generic_trait_requirement(ASR::Function_t &method,
             ASR::Template_t &message, ASR::symbol_t *type_symbol, SymbolTable *scope,
             const Location &loc) {
-        for (size_t i = 0; i < message.n_args; i++) {
-            if (ASRUtils::trait_parameter_binder(
-                    message.m_symtab->get_symbol(message.m_args[i]))) {
-                trait_error("generic message '" + std::string(method.m_name) + "' with the "
-                    "trait parameter '" + std::string(message.m_args[i]) + "' in a generic "
-                    "constraint is not implemented yet", loc);
-            }
-        }
         std::string receiver = ASRUtils::symbol_name(type_symbol);
         std::string name = scope->get_unique_name(
             "__trait_" + receiver + "_" + std::string(method.m_name));
@@ -6042,6 +6034,18 @@ public:
                 if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
                 auto *constraint = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
                 if (ASRUtils::symbol_get_past_external(constraint->m_parameter) != original) {
+                    continue;
+                }
+                if (auto *binder = ASRUtils::conformance_constraint_binder(*constraint)) {
+                    // `P :: U` between the requirement's own binders.
+                    std::string constraint_name = requirement_scope->get_unique_name(
+                        "__constraint_" + std::string(generic->m_args[i]));
+                    requirement_scope->add_symbol(constraint_name, ASR::down_cast<ASR::symbol_t>(
+                        ASR::make_TraitConstraint_t(al, loc, requirement_scope,
+                            s2c(al, constraint_name),
+                            requirement_scope->get_symbol(generic->m_args[i]),
+                            types.at(ASRUtils::symbol_name(binder)).second,
+                            nullptr, 0, nullptr, 0, nullptr, 0)));
                     continue;
                 }
                 auto *trait = ASR::down_cast<ASR::Trait_t>(

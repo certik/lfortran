@@ -34426,6 +34426,25 @@ public:
         auto *signature = ASRUtils::get_FunctionType(specialization);
         signature->m_is_restriction = true;
         signature->m_deftype = ASR::deftypeType::Interface;
+        // The instance records its type arguments under the binders' names;
+        // the declaration of a trait parameter, bound to a trait, is not
+        // instantiated.
+        auto *instance = ASR::down_cast<ASR::Function_t>(specialization);
+        for (size_t i = 0; i < generic->n_args; i++) {
+            if (instance->m_symtab->get_symbol(generic->m_args[i])) continue;
+            // A trait argument is the type of its trait objects, an unused
+            // local view.
+            const auto &argument = types.at(generic->m_args[i]);
+            instance->m_symtab->add_symbol(generic->m_args[i], ASR::down_cast<ASR::symbol_t>(
+                ASRUtils::make_Variable_t_util(al, loc, instance->m_symtab,
+                    s2c(al, generic->m_args[i]), nullptr, 0, ASR::intentType::Local, nullptr,
+                    nullptr, ASR::storage_typeType::Default,
+                    ASRUtils::duplicate_type(al, argument.first),
+                    ASR::is_a<ASR::TraitObjectType_t>(*argument.first)
+                        ? nullptr : argument.second,
+                    ASR::abiType::Source, ASR::accessType::Public,
+                    ASR::presenceType::Required, false)));
+        }
         Vec<ASR::trait_evidence_t> records;
         records.reserve(al, selected.size());
         auto *function = ASR::down_cast<ASR::Function_t>(specialization);
@@ -36380,6 +36399,14 @@ public:
                 std::vector<std::pair<ASR::ttype_t*, ASR::symbol_t*>> types;
                 for (const auto &argument : recorded) {
                     auto *type = ASRUtils::extract_type(argument.first);
+                    if (ASR::is_a<ASR::TraitObjectType_t>(*type) && !argument.second &&
+                            !ASRUtils::trait_object_binder(type)) {
+                        // A trait argument (E1) is recorded as the type of
+                        // its trait objects; its trait is made visible here.
+                        types.push_back({argument.first, make_operator_proc_visible(
+                            ASRUtils::trait_runtime_contract(type)->m_trait, "trait", target)});
+                        continue;
+                    }
                     if (!ASR::is_a<ASR::TypeParameter_t>(*type)) {
                         types.push_back(argument);
                         continue;
@@ -36415,19 +36442,32 @@ public:
                     }
                     // The caller's generic requirement copies the same message,
                     // so its constraint of the same binder and trait takes the
-                    // recorded conformance.
+                    // recorded conformance. A conformance constraint `P :: U`
+                    // names its trait by a binder of the copy, so it is the
+                    // constraint whose trait binder is at the same position.
                     std::vector<std::pair<ASR::TraitConstraint_t*,
                         ASR::TraitImplementation_t*>> republished;
                     for (const auto &witness : witnesses) {
                         size_t position = ASRUtils::trait_binder_position(*requirement,
                             witness.first->m_parameter);
+                        ASR::symbol_t *trait_binder =
+                            ASRUtils::conformance_constraint_binder(*witness.first);
+                        size_t trait_position = trait_binder
+                            ? ASRUtils::trait_binder_position(*requirement, trait_binder)
+                            : requirement->n_args;
                         auto *trait = ASRUtils::symbol_get_past_external(witness.first->m_trait);
                         ASR::TraitConstraint_t *same = nullptr;
                         for (auto *candidate : trait_constraints(forwarded)) {
                             if (ASRUtils::trait_binder_position(*forwarded,
-                                        candidate->m_parameter) == position &&
-                                    ASRUtils::symbol_get_past_external(candidate->m_trait)
-                                        == trait) {
+                                    candidate->m_parameter) != position) continue;
+                            ASR::symbol_t *candidate_binder =
+                                ASRUtils::conformance_constraint_binder(*candidate);
+                            if (trait_binder ? candidate_binder &&
+                                        ASRUtils::trait_binder_position(*forwarded,
+                                            candidate_binder) == trait_position
+                                    : !candidate_binder &&
+                                        ASRUtils::symbol_get_past_external(candidate->m_trait)
+                                            == trait) {
                                 same = candidate;
                             }
                         }

@@ -8564,7 +8564,19 @@ public:
                     || is_struct_like_type(formal_type);
                 bool procedure_argument = is_procedure_type(actual_type)
                     || is_procedure_type(formal_type);
-                if (procedure_argument) {
+                // A generic restriction keeps the function form of its
+                // interfaces (subroutine_from_function), while an actual
+                // function is lowered to a subroutine; a call of it in a
+                // generic body is never code-generated.
+                ASR::symbol_t *callee_symbol = ASRUtils::symbol_get_past_external(x.m_name);
+                ASR::FunctionType_t *actual_procedure = as_procedure_type(actual_type);
+                ASR::FunctionType_t *formal_procedure = as_procedure_type(formal_type);
+                bool lowered = callee_symbol && ASR::is_a<ASR::Function_t>(*callee_symbol) &&
+                    ASRUtils::get_FunctionType(
+                        ASR::down_cast<ASR::Function_t>(callee_symbol))->m_is_restriction &&
+                    actual_procedure && formal_procedure &&
+                    !actual_procedure->m_return_var_type && formal_procedure->m_return_var_type;
+                if (procedure_argument && !lowered) {
                     verify_procedure_interface(
                         actual_type, formal_type,
                         "Procedure argument '" +
