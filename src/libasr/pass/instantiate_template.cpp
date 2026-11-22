@@ -3605,9 +3605,11 @@ public:
         [[maybe_unused]] auto *evidence = ASRUtils::symbol_get_past_external(selected->second);
         auto *actual_type = ASRUtils::expr_type(payload);
         if (ASR::is_a<ASR::TraitImplementation_t>(*evidence)) {
-            // A value of a symbolic instance that stays symbolic.
+            // A value of a symbolic instance that stays symbolic, by the
+            // conformance of its definition, imported into an instance made
+            // in another unit.
             return ASR::make_TraitDeferredPack_t(al, x->base.base.loc,
-                payload, selected->second, type);
+                payload, visible_evidence(selected->second), type);
         }
         if (ASR::is_a<ASR::TypeParameter_t>(*actual_type)) {
             LCOMPILERS_ASSERT(ASR::is_a<ASR::TraitConstraint_t>(*evidence));
@@ -3646,11 +3648,15 @@ public:
 
     // Selected evidence of the generic's scope, such as the witness of a
     // concrete type of the generic's module packed in its body, imported
-    // into an instance made elsewhere.
+    // into an instance made elsewhere. The conformance of a generic type's
+    // definition is nested in the type's package.
     ASR::symbol_t *visible_evidence(ASR::symbol_t *symbol) {
         if (!symbol || ASRUtils::is_visible_from(symbol, new_scope)) return symbol;
-        ASR::symbol_t *reference = ASRUtils::import_symbol(al,
-            ASRUtils::symbol_get_past_external(symbol), new_scope);
+        ASR::symbol_t *definition = ASRUtils::symbol_get_past_external(symbol);
+        ASR::symbol_t *reference = ASRUtils::import_symbol(al, definition, new_scope);
+        if (reference == definition && !ASRUtils::is_visible_from(definition, new_scope)) {
+            reference = ASRUtils::import_nested_symbol(al, definition, new_scope);
+        }
         if (ASR::is_a<ASR::ExternalSymbol_t>(*reference)) {
             ADD_ASR_DEPENDENCIES(new_scope, reference, dependencies);
         }
@@ -4494,10 +4500,12 @@ public:
                 }
                 if (symbol_subs.find(struct_name) != symbol_subs.end()) {
                     ASR::symbol_t *sym = symbol_subs[struct_name];
-                    ttype = ASRUtils::import_trait_type(al, ASRUtils::make_StructType_t_util(
-                        al, s->base.base.loc, sym, s->m_is_cstruct), new_scope);
+                    ttype = ASRUtils::make_StructType_t_util(
+                        al, s->base.base.loc, sym, s->m_is_cstruct);
                 }
-                return ttype;
+                // The types of the components, such as class(IFactory), name
+                // trait contracts through imports of the template's scopes.
+                return ASRUtils::import_trait_type(al, ttype, new_scope);
             }
             case (ASR::ttypeType::String) : {
                 return duplicate_ttype(ttype);

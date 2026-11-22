@@ -42560,7 +42560,8 @@ public:
     ASR::symbol_t *import_generic_specific(ASR::symbol_t *specific,
             const std::string &generic_name) {
         ASR::symbol_t *target = ASRUtils::symbol_get_past_external(specific);
-        if (!ASR::is_a<ASR::Function_t>(*target)) {
+        // A generic specific (E6) is the Template of a generic procedure.
+        if (!ASR::is_a<ASR::Function_t>(*target) && !ASR::is_a<ASR::Template_t>(*target)) {
             return specific;
         }
         ASR::Module_t *owner = ASRUtils::get_sym_module(target);

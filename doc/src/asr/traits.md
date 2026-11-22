@@ -2253,7 +2253,12 @@ procedures, and local declarations of symbolic instances;
 with its modules compiled separately from the program, which instantiates
 the generic helpers and factory types from module files;
 `traits_generic_factory_04` the type-erasing `Factory` whose generic
-initializers box them (see "Generic initializers");
+initializers box them (see "Generic initializers"), and
+`traits_generic_factory_05` its modules compiled separately: a module file
+references the conformance by which a forwarded instance of a generic
+initializer packs its symbolic instance, the generic specifics of an
+imported generic interface such as `~factory`, and the trait contracts of
+the component types in an erased generic method through imports;
 `continue_compilation_traits_generic_factory` the diagnostics.
 
 ## Inheritance and composed constraints
