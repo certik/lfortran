@@ -4770,6 +4770,32 @@ bool trait_has_operations(const ASR::Trait_t &trait);
 bool trait_runtime_view_admissible(const ASR::Trait_t &trait);
 // The member as a source names it: `initial`, `operator(*)` or its name.
 std::string trait_member_display_name(ASR::symbol_t *member);
+// The name that the trait message `member` (its Template or Function)
+// declares: for one of overloaded generic messages (E6), the name of its
+// trait's overload set (Trait overloads), else its own name.
+std::string trait_message_name(ASR::symbol_t *member);
+// The members of the trait hierarchy `members` that declare messages of the
+// name `name`: one, several that correspond, or overloaded generic messages.
+std::vector<ASR::symbol_t*> trait_message_overloads(
+    const std::vector<ASR::symbol_t*> &members, const std::string &name);
+// Whether two trait messages of one name are one requirement: their
+// signatures and receivers correspond (trait_method_mismatch,
+// trait_receiver_mismatch). Messages of one name that do not correspond are
+// overloaded generic messages (E6).
+bool trait_messages_correspond(const ASR::Function_t &left, const ASR::Function_t &right);
+// Whether two trait messages of one name, of different traits, can be
+// combined: they correspond, or they are overloaded generic messages, both
+// functions or both subroutines. Their distinguishability is checked where
+// they are combined.
+bool trait_messages_combine(const ASR::Function_t &left, const ASR::Function_t &right);
+// Whether the member `member` of the trait hierarchy `members` is one of
+// overloaded generic messages: it and another generic message of its name
+// do not correspond. Other messages of one name that do not correspond are
+// incompatible declarations.
+bool trait_message_is_overloaded(const std::vector<ASR::symbol_t*> &members,
+    ASR::symbol_t *member);
+// Whether some message of the hierarchy `members` is overloaded.
+bool trait_has_overloaded_messages(const std::vector<ASR::symbol_t*> &members);
 std::string trait_operation_display_name(const ASR::type_set_operation_t &operation);
 bool same_trait_operation(const ASR::type_set_operation_t &left,
     const ASR::type_set_operation_t &right);

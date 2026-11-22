@@ -134,8 +134,11 @@ symbol
     -- operations are the members, in declaration order, that are initializer
     -- (TypeSetConversion) and operator requirements. Every other member is an
     -- ordinary message; its receiver, if any, is its dummy with pass_attr Pass.
+    -- overloads are the overloaded generic messages (E6) that the trait
+    -- declares: the members that declare generic messages of one name. Every
+    -- other message member declares its own name.
     -- qualified_name is as for Struct.
-    | Trait(symbol_table symtab, identifier name, symbol* parents, access access, trait_kind kind, ttype* member_types, trait_operation* operations, identifier? qualified_name)
+    | Trait(symbol_table symtab, identifier name, symbol* parents, access access, trait_kind kind, ttype* member_types, trait_operation* operations, trait_overload* overloads, identifier? qualified_name)
     -- trait is a Trait, or, for a conformance constraint `P :: U` (E2), the
     -- binder of an earlier trait parameter P of the same generic: the type
     -- bound to the parameter must implement the trait bound to P. A
@@ -708,5 +711,11 @@ type_set_requirement
 -- implementing type.
 trait_operation
     = (symbol member, type_set_operation operation)
+
+-- Overloaded generic messages (E6): the members of a trait, in declaration
+-- order, that declare generic messages of the name `name`. Their keys in the
+-- trait's symbol table are unique and have no meaning.
+trait_overload
+    = (identifier name, symbol* members)
 
 }

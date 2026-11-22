@@ -3072,6 +3072,7 @@
                                     [(Integer 4)
                                     (Real 8)]
                                     []
+                                    []
                                     traits_numeric_01_m::INumeric
                                 ),
                             numeric_average:

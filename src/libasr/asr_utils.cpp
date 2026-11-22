@@ -6582,7 +6582,75 @@ std::string trait_member_display_name(ASR::symbol_t *member)
     if (auto *operation = trait_member_operation(member)) {
         return trait_operation_display_name(*operation);
     }
-    return symbol_name(symbol_get_past_external(member));
+    return trait_message_name(member);
+}
+
+std::string trait_message_name(ASR::symbol_t *member)
+{
+    member = symbol_get_past_external(member);
+    if (member && ASR::is_a<ASR::Function_t>(*member)) {
+        if (auto *generic = trait_method_template(*ASR::down_cast<ASR::Function_t>(member))) {
+            member = &generic->base;
+        }
+    }
+    ASR::symbol_t *owner = member ? get_asr_owner(member) : nullptr;
+    if (owner && ASR::is_a<ASR::Trait_t>(*owner)) {
+        auto *trait = ASR::down_cast<ASR::Trait_t>(owner);
+        for (size_t i = 0; i < trait->n_overloads; i++) {
+            for (size_t j = 0; j < trait->m_overloads[i].n_members; j++) {
+                if (symbol_get_past_external(trait->m_overloads[i].m_members[j]) == member) {
+                    return trait->m_overloads[i].m_name;
+                }
+            }
+        }
+    }
+    return symbol_name(member);
+}
+
+std::vector<ASR::symbol_t*> trait_message_overloads(
+    const std::vector<ASR::symbol_t*> &members, const std::string &name)
+{
+    std::vector<ASR::symbol_t*> result;
+    for (auto *member : members) {
+        if (trait_member_operation(member) || !trait_method_function(member)) continue;
+        if (trait_message_name(member) == name) result.push_back(member);
+    }
+    return result;
+}
+
+bool trait_messages_correspond(const ASR::Function_t &left, const ASR::Function_t &right)
+{
+    return trait_method_mismatch(left, right).difference == TraitMethodDifference::None &&
+        trait_receiver_mismatch(left, right).difference == TraitMethodDifference::None;
+}
+
+bool trait_messages_combine(const ASR::Function_t &left, const ASR::Function_t &right)
+{
+    return trait_messages_correspond(left, right) || (trait_method_template(left) &&
+        trait_method_template(right) && bool(left.m_return_var) == bool(right.m_return_var));
+}
+
+bool trait_message_is_overloaded(const std::vector<ASR::symbol_t*> &members,
+    ASR::symbol_t *member)
+{
+    auto *method = trait_method_function(member);
+    if (!method || trait_member_operation(member) || !trait_method_template(*method)) {
+        return false;
+    }
+    for (auto *other : trait_message_overloads(members, trait_message_name(member))) {
+        auto *other_method = trait_method_function(other);
+        if (other != member && trait_method_template(*other_method) &&
+                !trait_messages_correspond(*method, *other_method)) return true;
+    }
+    return false;
+}
+
+bool trait_has_overloaded_messages(const std::vector<ASR::symbol_t*> &members)
+{
+    for (auto *member : members) {
+        if (trait_message_is_overloaded(members, member)) return true;
+    }
+    return false;
 }
 
 bool same_trait_operation(const ASR::type_set_operation_t &left,

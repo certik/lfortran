@@ -9,7 +9,7 @@ A nominal contract or an explicitly categorized finite intrinsic type set.
 ```text
 Trait(symbol_table symtab, identifier name, symbol* parents, access access,
     trait_kind kind, ttype* member_types, trait_operation* operations,
-    identifier? qualified_name)
+    trait_overload* overloads, identifier? qualified_name)
 ```
 
 ### Arguments
@@ -23,6 +23,7 @@ Trait(symbol_table symtab, identifier name, symbol* parents, access access,
 | `kind` | `UniversalTrait` or `IntrinsicTypeSet`. |
 | `member_types` | Nonempty, unique, concrete scalar intrinsic types for a finite set; empty for universal traits. |
 | `operations` | The directly declared members that are initializer or operator requirements, each with its operation; empty for type sets. |
+| `overloads` | The overloaded generic messages that the trait declares: for each name declared by several generic messages, the name and those members; empty when no name is. |
 | `qualified_name` | The name with the letter case of its declaration, prefixed by its module, as in `ILoggerMod::ILogger` (see [Struct](Struct.md)); `nil` for a compiler-made trait such as an inline type set or a trait combination. It is what the `type_name` intrinsic returns. |
 
 ### Return values
@@ -47,6 +48,14 @@ The symbol identity distinguishes traits even when their signatures are equal.
 The parent graph is acyclic. Inherited requirements retain the identity of
 their original declaring trait rather than being copied into each child.
 Shared ancestors contribute each canonical member once.
+
+A trait may declare several generic messages of one name (DI extension E6).
+Each is a member under a unique key with no meaning, and `overloads` records
+the name they declare (see [trait_overload](../helper_nodes/trait_overload.md)).
+Messages of one name of a trait and its parents, or of the traits that a
+type adopts or that constrain one parameter, are one requirement when their
+signatures and receivers correspond; generic messages that do not
+correspond are overloads of each other and must be distinguishable.
 
 A universal trait can also require an initializer and intrinsic operators of
 the implementing type. Such a member is an ordinary interface `Function` of
@@ -85,4 +94,5 @@ See the [static traits guide](../../traits.md).
 ## See Also
 
 [TraitConstraint](TraitConstraint.md), [TraitImplementation](TraitImplementation.md),
-[trait_operation](../helper_nodes/trait_operation.md)
+[trait_operation](../helper_nodes/trait_operation.md),
+[trait_overload](../helper_nodes/trait_overload.md)

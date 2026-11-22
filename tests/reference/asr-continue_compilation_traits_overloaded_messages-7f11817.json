@@ -1,0 +1,13 @@
+{
+    "basename": "asr-continue_compilation_traits_overloaded_messages-7f11817",
+    "cmd": "lfortran --semantics-only --continue-compilation --no-color {infile}",
+    "infile": "tests/errors/continue_compilation_traits_overloaded_messages.f90",
+    "infile_hash": "41ffdede5bb696185fb92b90fc5d5e4e6f391d8a3f63a3d635c7b8cf",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": "asr-continue_compilation_traits_overloaded_messages-7f11817.stderr",
+    "stderr_hash": "66174c1369e44676ff5bbd552bb9bd0a75871d892885dafc6f0964ad",
+    "returncode": 1
+}

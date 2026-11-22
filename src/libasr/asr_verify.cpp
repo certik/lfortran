@@ -118,7 +118,10 @@ private:
     std::vector<std::string> variable_dependencies;
 
     std::set<std::pair<uint64_t, std::string>> const_assigned;
-    std::map<std::pair<ASR::symbol_t*, std::string>, ASR::symbol_t*> trait_callables;
+    // The members of one name of the constraints of a parameter and their
+    // requirement procedures.
+    std::map<std::pair<ASR::symbol_t*, std::string>,
+        std::vector<std::pair<ASR::symbol_t*, ASR::symbol_t*>>> trait_callables;
 
     // checks whether we've visited any `Var`, which isn't a global `Variable`
     bool non_global_symbol_visited;
@@ -1875,24 +1878,58 @@ public:
                     "asr.verify.trait.universal_parent",
                     "Inheritance from a type-set trait is not supported");
             }
-            std::map<std::string, ASR::Function_t*> methods;
+            std::map<std::string, std::vector<ASR::Function_t*>> methods;
             for (ASR::symbol_t *member : hierarchy.members) {
                 if (ASRUtils::trait_member_operation(member)) continue;
                 auto *method = ASRUtils::trait_method_function(member);
-                auto previous = methods.emplace(method->m_name, method);
-                if (!previous.second) {
-                    auto mismatch = ASRUtils::trait_method_mismatch(
-                        *previous.first->second, *method);
+                auto &known = methods[ASRUtils::trait_message_name(member)];
+                for (auto *previous : known) {
+                    auto mismatch = ASRUtils::trait_method_mismatch(*previous, *method);
                     if (mismatch.difference == ASRUtils::TraitMethodDifference::None) {
-                        mismatch = ASRUtils::trait_receiver_mismatch(
-                            *previous.first->second, *method);
+                        mismatch = ASRUtils::trait_receiver_mismatch(*previous, *method);
                     }
-                    require_id(mismatch.difference == ASRUtils::TraitMethodDifference::None,
+                    require_id(ASRUtils::trait_messages_combine(*previous, *method),
                         "asr.verify.trait.inherited_signature_matches",
-                        "Same-name trait requirements must have equivalent signatures: " +
-                            mismatch.message);
+                        "Same-name trait requirements must have equivalent signatures, "
+                        "unless they are overloaded generic messages: " + mismatch.message);
+                }
+                known.push_back(method);
+            }
+        }
+        // Overloaded generic messages (E6): each set names at least two
+        // generic messages of this trait, each in one set, and no other
+        // member of the trait declares the set's name.
+        std::set<ASR::symbol_t*> overloaded;
+        std::set<std::string> overload_names;
+        for (size_t i = 0; i < x.n_overloads; i++) {
+            const auto &set = x.m_overloads[i];
+            bool valid = set.m_name && set.n_members >= 2 &&
+                overload_names.insert(set.m_name).second;
+            for (size_t j = 0; valid && j < set.n_members; j++) {
+                ASR::symbol_t *member = set.m_members[j];
+                valid = member && ASR::is_a<ASR::Template_t>(*member) &&
+                    ASRUtils::symbol_parent_symtab(member) == x.m_symtab &&
+                    x.m_symtab->get_symbol(ASRUtils::symbol_name(member)) == member &&
+                    ASRUtils::trait_method_function(member) &&
+                    !ASRUtils::trait_member_operation(member) &&
+                    bool(ASRUtils::trait_method_function(member)->m_return_var) ==
+                        bool(ASRUtils::trait_method_function(set.m_members[0])->m_return_var) &&
+                    overloaded.insert(member).second;
+                // The members are pairwise different requirements.
+                for (size_t k = 0; valid && k < j; k++) {
+                    valid = !ASRUtils::trait_messages_correspond(
+                        *ASRUtils::trait_method_function(set.m_members[k]),
+                        *ASRUtils::trait_method_function(member));
                 }
             }
+            require_id(valid, "asr.verify.trait.overloads",
+                "An overload set names two or more distinct generic messages of its trait "
+                "that do not correspond");
+        }
+        for (const auto &entry : x.m_symtab->get_scope()) {
+            require_id(!overload_names.count(entry.first) || overloaded.count(entry.second),
+                "asr.verify.trait.overloads",
+                "No member other than its overloads is named by an overload set");
         }
         current_symtab = parent_symtab;
     }
@@ -2566,12 +2603,23 @@ public:
                 "A normalized receiver must be the constraint's type parameter with the "
                 "intent of its message's receiver");
             if (specialization) continue;
-            auto callable = trait_callables.emplace(
-                std::make_pair(parameter, std::string(ASRUtils::symbol_name(member))),
-                procedure);
-            require_id(callable.second || callable.first->second == procedure,
-                "asr.verify.trait_constraint.callable_is_coalesced",
-                "Same-name requirements of one parameter must share a normalized procedure");
+            // Corresponding messages, or the same operation, of the
+            // constraints of one parameter share a requirement; overloaded
+            // generic messages (E6) do not correspond.
+            bool operation = ASRUtils::trait_member_operation(member) != nullptr;
+            auto &callables = trait_callables[std::make_pair(parameter, operation
+                ? std::string(ASRUtils::symbol_name(member))
+                : ASRUtils::trait_message_name(member))];
+            for (const auto &[other, other_procedure] : callables) {
+                require_id(other_procedure == procedure || (!operation &&
+                        !ASRUtils::trait_messages_correspond(
+                            *ASRUtils::trait_method_function(other),
+                            *ASRUtils::trait_method_function(member))),
+                    "asr.verify.trait_constraint.callable_is_coalesced",
+                    "Corresponding requirements of one parameter must share a normalized "
+                    "procedure");
+            }
+            callables.push_back({member, procedure});
         }
         require_id(required_members.size() == trait_members.size(),
             "asr.verify.trait_constraint.requirements_complete",
@@ -2647,7 +2695,8 @@ public:
         std::set<ASR::symbol_t*> trait_members(
             hierarchy.members.begin(), hierarchy.members.end());
         std::set<ASR::symbol_t*> bound_members;
-        std::map<std::string, const ASR::trait_binding_t*> methods;
+        std::map<std::string, std::vector<std::pair<ASR::symbol_t*,
+            const ASR::trait_binding_t*>>> methods;
         // Initializer and operator requirements are identified by their
         // operation and signature; distinct overloads of an operator are
         // different requirements whatever their generated names.
@@ -2685,8 +2734,18 @@ public:
                 }
                 operations.push_back(&x.m_bindings[i]);
             } else {
-                auto method = methods.emplace(member_name, &x.m_bindings[i]);
-                if (!method.second) previous = method.first->second;
+                // Corresponding messages are one requirement; overloaded
+                // generic messages (E6) do not correspond.
+                auto &known = methods[ASRUtils::trait_message_name(member)];
+                for (const auto &[other, binding] : known) {
+                    if (ASRUtils::trait_messages_correspond(
+                            *ASRUtils::trait_method_function(other),
+                            *ASRUtils::trait_method_function(member))) {
+                        previous = binding;
+                        break;
+                    }
+                }
+                known.push_back({member, &x.m_bindings[i]});
             }
             require_id(!previous || ASRUtils::trait_bindings_equal(
                     *previous, x.m_bindings[i]),
@@ -3362,11 +3421,15 @@ public:
                 "asr.verify.trait_contract.view_admissible",
                 "A runtime contract belongs to a trait whose requirements without a "
                 "receiver are initializers and whose messages do not use itself");
+            require_id(!ASRUtils::trait_has_overloaded_messages(hierarchy.members),
+                "asr.verify.trait_contract.overloaded_messages",
+                "A runtime contract belongs to a trait without overloaded generic messages");
             for (auto *member : hierarchy.members) {
                 // An initializer is required for conformance but is not
                 // callable through an object: it has no slot.
                 if (ASRUtils::trait_member_is_initializer(member)) continue;
-                auto inserted = indices.emplace(ASRUtils::symbol_name(member), expected.size());
+                auto inserted = indices.emplace(ASRUtils::trait_message_name(member),
+                    expected.size());
                 if (inserted.second) expected.emplace_back();
                 expected[inserted.first->second].push_back(member);
             }
@@ -5566,7 +5629,7 @@ public:
                 }
             }
         }
-        std::map<std::string, Function_t*> methods;
+        std::map<std::string, std::vector<Function_t*>> methods;
         for (auto *trait : traits) {
             auto hierarchy = verify_trait_hierarchy(
                 *ASR::down_cast<Trait_t>(trait), x.base.base.loc);
@@ -5580,24 +5643,40 @@ public:
                 // that proves the obligation binds each of them.
                 if (ASRUtils::trait_member_operation(member)) continue;
                 auto *required = ASRUtils::trait_method_function(member);
-                auto previous = methods.emplace(required->m_name, required);
-                require_id(previous.second || (ASRUtils::trait_method_mismatch(
-                        *previous.first->second, *required).difference ==
-                            ASRUtils::TraitMethodDifference::None &&
-                        ASRUtils::trait_receiver_mismatch(*previous.first->second,
-                            *required).difference == ASRUtils::TraitMethodDifference::None),
-                    "asr.verify.struct.compatible_trait_obligations",
-                    "Adopted traits must agree on shared method signatures");
+                std::string message = ASRUtils::trait_message_name(member);
+                auto &known = methods[message];
+                for (auto *previous : known) {
+                    require_id(ASRUtils::trait_messages_combine(*previous, *required),
+                        "asr.verify.struct.compatible_trait_obligations",
+                        "Adopted traits must agree on shared method signatures");
+                }
+                known.push_back(required);
                 symbol_t *method = nullptr;
                 std::set<const Struct_t*> seen;
                 for (const Struct_t *s = &x; s && !method && seen.insert(s).second;) {
-                    method = s->m_symtab->get_symbol(required->m_name);
+                    method = s->m_symtab->get_symbol(message);
                     auto *base = ASRUtils::symbol_get_past_external(s->m_parent);
                     s = base && ASR::is_a<Struct_t>(*base)
                         ? ASR::down_cast<Struct_t>(base) : nullptr;
                 }
                 auto *declaration = method && ASR::is_a<StructMethodDeclaration_t>(*method)
                     ? ASR::down_cast<StructMethodDeclaration_t>(method) : nullptr;
+                // A generic binding of the message's name implements it with
+                // the specific that the conformance binds.
+                auto *bound = proof != implementations.end()
+                    ? ASRUtils::find_trait_binding(*proof->second, member) : nullptr;
+                if (method && bound && ASR::is_a<GenericProcedure_t>(*method)) {
+                    auto *generic = ASR::down_cast<GenericProcedure_t>(method);
+                    for (size_t j = 0; j < generic->n_procs; j++) {
+                        auto *specific = ASRUtils::symbol_get_past_external(generic->m_procs[j]);
+                        if (ASR::is_a<StructMethodDeclaration_t>(*specific) &&
+                                ASRUtils::symbol_get_past_external(
+                                    ASR::down_cast<StructMethodDeclaration_t>(specific)->m_proc) ==
+                                ASRUtils::symbol_get_past_external(bound->m_procedure)) {
+                            declaration = ASR::down_cast<StructMethodDeclaration_t>(specific);
+                        }
+                    }
+                }
                 if (!declaration || declaration->m_is_deferred) {
                     require_id(x.m_is_abstract && proof == implementations.end(),
                         "asr.verify.struct.trait_method_implemented",
@@ -5616,7 +5695,6 @@ public:
                     ? ASRUtils::EXPR2VAR(procedure->m_args[self])->m_name : nullptr;
                 verify_trait_binding(const_cast<symbol_t*>(&x.base), binding, false);
                 if (proof != implementations.end()) {
-                    auto *bound = ASRUtils::find_trait_binding(*proof->second, member);
                     require_id(bound && ASRUtils::trait_bindings_equal(*bound, binding),
                         "asr.verify.struct.trait_method_binding",
                         "Nominal conformance must use the effective ordinary type-bound procedure");

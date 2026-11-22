@@ -868,7 +868,8 @@ A message may have several trait parameters, each with its descriptor, an
 allocatable `class(P)` result of one of them or an integer or logical
 result, and numeric or logical scalar arguments besides the receiver. Not yet
 implemented through trait objects: `class(P)` arguments, messages mixing trait
-parameters with type parameters, other results, and a call that mixes a
+parameters with type parameters, other results, overloaded generic messages
+(see "Overloaded generic messages in traits"), and a call that mixes a
 forwarded and a concrete trait argument; declaring a trait object of a trait
 with such a message is diagnosed.
 
@@ -1290,6 +1291,143 @@ selected; it is a private procedure of the unit and is otherwise unused.
 See `integration_tests/traits_generic_overload_01.f90` and the diagnostics in
 `tests/errors/continue_compilation_traits_generic_overload.f90`; the
 container of the extension in "The DI container (Extensions Sect. 4)".
+
+#### Overloaded generic messages in traits
+
+A trait may declare several generic messages of one name, the contract of a
+generic binding such as the container's `register`:
+
+```fortran
+abstract interface :: IContainer
+    subroutine register{Trait :: P, P :: U}(self, ctor)
+        type(itself), pass, intent(inout) :: self
+        procedure(ctor0{U})               :: ctor
+    end subroutine register
+    subroutine register{Trait :: P, Trait :: T1, P :: U}(self, ctor)
+        type(itself), pass, intent(inout) :: self
+        procedure(ctor1{T1,U})            :: ctor
+    end subroutine register
+end interface
+
+type, sealed, implements(IContainer) :: Container
+    ...
+contains
+    generic   :: register => register0, register1
+    procedure :: register0, register1
+end type Container
+
+subroutine setup{IContainer :: C}(cont)
+    type(C), intent(inout) :: cont
+    call cont%register{IClient}(make_client)   ! the first message
+    call cont%register{ILogger}(make_logger)   ! the second message
+end subroutine setup
+```
+
+- **Declaration.** Every overload must be a generic message; overloading a
+  non-generic message is not implemented yet. The overloads of a name are
+  all functions or all subroutines, and each two must be distinguishable by
+  the declaration rule above, with the receivers as passed-object dummies
+  (`check_trait_message_overloads`). Each overload is a member of the trait
+  under a unique key with no meaning, and the trait's `overloads` record the
+  name they declare and their members (ASR `trait_overload`);
+  `ASRUtils::trait_message_name` returns a member's declared name, which
+  diagnostics use.
+- **Combination.** Messages of one name of a trait and its parents, of the
+  traits that a type adopts, or of the traits that constrain one generic
+  parameter, are one requirement when their signatures and receivers
+  correspond (`ASRUtils::trait_messages_correspond`), whatever the order and
+  the parameter names of their declarations. Generic messages that do not
+  correspond are overloads of each other, so a trait may declare a subset
+  of another's overloads or add an overload to an inherited message; they
+  must be distinguishable as the overloads of one trait
+  (`combine_trait_messages`), else, for example:
+
+  ```
+  the generic messages 'register{p, u}' of trait 'iin' and 'register{p, u}' of trait 'iinout' neither correspond (their receivers have intent(in) and intent(inout)) nor are distinguishable overloads: some types that their generic parameters admit make a reference match both
+  ```
+- **Conformance.** A type implements each overload with exactly one specific
+  of its binding of that name, normally a generic binding, whose specific
+  corresponds to the message by the rules of "Generic messages"
+  (`select_trait_message_specific`, with `trait_generic_correspondence`), in
+  any order of the specifics. A binding of a non-overloaded message may also
+  be a generic binding. The conformance is checked before the type's generic
+  bindings are created (`add_generic_class_procedures`), so the specifics
+  are those that the binding will have (`effective_generic_binding`): the
+  parent's, each overridden by the type's binding of its name, then the
+  type's own pending specifics. A missing or mismatching overload is
+  reported with the reason of each specific, and two specifics that both
+  correspond to an overload as an ambiguous implementation:
+
+  ```
+  type 'container' does not implement the overloaded generic message 'register{p, t1, u}' of trait 'icontainer': no specific of its binding 'register' matches it
+      register0: generic contract does not match trait method 'register': generic type parameter counts differ
+  ```
+
+  An overloaded message cannot be bound in an `implements` block; it is
+  implemented by the type's generic binding.
+- **Calls on the type** go through the type's generic binding (E6), not
+  through the conformance's bindings, whenever the type's binding of the
+  name is a generic binding: `call r%add(5)` selects a non-generic specific
+  `add_int` also when another specific of the binding implements a message
+  `add`. A binding of an `implements` block that is not a specific of the
+  generic binding (`generic_binding_specific`, which resolves each specific
+  by its name through the type, so that overrides count) is one generic
+  with it (E6, `implements_block_generic`): the generic binding's specifics
+  and a binding of the block's procedure with its passed object.
+  - Its declaration rule is checked once, where the implements block is
+    completed (`check_implements_block_binding_distinguishable`): the
+    block's binding and each specific must be distinguishable
+    (`generic_procedures_distinguishable`), unless one is a generic
+    procedure and the other is not. The check covers the generic binding
+    of the type that the block names, also inherited; an extension that
+    declares its own generic binding of the name later is not checked
+    against the block. For example, `other(self)` in a block and a specific
+    `serve_n(self, n)` with an optional `n`:
+
+    ```
+    the binding 'other' of the message 'serve' of trait 'iclient' in an implements block is not distinguishable from the specific 'serve_n' of the generic binding 'serve' of type 'client', with which it is one generic: some reference matches both
+    ```
+  - A reference is resolved by the rules of E6 (`select_overloaded_specific`):
+    the non-generic specifics by the standard rules of type, kind and rank,
+    so that a non-generic binding beats a generic one wherever it is bound,
+    then the generic ones (`select_generic_candidate`). `c%serve()` calls the
+    block's `other` and `c%serve(2)` the specific `serve_n`; with `other(self,
+    x(:))`, `c%serve([1, 2])` calls `other`. A reference that none accepts
+    lists every candidate:
+
+    ```
+    no specific procedure of generic 'serve' accepts this reference:
+        serve_n: its dummy arguments do not match the actual arguments
+        other (implements block of trait 'iclient'): its dummy arguments do not match the actual arguments
+    ```
+  - This holds for every receiver, a variable, a component or an array
+    element (`resolved_trait_receiver`). Each reference is resolved once
+    (`overloaded_selections`), so the cost of nested references such as
+    `c%serve(c%serve(...))` grows with their number, not exponentially.
+
+  A call of an implements-block binding checks the rank of each actual
+  argument against its dummy argument (`check_trait_binding_ranks`): a
+  scalar other than an array element passed to an array dummy argument is
+  reported as "rank mismatch in argument `x`: the dummy argument is an
+  array of rank 1 but the actual argument is a scalar".
+- **Calls through a generic parameter** that the traits constrain select the
+  overload by the resolution rule above (`select_overloaded_trait_message`,
+  which uses `select_generic_candidate` as the resolution of generic
+  bindings and generic interfaces does): each overload, corresponding
+  messages of several traits once, is tried as a trial with the explicit
+  type arguments, inference, also through dummy procedures and type names,
+  and its constraints; the tie-break for type names applies as well. Each
+  overload has its own generic requirement, and each instance binds it to
+  the specific that the type's conformance selected.
+- **Trait objects.** A trait with overloaded messages has no runtime
+  contract: declaring a trait object of it is diagnosed, "calling the
+  overloaded generic message 'register' of trait 'icontainer' through trait
+  objects is not implemented yet". Declaring the trait and using it as a
+  generic constraint are not affected.
+
+See `integration_tests/traits_generic_overload_02.f90` to
+`integration_tests/traits_generic_overload_05.f90` and the diagnostics in
+`tests/errors/continue_compilation_traits_overloaded_messages.f90`.
 
 ### Generic initializers
 

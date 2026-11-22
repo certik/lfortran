@@ -4896,7 +4896,9 @@ public:
     }
 
     void check_trait_methods(ASR::Trait_t &trait, const Location &loc) {
-        std::map<std::string, ASR::Function_t*> methods;
+        // The messages of each name; those of one trait are its overloads,
+        // checked where it is declared.
+        std::map<std::string, std::vector<ASR::symbol_t*>> methods;
         for (ASR::symbol_t *member : checked_trait_hierarchy(trait, loc).members) {
             auto *method = ASRUtils::trait_method_function(member);
             for (size_t i = 0; i < method->n_args; i++) {
@@ -4926,11 +4928,14 @@ public:
                 }
                 continue;
             }
-            auto previous = methods.emplace(method->m_name, method);
-            if (!previous.second) {
-                check_trait_method_compatibility(*previous.first->second,
-                    *method, loc);
+            auto &known = methods[ASRUtils::trait_message_name(member)];
+            for (auto *previous : known) {
+                if (ASRUtils::get_asr_owner(previous) == ASRUtils::get_asr_owner(member)) {
+                    continue;
+                }
+                combine_trait_messages(*ASRUtils::trait_method_function(previous), *method, loc);
             }
+            known.push_back(member);
         }
     }
 
@@ -5168,6 +5173,71 @@ public:
             x.base.base.loc, AST::down_cast<AST::program_unit_t>(function)));
     }
 
+    // The generic message `x` declared as the trait member `name`. A function
+    // without a RESULT clause keeps its result variable.
+    AST::interface_item_t *rename_trait_message(const AST::InterfaceProc_t &x,
+            const char *name) {
+        auto *source = AST::down_cast<AST::TraitProcedure_t>(x.m_proc);
+        AST::program_unit_t *procedure;
+        if (AST::is_a<AST::Function_t>(*source->m_procedure)) {
+            auto *function = al.make_new<AST::Function_t>(
+                *AST::down_cast<AST::Function_t>(source->m_procedure));
+            if (!function->m_return_var) {
+                function->m_return_var = AST::down_cast<AST::expr_t>(AST::make_Name_t(al,
+                    function->base.base.loc, function->m_name, nullptr, 0));
+            }
+            function->m_name = const_cast<char*>(name);
+            procedure = &function->base;
+        } else {
+            auto *subroutine = al.make_new<AST::Subroutine_t>(
+                *AST::down_cast<AST::Subroutine_t>(source->m_procedure));
+            subroutine->m_name = const_cast<char*>(name);
+            procedure = &subroutine->base;
+        }
+        auto *renamed = al.make_new<AST::TraitProcedure_t>(*source);
+        renamed->m_procedure = procedure;
+        return AST::down_cast<AST::interface_item_t>(AST::make_InterfaceProc_t(al,
+            x.base.base.loc, &renamed->base));
+    }
+
+    // The overloaded generic messages of each name (E6) are all functions or
+    // all subroutines, and every two are distinguishable: by the rules for
+    // the specifics of a generic interface, with the receivers as
+    // passed-object dummies.
+    void check_trait_message_overloads(ASR::Trait_t &trait,
+            const std::map<std::string, std::vector<std::pair<std::string, Location>>>
+                &overloads) {
+        for (const auto &[name, members] : overloads) {
+            for (size_t i = 0; i < members.size(); i++) {
+                for (size_t j = i + 1; j < members.size(); j++) {
+                    auto *fa = ASRUtils::trait_method_function(
+                        trait.m_symtab->get_symbol(members[i].first));
+                    auto *fb = ASRUtils::trait_method_function(
+                        trait.m_symtab->get_symbol(members[j].first));
+                    if (!fa || !fb) continue;
+                    std::string error;
+                    if (bool(fa->m_return_var) != bool(fb->m_return_var)) {
+                        error = "overloaded generic messages '" + name + "' of trait '" +
+                            std::string(trait.m_name) + "' must all be functions or all "
+                            "subroutines";
+                    } else if (!generic_procedures_distinguishable(fa,
+                            ASRUtils::trait_message_receiver(*fa), fb,
+                            ASRUtils::trait_message_receiver(*fb))) {
+                        error = "overloaded generic messages '" + name +
+                            "' of trait '" + std::string(trait.m_name) + "' are not "
+                            "distinguishable: some types that their generic parameters admit "
+                            "make a reference match both";
+                    }
+                    if (error.empty()) continue;
+                    diag.add(diag::Diagnostic(error, diag::Level::Error,
+                        diag::Stage::Semantic, {diag::Label("", {members[j].second}),
+                            diag::Label("other declaration", {members[i].second}, false)}));
+                    if (!compiler_options.continue_compilation) throw SemanticAbort();
+                }
+            }
+        }
+    }
+
     AST::interface_item_t *lower_trait_operator(const AST::InterfaceOperator_t &x,
             const std::string &name) {
         if (!AST::is_a<AST::Function_t>(*x.m_proc)) {
@@ -5251,7 +5321,7 @@ public:
             ASR::make_Trait_t(al, x.base.base.loc, current_scope,
                 s2c(al, name), nullptr, 0,
                 assgnd_access.count(name) ? assgnd_access[name] : saved_access,
-                ASR::trait_kindType::UniversalTrait, nullptr, 0, nullptr, 0,
+                ASR::trait_kindType::UniversalTrait, nullptr, 0, nullptr, 0, nullptr, 0,
                 s2c(al, declared_qualified_name(x.m_name))));
         parent->add_or_overwrite_symbol(name, trait);
         dflt_access = ASR::accessType::Public;
@@ -5323,6 +5393,23 @@ public:
             if (universal) declare_trait_itself(current_scope, x.base.base.loc);
             Vec<ASR::trait_operation_t> operations;
             operations.reserve(al, x.n_items);
+            // The declarations of each message name: the generic messages
+            // of a name declared more than once are overloaded (E6).
+            std::map<std::string, std::vector<const AST::program_unit_t*>> declarations;
+            for (size_t i = 0; i < x.n_items; i++) {
+                if (!AST::is_a<AST::InterfaceProc_t>(*x.m_items[i])) continue;
+                const AST::program_unit_t *declared =
+                    AST::down_cast<AST::InterfaceProc_t>(x.m_items[i])->m_proc;
+                const AST::program_unit_t *body = AST::is_a<AST::TraitProcedure_t>(*declared)
+                    ? AST::down_cast<AST::TraitProcedure_t>(declared)->m_procedure : declared;
+                const char *declared_name = AST::is_a<AST::Function_t>(*body)
+                    ? AST::down_cast<AST::Function_t>(body)->m_name
+                    : AST::is_a<AST::Subroutine_t>(*body)
+                        ? AST::down_cast<AST::Subroutine_t>(body)->m_name : nullptr;
+                if (declared_name) declarations[to_lower(declared_name)].push_back(declared);
+            }
+            // The member keys and locations of the overloads of each name.
+            std::map<std::string, std::vector<std::pair<std::string, Location>>> overloads;
             for (size_t i = 0; i < x.n_items; i++) {
                 AST::interface_item_t *item = x.m_items[i];
                 if (AST::is_a<AST::InterfaceTypeSet_t>(*item) ||
@@ -5390,10 +5477,34 @@ public:
                     impure |= kind == AST::simple_attributeType::AttrImpure;
                 }
                 pure |= elemental && !impure;
-                if (current_scope->get_symbol(to_lower(procedure_name))) {
-                    trait_error("overloaded declarations of trait method '" +
-                        to_lower(procedure_name) + "' are not implemented yet",
-                        procedure->base.loc);
+                // The name that a message declares; its member key differs
+                // for overloaded generic messages.
+                std::string message = to_lower(procedure_name);
+                auto declared = declarations.find(message);
+                if (!operation && declared != declarations.end() &&
+                        declared->second.size() > 1) {
+                    // The k-th of overloaded generic messages (E6) is the
+                    // member keyed `name~k`, which the trait's overload set
+                    // of the name lists; the key has no meaning.
+                    auto &keys = overloads[message];
+                    auto generic = [](const AST::program_unit_t *unit) {
+                        return AST::is_a<AST::TraitProcedure_t>(*unit);
+                    };
+                    const AST::program_unit_t *unit =
+                        AST::down_cast<AST::InterfaceProc_t>(item)->m_proc;
+                    if (unit != declared->second[0] &&
+                            (!generic(declared->second[0]) || !generic(unit))) {
+                        trait_error("overloaded declarations of trait method '" +
+                            message + "' are not implemented yet unless every one "
+                            "is a generic message", procedure->base.loc);
+                    }
+                    if (generic(unit)) {
+                        procedure_name = s2c(al, message + "~" +
+                            std::to_string(keys.size() + 1));
+                        item = rename_trait_message(
+                            *AST::down_cast<AST::InterfaceProc_t>(item), procedure_name);
+                        keys.push_back({procedure_name, procedure->base.loc});
+                    }
                 }
                 for (size_t j = 0; j < n_items; j++) {
                     if (AST::is_executable_stmt(*items[j])) {
@@ -5418,7 +5529,7 @@ public:
                     if (function) {
                         mark_trait_message_receiver(*function, items, n_items,
                             operation ? ASRUtils::trait_operation_display_name(*operation)
-                                : to_lower(procedure_name), operation != nullptr, pure);
+                                : message, operation != nullptr, pure);
                     }
                 }
                 if (!operation) {
@@ -5439,7 +5550,7 @@ public:
                     if (itself && receiver == function->n_args && unmarked) {
                         trait_error("type(itself) dummy argument '" +
                             std::string(unmarked->m_name) + "' of trait message '" +
-                            to_lower(procedure_name) + "' is not its receiver: the receiver "
+                            message + "' is not its receiver: the receiver "
                             "is declared with the pass attribute, `type(itself), pass :: " +
                             std::string(unmarked->m_name) + "`; other uses of type(itself) "
                             "in a message are not implemented yet", item->base.loc);
@@ -5511,7 +5622,30 @@ public:
             }
             trait_definition->m_operations = operations.p;
             trait_definition->n_operations = operations.size();
+            Vec<ASR::trait_overload_t> overload_sets;
+            overload_sets.reserve(al, overloads.size());
+            for (const auto &[message, keys] : overloads) {
+                ASR::trait_overload_t set;
+                set.loc = keys.front().second;
+                set.m_name = s2c(al, message);
+                Vec<ASR::symbol_t*> members;
+                members.reserve(al, keys.size());
+                for (const auto &key : keys) {
+                    // A declaration abandoned under --continue-compilation
+                    // has no member.
+                    if (auto *member = current_scope->get_symbol(key.first)) {
+                        members.push_back(al, member);
+                    }
+                }
+                if (members.size() < 2) continue;
+                set.m_members = members.p;
+                set.n_members = members.size();
+                overload_sets.push_back(al, set);
+            }
+            trait_definition->m_overloads = overload_sets.p;
+            trait_definition->n_overloads = overload_sets.size();
             if (universal) remove_unused_trait_itself(current_scope);
+            check_trait_message_overloads(*trait_definition, overloads);
             check_trait_methods(*trait_definition, x.base.base.loc);
             check_trait_associated_types(*trait_definition, x);
         } catch (const SemanticAbort &) {
@@ -5698,7 +5832,8 @@ public:
                 auto *trait = ASR::down_cast<ASR::symbol_t>(ASR::make_Trait_t(
                     al, parameter.loc, scope, s2c(al, name), nullptr, 0,
                     ASR::accessType::Private, ASR::trait_kindType::IntrinsicTypeSet,
-                    parameter_members[i].p, parameter_members[i].size(), nullptr, 0, nullptr));
+                    parameter_members[i].p, parameter_members[i].size(), nullptr, 0,
+                    nullptr, 0, nullptr));
                 generic->m_symtab->add_symbol(name, trait);
                 parameter_traits[i].push_back(trait);
             }
@@ -5846,13 +5981,16 @@ public:
         return result;
     }
 
-    // The constraints of one generic type parameter, one per trait. Same-name
-    // methods of its traits share one normalized requirement.
+    // The constraints of one generic type parameter, one per trait.
+    // Corresponding messages of its traits share one normalized requirement.
     void add_trait_parameter_constraints(SymbolTable *scope, ASR::symbol_t *type_symbol,
             const std::vector<ASR::symbol_t*> &traits, const Location &loc,
             bool generic_messages, const ASRUtils::TraitAssociatedTypes &same_types = {}) {
         std::string parameter = ASRUtils::symbol_name(type_symbol);
-        std::map<std::string, std::pair<ASR::Function_t*, ASR::symbol_t*>> methods;
+        // The messages of each name and their requirement procedures: one for
+        // messages of several traits that correspond, one for each overload.
+        std::map<std::string, std::vector<std::pair<ASR::Function_t*, ASR::symbol_t*>>>
+            methods;
         // Equal initializer or operator requirements of several traits share
         // one requirement procedure.
         std::vector<std::pair<ASR::symbol_t*, ASR::symbol_t*>> operations;
@@ -5907,7 +6045,6 @@ public:
                     trait_error("generic messages returning associated types in generic "
                         "constraints are not implemented yet", loc);
                 }
-                auto found = methods.find(method->m_name);
                 ASR::symbol_t *procedure = nullptr;
                 if (auto *operation = ASRUtils::trait_member_operation(member)) {
                     for (const auto &previous : operations) {
@@ -5924,17 +6061,23 @@ public:
                             scope, loc, associated);
                         operations.push_back({member, procedure});
                     }
-                } else if (found == methods.end()) {
-                    procedure = message
-                        ? create_generic_trait_requirement(*method, *message,
-                            type_symbol, scope, loc)
-                        : normalize_trait_requirement(method,
-                            ASRUtils::symbol_type(type_symbol), parameter, scope, loc,
-                            true, associated);
-                    methods.emplace(method->m_name, std::make_pair(method, procedure));
                 } else {
-                    check_trait_method_compatibility(*found->second.first, *method, loc);
-                    procedure = found->second.second;
+                    auto &known = methods[ASRUtils::trait_message_name(member)];
+                    for (const auto &previous : known) {
+                        if (combine_trait_messages(*previous.first, *method, loc)) {
+                            procedure = previous.second;
+                            break;
+                        }
+                    }
+                    if (!procedure) {
+                        procedure = message
+                            ? create_generic_trait_requirement(*method, *message,
+                                type_symbol, scope, loc)
+                            : normalize_trait_requirement(method,
+                                ASRUtils::symbol_type(type_symbol), parameter, scope, loc,
+                                true, associated);
+                        known.push_back({method, procedure});
+                    }
                 }
                 ASR::trait_requirement_t requirement;
                 requirement.loc = loc;
@@ -5999,7 +6142,7 @@ public:
             const Location &loc) {
         std::string receiver = ASRUtils::symbol_name(type_symbol);
         std::string name = scope->get_unique_name(
-            "__trait_" + receiver + "_" + std::string(method.m_name));
+            "__trait_" + receiver + "_" + ASRUtils::trait_message_name(&method.base));
         auto *requirement_scope = al.make_new<SymbolTable>(scope);
         auto *generic = ASR::down_cast2<ASR::Template_t>(ASR::make_Template_t(al, loc,
             requirement_scope, s2c(al, name), nullptr, 0, nullptr, 0));
@@ -6063,7 +6206,7 @@ public:
                     auto *copy = ASR::down_cast<ASR::symbol_t>(ASR::make_Trait_t(al, loc,
                         al.make_new<SymbolTable>(requirement_scope), s2c(al, set_name),
                         nullptr, 0, ASR::accessType::Private, trait->m_kind,
-                        members.p, members.size(), nullptr, 0, nullptr));
+                        members.p, members.size(), nullptr, 0, nullptr, 0, nullptr));
                     requirement_scope->add_symbol(set_name, copy);
                     traits.push_back(copy);
                 } else {
@@ -6319,18 +6462,19 @@ public:
             TraitAssociatedInference &associated,
             ASR::ttype_t *intrinsic_type = nullptr) {
         size_t receiver = procedure->n_args;
+        std::string required_name = ASRUtils::trait_message_name(&requirement->base);
         // A message with an explicit receiver is implemented by a
         // passed-object procedure whose receiver has exactly its intent, a
         // message without one by a procedure without a passed object.
         ASR::Variable_t *required_receiver =
             ASRUtils::trait_message_receiver_variable(*requirement);
         if (required_receiver && binding.m_is_nopass) {
-            trait_error("trait message '" + std::string(requirement->m_name) +
+            trait_error("trait message '" + required_name +
                 "' has the receiver '" + required_receiver->m_name + "', so its "
                 "binding must have a passed-object argument, not nopass or static", loc);
         }
         if (!required_receiver && !binding.m_is_nopass) {
-            trait_error("trait message '" + std::string(requirement->m_name) +
+            trait_error("trait message '" + required_name +
                 "' has no receiver, so its binding must be nopass; a receiver is "
                 "declared in the message as `type(itself), pass :: object`", loc);
         }
@@ -6358,7 +6502,7 @@ public:
                 trait_error("the passed-object argument '" + std::string(self->m_name) +
                     "' of '" + procedure->m_name + "' has " +
                     ASRUtils::trait_intent_spelling(self->m_intent) + ", but trait message '" +
-                    requirement->m_name + "' declares its receiver '" +
+                    required_name + "' declares its receiver '" +
                     required_receiver->m_name + "' with " +
                     ASRUtils::trait_intent_spelling(required_receiver->m_intent), loc);
             }
@@ -6369,21 +6513,21 @@ public:
                 trait_error("the passed-object argument '" + std::string(self->m_name) +
                     "' of '" + procedure->m_name + "' must have the target attribute "
                     "of the receiver '" + required_receiver->m_name +
-                    "' of trait message '" + requirement->m_name + "'", loc);
+                    "' of trait message '" + required_name + "'", loc);
             }
         }
         std::vector<size_t> required_args = ASRUtils::trait_compared_arguments(*requirement);
         size_t expected_args = required_args.size() + (binding.m_is_nopass ? 0 : 1);
         if (procedure->n_args != expected_args) {
             trait_error("argument count does not match trait method '" +
-                std::string(requirement->m_name) + "'", loc);
+                required_name + "'", loc);
         }
         std::map<ASR::symbol_t*, ASR::symbol_t*> parameters;
         auto generic_mismatch = ASRUtils::trait_generic_correspondence(
             *requirement, *procedure, parameters);
         if (!generic_mismatch.empty()) {
             trait_error("generic contract does not match trait method '" +
-                std::string(requirement->m_name) + "': " + generic_mismatch, loc);
+                required_name + "': " + generic_mismatch, loc);
         }
         for (size_t i = 0, j = 0; i < procedure->n_args; i++) {
             if (i == receiver) continue;
@@ -6400,14 +6544,14 @@ public:
             int actual_rank = ASRUtils::extract_n_dims_from_ttype(actual->m_type);
             if (required_rank != actual_rank) {
                 trait_error("rank of argument '" + std::string(required->m_name)
-                    + "' does not match trait method '" + requirement->m_name
+                    + "' does not match trait method '" + required_name
                     + "': expected rank " + std::to_string(required_rank)
                     + ", got rank " + std::to_string(actual_rank), loc);
             }
             if (!trait_binding_types_equal(required_arg, procedure->m_args[i],
                     parameters, *requirement, binding, associated, loc)) {
                 trait_error("argument '" + std::string(required->m_name)
-                    + "' does not match trait method '" + requirement->m_name
+                    + "' does not match trait method '" + required_name
                     + "': expected " + trait_argument_type_spelling(*required, required_arg)
                     + ", got " + trait_argument_type_spelling(*actual,
                         procedure->m_args[i]), loc);
@@ -6417,20 +6561,20 @@ public:
                     || required->m_value_attr != actual->m_value_attr) {
                 trait_error("intent, optionality or value attribute of argument '"
                     + std::string(required->m_name) + "' does not match trait method '"
-                    + requirement->m_name + "'", loc);
+                    + required_name + "'", loc);
             }
             if (required->m_target_attr != actual->m_target_attr
                     || required->m_contiguous_attr != actual->m_contiguous_attr
                     || required->m_is_volatile != actual->m_is_volatile) {
                 trait_error("target, contiguous or volatile attribute of argument '"
                     + std::string(required->m_name) + "' does not match trait method '"
-                    + requirement->m_name + "'", loc);
+                    + required_name + "'", loc);
             }
             j++;
         }
         if (bool(requirement->m_return_var) != bool(procedure->m_return_var)) {
             trait_error("function or subroutine category does not match trait method '"
-                + std::string(requirement->m_name) + "'", loc);
+                + required_name + "'", loc);
         }
         if (requirement->m_return_var) {
             int required_rank = ASRUtils::extract_n_dims_from_ttype(
@@ -6439,7 +6583,7 @@ public:
                 ASRUtils::expr_type(procedure->m_return_var));
             if (required_rank != actual_rank) {
                 trait_error("result rank does not match trait method '"
-                    + std::string(requirement->m_name) + "': expected rank "
+                    + required_name + "': expected rank "
                     + std::to_string(required_rank) + ", got rank "
                     + std::to_string(actual_rank), loc);
             }
@@ -6449,7 +6593,7 @@ public:
                     procedure->m_return_var, parameters, *requirement, binding,
                     associated, loc)) {
             trait_error("result type does not match trait method '"
-                + std::string(requirement->m_name) + "': expected "
+                + required_name + "': expected "
                 + ASRUtils::type_to_str_with_kind(
                     ASRUtils::expr_type(requirement->m_return_var),
                     requirement->m_return_var)
@@ -6462,7 +6606,7 @@ public:
         if ((required_signature->m_pure && !actual_signature->m_pure)
                 || (required_signature->m_elemental && !actual_signature->m_elemental)) {
             trait_error("procedure attributes do not match trait method '"
-                + std::string(requirement->m_name) + "'", loc);
+                + required_name + "'", loc);
         }
     }
 
@@ -6949,6 +7093,177 @@ public:
         return binding;
     }
 
+    // The specifics of the generic binding `name` of the derived type
+    // `structure`, also before the bindings of the types declared in this
+    // unit are created: those of its parent's binding of the name, each
+    // overridden by the type's binding of its name, then its own, as
+    // add_generic_class_procedures and inherit_generic_class_procedures
+    // create the binding. Empty if the name is not a generic binding.
+    std::vector<ASR::symbol_t*> effective_generic_binding(ASR::Struct_t &structure,
+            const std::string &name) {
+        std::vector<ASR::symbol_t*> result;
+        auto resolve = [&](const std::string &specific) {
+            for (ASR::Struct_t *s = &structure; s; ) {
+                if (auto *procedure = s->m_symtab->get_symbol(specific)) return procedure;
+                s = s->m_parent ? ASR::down_cast<ASR::Struct_t>(
+                    ASRUtils::symbol_get_past_external(s->m_parent)) : nullptr;
+            }
+            return (ASR::symbol_t*)nullptr;
+        };
+        std::set<std::string> names;
+        auto add = [&](const std::string &specific, ASR::symbol_t *fallback) {
+            if (!names.insert(specific).second) return;
+            ASR::symbol_t *procedure = resolve(specific);
+            if (!procedure || !ASR::is_a<ASR::StructMethodDeclaration_t>(
+                    *ASRUtils::symbol_get_past_external(procedure))) procedure = fallback;
+            if (procedure) result.push_back(procedure);
+        };
+        auto *own = structure.m_symtab->get_symbol(name);
+        if (own && ASR::is_a<ASR::GenericProcedure_t>(*ASRUtils::symbol_get_past_external(own))) {
+            // Created, and merged with the parent's.
+            auto *generic = ASR::down_cast<ASR::GenericProcedure_t>(
+                ASRUtils::symbol_get_past_external(own));
+            result.assign(generic->m_procs, generic->m_procs + generic->n_procs);
+            return result;
+        }
+        if (own) return result;
+        if (structure.m_parent) {
+            auto *parent = ASR::down_cast<ASR::Struct_t>(
+                ASRUtils::symbol_get_past_external(structure.m_parent));
+            for (auto *specific : effective_generic_binding(*parent, name)) {
+                add(ASRUtils::symbol_name(specific), specific);
+            }
+        }
+        auto type = generic_class_procedures.find(structure.m_name);
+        if (type != generic_class_procedures.end() &&
+                current_scope->get_symbol(structure.m_name) == &structure.base) {
+            auto binding = type->second.find(name);
+            if (binding != type->second.end()) {
+                for (const std::string &specific : binding->second) add(specific, nullptr);
+            }
+        }
+        return result;
+    }
+
+    // A binding `binding` of an implements block of the message `name` and
+    // the type's generic binding of that name, of which it is not a
+    // specific, are one generic (E6): the binding and each specific must be
+    // distinguishable, unless one of them is a generic procedure and the
+    // other is not, which resolution prefers.
+    void check_implements_block_binding_distinguishable(ASR::Struct_t &structure,
+            const std::string &name, const ASR::trait_binding_t &binding) {
+        std::vector<ASR::symbol_t*> specifics;
+        for (ASR::Struct_t *s = &structure; s && specifics.empty(); ) {
+            specifics = effective_generic_binding(*s, name);
+            if (specifics.empty() && s->m_symtab->get_symbol(name)) break;
+            s = s->m_parent ? ASR::down_cast<ASR::Struct_t>(
+                ASRUtils::symbol_get_past_external(s->m_parent)) : nullptr;
+        }
+        ASR::symbol_t *procedure = ASRUtils::symbol_get_past_external(binding.m_procedure);
+        ASR::Function_t *fa = ASRUtils::trait_method_function(procedure);
+        if (!fa) return;
+        for (auto *specific : specifics) {
+            size_t pb;
+            ASR::Function_t *fb = generic_specific_procedure(specific, pb);
+            if (fb == fa) return;
+        }
+        size_t pa = fa->n_args;
+        if (!binding.m_is_nopass) {
+            for (size_t i = 0; i < fa->n_args; i++) {
+                if (binding.m_self_argument && std::string(ASRUtils::symbol_name(
+                        ASR::down_cast<ASR::Var_t>(fa->m_args[i])->m_v)) ==
+                        binding.m_self_argument) pa = i;
+            }
+        }
+        if (pa == fa->n_args) pa = SIZE_MAX;
+        bool generic = ASRUtils::is_generic_specific(procedure);
+        for (auto *specific : specifics) {
+            size_t pb;
+            ASR::Function_t *fb = generic_specific_procedure(specific, pb);
+            if (!fb || generic != ASRUtils::is_generic_specific(specific) ||
+                    generic_procedures_distinguishable(fa, pa, fb, pb)) continue;
+            diag.add(diag::Diagnostic("the binding '" + std::string(ASRUtils::symbol_name(
+                procedure)) + "' of the message '" + name + "' of trait '" +
+                ASRUtils::symbol_name(ASRUtils::get_asr_owner(
+                    ASRUtils::symbol_get_past_external(binding.m_member))) +
+                "' in an implements block is not distinguishable from the specific '" +
+                ASRUtils::symbol_name(ASRUtils::symbol_get_past_external(specific)) +
+                "' of the generic binding '" + name + "' of type '" + structure.m_name +
+                "', with which it is one generic: some reference matches both",
+                diag::Level::Error, diag::Stage::Semantic, {diag::Label("", {binding.loc})}));
+            if (!compiler_options.continue_compilation) throw SemanticAbort();
+        }
+    }
+
+    // The type-bound procedure of the implementing type that implements the
+    // message `member`, among the specifics of the type's binding `binding`
+    // of the message's name: a generic binding, or, for one of overloaded
+    // generic messages (E6), also a single procedure. Exactly one specific
+    // must correspond to the message.
+    ASR::symbol_t *select_trait_message_specific(ASR::symbol_t *member,
+            const std::string &binding, const std::vector<ASR::symbol_t*> &specifics,
+            ASR::symbol_t *type_symbol, ASR::ttype_t *type,
+            bool overloaded, TraitAssociatedInference &associated,
+            const ASR::Trait_t &trait, const Location &loc) {
+        std::vector<ASR::symbol_t*> candidates;
+        for (auto *symbol : specifics) {
+            auto *specific = ASRUtils::symbol_get_past_external(symbol);
+            if (ASR::is_a<ASR::StructMethodDeclaration_t>(*specific)) {
+                candidates.push_back(specific);
+            }
+        }
+        if (candidates.empty()) return nullptr;
+        auto *required = ASRUtils::trait_method_function(member);
+        std::vector<ASR::symbol_t*> matches;
+        std::vector<std::string> reasons;
+        for (auto *candidate : candidates) {
+            auto *specific = ASR::down_cast<ASR::StructMethodDeclaration_t>(candidate);
+            if (specific->m_is_deferred) continue;
+            ASR::trait_binding_t trial;
+            trial.loc = loc;
+            trial.m_member = member;
+            trial.m_procedure = ASRUtils::symbol_get_past_external(specific->m_proc);
+            trial.m_self_argument = specific->m_self_argument;
+            trial.m_is_nopass = specific->m_is_nopass;
+            TraitAssociatedInference inference = associated;
+            std::string error = trait_trial([&]() {
+                check_trait_binding(required, ASRUtils::trait_method_function(
+                    trial.m_procedure), type_symbol, trial, loc, inference, type);
+            });
+            if (error.empty()) {
+                matches.push_back(candidate);
+            } else {
+                reasons.push_back(std::string(specific->m_name) + ": " + error);
+            }
+        }
+        std::string description = std::string(ASRUtils::trait_method_template(*required)
+                ? "generic message '" : "message '") +
+            trait_message_label(member, trait_overload_set(member)) +
+            "' of trait '" + std::string(trait.m_name) + "'";
+        std::string type_name = type_symbol
+            ? ASRUtils::symbol_name(ASRUtils::symbol_get_past_external(type_symbol))
+            : ASRUtils::type_to_str_fortran_symbol(type, nullptr, true);
+        if (matches.size() > 1) {
+            trait_error("ambiguous implementation of " + description + ": the specifics '" +
+                std::string(ASRUtils::symbol_name(matches[0])) + "' and '" +
+                std::string(ASRUtils::symbol_name(matches[1])) + "' of binding '" +
+                binding + "' of type '" + type_name +
+                "' both match it", loc);
+        }
+        if (matches.empty()) {
+            if (!overloaded && candidates.size() == 1) return candidates[0];
+            std::string message = "type '" + type_name + "' does not implement the " +
+                (overloaded ? "overloaded " : "") + description +
+                ": no specific of its binding '" + binding + "' matches it";
+            for (const auto &reason : reasons) message += "\n    " + reason;
+            diag.add(diag::Diagnostic(message, diag::Level::Error, diag::Stage::Semantic,
+                {diag::Label("", {loc}), diag::Label("the message is declared here",
+                    {required->base.base.loc}, false)}));
+            throw SemanticAbort();
+        }
+        return matches[0];
+    }
+
     void complete_trait_implementation(ASR::ttype_t *type, ASR::symbol_t *type_symbol,
             const std::vector<ASR::symbol_t*> &traits,
             const std::map<std::string, ASR::trait_binding_t> &declared,
@@ -6957,7 +7272,9 @@ public:
         auto *structure = type_symbol ? ASR::down_cast<ASR::Struct_t>(
             ASRUtils::symbol_get_past_external(type_symbol)) : nullptr;
         std::vector<ASRUtils::TraitHierarchy> hierarchies;
-        std::map<std::string, ASR::Function_t*> methods;
+        // The messages of each name of all adopted traits.
+        std::map<std::string, std::vector<ASR::symbol_t*>> methods;
+        std::vector<ASR::symbol_t*> messages;
         for (auto *symbol : traits) {
             auto *trait = ASR::down_cast<ASR::Trait_t>(
                 ASRUtils::symbol_get_past_external(symbol));
@@ -6969,15 +7286,23 @@ public:
             for (ASR::symbol_t *member : hierarchies.back().members) {
                 // Initializer and operator requirements are bound by signature.
                 if (ASRUtils::trait_member_operation(member)) continue;
-                auto *method = ASRUtils::trait_method_function(member);
-                auto previous = methods.emplace(method->m_name, method);
-                if (!previous.second) {
-                    check_trait_method_compatibility(*previous.first->second,
-                        *method, loc);
+                auto &known = methods[ASRUtils::trait_message_name(member)];
+                if (std::find(known.begin(), known.end(), member) != known.end()) continue;
+                for (auto *previous : known) {
+                    if (ASRUtils::get_asr_owner(previous) == ASRUtils::get_asr_owner(member)) {
+                        continue;
+                    }
+                    combine_trait_messages(*ASRUtils::trait_method_function(previous),
+                        *ASRUtils::trait_method_function(member), loc);
                 }
+                known.push_back(member);
+                messages.push_back(member);
             }
         }
         std::set<std::string> used;
+        // The names whose implements-block binding was checked against the
+        // type's generic binding.
+        std::set<std::string> distinguished;
         for (size_t i = 0; i < traits.size(); i++) {
             const auto &hierarchy = hierarchies[i];
             const ASR::Trait_t *trait = hierarchy.traits.front();
@@ -6995,18 +7320,36 @@ public:
                     bindings.push_back(al, binding);
                     continue;
                 }
-                std::string member_name = ASRUtils::symbol_name(member);
+                // Overloaded generic messages (E6), also of several adopted
+                // traits, are implemented by the specifics of a generic
+                // binding of their name.
+                std::string message = ASRUtils::trait_message_name(member);
+                bool overloaded = ASRUtils::trait_message_is_overloaded(messages, member);
                 ASR::trait_binding_t binding;
-                auto found = declared.find(member_name);
+                auto found = declared.find(message);
+                if (found != declared.end() && overloaded) {
+                    trait_error("the overloaded generic message '" + message + "' of trait '" +
+                        std::string(ASRUtils::symbol_name(ASRUtils::get_asr_owner(member))) +
+                        "' cannot be bound in an implements block; it is implemented by the "
+                        "specifics of the type's generic binding '" + message + "'",
+                        found->second.loc);
+                }
                 if (found != declared.end()) {
                     binding = found->second;
-                    used.insert(member_name);
+                    used.insert(message);
                 } else {
                     ASR::symbol_t *method = nullptr;
-                    for (ASR::Struct_t *s = structure; s && !method; ) {
-                        method = s->m_symtab->get_symbol(member_name);
+                    std::vector<ASR::symbol_t*> specifics;
+                    for (ASR::Struct_t *s = structure; s && !method && specifics.empty(); ) {
+                        specifics = effective_generic_binding(*s, message);
+                        if (specifics.empty()) method = s->m_symtab->get_symbol(message);
                         s = s->m_parent ? ASR::down_cast<ASR::Struct_t>(
                             ASRUtils::symbol_get_past_external(s->m_parent)) : nullptr;
+                    }
+                    if (method && overloaded) specifics.push_back(method);
+                    if (!specifics.empty()) {
+                        method = select_trait_message_specific(member, message, specifics,
+                            type_symbol, type, overloaded, associated, *trait, loc);
                     }
                     if (!method || !ASR::is_a<ASR::StructMethodDeclaration_t>(
                             *ASRUtils::symbol_get_past_external(method))) {
@@ -7015,7 +7358,7 @@ public:
                             continue;
                         }
                         trait_error("missing implementation of trait method '"
-                            + member_name + "'", loc);
+                            + message + "'", loc);
                     }
                     auto *declaration = ASR::down_cast<ASR::StructMethodDeclaration_t>(
                         ASRUtils::symbol_get_past_external(method));
@@ -7024,7 +7367,7 @@ public:
                             complete = false;
                             continue;
                         }
-                        trait_error("trait method '" + member_name + "' is deferred",
+                        trait_error("trait method '" + message + "' is deferred",
                             loc);
                     }
                     binding.loc = loc;
@@ -7036,6 +7379,11 @@ public:
                 check_trait_binding(ASRUtils::trait_method_function(member),
                     ASRUtils::trait_method_function(binding.m_procedure), type_symbol,
                     binding, loc, associated, type);
+                if (found != declared.end() && structure &&
+                        distinguished.insert(message).second) {
+                    check_implements_block_binding_distinguishable(*structure, message,
+                        binding);
+                }
                 binding.m_member = reference_trait_member(
                     member, current_scope, loc);
                 binding.m_procedure = make_operator_proc_visible(
@@ -10135,7 +10483,7 @@ public:
                     ASR::symbol_t *trait = ASR::down_cast<ASR::symbol_t>(ASR::make_Trait_t(
                         al, parameter.loc, trait_scope, s2c(al, trait_name), nullptr, 0,
                         ASR::accessType::Private, ASR::trait_kindType::IntrinsicTypeSet,
-                        members.p, members.size(), nullptr, 0, nullptr));
+                        members.p, members.size(), nullptr, 0, nullptr, 0, nullptr));
                     scope->add_symbol(trait_name, trait);
                     parameter_traits[i].push_back(trait);
                 }

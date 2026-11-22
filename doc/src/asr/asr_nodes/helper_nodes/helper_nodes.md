@@ -33,6 +33,7 @@ trait_erased_parameter
 trait_evidence
 trait_lifecycle
 trait_operation
+trait_overload
 trait_projection_slot
 trait_requirement
 trait_slot

@@ -5245,6 +5245,7 @@
                                     [(Integer 4)
                                     (Real 8)]
                                     []
+                                    []
                                     traits_numeric_05_contracts_m::INumeric
                                 ),
                             real64:
@@ -6937,6 +6938,7 @@
                                     Public
                                     IntrinsicTypeSet
                                     [(Integer 4)]
+                                    []
                                     []
                                     traits_numeric_05_other_m::INumeric
                                 )

@@ -8041,6 +8041,10 @@ filename = "errors/continue_compilation_traits_generic_overload.f90"
 semantics_only_cc = true
 
 [[test]]
+filename = "errors/continue_compilation_traits_overloaded_messages.f90"
+semantics_only_cc = true
+
+[[test]]
 filename = "errors/continue_compilation_traits_di_container.f90"
 semantics_only_cc = true
 

@@ -23,6 +23,7 @@
 #include <sstream>
 #include <set>
 #include <map>
+#include <tuple>
 #include <queue>
 #include <limits>
 #include <memory>
@@ -2672,6 +2673,18 @@ public:
         Location loc = {};
     };
     std::vector<TraitSpecialization> trait_specializations;
+    // The selection of select_overloaded_specific for a reference, by its
+    // scope, its actual arguments, keywords and type arguments in the AST,
+    // and the generic: the specific it returned and the non-generic specific
+    // it matched. A reference is resolved once, also when the actual
+    // arguments of an enclosing reference are visited again.
+    std::map<std::tuple<SymbolTable*, const void*, const void*, const void*,
+        const ASR::GenericProcedure_t*>, std::pair<ASR::symbol_t*, ASR::symbol_t*>>
+        overloaded_selections;
+    // The generic of a type's generic binding and a binding of an
+    // implements block of the same name (implements_block_generic).
+    std::map<std::pair<const ASR::GenericProcedure_t*, const ASR::trait_binding_t*>,
+        ASR::GenericProcedure_t*> implements_block_generics;
     // The names, with the letter case of their declarations, of the program
     // units and procedures being visited, outermost first. A derived type or
     // trait records them in its qualified_name (`type_name` intrinsic).
@@ -29347,9 +29360,11 @@ public:
 
     void check_trait_method_compatibility(const ASR::Function_t &left,
             const ASR::Function_t &right, const Location &loc) {
+        std::string name = ASRUtils::trait_message_name(
+            const_cast<ASR::symbol_t*>(&left.base));
         auto mismatch = ASRUtils::trait_method_mismatch(left, right);
         if (mismatch.difference == ASRUtils::TraitMethodDifference::Arguments) {
-            trait_call_error("overloading trait method '" + std::string(left.m_name)
+            trait_call_error("overloading trait method '" + name
                 + "' with different argument signatures is not implemented yet: "
                 + mismatch.message, loc);
         }
@@ -29358,8 +29373,95 @@ public:
         }
         if (mismatch.difference == ASRUtils::TraitMethodDifference::Contract) {
             trait_call_error("incompatible declarations of trait method '"
-                + std::string(left.m_name) + "': " + mismatch.message, loc);
+                + name + "': " + mismatch.message, loc);
         }
+    }
+
+    // Combines the message `right` with `left`, a message of the same name
+    // of another trait, when a type adopts both traits, a parameter is
+    // constrained by both or one trait extends the other. They are one
+    // requirement when they correspond (returns true). Otherwise both must be
+    // generic messages, which are then overloaded (E6): as the overloads
+    // that one trait declares, they are both functions or both subroutines
+    // and distinguishable (returns false).
+    bool combine_trait_messages(const ASR::Function_t &left, const ASR::Function_t &right,
+            const Location &loc) {
+        if (ASRUtils::trait_messages_correspond(left, right)) return true;
+        if (!ASRUtils::trait_method_template(left) || !ASRUtils::trait_method_template(right)) {
+            check_trait_method_compatibility(left, right, loc);
+            return true;
+        }
+        auto *fa = const_cast<ASR::Function_t*>(&left);
+        auto *fb = const_cast<ASR::Function_t*>(&right);
+        if (bool(fa->m_return_var) == bool(fb->m_return_var) &&
+                generic_procedures_distinguishable(fa, ASRUtils::trait_message_receiver(*fa),
+                    fb, ASRUtils::trait_message_receiver(*fb))) return false;
+        auto mismatch = ASRUtils::trait_method_mismatch(left, right);
+        if (mismatch.difference == ASRUtils::TraitMethodDifference::None) {
+            mismatch = ASRUtils::trait_receiver_mismatch(left, right);
+        }
+        auto trait_name = [](const ASR::Function_t &message) {
+            auto *generic = ASRUtils::trait_method_template(message);
+            return std::string(ASRUtils::symbol_name(ASRUtils::get_asr_owner(&generic->base)));
+        };
+        trait_call_error("the generic messages '" + trait_message_signature(&fa->base) +
+            "' of trait '" + trait_name(left) + "' and '" + trait_message_signature(&fb->base) +
+            "' of trait '" + trait_name(right) + "' neither correspond (" + mismatch.message +
+            ") nor are distinguishable overloads: " + (bool(fa->m_return_var) !=
+                bool(fb->m_return_var) ? "one is a function and the other a subroutine"
+                : "some types that their generic parameters admit make a reference match "
+                    "both"), loc);
+    }
+
+    // The generic message `member` (its Template or Function) as a source
+    // declares it: its name and type parameters, `register{p, t1, u}`.
+    std::string trait_message_signature(ASR::symbol_t *member) {
+        std::string result = ASRUtils::trait_member_display_name(member);
+        auto *method = ASRUtils::trait_method_function(member);
+        if (!method && member && ASR::is_a<ASR::Function_t>(*member)) {
+            method = ASR::down_cast<ASR::Function_t>(member);
+        }
+        auto *generic = method ? ASRUtils::trait_method_template(*method) : nullptr;
+        for (size_t i = 0; generic && i < generic->n_args; i++) {
+            result += (i ? ", " : "{") + std::string(generic->m_args[i]);
+        }
+        return generic && generic->n_args ? result + "}" : result;
+    }
+
+    // The signature of the message `member` in diagnostics, followed by its
+    // dummy arguments when one of `others` has the same signature.
+    std::string trait_message_label(ASR::symbol_t *member,
+            const std::vector<ASR::symbol_t*> &others) {
+        std::string label = trait_message_signature(member);
+        for (auto *other : others) {
+            if (other == member || trait_message_signature(other) != label) continue;
+            auto *method = ASRUtils::trait_method_function(member);
+            for (size_t i = 0; method && i < method->n_args; i++) {
+                label += (i ? ", " : "(") + std::string(
+                    ASRUtils::EXPR2VAR(method->m_args[i])->m_name);
+            }
+            return label + (method && method->n_args ? ")" : "()");
+        }
+        return label;
+    }
+
+    // The overloads of the message `member` in its trait (E6), or none.
+    static std::vector<ASR::symbol_t*> trait_overload_set(ASR::symbol_t *member) {
+        member = ASRUtils::symbol_get_past_external(member);
+        auto *owner = ASRUtils::get_asr_owner(member);
+        if (!owner || !ASR::is_a<ASR::Trait_t>(*owner)) return {};
+        auto *trait = ASR::down_cast<ASR::Trait_t>(owner);
+        for (size_t i = 0; i < trait->n_overloads; i++) {
+            const auto &set = trait->m_overloads[i];
+            std::vector<ASR::symbol_t*> members;
+            for (size_t j = 0; j < set.n_members; j++) {
+                members.push_back(ASRUtils::symbol_get_past_external(set.m_members[j]));
+            }
+            if (std::find(members.begin(), members.end(), member) != members.end()) {
+                return members;
+            }
+        }
+        return {};
     }
 
     ASR::symbol_t *reference_trait_member(ASR::symbol_t *member,
@@ -29510,13 +29612,14 @@ public:
         // A view calls only messages: an initializer requirement has no slot,
         // and an operator requirement leaves the trait a generic constraint.
         if (!ASRUtils::trait_runtime_view_admissible(*trait)) return nullptr;
+        if (ASRUtils::trait_has_overloaded_messages(hierarchy.members)) return nullptr;
         std::map<std::string, ASR::Function_t*> methods;
         for (auto *member : hierarchy.members) {
             if (ASRUtils::trait_member_is_initializer(member)) continue;
             auto *method = ASRUtils::trait_method_function(member);
             if (!ASRUtils::runtime_trait_method_supported(*method) ||
                     has_postponed_array_bounds(*method)) return nullptr;
-            auto previous = methods.emplace(method->m_name, method);
+            auto previous = methods.emplace(ASRUtils::trait_message_name(member), method);
             if (!previous.second) {
                 check_trait_method_compatibility(*previous.first->second, *method, loc);
             }
@@ -29673,7 +29776,17 @@ public:
     // A message whose result is outside the runtime slot surface is named
     // with that result.
     void check_runtime_trait_results(const ASR::Trait_t &trait, const Location &loc) {
-        for (auto *member : checked_trait_hierarchy(trait, loc).members) {
+        auto members = checked_trait_hierarchy(trait, loc).members;
+        for (auto *member : members) {
+            if (ASRUtils::trait_message_is_overloaded(members, member)) {
+                trait_call_error("calling the overloaded generic message '" +
+                    ASRUtils::trait_member_display_name(member) + "' of trait '" +
+                    std::string(trait.m_name) + "' through trait objects is not "
+                    "implemented yet; it can be called on a type that implements the trait "
+                    "and through a generic parameter that the trait constrains", loc);
+            }
+        }
+        for (auto *member : members) {
             if (ASRUtils::trait_member_is_initializer(member)) continue;
             auto *method = ASRUtils::trait_method_function(member);
             auto *message = method ? ASRUtils::trait_method_template(*method) : nullptr;
@@ -29746,7 +29859,7 @@ public:
         auto *trait = ASR::down_cast2<ASR::Trait_t>(ASR::make_Trait_t(al, loc,
             al.make_new<SymbolTable>(scope), s2c(al, name), parents.p, parents.size(),
             ASR::accessType::Private, ASR::trait_kindType::UniversalTrait, nullptr, 0,
-            nullptr, 0, nullptr));
+            nullptr, 0, nullptr, 0, nullptr));
         scope->add_symbol(name, &trait->base);
         try {
             auto *contract = create_runtime_trait_contract(trait, true);
@@ -31173,8 +31286,9 @@ public:
                         index = known.second;
                     }
                 } else if (!operation && !known_operation &&
-                        std::string(known_method->m_name) == method->m_name) {
-                    check_trait_method_compatibility(*known_method, *method, loc);
+                        ASRUtils::trait_message_name(known.first) ==
+                            ASRUtils::trait_message_name(member) &&
+                        combine_trait_messages(*known_method, *method, loc)) {
                     index = known.second;
                 }
             }
@@ -33337,7 +33451,8 @@ public:
             for (size_t i = 0; i < n_keywords; i++) {
                 if (keywords[i].m_arg && to_lower(keywords[i].m_arg) == receiver) {
                     trait_call_error("keyword argument '" + receiver + "' names the "
-                        "receiver of trait procedure '" + std::string(signature->m_name) +
+                        "receiver of trait procedure '" +
+                        ASRUtils::trait_message_name(&signature->base) +
                         "', which is the object of the call, not an argument",
                         keywords[i].loc);
                 }
@@ -33357,7 +33472,7 @@ public:
             pass_index);
         if (args.size() + method > signature->n_args) {
             trait_call_error("too many arguments to trait procedure '"
-                + std::string(signature->m_name) + "'", loc);
+                + ASRUtils::trait_message_name(&signature->base) + "'", loc);
         }
         ASRUtils::set_absent_optional_arguments_to_null(args, signature, al, passed_object,
             false, pass_index);
@@ -34713,20 +34828,112 @@ public:
         return nullptr;
     }
 
-    // The generic binding `name` of the derived type `declaration`, or of
-    // its nearest ancestor with a member of that name, when some of its
-    // specifics are generic procedures.
-    static ASR::GenericProcedure_t *overloaded_generic_binding(ASR::symbol_t *declaration,
+    // The member `name` of the derived type `declaration` or of its nearest
+    // ancestor that declares it, or nullptr.
+    static ASR::symbol_t *type_bound_member(ASR::symbol_t *declaration,
             const std::string &name) {
         for (ASR::symbol_t *symbol = declaration
                     ? ASRUtils::symbol_get_past_external(declaration) : nullptr;
                 symbol && ASR::is_a<ASR::Struct_t>(*symbol);
                 symbol = ASRUtils::symbol_get_past_external(
                     ASR::down_cast<ASR::Struct_t>(symbol)->m_parent)) {
-            auto *member = ASR::down_cast<ASR::Struct_t>(symbol)->m_symtab->get_symbol(name);
-            if (member) return overloaded_generic(member);
+            if (auto *member = ASR::down_cast<ASR::Struct_t>(symbol)->m_symtab->get_symbol(
+                    name)) return ASRUtils::symbol_get_past_external(member);
         }
         return nullptr;
+    }
+
+    // The generic binding `name` of the derived type `declaration`, or of
+    // its nearest ancestor with a member of that name, when some of its
+    // specifics are generic procedures.
+    static ASR::GenericProcedure_t *overloaded_generic_binding(ASR::symbol_t *declaration,
+            const std::string &name) {
+        return overloaded_generic(type_bound_member(declaration, name));
+    }
+
+    // Whether `procedure` is the procedure of a specific of the generic
+    // binding `generic` of the derived type `declaration`, each specific
+    // resolved by its name through the type, so that overrides count.
+    static bool generic_binding_specific(ASR::symbol_t *declaration,
+            const ASR::GenericProcedure_t &generic, ASR::symbol_t *procedure) {
+        auto *function = ASRUtils::trait_method_function(
+            ASRUtils::symbol_get_past_external(procedure));
+        for (size_t i = 0; i < generic.n_procs; i++) {
+            ASR::symbol_t *specific = ASRUtils::symbol_get_past_external(generic.m_procs[i]);
+            for (ASR::symbol_t *binding : {type_bound_member(declaration,
+                    ASRUtils::symbol_name(specific)), specific}) {
+                if (binding && ASR::is_a<ASR::StructMethodDeclaration_t>(*binding) &&
+                        ASRUtils::trait_method_function(ASRUtils::symbol_get_past_external(
+                            ASR::down_cast<ASR::StructMethodDeclaration_t>(binding)->m_proc))
+                            == function) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // The generic that the generic binding `generic` of a type and the
+    // binding `binding` of an implements block of the same name, not a
+    // specific of `generic`, form (E6): the specifics of `generic`, then a
+    // binding of the procedure of `binding` with its passed object, named
+    // in diagnostics as the block's binding. Made once for each pair; it is
+    // in no symbol table.
+    ASR::GenericProcedure_t *implements_block_generic(ASR::GenericProcedure_t &generic,
+            const ASR::trait_binding_t &binding, const Location &loc) {
+        auto key = std::make_pair((const ASR::GenericProcedure_t*)&generic, &binding);
+        auto found = implements_block_generics.find(key);
+        if (found != implements_block_generics.end()) return found->second;
+        ASR::symbol_t *member = ASRUtils::symbol_get_past_external(binding.m_member);
+        ASR::symbol_t *procedure = ASRUtils::symbol_get_past_external(binding.m_procedure);
+        std::string label = std::string(ASRUtils::symbol_name(procedure)) +
+            " (implements block of trait '" +
+            ASRUtils::symbol_name(ASRUtils::get_asr_owner(member)) + "')";
+        ASR::symbol_t *block = ASR::down_cast<ASR::symbol_t>(
+            ASR::make_StructMethodDeclaration_t(al, loc, generic.m_parent_symtab,
+                s2c(al, label), binding.m_self_argument,
+                s2c(al, ASRUtils::symbol_name(procedure)), binding.m_procedure,
+                ASR::abiType::Source, false, binding.m_is_nopass,
+                ASR::accessType::Public, nullptr));
+        Vec<ASR::symbol_t*> procs;
+        procs.reserve(al, generic.n_procs + 1);
+        for (size_t i = 0; i < generic.n_procs; i++) procs.push_back(al, generic.m_procs[i]);
+        procs.push_back(al, block);
+        auto *merged = ASR::down_cast2<ASR::GenericProcedure_t>(ASR::make_GenericProcedure_t(
+            al, loc, generic.m_parent_symtab, generic.m_name, procs.p, procs.size(),
+            ASR::accessType::Public));
+        implements_block_generics[key] = merged;
+        return merged;
+    }
+
+    // A call of the procedure `callee` of a binding of an implements block
+    // passes each actual argument with the rank of its dummy argument, as an
+    // ordinary reference does: a scalar not to an array dummy, other than
+    // an array element or a character scalar sequence associated with an
+    // explicit-shape or assumed-size character dummy, nor an array to a
+    // scalar dummy unless the procedure is elemental. `args` are the actual
+    // arguments in the order of the dummy arguments.
+    void check_trait_binding_ranks(ASR::symbol_t *callee, Vec<ASR::call_arg_t> &args) {
+        ASR::Function_t *procedure = ASRUtils::trait_method_function(callee);
+        if (!procedure || ASRUtils::trait_method_template(*procedure)) return;
+        for (size_t i = 0; i < procedure->n_args && i < args.size(); i++) {
+            ASR::expr_t *actual = args[i].m_value;
+            ASR::ttype_t *dummy = ASRUtils::expr_type(procedure->m_args[i]);
+            if (!actual || !dummy || !ASRUtils::is_array(dummy) ||
+                    ASRUtils::is_assumed_rank_array(dummy) ||
+                    ASRUtils::is_array(ASRUtils::expr_type(actual)) ||
+                    ASR::is_a<ASR::ArrayItem_t>(*actual)) continue;
+            if (ASRUtils::is_character(*ASRUtils::expr_type(actual)) &&
+                    ASRUtils::is_character(*dummy) &&
+                    is_sequence_associable_dummy(dummy)) continue;
+            diag.add(Diagnostic("rank mismatch in argument `" + std::string(
+                ASRUtils::symbol_name(ASR::down_cast<ASR::Var_t>(procedure->m_args[i])->m_v)) +
+                "`: the dummy argument is an array of rank " + std::to_string(
+                ASRUtils::extract_n_dims_from_ttype(dummy)) + " but the actual argument is "
+                "a scalar", Level::Error, Stage::Semantic, {Label("", {actual->base.loc})}));
+            throw SemanticAbort();
+        }
+        check_array_actual_for_scalar_dummy(callee, procedure, args);
     }
 
     // Runs `attempt`, which may report errors, as a trial: its diagnostics,
@@ -34762,8 +34969,9 @@ public:
     // Resolves a reference to the generic interface or generic binding
     // `generic` whose specifics include generic procedures (E6):
     //  1. Without explicit type arguments, the non-generic specifics are
-    //     tried by the standard rules. If one matches, nullptr is returned
-    //     and the caller resolves the reference as an ordinary generic one.
+    //     tried by the standard rules. If one matches, nullptr is returned,
+    //     the specific in `non_generic` if given, and the caller resolves
+    //     the reference as an ordinary generic one.
     //  2. Otherwise each generic specific is viable if its leading parameters
     //     admit the explicit type arguments, inference determines the other
     //     parameters, also through dummy procedures and type names, and its
@@ -34774,16 +34982,48 @@ public:
     // to the structure constructor when no initializer is viable:
     // `structure_constructor` returns why it is not valid, or an empty
     // string when it is, and nullptr is then returned.
+    // A reference is resolved once (overloaded_selections): resolving it
+    // again, when the actual arguments of an enclosing reference are visited
+    // again, returns the same selection without trials, so that the cost of
+    // nested references grows with their number, not exponentially.
     ASR::symbol_t *select_overloaded_specific(ASR::GenericProcedure_t &generic,
             AST::fnarg_t *actuals, size_t n_actuals,
             AST::keyword_t *keywords, size_t n_keywords,
             AST::decl_attribute_t **explicit_args, size_t n_explicit_args,
             bool is_function, ASR::expr_t *receiver, const Location &loc,
-            const std::function<std::string()> &structure_constructor = nullptr) {
+            const std::function<std::string()> &structure_constructor = nullptr,
+            ASR::symbol_t **non_generic = nullptr) {
+        if (non_generic) *non_generic = nullptr;
+        if (!actuals && !keywords && !explicit_args) {
+            return resolve_overloaded_specific(generic, actuals, n_actuals, keywords,
+                n_keywords, explicit_args, n_explicit_args, is_function, receiver, loc,
+                structure_constructor, non_generic);
+        }
+        auto key = std::make_tuple(current_scope, (const void*)actuals,
+            (const void*)keywords, (const void*)explicit_args,
+            (const ASR::GenericProcedure_t*)&generic);
+        auto found = overloaded_selections.find(key);
+        if (found == overloaded_selections.end()) {
+            ASR::symbol_t *matched = nullptr;
+            ASR::symbol_t *selected = resolve_overloaded_specific(generic, actuals,
+                n_actuals, keywords, n_keywords, explicit_args, n_explicit_args,
+                is_function, receiver, loc, structure_constructor, &matched);
+            found = overloaded_selections.insert({key, {selected, matched}}).first;
+        }
+        if (non_generic) *non_generic = found->second.second;
+        return found->second.first;
+    }
+
+    ASR::symbol_t *resolve_overloaded_specific(ASR::GenericProcedure_t &generic,
+            AST::fnarg_t *actuals, size_t n_actuals,
+            AST::keyword_t *keywords, size_t n_keywords,
+            AST::decl_attribute_t **explicit_args, size_t n_explicit_args,
+            bool is_function, ASR::expr_t *receiver, const Location &loc,
+            const std::function<std::string()> &structure_constructor,
+            ASR::symbol_t **non_generic_match) {
         // The initializers of a type are named by the type.
         bool initializers = generic.m_name[0] == '~';
         std::string generic_name = initializers ? generic.m_name + 1 : generic.m_name;
-        std::vector<std::pair<std::string, std::string>> rejected;
         bool non_generic = false;
         for (size_t i = 0; i < generic.n_procs; i++) {
             if (!ASRUtils::is_generic_specific(generic.m_procs[i])) non_generic = true;
@@ -34799,8 +35039,11 @@ public:
                 }
                 if (designator) return;
                 if (!n_keywords) {
-                    matched = select_generic_specific(receiver ? prepend_call_arg(receiver, args)
-                        : args, generic, loc, false, receiver != nullptr) >= 0;
+                    int index = select_generic_specific(receiver
+                        ? prepend_call_arg(receiver, args) : args, generic, loc, false,
+                        receiver != nullptr);
+                    matched = index >= 0;
+                    if (matched) *non_generic_match = generic.m_procs[index];
                     return;
                 }
                 for (size_t i = 0; i < generic.n_procs && !matched; i++) {
@@ -34826,27 +35069,71 @@ public:
                     matched = select_generic_specific(receiver
                         ? prepend_call_arg(receiver, keyed) : keyed, generic, loc, false,
                         receiver != nullptr) == static_cast<int>(i);
+                    if (matched) *non_generic_match = generic.m_procs[i];
                 }
             });
             // A reference that a non-generic specific accepts, or that is in
             // error before any specific is considered, takes the standard path.
             if (matched || (!error.empty() && !designator)) return nullptr;
         }
-        // The viable generic specifics, and whether a type name designates
-        // a structure constructor for them.
-        std::vector<ASR::symbol_t*> viable;
-        std::vector<bool> constructs;
+        std::vector<std::pair<std::string, ASR::symbol_t*>> candidates;
         for (size_t i = 0; i < generic.n_procs; i++) {
-            ASR::symbol_t *specific = generic.m_procs[i];
-            std::string name = ASRUtils::symbol_name(
-                ASRUtils::symbol_get_past_external(specific));
+            candidates.push_back({ASRUtils::symbol_name(
+                ASRUtils::symbol_get_past_external(generic.m_procs[i])), generic.m_procs[i]});
+        }
+        return select_generic_candidate(candidates, n_explicit_args
+                ? "it is not generic, but type arguments are given"
+                : designator ? "it is not generic, and a type name designates a "
+                    "procedure only for a dummy procedure of a generic or specific "
+                    "procedure"
+                : "its dummy arguments do not match the actual arguments",
+            actuals, n_actuals, keywords, n_keywords, explicit_args, n_explicit_args,
+            is_function, receiver, loc,
+            initializers
+                ? "ambiguous reference to type '" + generic_name + "': its generic "
+                    "initializers "
+                : "ambiguous reference to generic procedure '" + generic_name +
+                    "': its generic specific procedures ",
+            initializers
+                ? "no initializer of type '" + generic_name + "' accepts this reference, "
+                    "nor does its structure constructor:"
+                : "no specific procedure of generic '" + generic_name +
+                    "' accepts this reference:",
+            structure_constructor);
+    }
+
+    // Selects among the generic procedures `candidates`, each with its name
+    // in diagnostics, the one that accepts a reference (E6): its leading
+    // parameters admit the explicit type arguments, inference determines its
+    // other parameters, also through dummy procedures and type names, and
+    // its constraints hold. A type name designates the type's initializer in
+    // preference to its structure constructor (E3), also across the
+    // candidates: those for which every type name designates an initializer
+    // are preferred. A candidate is a specific of a generic interface or
+    // binding, whose passed object is `receiver`, rejected for
+    // `non_generic` unless it is generic, or a trait message called through
+    // a constrained generic parameter, whose receiver is not among the
+    // arguments. A reference that several accept is reported with
+    // `ambiguous` and their names; one that none accepts with `none` and the
+    // reasons, unless `structure_constructor` returns an empty string, when
+    // nullptr is returned.
+    ASR::symbol_t *select_generic_candidate(
+            const std::vector<std::pair<std::string, ASR::symbol_t*>> &candidates,
+            const std::string &non_generic,
+            AST::fnarg_t *actuals, size_t n_actuals,
+            AST::keyword_t *keywords, size_t n_keywords,
+            AST::decl_attribute_t **explicit_args, size_t n_explicit_args,
+            bool is_function, ASR::expr_t *receiver, const Location &loc,
+            const std::string &ambiguous, const std::string &none,
+            const std::function<std::string()> &structure_constructor = nullptr) {
+        // The viable candidates, and whether a type name designates a
+        // structure constructor for them.
+        std::vector<std::pair<std::string, std::string>> rejected;
+        std::vector<std::pair<std::string, ASR::symbol_t*>> viable;
+        std::vector<bool> constructs;
+        for (const auto &[name, specific] : candidates) {
             if (!ASRUtils::is_generic_specific(specific)) {
-                rejected.push_back({name, n_explicit_args
-                    ? "it is not generic, but type arguments are given"
-                    : designator ? "it is not generic, and a type name designates a "
-                        "procedure only for a dummy procedure of a generic or specific "
-                        "procedure"
-                    : "its dummy arguments do not match the actual arguments"});
+                rejected.push_back({name, non_generic});
                 continue;
             }
             ASR::symbol_t *past = ASRUtils::symbol_get_past_external(specific);
@@ -34873,7 +35160,7 @@ public:
                 Vec<ASR::call_arg_t> args;
                 trait_call_arguments(signature, actuals, n_actuals, keywords, n_keywords,
                     args, loc, pass < signature->n_args ? receiver : nullptr, pass);
-                if (pass < signature->n_args && receiver) {
+                if (binding && pass < signature->n_args && receiver) {
                     // The passed object takes its dummy's place, as in the call.
                     Vec<ASR::call_arg_t> passed;
                     passed.reserve(al, args.size() + 1);
@@ -34893,36 +35180,27 @@ public:
                 resolve_trait_requirements(procedure, types, loc);
             });
             if (error.empty()) {
-                viable.push_back(specific);
+                viable.push_back({name, specific});
                 constructs.push_back(type_designator_constructor_uses != constructor_uses);
             } else {
                 rejected.push_back({name, error});
             }
         }
-        // A type name designates the type's initializer in preference to its
-        // structure constructor (E3), also across the specifics: those for
-        // which every type name designates an initializer are preferred.
         if (viable.size() > 1 && std::count(constructs.begin(), constructs.end(), false) > 0) {
-            std::vector<ASR::symbol_t*> initializers;
+            std::vector<std::pair<std::string, ASR::symbol_t*>> initializers;
             for (size_t k = 0; k < viable.size(); k++) {
                 if (!constructs[k]) initializers.push_back(viable[k]);
             }
             viable = initializers;
         }
-        if (viable.size() == 1) return viable[0];
+        if (viable.size() == 1) return viable[0].second;
         if (viable.size() > 1) {
             std::string names;
             for (size_t k = 0; k < viable.size(); k++) {
                 names += std::string(k == 0 ? "" : k + 1 == viable.size() ? " and " : ", ") +
-                    "'" + ASRUtils::symbol_name(ASRUtils::symbol_get_past_external(viable[k])) +
-                    "'";
+                    "'" + viable[k].first + "'";
             }
-            trait_call_error(initializers
-                ? "ambiguous reference to type '" + generic_name + "': its generic "
-                    "initializers " + names + " all accept these arguments"
-                : "ambiguous reference to generic procedure '" + generic_name +
-                    "': its generic specific procedures " + names +
-                    " all accept these arguments", loc);
+            trait_call_error(ambiguous + names + " all accept these arguments", loc);
         }
         if (structure_constructor) {
             std::string reason = structure_constructor();
@@ -34933,11 +35211,28 @@ public:
         for (const auto &entry : rejected) {
             reasons += "\n    " + entry.first + ": " + entry.second;
         }
-        trait_call_error(initializers
-            ? "no initializer of type '" + generic_name + "' accepts this reference, "
-                "nor does its structure constructor:" + reasons
-            : "no specific procedure of generic '" + generic_name +
-                "' accepts this reference:" + reasons, loc);
+        trait_call_error(none + reasons, loc);
+    }
+
+    // Resolves a call of overloaded generic messages `overloads` of one name
+    // (E6) through a generic parameter that their traits constrain, by the
+    // rules for the generic specifics of a generic (select_generic_candidate).
+    // Returns the member that accepts the reference.
+    ASR::symbol_t *select_overloaded_trait_message(
+            const std::vector<ASR::symbol_t*> &overloads, ASR::expr_t *receiver,
+            AST::fnarg_t *actuals, size_t n_actuals,
+            AST::keyword_t *keywords, size_t n_keywords,
+            AST::decl_attribute_t **explicit_args, size_t n_explicit_args,
+            bool is_function, const Location &loc) {
+        std::string name = ASRUtils::trait_message_name(overloads[0]);
+        std::vector<std::pair<std::string, ASR::symbol_t*>> candidates;
+        for (auto *member : overloads) {
+            candidates.push_back({trait_message_label(member, overloads), member});
+        }
+        return select_generic_candidate(candidates, "", actuals, n_actuals, keywords,
+            n_keywords, explicit_args, n_explicit_args, is_function, receiver, loc,
+            "ambiguous reference to the overloaded generic message '" + name + "': ",
+            "no overloaded generic message '" + name + "' accepts this reference:");
     }
 
     // Distinguishability of the generic specifics of a generic interface or
@@ -35210,11 +35505,17 @@ public:
         bool member = false;
         if (generic_procedure_binding(declaration, name, member)) return true;
         if (overloaded_generic_binding(declaration, name)) return true;
-        if (member) return false;
+        // A generic binding of the name and the bindings of implements
+        // blocks that are not its specifics are one generic.
+        ASR::symbol_t *type_binding = member ? type_bound_member(declaration, name) : nullptr;
+        auto *type_generic = type_binding && ASR::is_a<ASR::GenericProcedure_t>(*type_binding)
+            ? ASR::down_cast<ASR::GenericProcedure_t>(type_binding) : nullptr;
+        if (member && !type_generic) return false;
         auto *adopter = declaration && ASRUtils::is_class_type(type)
             ? ASRUtils::symbol_get_past_external(declaration) : nullptr;
-        if (adopter && ASR::is_a<ASR::Struct_t>(*adopter) && adopted_unbound_trait_message(
-                ASR::down_cast<ASR::Struct_t>(adopter), name, receiver->base.loc)) {
+        if (!member && adopter && ASR::is_a<ASR::Struct_t>(*adopter) &&
+                adopted_unbound_trait_message(ASR::down_cast<ASR::Struct_t>(adopter), name,
+                    receiver->base.loc)) {
             return true;
         }
         for (auto *implementation : visible_trait_implementations()) {
@@ -35222,9 +35523,14 @@ public:
                 continue;
             }
             for (size_t i = 0; i < implementation->n_bindings; i++) {
-                auto *member = ASRUtils::trait_method_function(
-                    implementation->m_bindings[i].m_member);
-                if (member && name == member->m_name) return true;
+                auto &binding = implementation->m_bindings[i];
+                auto *member = ASRUtils::trait_method_function(binding.m_member);
+                if (member && name == ASRUtils::trait_message_name(binding.m_member) &&
+                        !ASRUtils::trait_member_operation(binding.m_member) &&
+                        (!type_generic || !generic_binding_specific(declaration,
+                            *type_generic, binding.m_procedure))) {
+                    return true;
+                }
             }
         }
         return false;
@@ -35366,6 +35672,12 @@ public:
                     ? resolved_receiver : ASRUtils::EXPR(ASR::make_Var_t(al, loc, variable)));
                 if (!binder) binder = declared_trait_parameter(parameter->m_param, current_scope);
                 SymbolTable *binder_scope = binder ? ASRUtils::symbol_parent_symtab(binder) : nullptr;
+                // The messages of the name of the binder's constraints, one
+                // for each requirement: those of several traits that
+                // correspond are one. Overloaded generic messages (E6): the
+                // one that accepts the reference.
+                std::vector<ASR::symbol_t*> messages;
+                std::vector<std::pair<ASR::TraitConstraint_t*, size_t>> requirements;
                 for (const auto &entry : binder_scope ? binder_scope->get_scope()
                         : current_scope->get_scope()) {
                     if (!binder || !ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
@@ -35375,19 +35687,40 @@ public:
                     }
                     for (size_t i = 0; i < constraint->n_requirements; i++) {
                         if (ASRUtils::trait_requirement_specialization(*constraint, i)) continue;
-                        auto &requirement = constraint->m_requirements[i];
-                        auto *method = ASRUtils::trait_method_function(requirement.m_member);
-                        if (name != method->m_name) continue;
-                        ASR::symbol_t *procedure =
-                            ASRUtils::symbol_get_past_external(requirement.m_procedure);
-                        if (callee && callee != procedure) {
-                            trait_call_error("ambiguous required trait method '" + name + "'", loc);
-                        }
-                        callee = procedure;
-                        signature = method;
-                        requirement_constraint = constraint;
-                        requirement_index = i;
+                        auto *member = ASRUtils::symbol_get_past_external(
+                            constraint->m_requirements[i].m_member);
+                        if (ASRUtils::trait_member_operation(member) ||
+                                ASRUtils::trait_message_name(member) != name) continue;
+                        auto *method = ASRUtils::trait_method_function(member);
+                        bool known = std::any_of(messages.begin(), messages.end(),
+                            [&](ASR::symbol_t *other) {
+                                return ASRUtils::trait_messages_correspond(
+                                    *ASRUtils::trait_method_function(other), *method);
+                            });
+                        if (!known) messages.push_back(member);
+                        requirements.push_back({constraint, i});
                     }
+                }
+                ASR::symbol_t *selected = messages.size() > 1
+                    ? select_overloaded_trait_message(messages, resolved_receiver
+                        ? resolved_receiver : ASRUtils::EXPR(ASR::make_Var_t(al, loc, variable)),
+                        actuals, n_actuals, keywords, n_keywords, explicit_args,
+                        n_explicit_args, is_function, loc)
+                    : messages.empty() ? nullptr : messages[0];
+                for (const auto &[constraint, i] : requirements) {
+                    auto &requirement = constraint->m_requirements[i];
+                    auto *method = ASRUtils::trait_method_function(requirement.m_member);
+                    if (!ASRUtils::trait_messages_correspond(
+                            *ASRUtils::trait_method_function(selected), *method)) continue;
+                    ASR::symbol_t *procedure =
+                        ASRUtils::symbol_get_past_external(requirement.m_procedure);
+                    if (callee && callee != procedure) {
+                        trait_call_error("ambiguous required trait method '" + name + "'", loc);
+                    }
+                    callee = procedure;
+                    signature = method;
+                    requirement_constraint = constraint;
+                    requirement_index = i;
                 }
                 if (!callee) {
                     trait_call_error("method '" + name
@@ -35404,11 +35737,28 @@ public:
                         ? ASRUtils::get_struct_sym_from_struct_expr(resolved_receiver)
                         : nullptr;
                 if (ASR::is_a<ASR::StructType_t>(*type) && !declaration) return false;
-                for (auto *implementation : trait_implementations_for_type(declaration, loc, type)) {
+                // A generic binding of the name selects its specific by the
+                // reference (E6), also when its specifics implement trait
+                // messages, such as overloaded generic messages.
+                auto *type_binding = type_bound_member(declaration, name);
+                auto *type_generic = type_binding &&
+                        ASR::is_a<ASR::GenericProcedure_t>(*type_binding)
+                    ? ASR::down_cast<ASR::GenericProcedure_t>(type_binding) : nullptr;
+                for (auto *implementation : trait_implementations_for_type(
+                        declaration, loc, type)) {
                     for (size_t i = 0; i < implementation->n_bindings; i++) {
                         auto &binding = implementation->m_bindings[i];
+                        if (ASRUtils::trait_member_operation(binding.m_member) ||
+                                name != ASRUtils::trait_message_name(binding.m_member)) {
+                            continue;
+                        }
+                        // A conformance implemented by a specific of the
+                        // generic binding is reached through that binding.
+                        if (type_generic && generic_binding_specific(declaration,
+                                *type_generic, binding.m_procedure)) {
+                            continue;
+                        }
                         auto *member = ASRUtils::trait_method_function(binding.m_member);
-                        if (name != member->m_name) continue;
                         if (concrete_binding) {
                             check_trait_method_compatibility(*signature, *member, loc);
                             if (!ASRUtils::trait_bindings_equal(*concrete_binding, binding)) {
@@ -35420,6 +35770,35 @@ public:
                             callee = binding.m_procedure;
                             signature = member;
                         }
+                    }
+                }
+                if (callee && type_generic) {
+                    // A binding of an implements block and the type's generic
+                    // binding of the same name are one generic (E6): its
+                    // non-generic specifics are tried first, by the standard
+                    // rules, then its generic ones.
+                    ASR::expr_t *object = resolved_receiver ? resolved_receiver
+                        : ASRUtils::EXPR(resolve_variable(loc, to_lower(members[0].m_name)));
+                    ASR::GenericProcedure_t *merged = implements_block_generic(*type_generic,
+                        *concrete_binding, loc);
+                    ASR::symbol_t *block = merged->m_procs[merged->n_procs - 1];
+                    ASR::symbol_t *matched = nullptr;
+                    ASR::symbol_t *selected = select_overloaded_specific(*merged, actuals,
+                        n_actuals, keywords, n_keywords, explicit_args, n_explicit_args,
+                        is_function, object, loc, nullptr, &matched);
+                    if (!selected) selected = matched;
+                    if (selected != block) {
+                        concrete_binding = nullptr;
+                        callee = nullptr;
+                        signature = nullptr;
+                        // A non-generic specific of the type's generic
+                        // binding, or a reference in error before any
+                        // specific is considered, takes the standard path.
+                        if (!selected || !ASRUtils::is_generic_specific(selected)) return false;
+                        generic_binding = ASR::down_cast<ASR::StructMethodDeclaration_t>(
+                            ASRUtils::symbol_get_past_external(selected));
+                        callee = generic_binding->m_proc;
+                        signature = ASRUtils::trait_method_function(callee);
                     }
                 }
                 auto *adopter = declaration && ASRUtils::is_class_type(type)
@@ -35643,6 +36022,7 @@ public:
             }
             args = adapted;
         }
+        if (concrete_binding) check_trait_binding_ranks(callee, args);
         ASR::StructMethodDeclaration_t *dispatched = generic_binding;
         ASR::symbol_t *declaration = receiver &&
                 ASR::is_a<ASR::StructType_t>(*ASRUtils::extract_type(ASRUtils::expr_type(receiver)))
