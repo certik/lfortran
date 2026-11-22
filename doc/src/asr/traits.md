@@ -1209,16 +1209,28 @@ with or without explicit type arguments, keywords and type names:
        register1: type name 'printer' does not designate a procedure for dummy procedure 'ctor': the structure constructor 'printer(...)' with 1 component value is not valid here: the interface has 1 dummy argument, but the type has 0 components
    ```
 
-A type name designates the type's initializer in preference to its structure
-constructor (E3), and this preference also holds across the specifics: when
-the type name designates an initializer for some viable specifics and the
-structure constructor for others, only the former remain. So
-`call cont%register{ILogger}(DoubleLogger)` selects `register2`, whose dummy
-procedure matches `DoubleLogger`'s initializer, although `DoubleLogger()`,
-whose components are allocatable, is also a valid structure constructor for
-`register0`'s interface without arguments (Sect. 4.8 of the extension). Two
-viable specifics that remain are reported as an ambiguous reference, which
-the declaration rule otherwise prevents.
+**Initializers before structure constructors (a deviation, pending a
+decision in the extension).** The extension's resolution rule (Sect. 3.7)
+never ranks generic specifics: it assumes that the declaration rule leaves
+at most one viable. A type name as an actual argument (E3) breaks that
+assumption. `register0`, `register1` and `register2` are distinguishable by
+the arity of `ctor`'s interface, but for `call
+cont%register{ILogger}(DoubleLogger)` two of them are viable by the rules of
+E3: `register2`, whose `ctor2{T1,T2,U}` matches `DoubleLogger`'s initializer,
+and `register0`, whose `ctor0{U}` no initializer matches, so that the type
+name designates the structure constructor `DoubleLogger()`, valid outside its
+module because both components are allocatable. Sect. 4.8 of the extension
+nevertheless selects `register2` alone. The prototype therefore adds a
+tie-break: **among the viable generic specifics, those for which every type
+name in the actual arguments designates an initializer are preferred over
+those for which some type name designates a structure constructor.** This
+extends E3's preference of an initializer over the structure constructor,
+from the interfaces of one dummy procedure to the specifics of a generic
+(`select_overloaded_specific`, which counts the structure constructors a
+trial designates in `type_designator_constructor_uses`). Viable specifics
+that remain after it are reported as an ambiguous reference. Without it,
+`register{ILogger}(DoubleLogger)` and `register{IClient}(Client)` of the
+container's main program (`traits_di_container_01`) would be ambiguous.
 
 **Declaration rule.** When the generic is declared
 (`check_generic_specifics_distinguishable`, for interfaces and type-bound
@@ -1251,7 +1263,8 @@ procedure `__ctor_<type>_<n>` is created even if that specific is not
 selected; it is a private procedure of the unit and is otherwise unused.
 
 See `integration_tests/traits_generic_overload_01.f90` and the diagnostics in
-`tests/errors/continue_compilation_traits_generic_overload.f90`.
+`tests/errors/continue_compilation_traits_generic_overload.f90`; the
+container of the extension in "The DI container (Extensions Sect. 4)".
 
 ### Generic initializers
 
@@ -2260,6 +2273,61 @@ initializer packs its symbolic instance, the generic specifics of an
 imported generic interface such as `~factory`, and the trait contracts of
 the component types in an erased generic method through imports;
 `continue_compilation_traits_generic_factory` the diagnostics.
+
+## The DI container (Extensions Sect. 4)
+
+The complete dependency injection container of Sect. 4 of the extension
+proposal (Traits-for-Fortran `Extensions/traits-di-extension.md`) compiles
+and runs as written, and prints the output of its Sect. 4.7:
+
+- `traits_di_container_01`: the container in one file, with Sects. 4.2–4.7
+  verbatim; the modules that Sect. 4 does not repeat in full (the
+  application's traits and types, and the hash map `FactoryMapMod`) are
+  those of the `projected` branch of FortranDIContainer. Counters in
+  `PrinterMod` and `WriterMod` and checks after the code of Sect. 4.7 verify
+  the object graph.
+- `traits_di_container_02`: single logging, `register{ILogger}(SingleLogger)`
+  (end of Sect. 4.7), with the `IWriter` registration unused.
+- `traits_di_container_03` (expected to fail): the `IWriter` registration
+  missing while `ILogger` is registered with `DoubleLogger`; the check of
+  `fact` that Sect. 4.5 adds to `resolve` stops with `ERROR STOP No
+  registration available for IWriter!`.
+- `traits_di_container_04`: the files of FortranDIContainer, verbatim except
+  for that correction of `resolve`, compiled separately (the trait modules,
+  the other modules and the main program), also with
+  `--separate-compilation`.
+- `tests/errors/continue_compilation_traits_di_container.f90`: registrations
+  rejected at compile time, each with the reason of every specific of
+  `register` (Sect. 3.7, rule 3): a type that does not implement the trait
+  (`register{ILogger}(Printer)`, Sect. 3.3), a type whose initializer takes
+  a configuration value rather than a trait object (Sect. 5, "Dependencies
+  must be traits"), and a missing `{P}`, which no argument determines.
+
+The extensions the container uses:
+
+| Construct | Extension |
+| --- | --- |
+| `resolve{Trait :: P}` of `IResolver` and `Container`, `register0/1/2{Trait :: P, ...}`, `class(P)` | E1, trait parameters |
+| `P :: U` of `register0/1/2` | E2, conformance constraints |
+| `register{IClient}(Client)`: a type name for the dummy procedure `ctor` | E3, initializers as procedure designators |
+| `ctor0{U}`, `ctor1{T1,U}`, `ctor2{T1,T2,U}`; `T1`, `T2` and `U` inferred from `ctor` | E4, generic abstract interfaces |
+| `register{ILogger}(DoubleLogger)`: `P` explicit, the rest inferred | E5, partially explicit type arguments |
+| `generic :: register => register0, register1, register2` | E6, overloading of generic procedures, with the tie-break above |
+| `type_name{P}(qualified=.true.)` | E7, `type_name` |
+| `initial :: init0, init1, init2` of `Factory`; `Factory(ctor)` | E8, E9, generic initializers and their overloading |
+| `Factory0(ctor)` inferring `Factory0{U}` | E8b, inference through procedure components |
+| `c%resolve{T1}()` through `class(IResolver)` | E10, generic messages through trait objects |
+| `Factory0{U}`, `Factory1{Trait :: T1, U}`, `Factory2{...}` boxed in `Factory` | Sect. 3.13, type erasure through generic factory types |
+
+Besides, the container uses `initial :: init` initializer bindings
+(`Container()`, `Client`, `SingleLogger`, `DoubleLogger`), `implements`,
+`sealed`, `abstract interface, extends(ILogger) :: IClient`, and `key :=
+...`, LFortran's `:=` declaration with an inferred type.
+
+The main programs of `traits_di_container_01`, `_02` and `_04` end with
+`deallocate(cont)`: the end of the program does not finalize its variables,
+so the final procedure of `FactoryMap`, which frees the map's entries, runs
+only then, and `--detect-leaks` finds no leaks.
 
 ## Inheritance and composed constraints
 
