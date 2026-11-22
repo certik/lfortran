@@ -5252,6 +5252,17 @@ RUN(NAME traits_generic_factory_04 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-al
 RUN(NAME traits_generic_factory_05 LABELS llvm llvm2 NO_STD_F23 ISOLATE_MODULES
     EXTRA_ARGS --verify-all-passes
     EXTRAFILES traits_generic_factory_05_lib.f90)
+# The DI container of Sect. 4 of the traits extension proposal. Its modules
+# have the proposal's names, shared by the four tests.
+RUN(NAME traits_di_container_01 LABELS llvm NO_STD_F23 ISOLATE_MODULES
+    EXTRA_ARGS --verify-all-passes)
+RUN(NAME traits_di_container_02 LABELS llvm NO_STD_F23 ISOLATE_MODULES
+    EXTRA_ARGS --verify-all-passes)
+RUN(NAME traits_di_container_03 FAIL LABELS llvm NO_STD_F23 ISOLATE_MODULES
+    EXTRA_ARGS --verify-all-passes)
+RUN(NAME traits_di_container_04 LABELS llvm llvm2 NO_STD_F23 ISOLATE_MODULES
+    EXTRA_ARGS --verify-all-passes
+    EXTRAFILES traits_di_container_04_interfaces.f90 traits_di_container_04_lib.f90)
 RUN(NAME traits_implements_generic_type_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_implements_generic_type_02 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_type_sets_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)

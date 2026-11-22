@@ -1,0 +1,36 @@
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+  --> tests/errors/continue_compilation_traits_di_container.f90:14:5 - 19:1
+   |
+14 |        abstract interface :: ILogger
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+   |
+19 |    
+   | ...^ LFortran extension
+
+semantic error: no specific procedure of generic 'register' accepts this reference:
+    register0: type 'printer' does not implement trait 'ilogger', as required for generic parameter 'u' of 'register0'
+    register1: type name 'printer' does not designate a procedure for dummy procedure 'ctor': the structure constructor 'printer(...)' with 1 component value is not valid here: the interface has 1 dummy argument, but the type has 0 components
+    register2: type name 'printer' does not designate a procedure for dummy procedure 'ctor': the structure constructor 'printer(...)' with 2 component values is not valid here: the interface has 2 dummy arguments, but the type has 0 components
+   --> tests/errors/continue_compilation_traits_di_container.f90:127:5
+    |
+127 |     call cont%register{ILogger}(Printer)
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: no specific procedure of generic 'register' accepts this reference:
+    register0: type name 'filelogger' does not designate a procedure for dummy procedure 'ctor': no initializer of 'filelogger' matches its interface, and the structure constructor 'filelogger(...)' with 0 component values is not valid here: component 'unit' is private and has no default initialization
+    register1: type name 'filelogger' does not designate a procedure for dummy procedure 'ctor': no initializer of 'filelogger' matches its interface, and the structure constructor 'filelogger(...)' with 1 component value is not valid here: component 'unit' is private
+    register2: type name 'filelogger' does not designate a procedure for dummy procedure 'ctor': no initializer of 'filelogger' matches its interface, and the structure constructor 'filelogger(...)' with 2 component values is not valid here: the interface has 2 dummy arguments, but the type has 1 component
+   --> tests/errors/continue_compilation_traits_di_container.f90:129:5
+    |
+129 |     call cont%register{ILogger}(FileLogger)
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: no specific procedure of generic 'register' accepts this reference:
+    register0: cannot infer generic type parameter 'p'; provide it explicitly
+    register1: cannot infer generic type parameter 'p'; provide it explicitly
+    register2: type name 'singlelogger' does not designate a procedure for dummy procedure 'ctor': no initializer of 'singlelogger' matches its interface, and the structure constructor 'singlelogger(...)' with 2 component values is not valid here: the interface has 2 dummy arguments, but the type has 1 component
+   --> tests/errors/continue_compilation_traits_di_container.f90:131:5
+    |
+131 |     call cont%register(SingleLogger)
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
