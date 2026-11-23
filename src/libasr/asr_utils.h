@@ -4835,6 +4835,11 @@ const char *trait_descriptor_parameter(const ASR::Variable_t &variable);
 ASR::Trait_t *trait_constraint_trait(const ASR::TraitConstraint_t &constraint);
 // The binder P of a conformance constraint `P :: U`, or nullptr.
 ASR::symbol_t *conformance_constraint_binder(const ASR::TraitConstraint_t &constraint);
+// The trait-parameter binder P of a conformance parameter U (`P :: U`), or nullptr.
+ASR::symbol_t *conformance_parameter_binder(ASR::symbol_t *parameter);
+// Whether two trait members share one runtime contract slot family: same
+// message name, and if both are generic messages, corresponding signatures.
+bool trait_same_slot_family(ASR::symbol_t *left, ASR::symbol_t *right);
 std::vector<ASR::symbol_t*> trait_parameter_traits(ASR::symbol_t *parameter);
 // The runtime contract that erases a binder: that of its single nominal
 // trait, unless the trait has requirements without a receiver, which no view

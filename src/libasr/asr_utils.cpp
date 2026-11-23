@@ -6792,6 +6792,34 @@ ASR::symbol_t *conformance_constraint_binder(const ASR::TraitConstraint_t &const
     return trait_parameter_binder(constraint.m_trait);
 }
 
+// The binder P of a conformance parameter U declared `P :: U`.
+ASR::symbol_t *conformance_parameter_binder(ASR::symbol_t *parameter)
+{
+    parameter = symbol_get_past_external(parameter);
+    if (!parameter) return nullptr;
+    SymbolTable *scope = symbol_parent_symtab(parameter);
+    if (!scope) return nullptr;
+    for (const auto &entry : scope->get_scope()) {
+        if (!ASR::is_a<ASR::TraitConstraint_t>(*entry.second)) continue;
+        auto *constraint = ASR::down_cast<ASR::TraitConstraint_t>(entry.second);
+        if (symbol_get_past_external(constraint->m_parameter) != parameter) continue;
+        if (auto *binder = conformance_constraint_binder(*constraint)) return binder;
+    }
+    return nullptr;
+}
+
+bool trait_same_slot_family(ASR::symbol_t *left, ASR::symbol_t *right)
+{
+    if (trait_message_name(left) != trait_message_name(right)) return false;
+    auto *a = trait_method_function(left);
+    auto *b = trait_method_function(right);
+    if (!a || !b) return false;
+    if (trait_method_template(*a) && trait_method_template(*b)) {
+        return trait_messages_correspond(*a, *b);
+    }
+    return true;
+}
+
 ASR::Variable_t *trait_descriptor_variable(ASR::symbol_t *contract)
 {
     contract = contract ? symbol_get_past_external(contract) : nullptr;
@@ -7094,7 +7122,10 @@ bool trait_erased_signature_matches(const ASR::Function_t &generic,
     size_t n_original = generic.n_args, n_erased = erased.n_args;
     ASR::expr_t *generic_return = lowered_result(generic, n_original);
     ASR::expr_t *erased_return = lowered_result(erased, n_erased);
-    if (!generic_return || !erased_return) return false;
+    // A subroutine slot, such as register(self, ctor), has no result to lower.
+    bool subroutine = !generic_return && !erased_return &&
+        !generic.m_return_var && !erased.m_return_var;
+    if (!subroutine && (!generic_return || !erased_return)) return false;
     // The explicit receiver of a message is the leading argument of a slot.
     std::vector<size_t> generic_args = trait_compared_arguments(generic);
     while (!generic_args.empty() && generic_args.back() >= n_original) generic_args.pop_back();
@@ -7148,7 +7179,7 @@ bool trait_erased_signature_matches(const ASR::Function_t &generic,
     auto erased_arg = [&](size_t i) {
         return erased.m_args[i < n_explicit ? offset + i : offset + i + n_hidden];
     };
-    auto *result = typed_expr_type(generic_return);
+    auto *result = generic_return ? typed_expr_type(generic_return) : nullptr;
     bool erased_result = result && trait_dictionary_erased_type(result,
         typed_expr_type(erased_return), *method);
     // class(P), allocatable of a trait parameter is a trait object of the
@@ -7160,9 +7191,9 @@ bool trait_erased_signature_matches(const ASR::Function_t &generic,
                 std::string(symbol_name(trait_object_binder(result))) != parameter) return false;
         erased_result = true;
     }
-    if (!result || (!ASR::is_a<ASR::Integer_t>(*result) &&
+    if (!subroutine && (!result || (!ASR::is_a<ASR::Integer_t>(*result) &&
             !(descriptors.size() && ASR::is_a<ASR::Logical_t>(*result)) &&
-            !erased_result)) return false;
+            !erased_result))) return false;
     std::map<ASR::symbol_t*, ASR::symbol_t*> arguments;
     for (size_t i = 0; i < n_generic; i++) {
         if (!generic_arg(i) || !erased_arg(i) ||
@@ -7184,6 +7215,13 @@ bool trait_erased_signature_matches(const ASR::Function_t &generic,
             if (a->m_intent != ASR::intentType::In) return false;
             continue;
         }
+        // A procedure dummy is forwarded. Its type parameters may be erased
+        // (`procedure(ctor0{U})` with `P :: U` becomes a procedure whose
+        // result is class(P)).
+        if (ASR::is_a<ASR::FunctionType_t>(*type_get_past_pointer(a->m_type)) &&
+                ASR::is_a<ASR::FunctionType_t>(*type_get_past_pointer(b->m_type))) {
+            continue;
+        }
         auto *binder = trait_type_parameter(generic_arg(i));
         if (binder) {
             auto *contract = trait_parameter_contract(binder);
@@ -7197,6 +7235,7 @@ bool trait_erased_signature_matches(const ASR::Function_t &generic,
             return false;
         }
     }
+    if (subroutine) return true;
     return erased_result ||
         trait_types_equal(generic_return, erased_return, arguments);
 }
@@ -8101,13 +8140,50 @@ static bool runtime_trait_parameter_signature(const ASR::Function_t &method,
     return true;
 }
 
+// A generic subroutine whose binders are trait parameters and conformance
+// parameters of those trait parameters (`P :: U`), and whose other arguments
+// are procedure dummies or numeric or logical scalars. This is the slot
+// surface of an overloaded `register(self, ctor)`.
+static bool runtime_trait_open_subroutine(const ASR::Function_t &method,
+        const ASR::Template_t &generic)
+{
+    if (method.m_return_var || !generic.n_args) return false;
+    for (size_t i = 0; i < generic.n_args; i++) {
+        auto *binder = generic.m_symtab->get_symbol(generic.m_args[i]);
+        if (trait_parameter_binder(binder)) continue;
+        auto *trait = conformance_parameter_binder(binder);
+        if (!trait || !trait_parameter_binder(trait)) return false;
+    }
+    for (size_t i : trait_compared_arguments(method)) {
+        if (!ASR::is_a<ASR::Var_t>(*method.m_args[i])) return false;
+        auto *symbol = symbol_get_past_external(
+            ASR::down_cast<ASR::Var_t>(method.m_args[i])->m_v);
+        if (!ASR::is_a<ASR::Variable_t>(*symbol)) return false;
+        auto *arg = ASR::down_cast<ASR::Variable_t>(symbol);
+        auto *type = type_get_past_pointer(arg->m_type);
+        if (ASR::is_a<ASR::FunctionType_t>(*type)) {
+            if (arg->m_value_attr || arg->m_target_attr || arg->m_is_volatile ||
+                    arg->n_codims) return false;
+            continue;
+        }
+        if (!(ASR::is_a<ASR::Integer_t>(*arg->m_type) || ASR::is_a<ASR::Real_t>(*arg->m_type)
+                || ASR::is_a<ASR::Complex_t>(*arg->m_type) ||
+                ASR::is_a<ASR::Logical_t>(*arg->m_type))
+                || arg->m_presence != ASR::presenceType::Required || arg->m_value_attr) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool runtime_trait_method_supported(const ASR::Function_t &method)
 {
     auto abi = get_FunctionType(method)->m_abi;
     if (abi != ASR::abiType::Source && abi != ASR::abiType::ExternalUndefined) return false;
     auto *generic = trait_method_template(method);
     if (!generic) return runtime_trait_concrete_signature(method, {});
-    if (!method.m_return_var || (generic->n_args && !generic->m_args)) return false;
+    if (generic->n_args && !generic->m_args) return false;
+    if (!method.m_return_var) return runtime_trait_open_subroutine(method, *generic);
     // Closed binders expand to one concrete member signature per tuple.
     auto tuples = trait_member_tuples(*generic);
     if (!tuples.empty()) {

@@ -1647,6 +1647,10 @@ public:
         std::vector<ASR::symbol_t*> descriptors;
         for (auto &binder : erased_descriptor_binders(&x->base, type_subs)) {
             std::string name = trait_descriptor_dummy_name(binder);
+            // A nested interface instantiated inside an erased procedure sees
+            // its enclosing procedure's descriptor dummies and does not take
+            // extra descriptor arguments of its own.
+            if (target_scope->resolve_symbol(name)) continue;
             ASR::symbol_t *dummy = ASR::down_cast<ASR::symbol_t>(
                 ASRUtils::make_Variable_t_util(al, x->base.base.loc, new_scope,
                     s2c(al, name), nullptr, 0, ASR::intentType::In, nullptr, nullptr,
@@ -1658,6 +1662,27 @@ public:
             descriptors.push_back(dummy);
         }
         instantiate_local_symbols(x->m_symtab);
+        // `procedure(ctor0{U})` with `P :: U` erases `type(U)` to class(P).
+        // That result is only the interface's signature. A trait-object
+        // result needs allocatable storage, which a bare class(P) has not.
+        if (x->m_return_var && ASRUtils::get_FunctionType(x)->m_deftype ==
+                ASR::deftypeType::Interface) {
+            std::string result_name = ASRUtils::symbol_name(ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(x->m_return_var)->m_v));
+            ASR::symbol_t *result = new_scope->get_symbol(result_name);
+            if (result && ASR::is_a<ASR::Variable_t>(*result)) {
+                auto *variable = ASR::down_cast<ASR::Variable_t>(result);
+                if (variable->m_type && ASR::is_a<ASR::TraitObjectType_t>(*variable->m_type)) {
+                    auto *contract = ASR::down_cast<ASR::TraitObjectType_t>(
+                        variable->m_type)->m_contract;
+                    if (ASRUtils::trait_parameter_binder(contract) ||
+                            ASRUtils::trait_descriptor_variable(contract)) {
+                        variable->m_type = ASRUtils::TYPE(ASR::make_Allocatable_t(al,
+                            variable->m_type->base.loc, variable->m_type));
+                    }
+                }
+            }
+        }
 
         Vec<ASR::expr_t*> args;
         args.reserve(al, x->n_args);
@@ -1789,9 +1814,18 @@ public:
                 && ASR::is_a<ASR::Function_t>(*definition)) {
             // Not instantiated yet, e.g. not named by the ONLY list: instantiate
             // it in the corresponding scope, like a derived type the entity
-            // uses (see substitute_type).
+            // uses (see substitute_type). When the enclosing procedure carries
+            // erased trait-parameter descriptors, nest the interface inside
+            // that procedure so its erased types can name those descriptors.
             SymbolTable* scope = corresponding_target_scope(
                 ASRUtils::symbol_parent_symtab(definition));
+            for (const auto &entry : type_subs) {
+                if (entry.second.first && ASR::is_a<ASR::TraitDescriptorType_t>(
+                        *entry.second.first)) {
+                    scope = target_scope;
+                    break;
+                }
+            }
             std::string new_name = scope->get_unique_name("__asr_" + name, false);
             SymbolInstantiator t(al, template_scope, scope, type_subs, symbol_subs,
                 new_name, definition, diagnostics);
@@ -3015,9 +3049,13 @@ public:
                     // A parameter of a nested template, left deferred
                     return ASRUtils::duplicate_type(al, ttype);
                 }
-                return ASRUtils::substitute_class_type_parameter(al, param,
+                ASR::ttype_t *result = ASRUtils::substitute_class_type_parameter(al, param,
                     ASRUtils::duplicate_type(al, type_subs[param->m_param].first),
                     type_subs[param->m_param].second);
+                if (ASR::is_a<ASR::TraitObjectType_t>(*result)) {
+                    result = substitute_trait_parameter_object(al, result, type_subs, target_scope);
+                }
+                return result;
             } 
             case (ASR::ttypeType::List) : {
                 ASR::List_t *tlist = ASR::down_cast<ASR::List_t>(ttype);
@@ -4478,10 +4516,13 @@ public:
                 // The trait contracts that the components of a derived type
                 // argument name are referenced through imports of the
                 // instance's scope, which a module file can resolve.
-                return ASRUtils::import_trait_type(al,
-                    ASRUtils::substitute_class_type_parameter(al, param,
-                        ASRUtils::duplicate_type(al, type_subs[param->m_param].first),
-                        type_subs[param->m_param].second), new_scope);
+                ASR::ttype_t *result = ASRUtils::substitute_class_type_parameter(al, param,
+                    ASRUtils::duplicate_type(al, type_subs[param->m_param].first),
+                    type_subs[param->m_param].second);
+                if (ASR::is_a<ASR::TraitObjectType_t>(*result)) {
+                    result = substitute_trait_parameter_object(al, result, type_subs, new_scope);
+                }
+                return ASRUtils::import_trait_type(al, result, new_scope);
             }
             case (ASR::ttypeType::List) : {
                 ASR::List_t *tlist = ASR::down_cast<ASR::List_t>(ttype);

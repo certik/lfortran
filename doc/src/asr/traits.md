@@ -1422,15 +1422,21 @@ end subroutine setup
   and its constraints; the tie-break for type names applies as well. Each
   overload has its own generic requirement, and each instance binds it to
   the specific that the type's conformance selected.
-- **Trait objects.** A trait with overloaded messages has no runtime
-  contract: declaring a trait object of it is diagnosed, "calling the
-  overloaded generic message 'register' of trait 'icontainer' through trait
-  objects is not implemented yet". Declaring the trait and using it as a
-  generic constraint are not affected.
+- **Trait objects.** A trait with overloaded messages has a runtime contract
+  when every overload's signature is admitted by the slot surface: each
+  distinguishable overload occupies its own slot, while corresponding
+  messages across inherited traits share one slot family. A call through a
+  trait object selects the overload statically (`select_overloaded_trait_message`)
+  and dispatches through that slot. If any overload is outside the runtime
+  slot surface, the trait has no runtime contract and declaring a trait object
+  of it is diagnosed, "calling the overloaded generic message '...' of trait
+  '...' through trait objects is not implemented yet".
 
 See `integration_tests/traits_generic_overload_02.f90` to
-`integration_tests/traits_generic_overload_05.f90` and the diagnostics in
-`tests/errors/continue_compilation_traits_overloaded_messages.f90`.
+`integration_tests/traits_generic_overload_05.f90`,
+`integration_tests/traits_overloaded_trait_object_01.f90`,
+`integration_tests/traits_overloaded_trait_object_02.f90`, and the diagnostics
+in `tests/errors/continue_compilation_traits_overloaded_messages.f90`.
 
 ### Generic initializers
 

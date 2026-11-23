@@ -29612,16 +29612,28 @@ public:
         // A view calls only messages: an initializer requirement has no slot,
         // and an operator requirement leaves the trait a generic constraint.
         if (!ASRUtils::trait_runtime_view_admissible(*trait)) return nullptr;
-        if (ASRUtils::trait_has_overloaded_messages(hierarchy.members)) return nullptr;
-        std::map<std::string, ASR::Function_t*> methods;
+        // Distinguishable overloads are separate slots, even when inherited
+        // from different traits with the same unmangled name. Messages that
+        // correspond stay one family. A signature the slot surface does not
+        // admit still has no contract, as before.
+        std::vector<ASR::symbol_t*> canonical_members;
         for (auto *member : hierarchy.members) {
             if (ASRUtils::trait_member_is_initializer(member)) continue;
             auto *method = ASRUtils::trait_method_function(member);
             if (!ASRUtils::runtime_trait_method_supported(*method) ||
                     has_postponed_array_bounds(*method)) return nullptr;
-            auto previous = methods.emplace(ASRUtils::trait_message_name(member), method);
-            if (!previous.second) {
-                check_trait_method_compatibility(*previous.first->second, *method, loc);
+            ASR::symbol_t *previous = nullptr;
+            for (auto *existing : canonical_members) {
+                if (ASRUtils::trait_same_slot_family(existing, member)) {
+                    previous = existing;
+                    break;
+                }
+            }
+            if (previous) {
+                check_trait_method_compatibility(
+                    *ASRUtils::trait_method_function(previous), *method, loc);
+            } else {
+                canonical_members.push_back(member);
             }
         }
         auto *parent = trait->m_symtab->parent;
@@ -29636,7 +29648,7 @@ public:
             al, loc, &contract->base));
         // One family of slots per canonical callable: a single slot, or one per
         // member tuple of a generic message whose binders are all closed.
-        std::map<std::string, size_t> indices;
+        std::vector<ASR::symbol_t*> family_heads;
         std::vector<std::pair<size_t, size_t>> families;
         std::vector<std::vector<ASR::symbol_t*>> origins;
         Vec<ASR::trait_slot_t> slots;
@@ -29644,8 +29656,15 @@ public:
         for (auto *member : hierarchy.members) {
             if (ASRUtils::trait_member_is_initializer(member)) continue;
             auto *method = ASRUtils::trait_method_function(member);
-            auto inserted = indices.emplace(method->m_name, families.size());
-            if (inserted.second) {
+            size_t family_index = family_heads.size();
+            for (size_t i = 0; i < family_heads.size(); i++) {
+                if (ASRUtils::trait_same_slot_family(family_heads[i], member)) {
+                    family_index = i;
+                    break;
+                }
+            }
+            if (family_index == family_heads.size()) {
+                family_heads.push_back(member);
                 size_t first = slots.size();
                 ASR::trait_slot_t slot;
                 slot.loc = method->base.base.loc;
@@ -29696,7 +29715,7 @@ public:
                 families.push_back({first, slots.size() - first});
                 origins.emplace_back();
             }
-            origins[inserted.first->second].push_back(
+            origins[family_index].push_back(
                 reference_trait_member(member, scope, loc));
         }
         for (size_t i = 0; i < families.size(); i++) {
@@ -29777,13 +29796,18 @@ public:
     // with that result.
     void check_runtime_trait_results(const ASR::Trait_t &trait, const Location &loc) {
         auto members = checked_trait_hierarchy(trait, loc).members;
-        for (auto *member : members) {
-            if (ASRUtils::trait_message_is_overloaded(members, member)) {
-                trait_call_error("calling the overloaded generic message '" +
-                    ASRUtils::trait_member_display_name(member) + "' of trait '" +
-                    std::string(trait.m_name) + "' through trait objects is not "
-                    "implemented yet; it can be called on a type that implements the trait "
-                    "and through a generic parameter that the trait constrains", loc);
+        // A contract already holds one slot per distinguishable overload.
+        // Without one, the overload is still outside the runtime view.
+        if (!ASRUtils::trait_runtime_contract(
+                const_cast<ASR::symbol_t*>(&trait.base))) {
+            for (auto *member : members) {
+                if (ASRUtils::trait_message_is_overloaded(members, member)) {
+                    trait_call_error("calling the overloaded generic message '" +
+                        ASRUtils::trait_member_display_name(member) + "' of trait '" +
+                        std::string(trait.m_name) + "' through trait objects is not "
+                        "implemented yet; it can be called on a type that implements the trait "
+                        "and through a generic parameter that the trait constrains", loc);
+                }
             }
         }
         for (auto *member : members) {
@@ -30036,6 +30060,14 @@ public:
                     al, generic.base.base.loc, generic.m_args[i])), nullptr};
                 continue;
             }
+            // `P :: U` erases type(U) to class(P). P is a trait parameter;
+            // substitute_trait_parameter_object rewrites class(P) to the
+            // erased entry's descriptor dummy for P.
+            if (auto *trait_binder = ASRUtils::conformance_parameter_binder(parameter)) {
+                types[generic.m_args[i]] = {ASRUtils::TYPE(ASR::make_TraitObjectType_t(
+                    al, generic.base.base.loc, trait_binder)), nullptr};
+                continue;
+            }
             // A protocol binder is erased to storage its per-call dictionary describes.
             if (ASRUtils::trait_parameter_dictionary(parameter)) {
                 types[generic.m_args[i]] = {ASRUtils::TYPE(ASR::make_TraitErasedType_t(
@@ -30134,7 +30166,11 @@ public:
                 nested = trait_erased_storage_obstacle(
                     *ASR::down_cast<ASR::AssociateBlock_t>(entry.second)->m_symtab,
                     dictionaries, true);
-            } else if (ASR::is_a<ASR::Function_t>(*entry.second)) {
+            } else if (ASR::is_a<ASR::Function_t>(*entry.second) &&
+                    ASRUtils::get_FunctionType(entry.second)->m_deftype ==
+                        ASR::deftypeType::Implementation) {
+                // A `procedure(ctor{U})` interface lives in this scope too.
+                // Its `type(U)` result is a signature, not erased storage.
                 nested = trait_erased_storage_obstacle(
                     *ASR::down_cast<ASR::Function_t>(entry.second)->m_symtab, dictionaries, block);
             }
@@ -30586,12 +30622,31 @@ public:
         return generic && !trait_dictionary_binders(*generic).empty() ? generic : nullptr;
     }
 
-    // A witness whose entries erase protocol binders exists only once the
-    // bodies of the generic procedures it binds are known to be erasable.
+    // The generic procedure bound to `slot` whose binders include a
+    // conformance parameter (`P :: U`) erased as class(P), or nullptr.
+    ASR::Template_t *trait_witness_conformance_generic(
+            const ASR::TraitImplementation_t &implementation, const ASR::trait_slot_t &slot) {
+        if (slot.n_type_arguments) return nullptr;
+        auto *binding = ASRUtils::find_trait_binding(implementation, slot.m_origins[0]);
+        auto *procedure = binding ? ASRUtils::trait_method_function(binding->m_procedure)
+            : nullptr;
+        auto *generic = procedure ? ASRUtils::trait_method_template(*procedure) : nullptr;
+        if (!generic) return nullptr;
+        for (size_t i = 0; i < generic->n_args; i++) {
+            auto *binder = generic->m_symtab->get_symbol(generic->m_args[i]);
+            if (ASRUtils::conformance_parameter_binder(binder)) return generic;
+        }
+        return nullptr;
+    }
+
+    // A witness whose entries erase protocol or conformance binders exists
+    // only once the bodies of the generic procedures it binds are known to be
+    // erasable.
     bool trait_witness_needs_erasable_bodies(const ASR::TraitImplementation_t &implementation,
             const ASR::TraitRuntimeContract_t &contract) {
         for (size_t i = 0; i < contract.n_slots; i++) {
-            if (trait_witness_dictionary_generic(implementation, contract.m_slots[i])) {
+            if (trait_witness_dictionary_generic(implementation, contract.m_slots[i]) ||
+                    trait_witness_conformance_generic(implementation, contract.m_slots[i])) {
                 return true;
             }
         }
@@ -30603,11 +30658,24 @@ public:
             const ASR::TraitRuntimeContract_t &contract) {
         std::set<std::pair<const ASR::Template_t*, std::set<std::string>>> visited;
         for (size_t i = 0; i < contract.n_slots; i++) {
-            auto *generic = trait_witness_dictionary_generic(implementation, contract.m_slots[i]);
-            if (!generic) continue;
-            if (auto obstacle = trait_generic_erasure_obstacle(*generic,
-                    trait_dictionary_binders(*generic), visited)) {
-                return obstacle;
+            if (auto *generic = trait_witness_dictionary_generic(
+                    implementation, contract.m_slots[i])) {
+                if (auto obstacle = trait_generic_erasure_obstacle(*generic,
+                        trait_dictionary_binders(*generic), visited)) {
+                    return obstacle;
+                }
+            }
+            if (auto *generic = trait_witness_conformance_generic(
+                    implementation, contract.m_slots[i])) {
+                bool loaded = trait_scope_loaded(generic->m_symtab);
+                for (const auto &entry : generic->m_symtab->get_scope()) {
+                    if (ASR::is_a<ASR::Struct_t>(*entry.second)) {
+                        return {"generic derived types instantiated on erased "
+                            "trait or conformance parameters are not implemented "
+                            "yet in runtime generic messages",
+                            entry.second->base.loc, generic->m_name, loaded};
+                    }
+                }
             }
         }
         return {};
@@ -31054,6 +31122,14 @@ public:
             parameter.m_parameter = make_operator_proc_visible(binder, "trait", scope);
             // A trait parameter has its descriptor and no operations.
             if (ASRUtils::trait_parameter_binder(binder)) {
+                parameter.m_contract = nullptr;
+                parameter.m_operations = nullptr;
+                parameter.n_operations = 0;
+                parameters.push_back(al, parameter);
+                continue;
+            }
+            // `P :: U` has no nominal contract. type(U) is class(P) in the entry.
+            if (ASRUtils::conformance_parameter_binder(binder)) {
                 parameter.m_contract = nullptr;
                 parameter.m_operations = nullptr;
                 parameter.n_operations = 0;
@@ -35785,15 +35861,47 @@ public:
             if (ASR::is_a<ASR::TraitObjectType_t>(*type)) {
                 tmp = nullptr;
                 auto *contract = ASRUtils::trait_runtime_contract(type);
+                // One candidate per distinguishable overload. Closed member
+                // tuples share a function name and keep the first slot, which
+                // is the only slot a message without tuples has.
+                struct OverloadMatch {
+                    size_t slot;
+                    ASR::symbol_t *member;
+                };
+                std::vector<OverloadMatch> matches;
                 for (size_t i = 0; i < contract->n_slots; i++) {
-                    auto &slot = contract->m_slots[i];
-                    auto *member = ASRUtils::trait_method_function(slot.m_origins[0]);
-                    if (name == member->m_name) {
-                        signature = member;
-                        callee = slot.m_procedure;
-                        runtime_slot = i;
-                        break;
+                    auto *member = contract->m_slots[i].m_origins[0];
+                    if (ASRUtils::trait_message_name(member) != name) continue;
+                    bool seen = std::any_of(matches.begin(), matches.end(),
+                        [&](const OverloadMatch &match) {
+                            return ASRUtils::trait_same_slot_family(member, match.member);
+                        });
+                    if (!seen) matches.push_back({i, member});
+                }
+                ASR::symbol_t *selected = nullptr;
+                if (matches.size() == 1) {
+                    selected = matches[0].member;
+                    runtime_slot = matches[0].slot;
+                } else if (matches.size() > 1) {
+                    std::vector<ASR::symbol_t*> messages;
+                    for (const auto &match : matches) messages.push_back(match.member);
+                    ASR::expr_t *object = resolved_receiver ? resolved_receiver
+                        : ASRUtils::EXPR(ASR::make_Var_t(al, loc, variable));
+                    selected = select_overloaded_trait_message(messages, object,
+                        actuals, n_actuals, keywords, n_keywords, explicit_args,
+                        n_explicit_args, is_function, loc);
+                    for (const auto &match : matches) {
+                        if (ASRUtils::trait_messages_correspond(
+                                *ASRUtils::trait_method_function(selected),
+                                *ASRUtils::trait_method_function(match.member))) {
+                            runtime_slot = match.slot;
+                            break;
+                        }
                     }
+                }
+                if (selected && runtime_slot >= 0) {
+                    signature = ASRUtils::trait_method_function(selected);
+                    callee = contract->m_slots[runtime_slot].m_procedure;
                 }
                 if (!callee) {
                     trait_call_error("method '" + name

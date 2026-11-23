@@ -3415,23 +3415,24 @@ public:
                         "Anonymous combinations retain original nominal contracts, not synthetic names");
                 }
             }
-            std::map<std::string, size_t> indices;
             std::vector<std::vector<symbol_t*>> expected;
             require_id(ASRUtils::trait_runtime_view_admissible(*ASR::down_cast<Trait_t>(trait_symbol)),
                 "asr.verify.trait_contract.view_admissible",
                 "A runtime contract belongs to a trait whose requirements without a "
                 "receiver are initializers and whose messages do not use itself");
-            require_id(!ASRUtils::trait_has_overloaded_messages(hierarchy.members),
-                "asr.verify.trait_contract.overloaded_messages",
-                "A runtime contract belongs to a trait without overloaded generic messages");
             for (auto *member : hierarchy.members) {
                 // An initializer is required for conformance but is not
                 // callable through an object: it has no slot.
                 if (ASRUtils::trait_member_is_initializer(member)) continue;
-                auto inserted = indices.emplace(ASRUtils::trait_message_name(member),
-                    expected.size());
-                if (inserted.second) expected.emplace_back();
-                expected[inserted.first->second].push_back(member);
+                size_t family = expected.size();
+                for (size_t i = 0; i < expected.size(); i++) {
+                    if (ASRUtils::trait_same_slot_family(expected[i][0], member)) {
+                        family = i;
+                        break;
+                    }
+                }
+                if (family == expected.size()) expected.emplace_back();
+                expected[family].push_back(member);
             }
             // A callable whose generic binders are all closed has one slot per
             // member tuple; any other callable has exactly one slot.
@@ -3588,6 +3589,16 @@ public:
                             ASRUtils::trait_descriptor_dummy(*entry, generic->m_args[i]),
                         "asr.verify.trait_erasure.parameter_identity",
                         "A trait parameter keeps its scope and the entry's descriptor dummy");
+                    continue;
+                }
+                if (ASRUtils::conformance_parameter_binder(trait_binder)) {
+                    // `P :: U`: type(U) is erased to class(P). No descriptor of its own.
+                    require_id(parameter.m_parameter && !parameter.m_contract &&
+                            !parameter.m_member && !parameter.n_operations &&
+                            ASRUtils::symbol_get_past_external(parameter.m_parameter) ==
+                                trait_binder,
+                        "asr.verify.trait_erasure.parameter_identity",
+                        "A conformance parameter keeps its scope and is erased as class(P)");
                     continue;
                 }
                 require_id(parameter.m_parameter && parameter.m_contract && !parameter.m_member &&

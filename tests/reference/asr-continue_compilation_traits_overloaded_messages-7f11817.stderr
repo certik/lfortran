@@ -72,153 +72,155 @@ semantic error: type 'container' does not implement the overloaded generic messa
  40 |            end subroutine register
     | ...~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ the message is declared here
 
-semantic error: calling the overloaded generic message 'register' of trait 'icontainer' through trait objects is not implemented yet; it can be called on a type that implements the trait and through a generic parameter that the trait constrains
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:161:9
-    |
-161 |         class(IContainer), allocatable :: c
-    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
-
 semantic error: overloaded declarations of trait method 'run' are not implemented yet unless every one is a generic message
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:187:9 - 190:26
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:190:9 - 193:26
     |
-187 |            subroutine run(self, n)
+190 |            subroutine run(self, n)
     |            ^^^^^^^^^^^^^^^^^^^^^^^...
 ...
     |
-190 |            end subroutine run
+193 |            end subroutine run
     | ...^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
 semantic error: overloaded generic messages 'run' of trait 'imix' must all be functions or all subroutines
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:202:9 - 205:24
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:205:9 - 208:24
     |
-202 |            integer function run{Trait :: P}(self, n)
+205 |            integer function run{Trait :: P}(self, n)
     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
 ...
     |
-205 |            end function run
+208 |            end function run
     | ...^^^^^^^^^^^^^^^^^^^^^^^^ 
     |
-199 |            subroutine run{Trait :: P}(self)
+202 |            subroutine run{Trait :: P}(self)
     |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
 ...
     |
-201 |            end subroutine run
+204 |            end subroutine run
     | ...~~~~~~~~~~~~~~~~~~~~~~~~~~ other declaration
 
 semantic error: ambiguous implementation of generic message 'register{p, u}' of trait 'icontainer': the specifics 'register0' and 'register0b' of binding 'register' of type 'container' both match it
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:214:5 - 220:1
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:217:5 - 223:1
     |
-214 |        type, sealed, implements(IContainer) :: Container
+217 |        type, sealed, implements(IContainer) :: Container
     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
 ...
     |
-220 |    
+223 |    
     | ...^ 
 
 semantic error: generic specific procedures 'register0' and 'register0b' of generic 'register' are not distinguishable: some types that their generic parameters admit make a reference match both
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:218:9
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:221:9
     |
-218 |         procedure :: register0, register1, register0b
+221 |         procedure :: register0, register1, register0b
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
 semantic error: the overloaded generic message 'register' of trait 'icontainer' cannot be bound in an implements block; it is implemented by the specifics of the type's generic binding 'register'
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:254:9
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:257:9
     |
-254 |         procedure, pass(self) :: register => register0
+257 |         procedure, pass(self) :: register => register0
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
 semantic error: the generic messages 'register{p, u}' of trait 'iin' and 'register{p, u}' of trait 'iinout' neither correspond (their receivers have intent(in) and intent(inout)) nor are distinguishable overloads: some types that their generic parameters admit make a reference match both
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:291:5 - 296:1
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:294:5 - 299:1
     |
-291 |        type, sealed, implements(IIn + IInOut) :: Box
+294 |        type, sealed, implements(IIn + IInOut) :: Box
     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
 ...
     |
-296 |    
+299 |    
     | ...^ 
 
 semantic error: type 'container' does not implement the overloaded generic message 'register{p, t1, t2, u}' of trait 'ipair': no specific of its binding 'register' matches it
     register0: generic contract does not match trait method 'register': generic type parameter counts differ
     register1: generic contract does not match trait method 'register': generic type parameter counts differ
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:323:5 - 329:1
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:326:5 - 332:1
     |
-323 |        type, sealed, implements(IContainer + IPair) :: Container
+326 |        type, sealed, implements(IContainer + IPair) :: Container
     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
 ...
     |
-329 |    
+332 |    
     | ...^ 
     |
-317 |            subroutine register{Trait :: P, Trait :: T1, Trait :: T2, P :: U}(self, ctor)
+320 |            subroutine register{Trait :: P, Trait :: T1, Trait :: T2, P :: U}(self, ctor)
     |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
 ...
     |
-320 |            end subroutine register
+323 |            end subroutine register
     | ...~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ the message is declared here
 
 semantic error: the binding 'other' of the message 'serve' of trait 'iserve' in an implements block is not distinguishable from the specific 'serve0' of the generic binding 'serve' of type 'server', with which it is one generic: some reference matches both
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:363:9
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:366:9
     |
-363 |         procedure :: serve => other
+366 |         procedure :: serve => other
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
 semantic error: type 'server' does not implement the message 'serve' of trait 'iserve': no specific of its binding 'serve' matches it
     serve_n: argument count does not match trait method 'serve'
     serve_x: argument count does not match trait method 'serve'
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:394:5 - 400:1
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:397:5 - 403:1
     |
-394 |        type, implements(IServe) :: Server
+397 |        type, implements(IServe) :: Server
     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
 ...
     |
-400 |    
+403 |    
     | ...^ 
     |
-389 |            integer function serve(self)
+392 |            integer function serve(self)
     |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~...
 ...
     |
-391 |            end function serve
+394 |            end function serve
     | ...~~~~~~~~~~~~~~~~~~~~~~~~~~ the message is declared here
 
 semantic error: the binding 'other' of the message 'serve' of trait 'iserve' in an implements block is not distinguishable from the specific 'serve_n' of the generic binding 'serve' of type 'server', with which it is one generic: some reference matches both
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:463:9
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:466:9
     |
-463 |         procedure :: serve => other
+466 |         procedure :: serve => other
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
 semantic error: the binding 'other' of the message 'serve' of trait 'iserve' in an implements block is not distinguishable from the specific 'serve_t' of the generic binding 'serve' of type 'server', with which it is one generic: some reference matches both
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:506:9
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:509:9
     |
-506 |         procedure :: serve => other
+509 |         procedure :: serve => other
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
 semantic error: no overloaded generic message 'register' accepts this reference:
     register{p, u}: procedure 'make_pair' does not match the interface of dummy procedure 'ctor': it has 2 dummy arguments, but the interface has 0
     register{p, t1, u}: procedure 'make_pair' does not match the interface of dummy procedure 'ctor': it has 2 dummy arguments, but the interface has 1
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:175:9
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:164:9
     |
-175 |         call cont%register{IClient}(make_pair)
+164 |         call c%register{IClient}(make_pair)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: no overloaded generic message 'register' accepts this reference:
+    register{p, u}: procedure 'make_pair' does not match the interface of dummy procedure 'ctor': it has 2 dummy arguments, but the interface has 0
+    register{p, t1, u}: procedure 'make_pair' does not match the interface of dummy procedure 'ctor': it has 2 dummy arguments, but the interface has 1
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:178:9
+    |
+178 |         call cont%register{IClient}(make_pair)
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
 semantic error: no overloaded generic message 'get' accepts this reference:
     get{p}(self): too many arguments to trait procedure 'get'
     get{p}(self, n): actual arguments conflict with the generic procedure's types
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:441:13
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:444:13
     |
-441 |         r = x%get{IServe}(1.5)
+444 |         r = x%get{IServe}(1.5)
     |             ^^^^^^^^^^^^^^^^^^ 
 
 semantic error: no specific procedure of generic 'serve' accepts this reference:
     serve_n: its dummy arguments do not match the actual arguments
     other (implements block of trait 'iserve'): its dummy arguments do not match the actual arguments
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:563:22
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:566:22
     |
-563 |         use_server = c%serve(.true.)
+566 |         use_server = c%serve(.true.)
     |                      ^^^^^^^^^^^^^^^ 
 
 semantic error: rank mismatch in argument `x`: the dummy argument is an array of rank 1 but the actual argument is a scalar
-   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:597:30
+   --> tests/errors/continue_compilation_traits_overloaded_messages.f90:600:30
     |
-597 |         use_server = c%serve(2)
+600 |         use_server = c%serve(2)
     |                              ^ 

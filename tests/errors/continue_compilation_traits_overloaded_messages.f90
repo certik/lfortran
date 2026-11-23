@@ -1,7 +1,7 @@
 ! Overloaded generic messages in a trait (DI extension E6): overloads that
 ! are not distinguishable; an overloaded message that is not generic; a type
 ! whose generic binding has no specific for one overload, or a specific that
-! does not match it; a trait object of a trait with overloaded messages; a
+! does not match it; a call through a trait object that no overload accepts; a
 ! call through a generic parameter that no overload accepts; a non-generic
 ! message after a generic one; overloads mixing a function and a
 ! subroutine; two specifics that implement one overload; an implements-block
@@ -150,15 +150,18 @@ contains
     end subroutine register1
 end module continue_compilation_traits_overloaded_messages_m4
 
-! Overloaded messages are not dispatched through trait objects yet.
+! A call of an overloaded message through a trait object that no overload
+! accepts.
 module continue_compilation_traits_overloaded_messages_m5
-    use continue_compilation_traits_overloaded_messages_m0, only: IContainer
+    use continue_compilation_traits_overloaded_messages_m0, only: IContainer, &
+        IClient, make_pair
     implicit none
 
 contains
 
-    subroutine use_object()
-        class(IContainer), allocatable :: c
+    subroutine use_object(c)
+        class(IContainer), intent(inout) :: c
+        call c%register{IClient}(make_pair)
     end subroutine use_object
 end module continue_compilation_traits_overloaded_messages_m5
 
