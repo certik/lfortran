@@ -5769,10 +5769,58 @@ public:
         return constraints;
     }
 
+    // `concrete` instantiates the generic type that `symbolic` instantiates,
+    // with each type parameter replaced by the type argument of that name on
+    // the enclosing instance `metadata`. Evidence is not compared: a symbolic
+    // argument carries none, and a concrete argument records its own.
+    static bool symbolic_component_instance(const Template_t &package,
+            const GenericTypeInstance_t &metadata, const Struct_t &symbolic,
+            const Struct_t &concrete) {
+        if (ASRUtils::is_symbolic_generic_instance(concrete)) return false;
+        auto *symbolic_meta = ASRUtils::generic_type_instance(symbolic);
+        auto *concrete_meta = ASRUtils::generic_type_instance(concrete);
+        if (!symbolic_meta || !concrete_meta ||
+                symbolic_meta->n_arguments != concrete_meta->n_arguments ||
+                ASRUtils::generic_instance_definition(*symbolic_meta) !=
+                    ASRUtils::generic_instance_definition(*concrete_meta)) {
+            return false;
+        }
+        for (size_t i = 0; i < symbolic_meta->n_arguments; i++) {
+            const auto &symbolic_argument = symbolic_meta->m_arguments[i];
+            const auto &concrete_argument = concrete_meta->m_arguments[i];
+            if (symbolic_argument.m_type &&
+                    ASR::is_a<TypeParameter_t>(*symbolic_argument.m_type)) {
+                std::string parameter = ASR::down_cast<TypeParameter_t>(
+                    symbolic_argument.m_type)->m_param;
+                bool found = false;
+                for (size_t j = 0; j < package.n_args && j < metadata.n_arguments; j++) {
+                    if (parameter != package.m_args[j]) continue;
+                    found = true;
+                    if (!ASRUtils::trait_type_argument_equal(
+                            {concrete_argument.m_type,
+                                concrete_argument.m_type_declaration},
+                            {metadata.m_arguments[j].m_type,
+                                metadata.m_arguments[j].m_type_declaration})) {
+                        return false;
+                    }
+                }
+                if (!found) return false;
+            } else if (!ASRUtils::trait_type_argument_equal(
+                    {symbolic_argument.m_type, symbolic_argument.m_type_declaration},
+                    {concrete_argument.m_type,
+                        concrete_argument.m_type_declaration})) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // Whether the type `instance` of an instance's component (declared by
     // `instance_declaration`) is the type `definition` of the definition's
     // component (declared by `definition_declaration`) with each parameter
     // replaced by its type argument and the definition by the instance.
+    // A component that is a symbolic generic instance (Entry{U} inside
+    // Vector{U}) matches the concrete instance of those arguments.
     // Procedure types are compared by kind only.
     static bool instance_component_type(const Template_t &package,
             const Struct_t &definition_struct, const GenericTypeInstance_t &metadata,
@@ -5827,9 +5875,16 @@ public:
                 ? ASRUtils::symbol_get_past_external(definition_declaration) : nullptr;
             ASR::symbol_t *copy = instance_declaration
                 ? ASRUtils::symbol_get_past_external(instance_declaration) : nullptr;
-            return copy && ASRUtils::is_class_type(definition) ==
-                ASRUtils::is_class_type(instance) &&
-                (original == &definition_struct.base ? copy == &x.base : copy == original);
+            if (!copy || ASRUtils::is_class_type(definition) !=
+                    ASRUtils::is_class_type(instance)) return false;
+            if (original && ASR::is_a<Struct_t>(*original) &&
+                    ASRUtils::is_symbolic_generic_instance(
+                        *ASR::down_cast<Struct_t>(original))) {
+                return ASR::is_a<Struct_t>(*copy) && symbolic_component_instance(
+                    package, metadata, *ASR::down_cast<Struct_t>(original),
+                    *ASR::down_cast<Struct_t>(copy));
+            }
+            return original == &definition_struct.base ? copy == &x.base : copy == original;
         }
         if (ASR::is_a<FunctionType_t>(*definition)) return true;
         return ASRUtils::types_equal(definition, instance, nullptr, nullptr);
@@ -6207,19 +6262,36 @@ public:
         }
     }
 
-    // A symbolic instance is declared in the scope of a generic procedure,
-    // and some of its type arguments are binders of that generic.
+    // A symbolic instance is declared in the scope of a generic procedure or
+    // of a generic type, and its type-parameter arguments are binders of that
+    // generic. Inside a generic type the instance is another generic type
+    // applied to the enclosing type's own parameters, such as Entry{U} inside
+    // Vector{trait::U}.
     void verify_symbolic_generic_instance(const Struct_t &x,
             const GenericTypeInstance_t &instance) {
         SymbolTable *generic_scope = x.m_symtab->parent;
         auto *generic = ASR::down_cast<Template_t>(
             ASR::down_cast<ASR::symbol_t>(generic_scope->asr_owner));
-        require_id(instance.m_definition && symtab_in_scope(x.m_symtab, instance.m_definition) &&
-                generic->m_symtab->get_symbol(generic->m_name) &&
-                !ASR::is_a<Struct_t>(*generic->m_symtab->get_symbol(generic->m_name)),
+        ASR::symbol_t *name_symbol = generic->m_symtab->get_symbol(generic->m_name);
+        bool in_procedure = name_symbol && !ASR::is_a<Struct_t>(*name_symbol);
+        bool in_generic_type = false;
+        if (name_symbol && name_symbol != &x.base && ASR::is_a<Struct_t>(*name_symbol)) {
+            in_generic_type = ASRUtils::generic_type_definition_metadata(
+                *ASR::down_cast<Struct_t>(name_symbol)) != nullptr;
+        }
+        bool visible_definition = instance.m_definition &&
+            symtab_in_scope(x.m_symtab, instance.m_definition);
+        if (in_generic_type && visible_definition) {
+            ASR::symbol_t *definition = ASRUtils::symbol_get_past_external(
+                instance.m_definition);
+            visible_definition = definition && ASR::is_a<Struct_t>(*definition) &&
+                ASRUtils::generic_type_definition_metadata(
+                    *ASR::down_cast<Struct_t>(definition));
+        }
+        require_id(visible_definition && (in_procedure || in_generic_type),
             "asr.verify.generic_type.symbolic_instance",
             "A symbolic generic type instance must be declared in a generic procedure "
-            "and reference a visible definition");
+            "or a generic type and reference a visible definition");
         for (size_t i = 0; i < instance.n_arguments; i++) {
             const auto &argument = instance.m_arguments[i];
             if (!argument.m_type || !ASR::is_a<TypeParameter_t>(*argument.m_type)) continue;
@@ -6229,7 +6301,7 @@ public:
                     generic_scope && argument.n_evidence == 0,
                 "asr.verify.generic_type.symbolic_instance",
                 "The type arguments of a symbolic generic type instance that are type "
-                "parameters must be binders of its generic procedure");
+                "parameters must be binders of its generic procedure or generic type");
         }
     }
 

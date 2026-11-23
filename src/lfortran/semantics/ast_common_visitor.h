@@ -38043,6 +38043,9 @@ public:
         Location loc;
     };
     std::vector<DeferredGenericEvidence> deferred_generic_evidence;
+    // Generic type definitions whose symbolic component instances are being
+    // substituted. A component that names one of them is not bound again.
+    std::set<ASR::symbol_t*> generic_types_binding_components;
 
     // Instances live in the enclosing unit, not in the nominal declaration
     // that requested them. Remove its transitive dependents before abandoning
@@ -38550,6 +38553,56 @@ public:
         current_scope = saved_scope;
     }
 
+    // A component of `definition` whose type is a symbolic generic instance
+    // (Entry{U} inside Vector{U}) is bound to the concrete instance of the
+    // enclosing type arguments. The member copy then uses that symbol instead
+    // of duplicating the symbolic struct. A parameter that is still a type
+    // parameter is left unbound.
+    void bind_symbolic_component_instances(ASR::Struct_t &definition,
+            const std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> &type_subs,
+            std::map<std::string, ASR::symbol_t*> &symbol_subs,
+            const Location &loc) {
+        for (size_t i = 0; i < definition.n_members; i++) {
+            ASR::symbol_t *component = definition.m_symtab->get_symbol(
+                definition.m_members[i]);
+            if (!component || !ASR::is_a<ASR::Variable_t>(*component)) continue;
+            auto *variable = ASR::down_cast<ASR::Variable_t>(component);
+            ASR::symbol_t *declared = variable->m_type_declaration
+                ? ASRUtils::symbol_get_past_external(variable->m_type_declaration)
+                : nullptr;
+            if (!declared || !ASR::is_a<ASR::Struct_t>(*declared)) continue;
+            auto *symbolic = ASR::down_cast<ASR::Struct_t>(declared);
+            if (!ASRUtils::is_symbolic_generic_instance(*symbolic)) continue;
+            if (symbol_subs.find(symbolic->m_name) != symbol_subs.end()) continue;
+            auto *metadata = ASRUtils::generic_type_instance(*symbolic);
+            auto *nested_definition = ASRUtils::generic_instance_definition(*metadata);
+            if (generic_types_binding_components.count(&nested_definition->base)) continue;
+            ASR::symbol_t *owner = ASRUtils::get_asr_owner(&nested_definition->base);
+            if (!owner || !ASR::is_a<ASR::Template_t>(*owner)) continue;
+            auto *nested_package = ASR::down_cast<ASR::Template_t>(owner);
+            std::vector<std::pair<ASR::ttype_t*, ASR::symbol_t*>> arguments;
+            bool still_symbolic = false;
+            for (size_t j = 0; j < metadata->n_arguments; j++) {
+                const auto &argument = metadata->m_arguments[j];
+                if (argument.m_type && ASR::is_a<ASR::TypeParameter_t>(*argument.m_type)) {
+                    auto bound = type_subs.find(ASR::down_cast<ASR::TypeParameter_t>(
+                        argument.m_type)->m_param);
+                    if (bound == type_subs.end() || !bound->second.first ||
+                            ASR::is_a<ASR::TypeParameter_t>(*bound->second.first)) {
+                        still_symbolic = true;
+                        break;
+                    }
+                    arguments.push_back(bound->second);
+                } else {
+                    arguments.push_back({argument.m_type, argument.m_type_declaration});
+                }
+            }
+            if (still_symbolic) continue;
+            symbol_subs[symbolic->m_name] = instantiate_generic_type(
+                *nested_package, arguments, loc);
+        }
+    }
+
     ASR::symbol_t *instantiate_generic_type(ASR::Template_t &package,
             const std::vector<std::pair<ASR::ttype_t*, ASR::symbol_t*>> &given_arguments,
             const Location &loc) {
@@ -38728,6 +38781,14 @@ public:
         owner->add_symbol(name, &instance->base);
         std::map<std::string, ASR::symbol_t*> symbol_subs;
         symbol_subs[definition->m_name] = &instance->base;
+        bool inserted = generic_types_binding_components.insert(&definition->base).second;
+        try {
+            bind_symbolic_component_instances(*definition, type_subs, symbol_subs, loc);
+        } catch (const SemanticAbort &) {
+            if (inserted) generic_types_binding_components.erase(&definition->base);
+            throw;
+        }
+        if (inserted) generic_types_binding_components.erase(&definition->base);
         size_t n_diagnostics = diag.diagnostics.size();
         SetChar dependencies;
         dependencies.reserve(al, 1);

@@ -5224,9 +5224,10 @@ ASR::symbol_t *import_nested_symbol(Allocator &al, ASR::symbol_t *symbol,
 ASR::GenericTypeDefinition_t *generic_type_definition_metadata(const ASR::Struct_t &x);
 ASR::GenericTypeInstance_t *generic_type_instance(const ASR::Struct_t &x);
 // Whether `x` is a symbolic instance: an instance of a generic derived type
-// whose type arguments are binders of the generic procedure in whose scope it
-// is declared, such as `Factory1{T1,U}` inside `init1{Trait :: T1, U}`. It has
-// only its components; each instance of the generic procedure replaces it
+// declared in a generic procedure or a generic type, with a type argument that
+// is a binder of that generic, such as `Factory1{T1,U}` inside
+// `init1{Trait :: T1, U}` or `Entry{U}` inside `Vector{Trait :: U}`. It has
+// only its components; each instance of the enclosing generic replaces it
 // with the instance of its unit for the bound type arguments.
 bool is_symbolic_generic_instance(const ASR::Struct_t &x);
 // The definition Struct of the package `x`, or nullptr when `x` is not one.
