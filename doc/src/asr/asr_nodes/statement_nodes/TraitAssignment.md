@@ -27,13 +27,20 @@ selected witness, including equal-type assignments between distinct conformances
 
 This ordering supports self-assignment and RHS expressions that read the LHS.
 Allocatable components copy independently and pointer components preserve
-association. Borrowed views are not assignment targets. Ordinary `Assignment`
+association. Borrowed views other than trait array elements are not assignment
+targets. Ordinary `Assignment`
 or `Associate` of a trait header is rejected by verification because neither
 expresses this ownership protocol.
 
 The `class_constructor` pass also creates it for the value of a trait
 component of a [StructConstructor](../expression_nodes/StructConstructor.md),
 which is always a borrowed view, so `witness` is then absent.
+
+The target can also be an element `arr(i)` of a definable runtime trait array
+(TD-46), a view of the element. The elements of the array share one dynamic
+type, so the snapshot of a value of that type is assigned to the element in
+place through the lifecycle's assignment, and a value of another dynamic type
+stops the program with an error.
 
 This describes direct assignment to the owner slot. When an ordinary containing
 derived object is assigned instead, its noncoarray allocatable components are

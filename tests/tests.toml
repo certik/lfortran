@@ -7127,6 +7127,18 @@ filename = "errors/continue_compilation_traits_trait_param.f90"
 semantics_only_cc = true
 
 [[test]]
+filename = "errors/continue_compilation_traits_trait_param_array.f90"
+semantics_only_cc = true
+
+[[test]]
+filename = "errors/continue_compilation_traits_trait_param_array_02.f90"
+semantics_only_cc = true
+
+[[test]]
+filename = "../integration_tests/traits_trait_param_array_02.f90"
+run = true
+
+[[test]]
 filename = "errors/continue_compilation_traits_type_name.f90"
 semantics_only_cc = true
 

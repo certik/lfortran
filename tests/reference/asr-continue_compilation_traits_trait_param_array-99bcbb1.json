@@ -1,0 +1,13 @@
+{
+    "basename": "asr-continue_compilation_traits_trait_param_array-99bcbb1",
+    "cmd": "lfortran --semantics-only --continue-compilation --no-color {infile}",
+    "infile": "tests/errors/continue_compilation_traits_trait_param_array.f90",
+    "infile_hash": "7c72ee37849818d1a927f9523e5eaea2d4b348e4bfbd86a103678977",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": "asr-continue_compilation_traits_trait_param_array-99bcbb1.stderr",
+    "stderr_hash": "ad2d133c1c73f83214b31a0a8bf74eb8ecb21500ac668e8941574e9c",
+    "returncode": 2
+}

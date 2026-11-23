@@ -5022,6 +5022,14 @@ inline bool is_trait_array(const ASR::ttype_t *type) {
             ASR::array_physical_typeType::DescriptorArray;
 }
 
+// An element `arr(i)` of a runtime trait array (TD-46), a view of it.
+inline bool is_trait_array_element(ASR::expr_t *value) {
+    if (!value || !ASR::is_a<ASR::ArrayItem_t>(*value) ||
+            !ASR::is_a<ASR::TraitObjectType_t>(*expr_type(value))) return false;
+    return is_trait_array(type_get_past_allocatable(
+        expr_type(ASR::down_cast<ASR::ArrayItem_t>(value)->m_v)));
+}
+
 // An allocatable runtime trait array, which owns its elements (TD-46).
 inline bool is_trait_array_owner(const ASR::ttype_t *type) {
     return type && ASR::is_a<ASR::Allocatable_t>(*type) &&

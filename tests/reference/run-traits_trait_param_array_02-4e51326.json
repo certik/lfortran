@@ -1,0 +1,13 @@
+{
+    "basename": "run-traits_trait_param_array_02-4e51326",
+    "cmd": "lfortran --no-color {infile}",
+    "infile": "tests/../integration_tests/traits_trait_param_array_02.f90",
+    "infile_hash": "2104adaa8ac7b0c7fd012de79dc4f30ae135e9fd43d3f4c196a169a8",
+    "outfile": null,
+    "outfile_hash": null,
+    "stdout": null,
+    "stdout_hash": null,
+    "stderr": "run-traits_trait_param_array_02-4e51326.stderr",
+    "stderr_hash": "4e606959caae7c2ecd1434d6d8b91120b4dec2b5762c7c48fb60b123",
+    "returncode": 1
+}

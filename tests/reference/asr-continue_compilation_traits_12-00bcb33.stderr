@@ -58,11 +58,11 @@ semantic error: runtime trait array allocation requires the bounds of each dimen
 88 |         allocate(c, source=Item(1))
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
-semantic error: runtime trait array allocation requires exactly one of a type specifier or a source
-  --> tests/errors/continue_compilation_traits_12.f90:90:9
+semantic error: runtime trait array allocation with a mold is not implemented yet
+  --> tests/errors/continue_compilation_traits_12.f90:90:29
    |
 90 |         allocate(d(2), mold=Item(1))
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+   |                             ^^^^^^^ 
 
 semantic error: cannot allocate an intent(in) runtime trait array
   --> tests/errors/continue_compilation_traits_12.f90:92:9

@@ -5238,6 +5238,8 @@ RUN(NAME traits_trait_param_03 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-pa
 RUN(NAME traits_trait_param_runtime_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_trait_param_runtime_02 FAIL LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_trait_param_runtime_03 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
+RUN(NAME traits_trait_param_array_01 LABELS llvm NO_STD_F23 ISOLATE_MODULES EXTRA_ARGS --verify-all-passes)
+RUN(NAME traits_trait_param_array_02 FAIL LABELS llvm NO_STD_F23 ISOLATE_MODULES EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_type_name_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_partial_type_args_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_generic_interface_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)

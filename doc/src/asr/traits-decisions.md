@@ -1450,6 +1450,24 @@ specification action, that is, what the paper should say.
   to each element and keeps the bounds (F2018 10.2.1.3). Another dynamic
   type would deallocate the owner, which then needs the shape of the scalar,
   so it is a run-time error, as is an unallocated owner.
+- **Extension (2026-11-22, an implementation choice for #18485, kept by
+  the spec owner the same day).** The issue declares
+  `class(U), allocatable :: elements(:)` in `Vector{Trait :: U}`. Arrays of `class(P)` of a trait parameter are the
+  same homogeneous trait arrays, with the bound trait's contract in each
+  instance. Generic code, which knows no type, grows them with two
+  additions that also apply to named traits: an owner is allocated with a
+  scalar trait object SOURCE, whose dynamic type and witness the elements
+  take (F2018 9.7.1.2), and an element of a definable trait array is assigned
+  a value of the elements' dynamic type, a run-time error for another type.
+  Fortran forbids intrinsic assignment to a nonallocatable polymorphic
+  variable; the check keeps the array homogeneous, as the assignment of a
+  scalar to an owner does. Each such assignment gets a located "LFortran
+  extension" warning, and a value of another type stops the program with
+  an error that names the assignment's location and both dynamic types.
+  Arrays of `class(P)` in the erased copy of a generic message called
+  through trait objects (E10) are diagnosed as not implemented, since their
+  headers' size is known only at run time; the erased copy is compiled in
+  the implementing module, so the diagnostic does not depend on the calls.
 - **Implementation status.** Implemented, also through runtime views and
   under separate compilation. Structure constructor values of trait-array
   components, trait-array module variables, pointers, MOLD allocation,

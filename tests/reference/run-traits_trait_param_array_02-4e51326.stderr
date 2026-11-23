@@ -1,0 +1,20 @@
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+  --> tests/../integration_tests/traits_trait_param_array_02.f90:12:5 - 17:1
+   |
+12 |        abstract interface :: IShape
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+   |
+17 |    
+   | ...^ LFortran extension
+
+warning: assignment to an element of an array of trait objects is an LFortran extension: standard Fortran forbids intrinsic assignment to a polymorphic variable that is not allocatable, and all elements of the array must have the same dynamic type, which is checked at run time
+  --> tests/../integration_tests/traits_trait_param_array_02.f90:62:13
+   |
+62 |             self%elements(i) = old(i)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^ LFortran extension
+runtime error: cannot assign a value of dynamic type 'square' to an element of an array of dynamic type 'circle'
+  --> tests/../integration_tests/traits_trait_param_array_02.f90:62:13
+   |
+62 |             self%elements(i) = old(i)
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^ the elements of an array of trait objects have one dynamic type

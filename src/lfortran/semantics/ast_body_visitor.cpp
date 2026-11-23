@@ -905,6 +905,7 @@ public:
         publish_runtime_trait_witnesses(*unit);
         queue_trait_erasures(*unit);
         instantiate_pending_bodies();
+        check_trait_erasure_arrays(*unit);
         finish_trait_lifecycle_effects(*unit);
     }
 
@@ -9434,8 +9435,32 @@ public:
             current_function_side_effect_free = false;
             return;
         }
+        if (ASRUtils::is_trait_array_element(target)) {
+            // An element of a runtime trait array keeps the dynamic type
+            // that all elements share: a value of that type is assigned to
+            // it, any other stops the program (TD-46).
+            if (!ASRUtils::association_is_definable(target)) {
+                trait_call_error("cannot assign to an element of a nondefinable runtime "
+                    "trait array", target->base.loc);
+            }
+            diag.semantic_warning_label(
+                "assignment to an element of an array of trait objects is an LFortran "
+                "extension: standard Fortran forbids intrinsic assignment to a polymorphic "
+                "variable that is not allocatable, and all elements of the array must have "
+                "the same dynamic type, which is checked at run time",
+                {x.base.base.loc}, "LFortran extension");
+            auto *witness = prepare_runtime_trait_value(value, ASRUtils::expr_type(target));
+            tmp = ASR::make_TraitAssignment_t(al, x.base.base.loc, target, value, witness);
+            current_function_deterministic = false;
+            current_function_side_effect_free = false;
+            return;
+        }
         if (ASR::is_a<ASR::TraitObjectType_t>(
                 *ASRUtils::extract_type(ASRUtils::expr_type(target)))) {
+            if (ASR::is_a<ASR::ArraySection_t>(*target)) {
+                trait_call_error("assignment to a section of a runtime trait array is "
+                    "not implemented yet", target->base.loc);
+            }
             if (!ASRUtils::is_allocatable(ASRUtils::expr_type(target)) ||
                     !ASRUtils::trait_owner_variable(target)) {
                 trait_call_error("runtime trait assignment requires an allocatable owner",

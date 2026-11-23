@@ -3843,6 +3843,15 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(
         return builder->CreatePtrToInt(tag_i8, llvm::Type::getInt32Ty(context));
     }
 
+    llvm::Value* LLVMUtils::get_class_type_name_from_vptr(llvm::Value* vptr) {
+        llvm::Type* i64_type = llvm::Type::getInt64Ty(context);
+        llvm::Value* vptr_i8 = builder->CreateBitCast(vptr, i8_ptr->getPointerTo());
+        llvm::Value* typeinfo_ptr = CreateLoad2(i8_ptr, create_ptr_gep2(
+            i8_ptr, vptr_i8, llvm::ConstantInt::get(i64_type, -1, true)));
+        return CreateLoad2(i8_ptr, builder->CreateBitCast(typeinfo_ptr,
+            i8_ptr->getPointerTo()));
+    }
+
     void LLVMUtils::init_string_descriptors(llvm::Value* data_mem,
             llvm::Value* num_elements, llvm::Value* str_len) {
         llvm::Type* i64_ty = llvm::Type::getInt64Ty(context);

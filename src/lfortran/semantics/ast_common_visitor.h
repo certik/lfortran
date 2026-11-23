@@ -29881,10 +29881,6 @@ public:
             const Location &loc, bool pointer, bool allocatable,
             Vec<ASR::dimension_t> &dims, bool is_argument, bool assumed_rank,
             ASR::symbol_t *trait_binder = nullptr) {
-        if (trait_binder && (dims.size() || assumed_rank)) {
-            trait_call_error("arrays of trait objects of a trait parameter are not "
-                "implemented yet", loc);
-        }
         bool assumed_shape = dims.size() && !assumed_rank;
         for (size_t i = 0; i < dims.size(); i++) {
             if (dims[i].m_length) assumed_shape = false;
@@ -30099,6 +30095,34 @@ public:
         explicit operator bool() const { return !reason.empty(); }
     };
 
+    // The binder of a component of the derived type `declaration`, or of
+    // one of its components, that is an array of trait objects of a trait
+    // parameter, as `class(P), allocatable :: items(:)` of a `type(Vec{P})`
+    // local, or nullptr.
+    ASR::symbol_t *trait_parameter_array_component(ASR::symbol_t *declaration,
+            std::set<const ASR::Struct_t*> &seen) {
+        if (!declaration) return nullptr;
+        declaration = ASRUtils::symbol_get_past_external(declaration);
+        if (!ASR::is_a<ASR::Struct_t>(*declaration)) return nullptr;
+        auto *type = ASR::down_cast<ASR::Struct_t>(declaration);
+        if (!seen.insert(type).second) return nullptr;
+        for (size_t i = 0; i < type->n_members; i++) {
+            ASR::symbol_t *member = type->m_symtab->get_symbol(type->m_members[i]);
+            if (!member || !ASR::is_a<ASR::Variable_t>(*member)) continue;
+            auto *component = ASR::down_cast<ASR::Variable_t>(member);
+            if (ASRUtils::is_array(component->m_type)) {
+                if (auto *binder = ASRUtils::trait_object_binder(component->m_type)) {
+                    return binder;
+                }
+            }
+            if (auto *binder = trait_parameter_array_component(
+                    component->m_type_declaration, seen)) {
+                return binder;
+            }
+        }
+        return nullptr;
+    }
+
     TraitErasureObstacle trait_erased_storage_obstacle(const SymbolTable &scope,
             const std::set<std::string> &dictionaries = {}, bool block = false) {
         for (const auto &entry : scope.get_scope()) {
@@ -30117,6 +30141,25 @@ public:
             if (nested) return nested;
             if (!ASR::is_a<ASR::Variable_t>(*entry.second)) continue;
             auto *variable = ASR::down_cast<ASR::Variable_t>(entry.second);
+            // The trait objects of an erased trait parameter have headers
+            // whose size the descriptor gives only at run time, so an array
+            // of them has no descriptor layout yet (E10).
+            if (ASRUtils::is_array(variable->m_type)) {
+                if (auto *binder = ASRUtils::trait_object_binder(variable->m_type)) {
+                    return {"arrays of trait objects of the trait parameter '" +
+                        std::string(ASRUtils::symbol_name(binder)) + "' are not "
+                        "implemented yet in a generic message called through trait "
+                        "objects", variable->base.base.loc, ""};
+                }
+            }
+            std::set<const ASR::Struct_t*> seen;
+            if (auto *binder = trait_parameter_array_component(
+                    variable->m_type_declaration, seen)) {
+                return {"derived types with arrays of trait objects of the trait parameter '" +
+                    std::string(ASRUtils::symbol_name(binder)) + "' as components are not "
+                    "implemented yet in a generic message called through trait objects",
+                    variable->base.base.loc, ""};
+            }
             if (!ASRUtils::is_type_parameter(*ASRUtils::extract_type(variable->m_type))) continue;
             auto *element = ASRUtils::extract_type(variable->m_type);
             // The declaration of a trait parameter, erased to a descriptor.
@@ -31102,6 +31145,48 @@ public:
         erasure->m_procedure = instantiate_symbol(al, scope, types, symbols,
             name + "_entry", &original->base, diag);
         return erasure;
+    }
+
+    // The trait objects of an erased trait parameter have headers whose
+    // size the descriptor gives only at run time, so an array of them, in
+    // the erased entry or in a generic that it passes the parameter on to,
+    // has no descriptor layout yet (E10). Checked once the bodies of the
+    // erasures of this translation unit are instantiated.
+    void check_trait_erasure_arrays(ASR::TranslationUnit_t &unit) {
+        class Collect : public ASR::BaseWalkVisitor<Collect> {
+        public:
+            std::vector<ASR::TraitErasure_t*> erasures;
+            void visit_Module(const ASR::Module_t &x) {
+                if (!x.m_loaded_from_mod) ASR::BaseWalkVisitor<Collect>::visit_Module(x);
+            }
+            void visit_TraitErasure(const ASR::TraitErasure_t &x) {
+                erasures.push_back(const_cast<ASR::TraitErasure_t*>(&x));
+            }
+        } collect;
+        collect.visit_TranslationUnit(unit);
+        for (auto *erasure : collect.erasures) check_erased_trait_arrays(*erasure->m_symtab);
+    }
+
+    void check_erased_trait_arrays(const SymbolTable &scope) {
+        for (const auto &entry : scope.get_scope()) {
+            if (ASR::is_a<ASR::Function_t>(*entry.second)) {
+                check_erased_trait_arrays(*ASR::down_cast<ASR::Function_t>(entry.second)->m_symtab);
+            } else if (ASR::is_a<ASR::Block_t>(*entry.second)) {
+                check_erased_trait_arrays(*ASR::down_cast<ASR::Block_t>(entry.second)->m_symtab);
+            } else if (ASR::is_a<ASR::AssociateBlock_t>(*entry.second)) {
+                check_erased_trait_arrays(
+                    *ASR::down_cast<ASR::AssociateBlock_t>(entry.second)->m_symtab);
+            } else if (ASR::is_a<ASR::Variable_t>(*entry.second)) {
+                auto *variable = ASR::down_cast<ASR::Variable_t>(entry.second);
+                auto *descriptor = ASRUtils::trait_object_descriptor(variable->m_type);
+                if (descriptor && ASRUtils::is_array(variable->m_type)) {
+                    trait_call_error("arrays of trait objects of the trait parameter '" +
+                        std::string(ASRUtils::trait_descriptor_parameter(*descriptor)) +
+                        "' are not implemented yet in a generic message called through "
+                        "trait objects", variable->base.base.loc);
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -32375,7 +32460,21 @@ public:
                 trait_call_error("passing a section of a runtime trait array is not "
                     "implemented yet", loc);
             }
-            if (!ASRUtils::trait_contracts_equal(&ASRUtils::trait_runtime_contract(source)->base,
+            // In a generic, an array of class(P) of a trait parameter P is
+            // forwarded only to a dummy of class(P) (E1).
+            auto *source_binder = ASRUtils::trait_object_binder(source);
+            auto *target_binder = ASRUtils::trait_object_binder(target);
+            if (source_binder || target_binder) {
+                if (source_binder != target_binder) {
+                    trait_call_error("an array of " + ASRUtils::type_to_str_fortran_expr(
+                        ASRUtils::type_get_past_array(ASRUtils::type_get_past_allocatable(
+                            source)), actual) + " cannot be passed to an array dummy of " +
+                        ASRUtils::type_to_str_fortran_symbol(ASRUtils::extract_type(target),
+                            nullptr) + ": the trait bound to a trait parameter is not "
+                        "known in the generic", loc);
+                }
+            } else if (!ASRUtils::trait_contracts_equal(
+                    &ASRUtils::trait_runtime_contract(source)->base,
                     &ASRUtils::trait_runtime_contract(target)->base)) {
                 trait_call_error("passing a runtime trait array to a dummy of another "
                     "trait contract is not implemented yet", loc);
@@ -32385,9 +32484,12 @@ public:
                 // place; its view references the contract in this scope,
                 // also for a section of a component.
                 auto *section = ASR::down_cast<ASR::ArraySection_t>(actual);
-                auto *contract = ASRUtils::trait_runtime_contract(source);
-                auto *view = ASRUtils::TYPE(ASR::make_TraitObjectType_t(al, loc,
-                    make_operator_proc_visible(&contract->base, "trait", current_scope)));
+                ASR::symbol_t *reference = source_binder;
+                if (!reference) {
+                    reference = make_operator_proc_visible(
+                        &ASRUtils::trait_runtime_contract(source)->base, "trait", current_scope);
+                }
+                auto *view = ASRUtils::TYPE(ASR::make_TraitObjectType_t(al, loc, reference));
                 section->m_type = ASRUtils::duplicate_type_with_empty_dims(al,
                     ASRUtils::make_Array_t_util(al, loc, view,
                         ASR::down_cast<ASR::Array_t>(section->m_type)->m_dims,
@@ -32427,6 +32529,14 @@ public:
                 !ASR::is_a<ASR::StructInstanceMember_t>(*designator)) {
             trait_call_error("borrowing a runtime trait array from this expression "
                 "is not implemented yet", loc);
+        }
+        if (auto *binder = ASRUtils::trait_object_binder(target)) {
+            std::string name = ASRUtils::symbol_name(binder);
+            trait_call_error("an array of type(" + std::string(ASRUtils::symbol_name(
+                ASRUtils::symbol_get_past_external(ASRUtils::get_struct_sym_from_struct_expr(
+                    actual)))) + ") cannot be passed to an array dummy of class(" + name +
+                "): the trait bound to trait parameter '" + name + "' is not known in "
+                "the generic", loc);
         }
         auto *contract = ASRUtils::trait_runtime_contract(target);
         auto *view = ASRUtils::TYPE(ASR::make_TraitObjectType_t(al, loc,
@@ -33259,12 +33369,21 @@ public:
     // `copy` is false for MOLD=, which takes only the source's type.
     // Allocates the elements of a runtime trait array owner (TD-46) with
     // the explicit bounds of `arg` and a type specification or a concrete
-    // scalar SOURCE, which selects the witness of their shared type.
+    // scalar SOURCE, which selects the witness of their shared type, or a
+    // scalar trait object SOURCE, whose dynamic type and witness they take.
     ASR::asr_t *runtime_trait_array_allocate(const ASR::alloc_arg_t &arg,
             ASR::expr_t *source, ASR::expr_t *mold, const Location &loc) {
-        if (mold || (arg.m_sym_subclass && source) || (!arg.m_sym_subclass && !source)) {
+        if (mold) {
+            trait_call_error("runtime trait array allocation with a mold is not "
+                "implemented yet", mold->base.loc);
+        }
+        if ((arg.m_sym_subclass && source) || (!arg.m_sym_subclass && !source)) {
             trait_call_error("runtime trait array allocation requires exactly one of "
                 "a type specifier or a source", loc);
+        }
+        if (source && ASRUtils::is_array(ASRUtils::expr_type(source))) {
+            trait_call_error("runtime trait array allocation with an array source is "
+                "not implemented yet", source->base.loc);
         }
         auto *type = ASRUtils::expr_type(arg.m_a);
         if (!arg.n_dims || arg.n_dims != (size_t)ASRUtils::extract_n_dims_from_ttype(type)
@@ -33278,13 +33397,27 @@ public:
         }
         auto *element = ASRUtils::type_get_past_array(ASRUtils::type_get_past_allocatable(type));
         ASR::symbol_t *witness = nullptr;
-        if (source) {
+        if (source && ASR::is_a<ASR::TraitObjectType_t>(*ASRUtils::extract_type(
+                    ASRUtils::expr_type(source)))) {
+            // A view of the source, projected to the elements' contract,
+            // carries their dynamic type and witness.
+            make_runtime_trait_view(source, element);
+        } else if (auto *binder = ASRUtils::trait_object_binder(element)) {
+            std::string name = ASRUtils::symbol_name(binder);
+            trait_call_error("an array of class(" + name + ") can only be allocated with "
+                "a scalar trait object of class(" + name + ") as the source: the trait bound "
+                "to trait parameter '" + name + "' is not known in the generic",
+                source ? source->base.loc : arg.loc);
+        } else if (source) {
             auto *source_type = ASRUtils::expr_type(source);
-            if (ASRUtils::is_array(source_type) ||
-                    !ASR::is_a<ASR::StructType_t>(*source_type) ||
-                    ASRUtils::is_class_type(source_type)) {
+            if (!ASR::is_a<ASR::StructType_t>(*source_type)) {
                 trait_call_error("the source of a runtime trait array allocation must be "
-                    "a nonpolymorphic scalar of a derived type", source->base.loc);
+                    "a derived type or a trait object", source->base.loc);
+            }
+            if (ASRUtils::is_class_type(source_type)) {
+                trait_call_error("runtime trait array allocation with a polymorphic "
+                    "source that is not a trait object is not implemented yet",
+                    source->base.loc);
             }
             auto *constant = ASRUtils::expr_value(source);
             if (constant && ASR::is_a<ASR::StructConstant_t>(*constant)) source = constant;
@@ -38388,6 +38521,23 @@ public:
                         arguments.push_back(bound->second);
                     } else {
                         arguments.push_back({argument.m_type, argument.m_type_declaration});
+                    }
+                }
+                // A trait parameter erased to a descriptor (E10) has trait
+                // objects whose headers' size is known only at run time.
+                bool erased = false;
+                for (const auto &argument : arguments) {
+                    erased |= argument.first && ASR::is_a<ASR::TraitDescriptorType_t>(
+                        *ASRUtils::extract_type(argument.first));
+                }
+                std::set<const ASR::Struct_t*> seen;
+                if (erased) {
+                    if (auto *binder = trait_parameter_array_component(
+                            &definition->base, seen)) {
+                        trait_call_error("derived types with arrays of trait objects of the "
+                            "trait parameter '" + std::string(ASRUtils::symbol_name(binder)) +
+                            "' as components are not implemented yet in a generic message "
+                            "called through trait objects", structure->base.base.loc);
                     }
                 }
                 ASR::symbol_t *instance = instantiate_generic_type(*package, arguments, loc);

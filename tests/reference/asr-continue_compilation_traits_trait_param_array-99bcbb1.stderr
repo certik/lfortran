@@ -1,0 +1,111 @@
+warning: traits are an experimental LFortran extension; use ordinary derived types and procedures for portable Fortran
+  --> tests/errors/continue_compilation_traits_trait_param_array.f90:8:5 - 13:1
+   |
+ 8 |        abstract interface :: IShow
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^...
+...
+   |
+13 |    
+   | ...^ LFortran extension
+
+semantic error: arrays of trait objects of the trait parameter 'p' are not implemented yet in a generic message called through trait objects
+  --> tests/errors/continue_compilation_traits_trait_param_array.f90:92:34
+   |
+92 |         class(P), allocatable :: cache(:)
+   |                                  ^^^^^^^^ 
+
+semantic error: derived types with arrays of trait objects of the trait parameter 'p' as components are not implemented yet in a generic message called through trait objects
+   --> tests/errors/continue_compilation_traits_trait_param_array.f90:216:25
+    |
+216 |         type(Vec{P}) :: v
+    |                         ^ 
+
+semantic error: an array of class(p) can only be allocated with a scalar trait object of class(p) as the source: the trait bound to trait parameter 'p' is not known in the generic
+  --> tests/errors/continue_compilation_traits_trait_param_array.f90:34:9
+   |
+34 |         allocate(A :: arr(2))
+   |         ^^^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: an array of class(p) can only be allocated with a scalar trait object of class(p) as the source: the trait bound to trait parameter 'p' is not known in the generic
+  --> tests/errors/continue_compilation_traits_trait_param_array.f90:39:33
+   |
+39 |         allocate(arr(2), source=A(3))
+   |                                 ^^^^ 
+
+semantic error: runtime trait array allocation with a mold is not implemented yet
+  --> tests/errors/continue_compilation_traits_trait_param_array.f90:45:31
+   |
+45 |         allocate(arr(2), mold=b)
+   |                               ^ 
+
+semantic error: an array of type(a) cannot be passed to an array dummy of class(p): the trait bound to trait parameter 'p' is not known in the generic
+  --> tests/errors/continue_compilation_traits_trait_param_array.f90:50:28
+   |
+50 |         n = count_items{P}(xs)
+   |                            ^^ 
+
+semantic error: actual arguments conflict with the generic procedure's types
+  --> tests/errors/continue_compilation_traits_trait_param_array.f90:55:13
+   |
+55 |         n = count_items{P}(arr)
+   |             ^^^^^^^^^^^^^^^^^^^ 
+
+semantic error: cannot assign to an element of a nondefinable runtime trait array
+  --> tests/errors/continue_compilation_traits_trait_param_array.f90:61:9
+   |
+61 |         arr(1) = x
+   |         ^^^^^^ 
+
+semantic error: cannot assign to an element of a nondefinable runtime trait array
+  --> tests/errors/continue_compilation_traits_trait_param_array.f90:66:9
+   |
+66 |         arr(1) = A(2)
+   |         ^^^^^^ 
+
+semantic error: an array of class(p) cannot be passed to an array dummy of class(ishow): the trait bound to a trait parameter is not known in the generic
+   --> tests/errors/continue_compilation_traits_trait_param_array.f90:151:22
+    |
+151 |         n = show_all(arr)
+    |                      ^^^ 
+
+semantic error: runtime trait array allocation with an array source is not implemented yet
+   --> tests/errors/continue_compilation_traits_trait_param_array.f90:157:33
+    |
+157 |         allocate(arr(2), source=b)
+    |                                 ^ 
+
+semantic error: assignment to a section of a runtime trait array is not implemented yet
+   --> tests/errors/continue_compilation_traits_trait_param_array.f90:163:9
+    |
+163 |         arr(1:2) = x
+    |         ^^^^^^^^ 
+
+warning: assignment to an element of an array of trait objects is an LFortran extension: standard Fortran forbids intrinsic assignment to a polymorphic variable that is not allocatable, and all elements of the array must have the same dynamic type, which is checked at run time
+   --> tests/errors/continue_compilation_traits_trait_param_array.f90:169:9
+    |
+169 |         arr(1) = x
+    |         ^^^^^^^^^^ LFortran extension
+
+warning: assignment to an element of an array of trait objects is an LFortran extension: standard Fortran forbids intrinsic assignment to a polymorphic variable that is not allocatable, and all elements of the array must have the same dynamic type, which is checked at run time
+   --> tests/errors/continue_compilation_traits_trait_param_array.f90:174:9
+    |
+174 |         arr(2) = A(5)
+    |         ^^^^^^^^^^^^^ LFortran extension
+
+semantic error: runtime trait array allocation with a polymorphic source that is not a trait object is not implemented yet
+   --> tests/errors/continue_compilation_traits_trait_param_array.f90:180:33
+    |
+180 |         allocate(arr(2), source=b)
+    |                                 ^ 
+
+semantic error: the source of a runtime trait array allocation must be a derived type or a trait object
+   --> tests/errors/continue_compilation_traits_trait_param_array.f90:185:33
+    |
+185 |         allocate(arr(2), source=1)
+    |                                 ^ 
+
+semantic error: arrays of trait objects of the trait parameter 'p' are not implemented yet in a generic message called through trait objects
+   --> tests/errors/continue_compilation_traits_trait_param_array.f90:119:34
+    |
+119 |         class(P), allocatable :: items(:)
+    |                                  ^^^^^^^^ 

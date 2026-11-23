@@ -765,11 +765,14 @@ Not yet implemented: trait combinations such as `IA + IB` as arguments of a
 trait parameter, a constraint combining `P` with other traits, conformance
 constraints `P :: U` of generic derived types (their trait parameters are
 described under "Trait parameters and procedure components of generic
-types"), arrays and associate names of
+types"), associate names of
 `class(P)` objects, `select type` on a `class(P)` selector, a `class is (P)`
 guard together with other trait guards in one `select type`. A generic
 message with trait parameters can be called through a trait object (see the
-next section).
+next section). Arrays of `class(P)` objects are described under "Arrays of
+trait objects of a trait parameter"; they are not yet implemented in a
+generic procedure that implements a trait's message with trait parameters
+(E10), even when the program only calls it statically.
 
 A generic message with trait parameters can also be called through a generic
 parameter that its trait constrains, `reg%add{ILogger}(make_logger)` for
@@ -3368,7 +3371,13 @@ end interface
 An implementation allocates the elements with a type specification or a
 concrete scalar SOURCE and the bounds of each dimension, as
 `allocate(Cell :: arr(0:n - 1))`, in a `TraitArrayAllocate` that selects the
-witness of their type. The storage is contiguous and described in bytes, as a
+witness of their type. A SOURCE that is a scalar trait object, an owner, a
+view or an element of a trait array, as `allocate(arr(n), source=x(1))`,
+gives the elements its dynamic type and witness instead: the
+`TraitArrayAllocate` has no witness, the header of the elements is the
+source's view, projected to the owner's contract, without its payload, and
+the size of an element is read from the type information of the source's
+dynamic type. The storage is contiguous and described in bytes, as a
 borrowed trait array's is, with the view of the elements' type after the
 dimensions; each element is default-initialized or initialize-copied through
 the witness's lifecycle. DEALLOCATE, the entry to an `intent(out)` dummy and
@@ -3430,6 +3439,22 @@ which has none, and stops the program with an error.
 `traits_runtime_array_assign_01` assigns to local, component and rank-two
 owners, also with `--detect-leaks`.
 
+An element `arr(i)` of a definable trait array, an owner or a borrowed dummy
+that is not `intent(in)`, is assigned a concrete value or a trait object of
+the dynamic type that the elements share, as `arr(i) = old(i)`: a
+`TraitAssignment` whose target is the element's view. The value is
+snapshotted first, so it may be an element of the same array, and then
+assigned to the element in place through the witness's lifecycle; a value
+of another dynamic type stops the program with an error that names the
+assignment's location and both dynamic types, "cannot assign a value of
+dynamic type 'circle' to an element of an array of dynamic type 'square'",
+since the element cannot change the type of the whole array. Fortran forbids
+intrinsic assignment to a polymorphic variable that is not allocatable, so
+this is an LFortran extension, and each such assignment gets a located
+"LFortran extension" warning; the runtime check gives it the meaning it has
+for an owner of the value's type, which lets generic code copy elements (see
+"Arrays of trait objects of a trait parameter").
+
 A derived type whose component is a runtime trait object of a trait of
 another module is allocated with a type specification, as a further report
 does with `allocate(MyType :: arr(1))` for a `class(AbsType)` array: the
@@ -3438,11 +3463,14 @@ struct's own scope, where its components are declared, not in the scope
 that uses the type (`traits_runtime_component_allocate_01`).
 
 Trait-array module variables and pointers, a structure constructor value for a
-trait-array component, MOLD allocation, assignment of an array value to and
-MOVE_ALLOC of owners,
+trait-array component, MOLD allocation, an array SOURCE, a polymorphic
+`class(T)` SOURCE that is not a trait object, assignment of an array value
+to owners, assignment to a section,
 explicit-shape and assumed-size trait arrays, polymorphic or
 vector-subscripted actuals, forwarding to a dummy of another contract and
 trait arrays of generic messages are diagnosed as not implemented.
+MOVE_ALLOC of owners is not implemented either and is not yet diagnosed: it
+currently fails with an internal error.
 `traits_runtime_array_01` passes whole arrays, strided and reversed sections,
 explicit-shape, allocatable, component and rank-two arrays, forwards them,
 updates elements through a defining receiver and calls the reported message
@@ -3457,6 +3485,100 @@ dummies and through a view of a message, also with `--detect-leaks`.
 `traits_runtime_array_component_01` allocates, passes, assigns and finalizes
 the reported component in each kind of containing object, also with
 `--detect-leaks`. `continue_compilation_traits_12` checks the diagnostics.
+
+### Arrays of trait objects of a trait parameter
+
+A trait parameter `{Trait :: U}` of a generic type or procedure (E1) can
+declare arrays of its trait objects, as #18485 does:
+
+```fortran
+type, sealed :: Vector{Trait :: U}
+    class(U), allocatable :: elements(:)
+contains
+    procedure, pass :: append
+end type Vector
+
+subroutine append(self, item)
+    type(Vector{U}), intent(inout) :: self
+    class(U), intent(in) :: item
+    class(U), allocatable :: old(:)
+    integer :: n, i
+    if (.not. allocated(self%elements)) then
+        allocate(self%elements(1), source=item)
+        return
+    end if
+    n = size(self%elements)
+    allocate(old(n), source=self%elements(1))
+    do i = 2, n
+        old(i) = self%elements(i)
+    end do
+    deallocate(self%elements)
+    allocate(self%elements(n + 1), source=item)
+    do i = 1, n
+        self%elements(i) = old(i)
+    end do
+end subroutine append
+```
+
+They are the runtime trait arrays above, borrowed assumed-shape dummies and
+allocatable owners (dummies, locals and components), whose element type is
+`class(U)`, a `TraitObjectType` of the binder (`runtime_trait_declared_type`).
+Each instance substitutes the bound trait's contract for the binder, so
+`Vector{IShape}`'s component is an allocatable array of `IShape` trait
+objects, and its elements dispatch, `v%elements(i)%area()`, are inquired,
+passed to `class(IShape)` dummies, copied to `class(IShape)` owners and
+inspected with SELECT TYPE through such a copy, as those of any trait array
+of `IShape` are; intrinsic assignment of a structure with a `Vector{IShape}`
+component copies its elements. Their elements share one dynamic type
+(TD-46): `Vector{IShape}` holds squares or rectangles, and appending a value
+of another type stops the program in the element assignment.
+
+Inside the generic the trait is unknown, so an array of `class(U)` is
+allocated only with a scalar `class(U)` SOURCE, an owner, a view or an
+element of another `class(U)` array, which gives the elements its dynamic
+type; its elements are assigned `class(U)` values of that type (the
+extension above), copied to
+`class(U)` owners and passed to `class(U)` dummies; and the array, a section
+of it or an element is passed to `class(U)` dummies of other generics, also
+forwarding `U` as their trait parameter, `count_items{P}(a(2:))`. A type
+specification, a concrete SOURCE, and an array of a derived type or of
+another trait passed to a `class(U)` array dummy are diagnosed: "an array of
+class(p) can only be allocated with a scalar trait object of class(p) as the
+source", "an array of type(a) cannot be passed to an array dummy of
+class(p)"; so is a `class(P)` array passed to an array dummy of a named
+trait. MOLD and an array SOURCE are diagnosed as not implemented yet, as for
+named traits. Called with a concrete array, a generic procedure's `class(P)`
+array dummy borrows it like any trait array dummy, `count_items{IShape}(plain)`
+for `type(Square) :: plain(4)`, or infers `P` from a trait array,
+`swap_ends(rects%elements)`.
+
+A generic message called through trait objects is compiled once as an
+erased copy whose `class(P)` objects are trait objects of the descriptor it
+receives (E10). Their headers have a slot count that the descriptor gives
+only at run time, so an array of them has no descriptor layout yet: a
+`class(P)` array in the erased copy, or in a generic that the copy passes
+`P` on to, is diagnosed as "arrays of trait objects of the trait parameter
+'p' are not implemented yet in a generic message called through trait
+objects"; so is a variable of a generic type with such an array component,
+`type(Vec{P}) :: v` for a `Vec{Trait :: P}` with `class(P), allocatable ::
+items(:)` (a scalar `class(P)` component there still fails with an internal
+error, #18507). The erased copy is compiled in the implementing module whatever
+calls exist, so the diagnostic is given there even if the program only calls
+the message statically, `cont%resolve{IClient}()` on a `type(Container)`:
+a generic procedure that reaches a `class(P)` array cannot yet implement a
+trait's message with trait parameters. Other generics are not affected.
+
+`traits_trait_param_array_01` grows `Vector{IShape}` of squares and of
+rectangles with an allocatable component and `Vector{ILogger}` of two logger
+types with `append`, dispatches through their elements, copies them out with
+a generic `get` and inspects the copies with SELECT TYPE, reallocates a
+vector with another element type, assigns a structure with a vector
+component, and calls generic procedures with `class(P)` array dummies,
+locals and an allocatable `intent(out)` dummy, also with `--detect-leaks`;
+`traits_trait_param_array_02` stops when a circle is appended to a vector of
+squares, and its `run` reference test checks the extension warning and the
+run-time error; `continue_compilation_traits_trait_param_array` and `_02`
+check the diagnostics.
 
 ### Associate names of trait objects
 

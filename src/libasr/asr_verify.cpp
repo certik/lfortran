@@ -4673,7 +4673,17 @@ public:
                 "asr.verify.trait_array_allocate.target",
                 "A runtime trait array allocation allocates every dimension of an owner variable");
         }
-        if (check_external) {
+        if (!x.m_witness) {
+            // A view source carries the elements' dynamic type and witness.
+            auto *source_type = x.m_source ? typed_expr_type(x.m_source) : nullptr;
+            require_id(source_type && ASR::is_a<TraitObjectType_t>(*source_type),
+                "asr.verify.trait_array_allocate.source",
+                "A runtime trait array allocation without a witness takes a scalar view source");
+            require_id(!check_external || ASRUtils::trait_contracts_equal(source_type,
+                    ASRUtils::type_get_past_array(ASRUtils::type_get_past_allocatable(type))),
+                "asr.verify.trait_array_allocate.source",
+                "The view source of a runtime trait array allocation has the owner's contract");
+        } else if (check_external) {
             auto *witness = verify_trait_witness_reference(x.m_witness, x.base.base.loc);
             verify_runtime_trait_evidence(*witness, x.base.base.loc);
             auto *concrete = ASRUtils::symbol_get_past_external(
@@ -4706,6 +4716,16 @@ public:
             visit_expr(*x.m_target);
             verify_trait_copy_source(x.m_value, ASRUtils::extract_type(
                 typed_expr_type(x.m_target)), x.m_witness, x.base.base.loc);
+            return;
+        }
+        if (ASRUtils::is_trait_array_element(x.m_target)) {
+            // An element keeps the dynamic type that the elements share.
+            require_id(!check_external || ASRUtils::association_is_definable(x.m_target),
+                "asr.verify.trait_owner.definable",
+                "An element of a nondefinable runtime trait array cannot be assigned");
+            visit_expr(*x.m_target);
+            verify_trait_copy_source(x.m_value, typed_expr_type(x.m_target), x.m_witness,
+                x.base.base.loc);
             return;
         }
         auto *type = verify_trait_owner(x.m_target, x.base.base.loc);
