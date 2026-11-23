@@ -4952,6 +4952,7 @@ RUN(NAME traits_runtime_solver_separate_01 LABELS llvm llvm2 NO_STD_F23 ISOLATE_
         traits_runtime_solver_separate_01_provider.f90)
 RUN(NAME traits_runtime_explicit_shape_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_runtime_array_expression_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
+RUN(NAME traits_runtime_array_borrow_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_runtime_array_result_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_runtime_array_result_02 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_runtime_array_result_03 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)

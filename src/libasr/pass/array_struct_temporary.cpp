@@ -2157,9 +2157,11 @@ bool is_temporary_needed(ASR::expr_t* value) {
     bool is_null_pointer = ASR::is_a<ASR::PointerNullConstant_t>(
         *ASRUtils::get_past_array_physical_cast(value));
     // A section of a runtime trait array is a descriptor of the selected
-    // elements in place, never a copy (TD-46).
+    // elements in place, never a copy, and so is a concrete array borrowed
+    // as a runtime trait array (TD-46).
     bool is_trait_array_section = ASRUtils::is_trait_array(ASRUtils::expr_type(value)) &&
-        ASR::is_a<ASR::ArraySection_t>(*ASRUtils::get_past_array_physical_cast(value));
+        (ASR::is_a<ASR::ArraySection_t>(*ASRUtils::get_past_array_physical_cast(value)) ||
+         ASR::is_a<ASR::TraitPack_t>(*ASRUtils::get_past_array_physical_cast(value)));
     return is_expr_with_no_type 
         && !ASRUtils::is_stringToArray_cast(value)
         && !is_directly_addressable_expr(value)
