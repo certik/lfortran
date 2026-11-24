@@ -34395,7 +34395,9 @@ public:
                 auto &actual = types.at(generic.m_args[i]);
                 ASR::symbol_t *descriptor = ASR::is_a<ASR::TypeParameter_t>(*actual.first)
                     ? actual.second
-                    : ASR::down_cast<ASR::TraitObjectType_t>(actual.first)->m_contract;
+                    : make_operator_proc_visible(
+                        ASR::down_cast<ASR::TraitObjectType_t>(actual.first)->m_contract,
+                        "trait", current_scope);
                 descriptors.push_back(ASR::call_arg_t{loc, ASRUtils::EXPR(
                     ASR::make_TraitDescriptor_t(al, loc, descriptor, ASRUtils::TYPE(
                         ASR::make_TraitDescriptorType_t(al, loc, nullptr))))});
