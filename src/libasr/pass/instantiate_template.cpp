@@ -3725,6 +3725,31 @@ public:
         return &assignment->base.base;
     }
 
+    ASR::asr_t *duplicate_Allocate(ASR::Allocate_t *x) {
+        auto *alloc = ASR::down_cast2<ASR::Allocate_t>(
+            BaseExprStmtDuplicator<BodyInstantiator>::duplicate_Allocate(x));
+        for (size_t i = 0; i < alloc->n_args; i++) {
+            auto &arg = alloc->m_args[i];
+            if (!arg.m_sym_subclass) continue;
+            ASR::symbol_t *sub = ASRUtils::symbol_get_past_external(arg.m_sym_subclass);
+            std::string name = ASRUtils::symbol_name(sub);
+            if (ASR::symbol_t *local_type = instantiated_local_type(sub)) {
+                arg.m_sym_subclass = local_type;
+            } else if (symbol_subs.find(name) != symbol_subs.end()) {
+                arg.m_sym_subclass = visible_evidence(symbol_subs[name]);
+            } else {
+                arg.m_sym_subclass = visible_evidence(arg.m_sym_subclass);
+            }
+            if (arg.m_type && ASR::is_a<ASR::StructType_t>(*arg.m_type)) {
+                auto *s = ASR::down_cast<ASR::StructType_t>(arg.m_type);
+                arg.m_type = ASRUtils::import_trait_type(al,
+                    ASRUtils::make_StructType_t_util(al, s->base.base.loc,
+                        arg.m_sym_subclass, s->m_is_cstruct), new_scope);
+            }
+        }
+        return &alloc->base.base;
+    }
+
     ASR::asr_t *duplicate_TraitAllocate(ASR::TraitAllocate_t *x) {
         auto *allocate = ASR::down_cast2<ASR::TraitAllocate_t>(
             BaseExprStmtDuplicator<BodyInstantiator>::duplicate_TraitAllocate(x));

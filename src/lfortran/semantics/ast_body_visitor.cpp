@@ -5142,6 +5142,18 @@ public:
                     throw SemanticAbort();
                 }
             }
+        } else if (AST::is_a<AST::GenericProcedureValue_t>(*type_spec)) {
+            auto *gpv = AST::down_cast<AST::GenericProcedureValue_t>(type_spec);
+            ASR::symbol_t *v = resolve_generic_type_application(
+                gpv->m_name, gpv->m_args, gpv->n_args, type_spec->base.loc);
+            auto *concrete = ASRUtils::symbol_get_past_external(v);
+            if (!ASR::is_a<ASR::Struct_t>(*concrete)) {
+                trait_call_error("allocation requires a concrete derived type",
+                    type_spec->base.loc);
+            }
+            ASR::ttype_t* struct_t = ASRUtils::make_StructType_t_util(al, loc, v, true);
+            alloc_arg.m_type = ASRUtils::import_trait_type(al, struct_t, current_scope);
+            alloc_arg.m_sym_subclass = v;
         } else {
             LCOMPILERS_ASSERT_MSG(false, std::to_string(type_spec->type));
         }

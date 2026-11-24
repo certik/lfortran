@@ -37907,15 +37907,6 @@ public:
                 auto *contract = checked_runtime_trait_contract(symbol, name, loc);
                 return {runtime_trait_type(contract, loc, false, false, false), symbol};
             }
-            // A parameter of the enclosing generic procedure, which makes the
-            // instance symbolic (see symbolic_generic_instance); not yet one
-            // of a generic derived type.
-            if (definition && ASR::is_a<ASR::Variable_t>(*definition) &&
-                    ASR::is_a<ASR::TypeParameter_t>(*ASRUtils::symbol_type(definition)) &&
-                    ASRUtils::generic_type_package(ASRUtils::get_asr_owner(definition))) {
-                trait_call_error("generic type arguments that are generic type parameters "
-                    "are not implemented yet", loc);
-            }
             if (auto *forwarded = ASRUtils::trait_parameter_binder(symbol)) {
                 if (!trait_binder) {
                     trait_call_error("'" + name + "' is a trait parameter, but generic "
@@ -37923,6 +37914,15 @@ public:
                 }
                 return {ASRUtils::duplicate_type(al, ASRUtils::symbol_type(forwarded)),
                     forwarded};
+            }
+            // A parameter of the enclosing generic procedure, which makes the
+            // instance symbolic (see symbolic_generic_instance); not yet a
+            // non-trait parameter of a generic derived type.
+            if (definition && ASR::is_a<ASR::Variable_t>(*definition) &&
+                    ASR::is_a<ASR::TypeParameter_t>(*ASRUtils::symbol_type(definition)) &&
+                    ASRUtils::generic_type_package(ASRUtils::get_asr_owner(definition))) {
+                trait_call_error("generic type arguments that are generic type parameters "
+                    "are not implemented yet", loc);
             }
             if (trait_binder) {
                 trait_call_error("generic type parameter '" + parameter + "' is a trait "
@@ -38450,9 +38450,23 @@ public:
         }
         auto *generic = target ? ASR::down_cast<ASR::Template_t>(
             ASR::down_cast<ASR::symbol_t>(target->asr_owner)) : nullptr;
-        if (!generic || ASRUtils::generic_type_definition(*generic)) {
+        if (!generic) {
             trait_call_error("generic type arguments that are generic type parameters "
                 "are implemented only in generic procedures", loc);
+        }
+        if (ASRUtils::generic_type_definition(*generic)) {
+            bool all_trait_params = true;
+            for (const auto &argument : arguments) {
+                if (ASR::is_a<ASR::TypeParameter_t>(*argument.first) &&
+                        !ASRUtils::trait_parameter_binder(argument.second)) {
+                    all_trait_params = false;
+                    break;
+                }
+            }
+            if (!all_trait_params) {
+                trait_call_error("generic type arguments that are generic type parameters "
+                    "are implemented only in generic procedures", loc);
+            }
         }
         if (definition->m_parent) {
             trait_call_error("generic type arguments that are generic type parameters "
@@ -39732,6 +39746,7 @@ public:
             PendingBodyInstantiation type_set{type_subs, symbol_subs, {}, {}};
             bind_type_set_requirements(type_set, package, owner);
             symbol_subs = type_set.symbol_subs;
+            bind_symbolic_generic_instances(*package, type_subs, symbol_subs, owner, loc);
             std::map<ASR::symbol_t*, ASR::symbol_t*> copies;
             std::vector<std::pair<ASR::symbol_t*, ASR::symbol_t*>> functions, methods;
             functions.insert(functions.end(), type_set.symbols.begin(), type_set.symbols.end());
