@@ -30048,6 +30048,26 @@ public:
         return result;
     }
 
+    ASR::symbol_t *unlimited_polymorphic_symbol(SymbolTable *scope, const Location &loc) {
+        SymbolTable *target_scope = scope;
+        while (target_scope->parent != nullptr && target_scope->parent->parent != nullptr) {
+            target_scope = target_scope->parent;
+        }
+        if (ASR::symbol_t *existing = target_scope->get_symbol("~unlimited_polymorphic_type")) {
+            return existing;
+        }
+        SymbolTable *struct_symtab = al.make_new<SymbolTable>(target_scope);
+        ASR::asr_t *dtype = ASR::make_Struct_t(al, loc, struct_symtab,
+            s2c(al, "~unlimited_polymorphic_type"), nullptr, nullptr, 0, nullptr, 0,
+            nullptr, 0, ASR::abiType::Source, ASR::accessType::Private, false, true, false,
+            nullptr, 0, nullptr, nullptr, nullptr, 0, false, nullptr, 0, nullptr, nullptr);
+        ASR::symbol_t *struct_symbol = ASR::down_cast<ASR::symbol_t>(dtype);
+        ASR::down_cast<ASR::Struct_t>(struct_symbol)->m_struct_signature =
+            ASRUtils::make_StructType_t_util(al, loc, struct_symbol, true);
+        target_scope->add_symbol("~unlimited_polymorphic_type", struct_symbol);
+        return struct_symbol;
+    }
+
     std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>>
     trait_erased_types(ASR::Template_t &generic, SymbolTable *scope) {
         std::map<std::string, std::pair<ASR::ttype_t*, ASR::symbol_t*>> types;
@@ -30060,12 +30080,15 @@ public:
                     al, generic.base.base.loc, generic.m_args[i])), nullptr};
                 continue;
             }
-            // `P :: U` erases type(U) to class(P). P is a trait parameter;
-            // substitute_trait_parameter_object rewrites class(P) to the
-            // erased entry's descriptor dummy for P.
-            if (auto *trait_binder = ASRUtils::conformance_parameter_binder(parameter)) {
-                types[generic.m_args[i]] = {ASRUtils::TYPE(ASR::make_TraitObjectType_t(
-                    al, generic.base.base.loc, trait_binder)), nullptr};
+            // `P :: U` erases type(U) to class(*) (unlimited polymorphic).
+            // A dummy procedure `procedure(ctor0{U})` returning `type(U)`
+            // erases to returning `class(*), allocatable`; the caller wraps
+            // the concrete constructor in a thunk that boxes `type(U)`.
+            if (ASRUtils::conformance_parameter_binder(parameter)) {
+                ASR::symbol_t *up_sym = unlimited_polymorphic_symbol(scope, generic.base.base.loc);
+                types[generic.m_args[i]] = {
+                    ASRUtils::make_StructType_t_util(al, generic.base.base.loc, up_sym, false),
+                    up_sym};
                 continue;
             }
             // A protocol binder is erased to storage its per-call dictionary describes.
@@ -30668,12 +30691,57 @@ public:
             if (auto *generic = trait_witness_conformance_generic(
                     implementation, contract.m_slots[i])) {
                 bool loaded = trait_scope_loaded(generic->m_symtab);
+                std::set<std::string> conformance_params;
+                for (size_t j = 0; j < generic->n_args; j++) {
+                    auto *binder = generic->m_symtab->get_symbol(generic->m_args[j]);
+                    if (ASRUtils::conformance_parameter_binder(binder)) {
+                        conformance_params.insert(generic->m_args[j]);
+                    }
+                }
                 for (const auto &entry : generic->m_symtab->get_scope()) {
-                    if (ASR::is_a<ASR::Struct_t>(*entry.second)) {
-                        return {"generic derived types instantiated on erased "
-                            "trait or conformance parameters are not implemented "
-                            "yet in runtime generic messages",
-                            entry.second->base.loc, generic->m_name, loaded};
+                    if (!ASR::is_a<ASR::Struct_t>(*entry.second)) continue;
+                    auto *s = ASR::down_cast<ASR::Struct_t>(entry.second);
+                    auto *meta = ASRUtils::generic_type_instance(*s);
+                    if (!meta) continue;
+                    for (size_t j = 0; j < meta->n_arguments; j++) {
+                        auto *t = meta->m_arguments[j].m_type;
+                        if (t && ASR::is_a<ASR::TypeParameter_t>(*t) &&
+                                !conformance_params.count(
+                                    ASR::down_cast<ASR::TypeParameter_t>(t)->m_param)) {
+                            return {"generic derived types instantiated on erased "
+                                "trait parameters are not implemented yet in runtime "
+                                "generic messages",
+                                entry.second->base.loc, generic->m_name, loaded};
+                        }
+                    }
+                }
+                // Packing a value of an erased conformance parameter U directly
+                // into class(P) (e.g. `object = ctor()`) cannot be erased without
+                // concrete type U; passing `ctor` to a generic factory returning
+                // `class(*), allocatable` is supported.
+                if (auto *fn = ASRUtils::trait_method_function(&generic->base)) {
+                    struct CheckPack : public ASR::BaseWalkVisitor<CheckPack> {
+                        const std::set<std::string> &params;
+                        Location found_loc{};
+                        bool found = false;
+                        explicit CheckPack(const std::set<std::string> &p) : params(p) {}
+                        void visit_TraitDeferredPack(const ASR::TraitDeferredPack_t &x) {
+                            if (found) return;
+                            auto *t = x.m_payload ? ASRUtils::expr_type(x.m_payload) : nullptr;
+                            t = t ? ASRUtils::extract_type(t) : nullptr;
+                            if (t && ASR::is_a<ASR::TypeParameter_t>(*t) &&
+                                    params.count(ASR::down_cast<ASR::TypeParameter_t>(t)->m_param)) {
+                                found = true;
+                                found_loc = x.base.base.loc;
+                            }
+                            ASR::BaseWalkVisitor<CheckPack>::visit_TraitDeferredPack(x);
+                        }
+                    } check(conformance_params);
+                    check.visit_Function(*fn);
+                    if (check.found) {
+                        return {"converting an erased conformance-parameter value directly "
+                            "to class(P) is not implemented yet in runtime generic messages",
+                            check.found_loc, generic->m_name, loaded};
                     }
                 }
             }
@@ -31218,6 +31286,17 @@ public:
         erasure->m_parameters = parameters.p;
         erasure->n_parameters = parameters.size();
         bind_trait_dictionary_operations(generic, scope, symbols);
+        bool has_conformance_param = false;
+        for (size_t i = 0; i < generic.n_args; i++) {
+            if (ASRUtils::conformance_parameter_binder(
+                    generic.m_symtab->get_symbol(generic.m_args[i]))) {
+                has_conformance_param = true;
+                break;
+            }
+        }
+        if (has_conformance_param) {
+            bind_symbolic_generic_instances(generic, types, symbols, provider_scope, loc);
+        }
         erasure->m_procedure = instantiate_symbol(al, scope, types, symbols,
             name + "_entry", &original->base, diag);
         return erasure;
@@ -36178,6 +36257,109 @@ public:
             callee = ASRUtils::import_trait_slot(al, *contract, runtime_slot,
                 current_scope, name, loc);
             args = prepend_call_arg(receiver, args);
+            {
+                auto *slot_fn = ASR::down_cast<ASR::Function_t>(
+                    ASRUtils::symbol_get_past_external(callee));
+                for (size_t i = 1; i < args.size() && i < slot_fn->n_args; i++) {
+                    if (!args[i].m_value || !ASR::is_a<ASR::Var_t>(*args[i].m_value)) continue;
+                    if (!ASR::is_a<ASR::Var_t>(*slot_fn->m_args[i])) continue;
+                    auto *dummy_sym = ASRUtils::symbol_get_past_external(
+                        ASR::down_cast<ASR::Var_t>(slot_fn->m_args[i])->m_v);
+                    if (!ASR::is_a<ASR::Variable_t>(*dummy_sym)) continue;
+                    auto *dummy_var = ASR::down_cast<ASR::Variable_t>(dummy_sym);
+                    auto *dummy_ft_raw = ASRUtils::type_get_past_pointer(dummy_var->m_type);
+                    if (!ASR::is_a<ASR::FunctionType_t>(*dummy_ft_raw)) continue;
+                    auto *dummy_ft = ASR::down_cast<ASR::FunctionType_t>(dummy_ft_raw);
+                    if (!dummy_ft->m_return_var_type ||
+                            !ASR::is_a<ASR::Allocatable_t>(*dummy_ft->m_return_var_type) ||
+                            !ASRUtils::is_unlimited_polymorphic_type(
+                                ASRUtils::type_get_past_allocatable(
+                                    dummy_ft->m_return_var_type))) continue;
+                    auto *actual_sym = ASRUtils::symbol_get_past_external(
+                        ASR::down_cast<ASR::Var_t>(args[i].m_value)->m_v);
+                    if (!ASR::is_a<ASR::Function_t>(*actual_sym)) continue;
+                    auto *actual_fn = ASR::down_cast<ASR::Function_t>(actual_sym);
+                    if (!actual_fn->m_return_var) continue;
+                    auto *actual_ret = ASRUtils::expr_type(actual_fn->m_return_var);
+                    if (ASRUtils::is_unlimited_polymorphic_type(
+                            ASRUtils::type_get_past_allocatable(actual_ret))) continue;
+                    // Wrap concrete constructor `actual_fn` returning `type(U)`
+                    // in a unit-level thunk returning `class(*), allocatable`
+                    // so the erased slot can store and invoke it uniformly.
+                    SymbolTable *unit_scope = runtime_trait_storage_scope();
+                    std::string thunk_name = unit_scope->get_unique_name(
+                        "__trait_ctor_thunk_" + std::string(actual_fn->m_name), false);
+                    SymbolTable *thunk_scope = al.make_new<SymbolTable>(unit_scope);
+                    Vec<ASR::expr_t*> thunk_args;
+                    thunk_args.reserve(al, actual_fn->n_args);
+                    Vec<ASR::call_arg_t> call_args;
+                    call_args.reserve(al, actual_fn->n_args);
+                    for (size_t j = 0; j < actual_fn->n_args; j++) {
+                        auto *orig_arg = ASR::down_cast<ASR::Variable_t>(
+                            ASRUtils::symbol_get_past_external(
+                                ASR::down_cast<ASR::Var_t>(actual_fn->m_args[j])->m_v));
+                        ASR::ttype_t *arg_type = ASRUtils::import_trait_type(al,
+                            ASRUtils::duplicate_type(al, orig_arg->m_type), thunk_scope);
+                        ASR::symbol_t *arg_decl = orig_arg->m_type_declaration
+                            ? ASRUtils::import_type_declaration(al,
+                                orig_arg->m_type_declaration, thunk_scope)
+                            : nullptr;
+                        std::string aname = orig_arg->m_name;
+                        ASR::symbol_t *param = ASR::down_cast<ASR::symbol_t>(
+                            ASRUtils::make_Variable_t_util(al, loc, thunk_scope,
+                                s2c(al, aname), nullptr, 0, orig_arg->m_intent,
+                                nullptr, nullptr, ASR::storage_typeType::Default,
+                                arg_type, arg_decl, ASR::abiType::Source,
+                                ASR::accessType::Private, orig_arg->m_presence,
+                                orig_arg->m_value_attr));
+                        thunk_scope->add_symbol(aname, param);
+                        ASR::expr_t *pvar = ASRUtils::EXPR(ASR::make_Var_t(al, loc, param));
+                        thunk_args.push_back(al, pvar);
+                        call_args.push_back(al, ASR::call_arg_t{loc, pvar});
+                    }
+                    ASR::symbol_t *up_sym = unlimited_polymorphic_symbol(unit_scope, loc);
+                    ASR::ttype_t *res_type = ASRUtils::TYPE(ASR::make_Allocatable_t(al, loc,
+                        ASRUtils::make_StructType_t_util(al, loc, up_sym, false)));
+                    ASR::symbol_t *res_sym = ASR::down_cast<ASR::symbol_t>(
+                        ASRUtils::make_Variable_t_util(al, loc, thunk_scope,
+                            s2c(al, "__res"), nullptr, 0, ASR::intentType::ReturnVar,
+                            nullptr, nullptr, ASR::storage_typeType::Default,
+                            res_type, up_sym, ASR::abiType::Source,
+                            ASR::accessType::Private, ASR::presenceType::Required, false));
+                    thunk_scope->add_symbol("__res", res_sym);
+                    ASR::expr_t *res_var = ASRUtils::EXPR(ASR::make_Var_t(al, loc, res_sym));
+                    ASR::symbol_t *target_fn = make_operator_proc_visible(
+                        actual_sym, "trait", thunk_scope);
+                    SetChar thunk_deps;
+                    thunk_deps.reserve(al, 1);
+                    if (!ASR::is_a<ASR::ExternalSymbol_t>(*target_fn) &&
+                            ASRUtils::symbol_parent_symtab(target_fn) == unit_scope) {
+                        thunk_deps.push_back(al, ASRUtils::symbol_name(target_fn));
+                    }
+                    ASR::ttype_t *call_ret_type = ASRUtils::import_trait_type(al,
+                        ASRUtils::duplicate_type(al, actual_ret), thunk_scope);
+                    ASR::expr_t *inner_call = ASRUtils::EXPR(
+                        ASRUtils::make_FunctionCall_t_util(al, loc, target_fn, nullptr,
+                            call_args.p, call_args.size(), call_ret_type,
+                            nullptr, nullptr, thunk_scope, thunk_deps, false));
+                    Vec<ASR::stmt_t*> body;
+                    body.reserve(al, 1);
+                    body.push_back(al, ASRUtils::STMT(ASRUtils::make_Assignment_t_util(
+                        al, loc, res_var, inner_call, nullptr, false, false)));
+                    ASR::symbol_t *thunk_sym = ASR::down_cast<ASR::symbol_t>(
+                        ASRUtils::make_Function_t_util(al, loc, thunk_scope,
+                            s2c(al, thunk_name), thunk_deps.p, thunk_deps.size(),
+                            thunk_args.p, thunk_args.size(), body.p, body.size(),
+                            res_var, ASR::abiType::Source, ASR::accessType::Private,
+                            ASR::deftypeType::Implementation, nullptr,
+                            false, false, false, false, false, nullptr, 0, false,
+                            false, false));
+                    unit_scope->add_symbol(thunk_name, thunk_sym);
+                    ASR::symbol_t *visible_thunk = make_operator_proc_visible(
+                        thunk_sym, "trait", current_scope);
+                    args.p[i].m_value = ASRUtils::EXPR(ASR::make_Var_t(al, loc, visible_thunk));
+                }
+            }
             validate_create_function_arguments(args, callee);
             auto *function = ASR::down_cast<ASR::Function_t>(
                 ASRUtils::symbol_get_past_external(callee));
@@ -36630,6 +36812,18 @@ public:
             if (!member) {
                 bind_trait_dictionary_operations(*generic, erasure->m_symtab, symbols,
                     nullptr, &evidence);
+                bool has_conformance_param = false;
+                for (size_t i = 0; i < generic->n_args; i++) {
+                    if (ASRUtils::conformance_parameter_binder(
+                            generic->m_symtab->get_symbol(generic->m_args[i]))) {
+                        has_conformance_param = true;
+                        break;
+                    }
+                }
+                if (has_conformance_param) {
+                    bind_symbolic_generic_instances(*generic, types, symbols,
+                        erasure->m_symtab->parent, erasure->base.base.loc);
+                }
             }
             trait_specializations.push_back(
                 {erasure->m_symtab, generic, types, evidence, erasure->m_procedure});
@@ -38833,7 +39027,8 @@ public:
             argument.m_type = ASRUtils::import_trait_type(al, argument.m_type_declaration &&
                     ASR::is_a<ASR::Struct_t>(
                         *ASRUtils::symbol_get_past_external(argument.m_type_declaration))
-                ? ASRUtils::make_StructType_t_util(al, loc, argument.m_type_declaration, true)
+                ? ASRUtils::make_StructType_t_util(al, loc, argument.m_type_declaration,
+                    !ASRUtils::is_unlimited_polymorphic_type(argument.m_type_declaration))
                 : ASRUtils::duplicate_type(al, arguments[i].first), scope);
             if (auto *module = arguments[i].second ? ASRUtils::get_sym_module0(
                     ASRUtils::symbol_get_past_external(arguments[i].second)) : nullptr) {
@@ -39683,7 +39878,8 @@ public:
                     metadata->m_arguments[i].m_type_declaration, owner) : nullptr;
             type_subs[package->m_args[i]] = {declaration && ASR::is_a<ASR::Struct_t>(
                     *ASRUtils::symbol_get_past_external(declaration))
-                ? ASRUtils::make_StructType_t_util(al, loc, declaration, true)
+                ? ASRUtils::make_StructType_t_util(al, loc, declaration,
+                    !ASRUtils::is_unlimited_polymorphic_type(declaration))
                 : metadata->m_arguments[i].m_type, declaration};
         }
         std::map<std::string, ASR::symbol_t*> symbol_subs;

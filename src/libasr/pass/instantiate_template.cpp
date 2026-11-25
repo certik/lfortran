@@ -645,6 +645,18 @@ public:
         ASR::ttype_t* type = substitute_type(&x->base, x->m_type);
         ASR::expr_t* value = duplicate_expr(x->m_value);
         ASR::expr_t* dt = duplicate_expr(x->m_dt);
+        if (dt && type && !ASRUtils::is_allocatable(type) &&
+                ASRUtils::is_unlimited_polymorphic_type(type)) {
+            ASR::ttype_t *dt_type = ASRUtils::type_get_past_pointer(ASRUtils::expr_type(dt));
+            if (dt_type && ASR::is_a<ASR::FunctionType_t>(*dt_type)) {
+                auto *ret = ASR::down_cast<ASR::FunctionType_t>(dt_type)->m_return_var_type;
+                if (ret && ASRUtils::is_allocatable(ret) &&
+                        ASRUtils::is_unlimited_polymorphic_type(
+                            ASRUtils::type_get_past_allocatable(ret))) {
+                    type = ASRUtils::duplicate_type(al, ret);
+                }
+            }
+        }
 
         std::string call_name = ASRUtils::symbol_name(x->m_name);
         ASR::symbol_t *name = template_scope->get_symbol(call_name);
@@ -1662,9 +1674,9 @@ public:
             descriptors.push_back(dummy);
         }
         instantiate_local_symbols(x->m_symtab);
-        // `procedure(ctor0{U})` with `P :: U` erases `type(U)` to class(P).
-        // That result is only the interface's signature. A trait-object
-        // result needs allocatable storage, which a bare class(P) has not.
+        // `procedure(ctor0{U})` with `P :: U` erases `type(U)` to class(*).
+        // That result is only the interface's signature. A polymorphic
+        // result needs allocatable storage, which a bare class(*) has not.
         if (x->m_return_var && ASRUtils::get_FunctionType(x)->m_deftype ==
                 ASR::deftypeType::Interface) {
             std::string result_name = ASRUtils::symbol_name(ASRUtils::symbol_get_past_external(
@@ -1672,7 +1684,12 @@ public:
             ASR::symbol_t *result = new_scope->get_symbol(result_name);
             if (result && ASR::is_a<ASR::Variable_t>(*result)) {
                 auto *variable = ASR::down_cast<ASR::Variable_t>(result);
-                if (variable->m_type && ASR::is_a<ASR::TraitObjectType_t>(*variable->m_type)) {
+                if (variable->m_type && !ASRUtils::is_allocatable(variable->m_type) &&
+                        ASRUtils::is_unlimited_polymorphic_type(variable->m_type)) {
+                    variable->m_type = ASRUtils::TYPE(ASR::make_Allocatable_t(al,
+                        variable->m_type->base.loc, variable->m_type));
+                } else if (variable->m_type &&
+                        ASR::is_a<ASR::TraitObjectType_t>(*variable->m_type)) {
                     auto *contract = ASR::down_cast<ASR::TraitObjectType_t>(
                         variable->m_type)->m_contract;
                     if (ASRUtils::trait_parameter_binder(contract) ||
@@ -4037,6 +4054,18 @@ public:
         ASR::ttype_t* type = substitute_type(&x->base, x->m_type);
         ASR::expr_t* value = duplicate_expr(x->m_value);
         ASR::expr_t* dt = duplicate_expr(x->m_dt);
+        if (dt && type && !ASRUtils::is_allocatable(type) &&
+                ASRUtils::is_unlimited_polymorphic_type(type)) {
+            ASR::ttype_t *dt_type = ASRUtils::type_get_past_pointer(ASRUtils::expr_type(dt));
+            if (dt_type && ASR::is_a<ASR::FunctionType_t>(*dt_type)) {
+                auto *ret = ASR::down_cast<ASR::FunctionType_t>(dt_type)->m_return_var_type;
+                if (ret && ASRUtils::is_allocatable(ret) &&
+                        ASRUtils::is_unlimited_polymorphic_type(
+                            ASRUtils::type_get_past_allocatable(ret))) {
+                    type = ASRUtils::duplicate_type(al, ret);
+                }
+            }
+        }
         if (ASR::symbol_t *binding = instance_binding(dt, x->m_name, x->base.base.loc)) {
             return ASRUtils::make_FunctionCall_t_util(al, x->base.base.loc, binding,
                 nullptr, args.p, args.size(), type, value, dt);

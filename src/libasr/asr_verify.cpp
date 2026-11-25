@@ -5969,7 +5969,8 @@ public:
                     (structure ? argument.m_type_declaration &&
                         symtab_in_scope(x.m_symtab, argument.m_type_declaration) &&
                         declaration && ASR::is_a<Struct_t>(*declaration) &&
-                        !ASRUtils::is_class_type(type)
+                        (!ASRUtils::is_class_type(type) ||
+                            ASRUtils::is_unlimited_polymorphic_type(type))
                     : !argument.m_type_declaration && (type_set_concrete_kind(type) ||
                         constant_length_character(type))),
                 "asr.verify.generic_type.instance_arguments",
