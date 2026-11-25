@@ -30698,23 +30698,6 @@ public:
                         conformance_params.insert(generic->m_args[j]);
                     }
                 }
-                for (const auto &entry : generic->m_symtab->get_scope()) {
-                    if (!ASR::is_a<ASR::Struct_t>(*entry.second)) continue;
-                    auto *s = ASR::down_cast<ASR::Struct_t>(entry.second);
-                    auto *meta = ASRUtils::generic_type_instance(*s);
-                    if (!meta) continue;
-                    for (size_t j = 0; j < meta->n_arguments; j++) {
-                        auto *t = meta->m_arguments[j].m_type;
-                        if (t && ASR::is_a<ASR::TypeParameter_t>(*t) &&
-                                !conformance_params.count(
-                                    ASR::down_cast<ASR::TypeParameter_t>(t)->m_param)) {
-                            return {"generic derived types instantiated on erased "
-                                "trait parameters are not implemented yet in runtime "
-                                "generic messages",
-                                entry.second->base.loc, generic->m_name, loaded};
-                        }
-                    }
-                }
                 // Packing a value of an erased conformance parameter U directly
                 // into class(P) (e.g. `object = ctor()`) cannot be erased without
                 // concrete type U; passing `ctor` to a generic factory returning
@@ -38581,7 +38564,12 @@ public:
             ASR::symbol_t *declaration = arguments[i].second
                 ? ASRUtils::symbol_get_past_external(arguments[i].second) : nullptr;
             if (!declaration) {
-                name += ASRUtils::type_to_str_fortran_symbol(arguments[i].first, nullptr, true);
+                if (arguments[i].first &&
+                        ASR::is_a<ASR::TraitDescriptorType_t>(*arguments[i].first)) {
+                    name += "~erased_trait";
+                } else {
+                    name += ASRUtils::type_to_str_fortran_symbol(arguments[i].first, nullptr, true);
+                }
                 continue;
             }
             auto *structure = ASR::is_a<ASR::Struct_t>(*declaration)
@@ -39019,17 +39007,24 @@ public:
         for (size_t i = 0; i < arguments.size(); i++) {
             ASR::generic_type_argument_t argument;
             argument.loc = loc;
-            argument.m_type_declaration = arguments[i].second
-                ? ASRUtils::import_nested_symbol(al, arguments[i].second, scope) : nullptr;
-            // The type references the trait contracts it names, those of a
-            // trait argument and of the components of a derived type,
-            // through imports of the instance's scope.
-            argument.m_type = ASRUtils::import_trait_type(al, argument.m_type_declaration &&
-                    ASR::is_a<ASR::Struct_t>(
-                        *ASRUtils::symbol_get_past_external(argument.m_type_declaration))
-                ? ASRUtils::make_StructType_t_util(al, loc, argument.m_type_declaration,
-                    !ASRUtils::is_unlimited_polymorphic_type(argument.m_type_declaration))
-                : ASRUtils::duplicate_type(al, arguments[i].first), scope);
+            if (arguments[i].first &&
+                    ASR::is_a<ASR::TraitDescriptorType_t>(*arguments[i].first)) {
+                argument.m_type_declaration = nullptr;
+                argument.m_type = ASRUtils::TYPE(ASR::make_TraitDescriptorType_t(
+                    al, loc, s2c(al, package.m_args[i])));
+            } else {
+                argument.m_type_declaration = arguments[i].second
+                    ? ASRUtils::import_nested_symbol(al, arguments[i].second, scope) : nullptr;
+                // The type references the trait contracts it names, those of a
+                // trait argument and of the components of a derived type,
+                // through imports of the instance's scope.
+                argument.m_type = ASRUtils::import_trait_type(al, argument.m_type_declaration &&
+                        ASR::is_a<ASR::Struct_t>(
+                            *ASRUtils::symbol_get_past_external(argument.m_type_declaration))
+                    ? ASRUtils::make_StructType_t_util(al, loc, argument.m_type_declaration,
+                        !ASRUtils::is_unlimited_polymorphic_type(argument.m_type_declaration))
+                    : ASRUtils::duplicate_type(al, arguments[i].first), scope);
+            }
             if (auto *module = arguments[i].second ? ASRUtils::get_sym_module0(
                     ASRUtils::symbol_get_past_external(arguments[i].second)) : nullptr) {
                 add_unit_dependency(owner, module->m_name);
@@ -39044,6 +39039,23 @@ public:
         }
         Vec<char*> members;
         members.from_pointer_n_copy(al, definition->m_members, definition->n_members);
+        // For each erased trait parameter, add a hidden descriptor component so
+        // the instance carries the trait descriptor at run time and its
+        // component interfaces (e.g. procedure(ctor1{T1,U})) can reference it.
+        for (size_t i = 0; i < instance_arguments.size(); i++) {
+            if (!instance_arguments[i].m_type ||
+                    !ASR::is_a<ASR::TraitDescriptorType_t>(*instance_arguments[i].m_type)) continue;
+            std::string desc_name = "__descriptor_" + std::string(package.m_args[i]);
+            ASR::symbol_t *desc_sym = ASR::down_cast<ASR::symbol_t>(
+                ASRUtils::make_Variable_t_util(al, loc, scope, s2c(al, desc_name),
+                    nullptr, 0, ASR::intentType::Local, nullptr, nullptr,
+                    ASR::storage_typeType::Default,
+                    ASRUtils::duplicate_type(al, instance_arguments[i].m_type),
+                    nullptr, ASR::abiType::Source, ASR::accessType::Private,
+                    ASR::presenceType::Required, false));
+            scope->add_symbol(desc_name, desc_sym);
+            members.push_back(al, s2c(al, desc_name));
+        }
         ASR::symbol_t *definition_reference = ASRUtils::import_nested_symbol(al,
             &definition->base, scope);
         if (auto *module = ASRUtils::get_sym_module0(&definition->base)) {

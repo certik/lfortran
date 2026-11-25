@@ -10213,8 +10213,16 @@ public:
         llvm::Value *target_var = nullptr;
         ASR::Variable_t *v = down_cast<ASR::Variable_t>(var_sym);
         uint64_t h = get_hash((ASR::asr_t*)v);
-        if (ASR::is_a<ASR::TraitDictionaryType_t>(*v->m_type) ||
-                ASR::is_a<ASR::TraitDescriptorType_t>(*v->m_type)) return;
+        if (ASR::is_a<ASR::TraitDictionaryType_t>(*v->m_type)) return;
+        if (ASR::is_a<ASR::TraitDescriptorType_t>(*v->m_type)) {
+            if (v->m_intent == ASR::intentType::Local) {
+                llvm_symtab[h] = llvm_utils->CreateAlloca(
+                    llvm_utils->i8_ptr, nullptr, v->m_name);
+                builder->CreateStore(
+                    llvm::ConstantPointerNull::get(llvm_utils->i8_ptr), llvm_symtab[h]);
+            }
+            return;
+        }
         if (ASR::is_a<ASR::TraitErasedType_t>(*v->m_type)) {
             // A local lives in entry-block storage of the size its
             // dictionary describes; the result is the caller's storage.
@@ -20181,10 +20189,17 @@ public:
     }
 
     inline void fetch_var(ASR::Variable_t* x) {
+        if (ASR::is_a<ASR::TraitDescriptorType_t>(*x->m_type)) {
+            uint64_t hash = get_hash((ASR::asr_t*)x);
+            tmp = llvm_symtab.at(hash);
+            if (x->m_intent == ASR::intentType::Local && ptr_loads > 0) {
+                tmp = llvm_utils->CreateLoad2(llvm_utils->i8_ptr, tmp);
+            }
+            return;
+        }
         if (ASRUtils::is_trait_pointer(x->m_type) ||
                 ASR::is_a<ASR::TraitErasedType_t>(*x->m_type) ||
-                ASR::is_a<ASR::TraitDictionaryType_t>(*x->m_type) ||
-                ASR::is_a<ASR::TraitDescriptorType_t>(*x->m_type)) {
+                ASR::is_a<ASR::TraitDictionaryType_t>(*x->m_type)) {
             uint64_t hash = get_hash((ASR::asr_t*)x);
             tmp = llvm_symtab.at(hash);
             return;
@@ -30166,8 +30181,11 @@ public:
     // The descriptor that the descriptor dummy `descriptor` of the erased
     // entry being lowered holds (E10).
     llvm::Value *trait_descriptor_value(const ASR::Variable_t &descriptor) {
-        return builder->CreateBitCast(llvm_symtab.at(get_hash((ASR::asr_t*)&descriptor)),
-            llvm_utils->i8_ptr);
+        llvm::Value *val = llvm_symtab.at(get_hash((ASR::asr_t*)&descriptor));
+        if (descriptor.m_intent == ASR::intentType::Local) {
+            return llvm_utils->CreateLoad2(llvm_utils->i8_ptr, val);
+        }
+        return builder->CreateBitCast(val, llvm_utils->i8_ptr);
     }
 
     // The size in bytes of the header of a trait object of the trait whose
@@ -30763,8 +30781,14 @@ public:
             dummy.m_value_attr, n_dims, a_kind, is_array_type, dummy.m_intent,
             module.get(), false);
         if (is_array_type) dummy_type = dummy_type->getPointerTo();
+        if (ASR::is_a<ASR::TraitDescriptorType_t>(*dummy.m_type)) {
+            int64_t saved_loads = ptr_loads;
+            ptr_loads = 1;
+            this->visit_expr_wrapper(actual, true);
+            ptr_loads = saved_loads;
+            return builder->CreateBitCast(tmp, llvm_utils->i8_ptr);
+        }
         if (ASR::is_a<ASR::TraitDictionaryType_t>(*dummy.m_type) ||
-                ASR::is_a<ASR::TraitDescriptorType_t>(*dummy.m_type) ||
                 !ASRUtils::is_array(dummy.m_type)) {
             int64_t saved_loads = ptr_loads;
             ptr_loads = 0;

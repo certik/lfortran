@@ -3304,8 +3304,10 @@ public:
             return;
         }
         if (auto *descriptor = ASRUtils::trait_descriptor_variable(symbol)) {
-            // class(P) of an erased entry: the trait of its descriptor dummy.
-            require_id(descriptor->m_intent == intentType::In &&
+            // class(P) of an erased entry (In dummy) or erased generic derived
+            // type / method (Local descriptor loaded from self).
+            require_id((descriptor->m_intent == intentType::In ||
+                        descriptor->m_intent == intentType::Local) &&
                     ASRUtils::trait_descriptor_parameter(*descriptor),
                 "asr.verify.trait_view.descriptor",
                 "A trait object of an erased trait parameter must name the descriptor "
@@ -5512,7 +5514,8 @@ public:
                 ASR::is_a<ASR::Struct_t>(*a.second) ||
                 ASR::is_a<ASR::Union_t>(*a.second) ||
                 ASR::is_a<ASR::ExternalSymbol_t>(*a.second) ||
-                ASR::is_a<ASR::CustomOperator_t>(*a.second) ) {
+                ASR::is_a<ASR::CustomOperator_t>(*a.second) ||
+                ASR::is_a<ASR::Function_t>(*a.second) ) {
                 continue ;
             }
             if ( ASR::is_a<ASR::Variable_t>(*a.second) ) {
@@ -5949,6 +5952,15 @@ public:
                 ? ASRUtils::symbol_get_past_external(argument.m_type_declaration) : nullptr;
             if (ASRUtils::trait_parameter_binder(
                     package->m_symtab->get_symbol(package->m_args[i]))) {
+                // An erased trait parameter carries its descriptor in a hidden
+                // component of the generic type instance.
+                if (type && ASR::is_a<TraitDescriptorType_t>(*type)) {
+                    require_id(!argument.m_type_declaration && argument.n_evidence == 0,
+                        "asr.verify.generic_type.instance_arguments",
+                        "An erased trait parameter argument of a generic type must not "
+                        "have a concrete declaration or evidence");
+                    continue;
+                }
                 // The argument of a trait parameter (E1) is a visible trait,
                 // and its type the trait object of the trait's contract.
                 require_id(type && ASR::is_a<TraitObjectType_t>(*type) &&
@@ -6048,8 +6060,15 @@ public:
                 }
             }
         }
-        bool members = x.n_members == definition->n_members;
-        for (size_t i = 0; members && i < x.n_members; i++) {
+        size_t n_erased_descriptors = 0;
+        for (size_t i = 0; i < instance.n_arguments; i++) {
+            if (instance.m_arguments[i].m_type &&
+                    ASR::is_a<TraitDescriptorType_t>(*instance.m_arguments[i].m_type)) {
+                n_erased_descriptors++;
+            }
+        }
+        bool members = x.n_members == definition->n_members + n_erased_descriptors;
+        for (size_t i = 0; members && i < definition->n_members; i++) {
             ASR::symbol_t *copy = x.m_symtab->get_symbol(x.m_members[i]);
             ASR::symbol_t *original = definition->m_symtab->get_symbol(definition->m_members[i]);
             members = std::string(x.m_members[i]) == definition->m_members[i] &&
@@ -6070,6 +6089,10 @@ public:
                     "A generic type instance's component initializer must not "
                     "contain deferred types");
             }
+        }
+        for (size_t i = definition->n_members; members && i < x.n_members; i++) {
+            ASR::symbol_t *copy = x.m_symtab->get_symbol(x.m_members[i]);
+            members = copy && ASRUtils::trait_descriptor_variable(copy) != nullptr;
         }
         bool obligations = x.n_trait_obligations == 0 ||
             x.n_trait_obligations == definition->n_trait_obligations;

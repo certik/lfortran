@@ -97,6 +97,8 @@ public:
                     this->visit_Function(*down_cast<ASR::Function_t>(sym));
                 } else if (ASR::is_a<ASR::Template_t>(*sym)) {
                     this->visit_Template(*down_cast<ASR::Template_t>(sym));
+                } else if (ASR::is_a<ASR::Struct_t>(*sym)) {
+                    this->visit_Struct(*down_cast<ASR::Struct_t>(sym));
                 }
             });
             ASRUtils::for_each_symbol_in_scope_and_constructs(scope, [&](ASR::symbol_t *sym) {
@@ -184,12 +186,28 @@ public:
             visit_procedures_in_scope_and_constructs(x.m_symtab);
         }
 
+        void visit_Struct(const ASR::Struct_t &x) {
+            for (auto &a : x.m_symtab->get_scope()) {
+                if (ASR::is_a<ASR::Function_t>(*a.second)) {
+                    this->visit_Function(*down_cast<ASR::Function_t>(a.second));
+                }
+            }
+            for (auto &a : x.m_symtab->get_scope()) {
+                if (ASR::is_a<ASR::Variable_t>(*a.second) &&
+                    ASR::is_a<ASR::FunctionType_t>(*ASRUtils::extract_type(ASRUtils::symbol_type(a.second)))) {
+                    this->visit_Variable(*down_cast<ASR::Variable_t>(a.second));
+                }
+            }
+        }
+
         void visit_Module(const ASR::Module_t &x) {
             for (auto &a : x.m_symtab->get_scope()) {
                 if (ASR::is_a<ASR::Function_t>(*a.second)) {
                     this->visit_Function(*down_cast<ASR::Function_t>(a.second));
                 } else if (ASR::is_a<ASR::Template_t>(*a.second)) {
                     this->visit_Template(*down_cast<ASR::Template_t>(a.second));
+                } else if (ASR::is_a<ASR::Struct_t>(*a.second)) {
+                    this->visit_Struct(*down_cast<ASR::Struct_t>(a.second));
                 }
             }
             for (auto &a : x.m_symtab->get_scope()) {
@@ -210,6 +228,8 @@ public:
                     this->visit_Function(*down_cast<ASR::Function_t>(a.second));
                 } else if (ASR::is_a<ASR::Template_t>(*a.second)) {
                     this->visit_Template(*down_cast<ASR::Template_t>(a.second));
+                } else if (ASR::is_a<ASR::Struct_t>(*a.second)) {
+                    this->visit_Struct(*down_cast<ASR::Struct_t>(a.second));
                 }
             }
             for (auto &a : x.m_symtab->get_scope()) {

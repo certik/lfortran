@@ -7776,6 +7776,15 @@ ASR::ttype_t* import_trait_type(Allocator &al, ASR::ttype_t* type, SymbolTable* 
         }
         case ASR::ttypeType::TraitObjectType: {
             auto *view = ASR::down_cast<ASR::TraitObjectType_t>(type);
+            if (trait_descriptor_variable(view->m_contract)) {
+                ASR::symbol_t *local = scope->resolve_symbol(
+                    ASRUtils::symbol_name(view->m_contract));
+                if (local && trait_descriptor_variable(local)) {
+                    return local == view->m_contract ? type :
+                        TYPE(ASR::make_TraitObjectType_t(al, type->base.loc, local));
+                }
+                return type;
+            }
             auto *reference = import_type_declaration(al, view->m_contract, scope);
             return reference == view->m_contract ? type :
                 TYPE(ASR::make_TraitObjectType_t(al, type->base.loc, reference));

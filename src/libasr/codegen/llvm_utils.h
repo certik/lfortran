@@ -2902,6 +2902,7 @@ class ASRToLLVMVisitor;
                 // dictionary, so erased storage owns nothing to release.
                 case ASR::TraitErasedType:
                 case ASR::TraitDictionaryType:
+                case ASR::TraitDescriptorType:
                     return false;
                 case ASR::StructType:{
                     ASR::StructType_t* struc_t = ASR::down_cast<ASR::StructType_t>(t);

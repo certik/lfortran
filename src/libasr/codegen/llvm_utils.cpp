@@ -4083,7 +4083,8 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(
             case ASR::ttypeType::Real:
             case ASR::ttypeType::Logical:
             case ASR::ttypeType::Complex:
-            case ASR::ttypeType::CPtr: {
+            case ASR::ttypeType::CPtr:
+            case ASR::ttypeType::TraitDescriptorType: {
                 if( ASRUtils::is_array(asr_src_type) ) {
                     ASR::array_physical_typeType physical_type = ASRUtils::extract_physical_type(asr_src_type);
                     llvm::DataLayout data_layout(module->getDataLayout());

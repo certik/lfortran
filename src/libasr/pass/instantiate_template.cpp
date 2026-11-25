@@ -1655,23 +1655,34 @@ public:
         dependencies.clear(al);
         new_scope = al.make_new<SymbolTable>(target_scope);
         // Erased trait parameters travel with trailing descriptor dummies,
-        // which the declarations of class(P) objects name (E10).
+        // which the declarations of class(P) objects name (E10). For a method
+        // of an erased generic derived type, the descriptors live on `self`
+        // and are loaded into local descriptor variables at function entry so
+        // the method's signature stays compatible with its trait contract.
+        ASR::symbol_t *func_owner = ASRUtils::get_asr_owner(&x->base);
+        bool generic_type_method = func_owner && ASR::is_a<ASR::Template_t>(*func_owner) &&
+            ASRUtils::generic_type_definition(*ASR::down_cast<ASR::Template_t>(func_owner)) != nullptr;
         std::vector<ASR::symbol_t*> descriptors;
         for (auto &binder : erased_descriptor_binders(&x->base, type_subs)) {
             std::string name = trait_descriptor_dummy_name(binder);
             // A nested interface instantiated inside an erased procedure sees
             // its enclosing procedure's descriptor dummies and does not take
             // extra descriptor arguments of its own.
-            if (target_scope->resolve_symbol(name)) continue;
+            if (ASRUtils::get_FunctionType(x)->m_deftype == ASR::deftypeType::Interface &&
+                    target_scope->resolve_symbol(name)) continue;
+            ASR::intentType desc_intent = generic_type_method
+                ? ASR::intentType::Local : ASR::intentType::In;
             ASR::symbol_t *dummy = ASR::down_cast<ASR::symbol_t>(
                 ASRUtils::make_Variable_t_util(al, x->base.base.loc, new_scope,
-                    s2c(al, name), nullptr, 0, ASR::intentType::In, nullptr, nullptr,
+                    s2c(al, name), nullptr, 0, desc_intent, nullptr, nullptr,
                     ASR::storage_typeType::Default, ASRUtils::TYPE(
                         ASR::make_TraitDescriptorType_t(al, x->base.base.loc,
                             s2c(al, binder))), nullptr, ASR::abiType::Source,
                     ASR::accessType::Private, ASR::presenceType::Required, false));
             new_scope->add_symbol(name, dummy);
-            descriptors.push_back(dummy);
+            if (!generic_type_method) {
+                descriptors.push_back(dummy);
+            }
         }
         instantiate_local_symbols(x->m_symtab);
         // `procedure(ctor0{U})` with `P :: U` erases `type(U)` to class(*).
@@ -1929,15 +1940,19 @@ public:
                 source_host_scope = source_host_scope != nullptr
                     ? source_host_scope->parent : nullptr;
             }
-            if (type_decl != nullptr
-                    && ASRUtils::is_unlimited_polymorphic_type(type_decl)) {
-                type_decl = ASRUtils::import_type_declaration(al, type_decl,
-                    host_scope);
-            } else if (type_decl != nullptr) {
-                type_decl = ASRUtils::import_symbol(al, type_decl, host_scope,
-                    ASR::accessType::Private, "1_");
+            bool nested_in_struct = type_decl != nullptr &&
+                ASRUtils::symbol_parent_symtab(type_decl) == target_scope;
+            if (!nested_in_struct) {
+                if (type_decl != nullptr
+                        && ASRUtils::is_unlimited_polymorphic_type(type_decl)) {
+                    type_decl = ASRUtils::import_type_declaration(al, type_decl,
+                        host_scope);
+                } else if (type_decl != nullptr) {
+                    type_decl = ASRUtils::import_symbol(al, type_decl, host_scope,
+                        ASR::accessType::Private, "1_");
+                }
+                new_type = ASRUtils::import_procedure_type(al, new_type, host_scope);
             }
-            new_type = ASRUtils::import_procedure_type(al, new_type, host_scope);
         }
 
         // The initializer can refer to the variable itself, e.g. the mold of
@@ -3326,7 +3341,42 @@ public:
         ASR::Function_t* new_f = ASR::down_cast<ASR::Function_t>(new_sym);
         new_scope = new_f->m_symtab;
         old_scope = x->m_symtab;
-        Vec<ASR::stmt_t*> body = instantiate_local_scope(x->m_body, x->n_body);
+        Vec<ASR::stmt_t*> body;
+        body.reserve(al, x->n_body + 2);
+        // For a method of an erased generic derived type, load each local
+        // descriptor variable from the corresponding hidden component of `self`.
+        if (new_f->n_args > 0 && ASR::is_a<ASR::Var_t>(*new_f->m_args[0])) {
+            ASR::symbol_t *self_sym = ASRUtils::symbol_get_past_external(
+                ASR::down_cast<ASR::Var_t>(new_f->m_args[0])->m_v);
+            ASR::Variable_t *self_var = ASRUtils::get_variable_from_symbol(self_sym);
+            ASR::symbol_t *self_decl = self_var && self_var->m_type_declaration
+                ? ASRUtils::symbol_get_past_external(self_var->m_type_declaration) : nullptr;
+            if (self_decl && ASR::is_a<ASR::Struct_t>(*self_decl)) {
+                auto *self_struct = ASR::down_cast<ASR::Struct_t>(self_decl);
+                for (size_t i = 0; i < self_struct->n_members; i++) {
+                    ASR::symbol_t *member = self_struct->m_symtab->get_symbol(
+                        self_struct->m_members[i]);
+                    if (!member || !ASRUtils::trait_descriptor_variable(member)) continue;
+                    ASR::symbol_t *local_desc = new_scope->get_symbol(self_struct->m_members[i]);
+                    if (!local_desc || !ASRUtils::trait_descriptor_variable(local_desc)) continue;
+                    auto *local_var = ASR::down_cast<ASR::Variable_t>(local_desc);
+                    if (local_var->m_intent != ASR::intentType::Local) continue;
+                    ASR::symbol_t *member_ref = ASRUtils::import_struct_instance_member(
+                        al, member, new_scope);
+                    ASR::expr_t *lhs = ASRUtils::EXPR(ASR::make_Var_t(
+                        al, x->base.base.loc, local_desc));
+                    ASR::expr_t *rhs = ASRUtils::EXPR(ASR::make_StructInstanceMember_t(
+                        al, x->base.base.loc, new_f->m_args[0], member_ref,
+                        ASRUtils::duplicate_type(al, local_var->m_type), nullptr));
+                    body.push_back(al, ASRUtils::STMT(ASRUtils::make_Assignment_t_util(
+                        al, x->base.base.loc, lhs, rhs, nullptr, false, false)));
+                }
+            }
+        }
+        Vec<ASR::stmt_t*> duplicated_body = instantiate_local_scope(x->m_body, x->n_body);
+        for (size_t i = 0; i < duplicated_body.size(); i++) {
+            body.push_back(al, duplicated_body[i]);
+        }
 
         SetChar deps_vec;
         deps_vec.reserve(al, new_f->n_dependencies + dependencies.size());
@@ -3542,6 +3592,14 @@ public:
     }
 
     ASR::asr_t *duplicate_TraitObjectType(ASR::TraitObjectType_t *x) {
+        if (ASRUtils::trait_descriptor_variable(x->m_contract)) {
+            if (ASR::symbol_t *local = new_scope->resolve_symbol(
+                    ASRUtils::symbol_name(x->m_contract))) {
+                if (ASRUtils::trait_descriptor_variable(local)) {
+                    return ASR::make_TraitObjectType_t(al, x->base.base.loc, local);
+                }
+            }
+        }
         return &ASRUtils::import_trait_type(al, substitute_trait_parameter_object(
             al, &x->base, type_subs, new_scope), new_scope)->base;
     }
@@ -3591,6 +3649,12 @@ public:
         ASR::Function_t *owner = ASRUtils::trait_erased_owner(new_scope);
         ASR::Variable_t *dummy = owner ? ASRUtils::trait_descriptor_dummy(*owner, parameter)
             : nullptr;
+        if (!dummy) {
+            if (ASR::symbol_t *local = new_scope->resolve_symbol(
+                    trait_descriptor_dummy_name(parameter))) {
+                dummy = ASRUtils::trait_descriptor_variable(local);
+            }
+        }
         LCOMPILERS_ASSERT(dummy);
         return ASRUtils::EXPR(ASR::make_Var_t(al, loc, &dummy->base));
     }
@@ -4323,6 +4387,61 @@ public:
             copy->m_dt_sym = candidate->second;
             copy->m_type = ASRUtils::make_StructType_t_util(al, x->base.base.loc,
                 candidate->second, ASR::down_cast<ASR::StructType_t>(x->m_type)->m_is_cstruct);
+            auto *target_struct = ASR::down_cast<ASR::Struct_t>(target);
+            if (target_struct->n_members > copy->n_args) {
+                // Append runtime trait descriptors for hidden descriptor components
+                // of an erased generic derived type (e.g. Factory1{T1,U}).
+                ASR::GenericTypeInstance_t *sym_meta = symbolic
+                    ? ASRUtils::generic_type_instance(*ASR::down_cast<ASR::Struct_t>(type))
+                    : nullptr;
+                Vec<ASR::call_arg_t> extended;
+                extended.reserve(al, target_struct->n_members);
+                for (size_t i = 0; i < copy->n_args; i++) {
+                    extended.push_back(al, copy->m_args[i]);
+                }
+                size_t desc_idx = 0;
+                for (size_t i = copy->n_args; i < target_struct->n_members; i++) {
+                    ASR::symbol_t *member = target_struct->m_symtab->get_symbol(
+                        target_struct->m_members[i]);
+                    auto *desc_var = member ? ASRUtils::trait_descriptor_variable(member)
+                        : nullptr;
+                    if (!desc_var) break;
+                    std::string param = ASRUtils::trait_descriptor_parameter(*desc_var);
+                    // Map the generic type's trait parameter to the caller's
+                    // erased trait parameter name when symbolic metadata exists.
+                    if (sym_meta) {
+                        size_t seen = 0;
+                        for (size_t j = 0; j < instance->n_arguments &&
+                                j < sym_meta->n_arguments; j++) {
+                            if (!instance->m_arguments[j].m_type ||
+                                    !ASR::is_a<ASR::TraitDescriptorType_t>(
+                                        *instance->m_arguments[j].m_type)) continue;
+                            if (seen == desc_idx) {
+                                if (sym_meta->m_arguments[j].m_type &&
+                                        ASR::is_a<ASR::TypeParameter_t>(
+                                            *sym_meta->m_arguments[j].m_type)) {
+                                    std::string caller_p = ASR::down_cast<ASR::TypeParameter_t>(
+                                        sym_meta->m_arguments[j].m_type)->m_param;
+                                    auto bound = type_subs.find(caller_p);
+                                    if (bound != type_subs.end() && bound->second.first &&
+                                            ASR::is_a<ASR::TraitDescriptorType_t>(
+                                                *bound->second.first)) {
+                                        param = ASR::down_cast<ASR::TraitDescriptorType_t>(
+                                            bound->second.first)->m_parameter;
+                                    }
+                                }
+                                break;
+                            }
+                            seen++;
+                        }
+                    }
+                    extended.push_back(al, ASR::call_arg_t{x->base.base.loc,
+                        erased_descriptor(param, x->base.base.loc)});
+                    desc_idx++;
+                }
+                copy->m_args = extended.p;
+                copy->n_args = extended.size();
+            }
         }
         return &copy->base.base;
     }
@@ -4638,6 +4757,9 @@ public:
                 ASR::Pointer_t *p = ASR::down_cast<ASR::Pointer_t>(ttype);
                 return ASRUtils::make_Pointer_t_util(al, ttype->base.loc,
                     substitute_type(expr, p->m_type));
+            }
+            case (ASR::ttypeType::FunctionType) : {
+                return duplicate_ttype(ttype);
             }
             // A trait contract the template named may be imported into a
             // scope the instantiation cannot see, e.g. a component's.
