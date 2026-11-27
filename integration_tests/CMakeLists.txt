@@ -5281,6 +5281,12 @@ RUN(NAME traits_di_container_04 LABELS llvm llvm2 NO_STD_F23 ISOLATE_MODULES
     EXTRAFILES traits_di_container_04_interfaces.f90 traits_di_container_04_lib.f90)
 RUN(NAME traits_di_container_05 LABELS llvm NO_STD_F23 ISOLATE_MODULES
     EXTRA_ARGS --verify-all-passes)
+RUN(NAME traits_di_container_06 LABELS llvm NO_STD_F23 ISOLATE_MODULES
+    EXTRA_ARGS --verify-all-passes)
+RUN(NAME traits_pointer_component_01 LABELS llvm NO_STD_F23 ISOLATE_MODULES
+    EXTRA_ARGS --verify-all-passes)
+RUN(NAME traits_pointer_component_02 LABELS llvm NO_STD_F23 ISOLATE_MODULES
+    EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_implements_generic_type_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_implements_generic_type_02 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)
 RUN(NAME traits_type_sets_01 LABELS llvm NO_STD_F23 EXTRA_ARGS --verify-all-passes)

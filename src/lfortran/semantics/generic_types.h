@@ -91,6 +91,11 @@ inline void generic_type_bound_procedures(AST::procedure_decl_t **procedures,
                 bound.emplace(name, false);
                 if (locations) locations->emplace(name, binding->base.base.loc);
             }
+        } else if (AST::is_a<AST::FinalName_t>(*procedures[i])) {
+            auto *final_name = AST::down_cast<AST::FinalName_t>(procedures[i]);
+            std::string name = to_lower(final_name->m_name);
+            bound.emplace(name, false);
+            if (locations) locations->emplace(name, final_name->base.base.loc);
         }
     }
 }
@@ -226,6 +231,27 @@ inline AST::Module_t *lower_generic_type_module(Allocator &al, const AST::Module
             // The first type binding a dependent procedure owns it; the
             // semantic visitor diagnoses the others.
             owners.emplace(to_lower(name), entry.first);
+        }
+    }
+    // An unbound non-generic helper procedure in the same module that names
+    // a generic type and its parameters (e.g. `type(HashMap{T})`) also
+    // belongs to that type's package.
+    for (auto &entry : generic_types) {
+        std::set<std::string> parameters;
+        for (size_t i = 0; i < entry.second.definition->n_parameters; i++) {
+            parameters.insert(to_lower(entry.second.definition->m_parameters[i].m_name));
+        }
+        std::set<std::string> no_params;
+        for (size_t i = 0; i < x.n_contains; i++) {
+            if (AST::is_a<AST::TraitProcedure_t>(*x.m_contains[i])) continue;
+            const char *name = program_unit_name(*x.m_contains[i]);
+            if (!name) continue;
+            std::string lowered = to_lower(name);
+            if (owners.count(lowered)) continue;
+            if (generic_type_procedure_dependent(*x.m_contains[i], no_params, entry.first) &&
+                    generic_type_procedure_dependent(*x.m_contains[i], parameters, "")) {
+                owners.emplace(lowered, entry.first);
+            }
         }
     }
     std::set<std::string> module_procedures;

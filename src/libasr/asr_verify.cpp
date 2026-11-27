@@ -4592,16 +4592,23 @@ public:
     ttype_t *verify_trait_pointer(expr_t *pointer, const Location &loc,
             bool defining) {
         auto *type = typed_expr_type(pointer);
-        require_with_loc_id(pointer && ASR::is_a<Var_t>(*pointer) &&
+        require_with_loc_id(pointer &&
+                (ASR::is_a<Var_t>(*pointer) || ASR::is_a<StructInstanceMember_t>(*pointer)) &&
                 ASRUtils::is_trait_pointer(type),
             "asr.verify.trait_pointer.storage",
             "A trait pointer operation requires a scalar pointer variable", loc);
-        auto *variable = ASRUtils::get_variable_from_symbol(
-            ASR::down_cast<Var_t>(pointer)->m_v);
-        require_with_loc_id(variable &&
-                (!defining || variable->m_intent != intentType::In),
-            "asr.verify.trait_pointer.definable",
-            "An intent(in) trait pointer cannot change association", loc);
+        if (ASR::is_a<Var_t>(*pointer)) {
+            auto *variable = ASRUtils::get_variable_from_symbol(
+                ASR::down_cast<Var_t>(pointer)->m_v);
+            require_with_loc_id(variable &&
+                    (!defining || variable->m_intent != intentType::In),
+                "asr.verify.trait_pointer.definable",
+                "An intent(in) trait pointer cannot change association", loc);
+        } else if (defining && check_external) {
+            require_with_loc_id(ASRUtils::association_is_definable(pointer),
+                "asr.verify.trait_pointer.definable",
+                "An intent(in) trait pointer cannot change association", loc);
+        }
         visit_expr(*pointer);
         return ASRUtils::extract_type(type);
     }
@@ -4645,7 +4652,10 @@ public:
     }
 
     void visit_TraitAllocate(const TraitAllocate_t &x) {
-        auto *type = verify_trait_owner(x.m_target, x.base.base.loc);
+        auto *target_type = typed_expr_type(x.m_target);
+        auto *type = ASRUtils::is_trait_pointer(target_type)
+            ? verify_trait_pointer(x.m_target, x.base.base.loc, true)
+            : verify_trait_owner(x.m_target, x.base.base.loc);
         require_id((x.m_source || x.m_witness) &&
                 (!x.m_copy_value || x.m_source) &&
                 (bool(x.m_type_declaration) == !bool(x.m_source)),
@@ -6316,7 +6326,7 @@ public:
         }
         bool visible_definition = instance.m_definition &&
             symtab_in_scope(x.m_symtab, instance.m_definition);
-        if (in_generic_type && visible_definition) {
+        if (check_external && in_generic_type && visible_definition) {
             ASR::symbol_t *definition = ASRUtils::symbol_get_past_external(
                 instance.m_definition);
             visible_definition = definition && ASR::is_a<Struct_t>(*definition) &&
@@ -6699,8 +6709,6 @@ public:
                  (!dummy && x.m_intent == intentType::Local &&
                   x.m_parent_symtab && x.m_parent_symtab->asr_owner &&
                   ASR::is_a<symbol_t>(*x.m_parent_symtab->asr_owner) &&
-                  !ASR::is_a<Struct_t>(*ASR::down_cast<symbol_t>(
-                      x.m_parent_symtab->asr_owner)) &&
                   !ASR::is_a<Union_t>(*ASR::down_cast<symbol_t>(
                       x.m_parent_symtab->asr_owner)) &&
                   (x.m_storage == storage_typeType::Default ||
@@ -6744,7 +6752,11 @@ public:
                     x.m_storage == storage_typeType::Default &&
                     !x.m_symbolic_value && !x.m_value && x.m_parent_symtab &&
                     x.m_parent_symtab->asr_owner &&
-                    ASR::is_a<symbol_t>(*x.m_parent_symtab->asr_owner)) {
+                    ASR::is_a<symbol_t>(*x.m_parent_symtab->asr_owner) &&
+                    !ASR::is_a<Struct_t>(*ASR::down_cast<symbol_t>(
+                        x.m_parent_symtab->asr_owner)) &&
+                    !ASR::is_a<Union_t>(*ASR::down_cast<symbol_t>(
+                        x.m_parent_symtab->asr_owner))) {
                 AbsentViewActual uses(x);
                 uses.visit_symbol(*ASR::down_cast<symbol_t>(x.m_parent_symtab->asr_owner));
                 absent = uses.references == uses.actuals;
@@ -7956,6 +7968,19 @@ public:
                         ASRUtils::association_is_definable(x.m_vars[i]),
                     "asr.verify.trait_array_owner.deallocate",
                     "A runtime trait array deallocation requires a definable owner variable");
+                continue;
+            }
+            if (ASRUtils::is_trait_pointer(type)) {
+                require_id(!implicit,
+                    "asr.verify.trait_pointer.explicit_deallocate",
+                    "Implicit scope cleanup must not deallocate a runtime trait pointer");
+                verify_trait_pointer(x.m_vars[i], x.base.base.loc, true);
+                for (auto *previous : owners) {
+                    require_id(!ASRUtils::trait_owner_same_slot(previous, x.m_vars[i]),
+                        "asr.verify.trait_owner.duplicate_cleanup",
+                        "One deallocation cannot destroy the same owner twice");
+                }
+                owners.push_back(x.m_vars[i]);
                 continue;
             }
             verify_trait_owner(x.m_vars[i], x.base.base.loc);

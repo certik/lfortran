@@ -134,7 +134,7 @@ semantic error: binding procedure 'describe', which does not depend on the gener
 367 |         procedure, nopass :: describe
     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
-semantic error: FINAL procedures of a generic derived type are not implemented yet
+semantic error: binding procedure 'release', which does not depend on the generic parameters of 'finalized', to the generic type is not implemented yet
    --> tests/errors/continue_compilation_traits_04.f90:382:9
     |
 382 |         final :: release

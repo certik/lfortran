@@ -14,7 +14,7 @@ semantic error: runtime trait arrays other than assumed-shape dummy arguments wi
 67 |     class(ISomeTrait), allocatable :: saved(:)
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
-semantic error: runtime trait components currently require allocatable storage
+semantic error: runtime trait arrays other than assumed-shape dummy arguments without the allocatable or pointer attribute and deferred-shape allocatable dummy arguments, local variables and components are not implemented yet
   --> tests/errors/continue_compilation_traits_12.f90:71:9
    |
 71 |         class(ISomeTrait), pointer :: linked(:)

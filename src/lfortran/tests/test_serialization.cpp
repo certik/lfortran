@@ -8535,9 +8535,8 @@ end module
         deallocation->m_vars[1] = deallocation->m_vars[0];
         rejects("asr.verify.trait_owner.duplicate_cleanup");
     }
-    SUBCASE("pointer trait components remain outside this owning slice") {
-        item->m_type = ASRUtils::TYPE(ASR::make_Pointer_t(
-            al, item->base.base.loc, ASRUtils::extract_type(item->m_type)));
+    SUBCASE("non-allocatable non-pointer trait components remain invalid") {
+        item->m_type = ASRUtils::extract_type(item->m_type);
         rejects("asr.verify.trait_view.borrowed_storage");
     }
     SUBCASE("containing-object assignment retains its lifecycle effects") {

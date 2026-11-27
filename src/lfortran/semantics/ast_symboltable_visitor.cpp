@@ -10507,9 +10507,7 @@ public:
             for (size_t i = 0; i < type.n_contains; i++) {
                 const AST::procedure_decl_t &binding = *type.m_contains[i];
                 std::string kind;
-                if (AST::is_a<AST::FinalName_t>(binding)) {
-                    kind = "FINAL procedures";
-                } else if (AST::is_a<AST::GenericOperator_t>(binding) ||
+                if (AST::is_a<AST::GenericOperator_t>(binding) ||
                         AST::is_a<AST::GenericDefinedOperator_t>(binding) ||
                         AST::is_a<AST::GenericAssignment_t>(binding) ||
                         AST::is_a<AST::GenericName_t>(binding) ||

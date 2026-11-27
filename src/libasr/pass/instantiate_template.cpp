@@ -4161,15 +4161,24 @@ public:
         if (name == nullptr) {
             ASR::symbol_t* nested_sym = ASRUtils::symbol_symtab(sym)->resolve_symbol(call_name);
             SymbolTable* target_scope = ASRUtils::symbol_parent_symtab(new_sym);
-            std::string nested_sym_name = target_scope->get_unique_name("__asr_" + call_name, false);
+            ASR::symbol_t* nested_def = nested_sym ? ASRUtils::symbol_get_past_external(nested_sym) : nullptr;
+            ASR::symbol_t* nested_owner = nested_def ? ASRUtils::get_asr_owner(nested_def) : nullptr;
+            if (nested_def && nested_owner && ASR::is_a<ASR::Module_t>(*nested_owner) &&
+                    !is_template_procedure(nested_def)) {
+                name = ASRUtils::import_symbol(al, nested_def, target_scope,
+                    ASR::accessType::Private);
+                symbol_subs[call_name] = name;
+            } else {
+                std::string nested_sym_name = target_scope->get_unique_name("__asr_" + call_name, false);
 
-            SymbolInstantiator t_i(al, template_scope, target_scope, type_subs, symbol_subs, nested_sym_name, nested_sym);
-            name = t_i.instantiate();
-            symbol_subs[call_name] = name;
+                SymbolInstantiator t_i(al, template_scope, target_scope, type_subs, symbol_subs, nested_sym_name, nested_sym);
+                name = t_i.instantiate();
+                symbol_subs[call_name] = name;
 
-            BodyInstantiator t_b(al, template_scope, type_subs, symbol_subs, name, nested_sym,
-                instantiated_bodies);
-            t_b.instantiate();
+                BodyInstantiator t_b(al, template_scope, type_subs, symbol_subs, name, nested_sym,
+                    instantiated_bodies);
+                t_b.instantiate();
+            }
         }
 
         if (ASRUtils::symbol_parent_symtab(name)->get_counter() != new_scope->get_counter()
@@ -4243,15 +4252,24 @@ public:
         if (name == nullptr) {
             ASR::symbol_t* nested_sym = ASRUtils::symbol_symtab(sym)->resolve_symbol(call_name);
             SymbolTable* target_scope = ASRUtils::symbol_parent_symtab(new_sym);
-            std::string nested_sym_name = target_scope->get_unique_name("__asr_" + call_name, false);
+            ASR::symbol_t* nested_def = nested_sym ? ASRUtils::symbol_get_past_external(nested_sym) : nullptr;
+            ASR::symbol_t* nested_owner = nested_def ? ASRUtils::get_asr_owner(nested_def) : nullptr;
+            if (nested_def && nested_owner && ASR::is_a<ASR::Module_t>(*nested_owner) &&
+                    !is_template_procedure(nested_def)) {
+                name = ASRUtils::import_symbol(al, nested_def, target_scope,
+                    ASR::accessType::Private);
+                symbol_subs[call_name] = name;
+            } else {
+                std::string nested_sym_name = target_scope->get_unique_name("__asr_" + call_name, false);
 
-            SymbolInstantiator t_i(al, template_scope, target_scope, type_subs, symbol_subs, nested_sym_name, nested_sym);
-            name = t_i.instantiate();
-            symbol_subs[call_name] = name;
+                SymbolInstantiator t_i(al, template_scope, target_scope, type_subs, symbol_subs, nested_sym_name, nested_sym);
+                name = t_i.instantiate();
+                symbol_subs[call_name] = name;
 
-            BodyInstantiator t_b(al, template_scope, type_subs, symbol_subs, name, nested_sym,
-                instantiated_bodies);
-            t_b.instantiate();
+                BodyInstantiator t_b(al, template_scope, type_subs, symbol_subs, name, nested_sym,
+                    instantiated_bodies);
+                t_b.instantiate();
+            }
         }
 
         if (ASRUtils::symbol_parent_symtab(name)->get_counter() != new_scope->get_counter()

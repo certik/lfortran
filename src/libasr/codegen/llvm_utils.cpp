@@ -4335,6 +4335,11 @@ llvm::Value* LLVMUtils::handle_global_nonallocatable_stringArray(
                             ASRUtils::get_string_type(asr_dest_type), src_str_type,
                             ASRUtils::is_allocatable(asr_dest_type));
                     }
+                } else if (ASRUtils::is_trait_pointer(asr_src_type)) {
+                    llvm::Type* header_type = getTraitType(asr_src_type);
+                    llvm::Value* val = src->getType()->isPointerTy()
+                        ? CreateLoad2(header_type, src) : src;
+                    builder->CreateStore(val, dest);
                 } else if (ASR::is_a<ASR::FunctionType_t>(*pointer_type->m_type)) {
                     // Pointer(FunctionType) has the same LLVM layout as FunctionType (fntype*),
                     // so use fntype* as load type (no extra getPointerTo()).

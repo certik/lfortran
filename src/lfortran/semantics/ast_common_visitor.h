@@ -29915,9 +29915,9 @@ public:
                 current_scope->asr_owner))));
         if (!owner && (!assumed_shape || !is_argument || pointer || allocatable ||
                 is_derived_type)) {
-            if (is_derived_type && (!allocatable || pointer)) {
+            if (is_derived_type && !allocatable && !pointer) {
                 trait_call_error("runtime trait components currently require "
-                    "allocatable storage", loc);
+                    "allocatable or pointer storage", loc);
             }
             return runtime_trait_type(contract, loc, pointer, allocatable,
                 dims.size() || assumed_rank, trait_binder);
@@ -33335,10 +33335,14 @@ public:
             ASR::expr_t *value, const Location &loc) {
         auto *target_type = ASRUtils::expr_type(target);
         if (!ASRUtils::is_trait_pointer(target_type) ||
-                !ASR::is_a<ASR::Var_t>(*target)) {
+                (!ASR::is_a<ASR::Var_t>(*target) &&
+                 !ASR::is_a<ASR::StructInstanceMember_t>(*target))) {
             trait_call_error("runtime trait association requires a scalar trait pointer", loc);
         }
-        if (ASRUtils::EXPR2VAR(target)->m_intent == ASR::intentType::In) {
+        if ((ASR::is_a<ASR::Var_t>(*target) &&
+                ASRUtils::EXPR2VAR(target)->m_intent == ASR::intentType::In) ||
+                (ASR::is_a<ASR::StructInstanceMember_t>(*target) &&
+                !ASRUtils::association_is_definable(target))) {
             trait_call_error("cannot change association of an intent(in) runtime trait pointer", loc);
         }
         check_runtime_trait_pointer_context(target, true);
@@ -38183,16 +38187,32 @@ public:
         if (definition && ASR::is_a<ASR::Struct_t>(*definition)) {
             auto *structure = ASR::down_cast<ASR::Struct_t>(definition);
             auto *metadata = ASRUtils::generic_type_definition_metadata(*structure);
-            if (!metadata) {
+            ASR::Template_t *enclosing_package = nullptr;
+            if (!metadata && structure->m_symtab && structure->m_symtab->parent &&
+                    structure->m_symtab->parent->asr_owner &&
+                    ASR::is_a<ASR::symbol_t>(*structure->m_symtab->parent->asr_owner) &&
+                    ASR::is_a<ASR::Template_t>(*ASR::down_cast<ASR::symbol_t>(
+                        structure->m_symtab->parent->asr_owner))) {
+                auto *tmpl = ASR::down_cast<ASR::Template_t>(
+                    ASR::down_cast<ASR::symbol_t>(structure->m_symtab->parent->asr_owner));
+                if (std::string(tmpl->m_name) == std::string(structure->m_name)) {
+                    enclosing_package = tmpl;
+                }
+            }
+            if (!metadata && !enclosing_package) {
                 trait_call_error("'" + name + "' is not a generic derived type", loc);
             }
-            bool identity = n_args == metadata->n_parameters;
+            size_t n_params = metadata ? metadata->n_parameters : enclosing_package->n_args;
+            bool identity = n_args == n_params;
             for (size_t i = 0; identity && i < n_args; i++) {
                 ASR::symbol_t *argument = AST::is_a<AST::AttrName_t>(*args[i])
                     ? current_scope->resolve_symbol(to_lower(
                         AST::down_cast<AST::AttrName_t>(args[i])->m_name)) : nullptr;
+                ASR::symbol_t *param = metadata
+                    ? metadata->m_parameters[i]
+                    : enclosing_package->m_symtab->get_symbol(enclosing_package->m_args[i]);
                 identity = argument && ASRUtils::symbol_get_past_external(argument) ==
-                    ASRUtils::symbol_get_past_external(metadata->m_parameters[i]);
+                    ASRUtils::symbol_get_past_external(param);
             }
             if (!identity) {
                 trait_call_error("inside its definition, generic type '" + name +
@@ -40028,6 +40048,23 @@ public:
                 instance.m_symtab->add_symbol(entry.first, copy);
             }
             record_generic_instance_procedures(*package, *metadata, copies);
+            if (definition->n_member_functions > 0) {
+                Vec<char*> final_procs;
+                final_procs.reserve(al, definition->n_member_functions);
+                for (size_t i = 0; i < definition->n_member_functions; i++) {
+                    ASR::symbol_t *orig = package->m_symtab->resolve_symbol(
+                        definition->m_member_functions[i]);
+                    if (orig) {
+                        ASR::symbol_t *mapped = generic_instance_procedure(orig, available,
+                            owner, true);
+                        final_procs.push_back(al, s2c(al, ASRUtils::symbol_name(mapped)));
+                    } else {
+                        final_procs.push_back(al, definition->m_member_functions[i]);
+                    }
+                }
+                instance.m_member_functions = final_procs.p;
+                instance.n_member_functions = final_procs.size();
+            }
             create_member_slots(instance);
             // Initializers.
             ASR::symbol_t *initializers = package->m_symtab->get_symbol(
@@ -40112,6 +40149,7 @@ public:
         auto *saved_scope = current_scope;
         current_scope = instance.m_symtab->parent;
         try {
+            std::set<ASR::symbol_t*> instantiated_bodies;
             for (auto &method : bodies.methods) {
                 auto *source = ASR::down_cast<ASR::Template_t>(method.second);
                 auto *copied = ASR::down_cast<ASR::Template_t>(method.first);
@@ -40120,12 +40158,15 @@ public:
                 bind_generic_instance_requirements(*bodies.package, *source, *copied,
                     bodies.types, *metadata, method_subs);
                 bind_generic_instance_dictionaries(*source, *copied, method_subs);
-                std::set<ASR::symbol_t*> instantiated_bodies;
                 instantiate_body(al, bodies.types, method_subs, method.first,
                     method.second, instantiated_bodies);
             }
+            for (const auto &copy : bodies.copies) {
+                if (ASR::is_a<ASR::Function_t>(*copy.second)) {
+                    bodies.symbols.emplace(ASRUtils::symbol_name(copy.first), copy.second);
+                }
+            }
             for (auto &function : bodies.functions) {
-                std::set<ASR::symbol_t*> instantiated_bodies;
                 std::map<std::string, ASR::symbol_t*> function_subs = bodies.symbols;
                 for (const auto &copy : bodies.copies) {
                     if (ASR::is_a<ASR::Template_t>(*copy.second)) {
@@ -40138,6 +40179,9 @@ public:
                 }
                 instantiate_body(al, bodies.types, function_subs, function.first,
                     function.second, instantiated_bodies);
+                for (const auto &sub : function_subs) {
+                    bodies.symbols.emplace(sub.first, sub.second);
+                }
             }
             check_generic_instance_transfers(instance, bodies.copies);
         } catch (const SemanticAbort &) {

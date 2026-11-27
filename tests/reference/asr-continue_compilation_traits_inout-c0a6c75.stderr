@@ -98,7 +98,7 @@ semantic error: runtime trait assignment requires an allocatable owner
 105 |         object = other
     |         ^^^^^^ 
 
-semantic error: runtime trait allocation requires a scalar allocatable owner
+semantic error: runtime trait allocation requires a scalar allocatable or pointer target
    --> tests/errors/continue_compilation_traits_inout.f90:109:9
     |
 109 |         allocate(Cell :: object)

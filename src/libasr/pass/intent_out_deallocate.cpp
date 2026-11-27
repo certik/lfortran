@@ -119,6 +119,11 @@ class IntentOutDeallocateVisitor : public ASR::BaseWalkVisitor<IntentOutDealloca
             if (!ASR::is_a<ASR::PointerNullConstant_t>(*value)) {
                 return false;
             }
+            if (ASRUtils::is_trait_pointer(ASRUtils::expr_type(target))) {
+                out_stmts.push_back(al, ASRUtils::STMT(
+                    ASR::make_TraitAssociate_t(al, loc, target, nullptr)));
+                return true;
+            }
             ASR::expr_t* null_value = ASRUtils::EXPR(
                 ASR::make_PointerNullConstant_t(al, loc,
                     ASRUtils::expr_type(value), target));
@@ -414,13 +419,18 @@ class IntentOutDeallocateVisitor : public ASR::BaseWalkVisitor<IntentOutDealloca
                     // declaring module's scope.
                     if (!ASR::is_a<ASR::PointerNullConstant_t>(
                             *m_var->m_symbolic_value)) continue;
-                    ASR::expr_t* null_value = ASRUtils::EXPR(
-                        ASR::make_PointerNullConstant_t(al, loc,
-                            ASRUtils::expr_type(m_var->m_symbolic_value),
-                            member_expr));
-                    init_stmt = ASRUtils::STMT(
-                        ASRUtils::make_Associate_t_util(al, loc,
-                            member_expr, null_value));
+                    if (ASRUtils::is_trait_pointer(ASRUtils::expr_type(member_expr))) {
+                        init_stmt = ASRUtils::STMT(
+                            ASR::make_TraitAssociate_t(al, loc, member_expr, nullptr));
+                    } else {
+                        ASR::expr_t* null_value = ASRUtils::EXPR(
+                            ASR::make_PointerNullConstant_t(al, loc,
+                                ASRUtils::expr_type(m_var->m_symbolic_value),
+                                member_expr));
+                        init_stmt = ASRUtils::STMT(
+                            ASRUtils::make_Associate_t_util(al, loc,
+                                member_expr, null_value));
+                    }
                 } else {
                     // Use the folded value, not `m_symbolic_value`: the
                     // symbolic form may name a constant declared in the type's

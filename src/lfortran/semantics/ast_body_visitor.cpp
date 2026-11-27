@@ -5459,13 +5459,22 @@ public:
                 tmp = runtime_trait_array_allocate(arg, source, mold, x.base.base.loc);
                 return;
             }
-            if (!ASRUtils::trait_owner_variable(arg.m_a) ||
-                    !ASRUtils::is_allocatable(ASRUtils::expr_type(arg.m_a)) ||
+            auto *arg_type = ASRUtils::expr_type(arg.m_a);
+            bool is_pointer_target = ASRUtils::is_trait_pointer(arg_type) &&
+                (ASR::is_a<ASR::Var_t>(*arg.m_a) ||
+                 ASR::is_a<ASR::StructInstanceMember_t>(*arg.m_a));
+            if ((!is_pointer_target && (!ASRUtils::trait_owner_variable(arg.m_a) ||
+                    !ASRUtils::is_allocatable(arg_type))) ||
                     arg.n_dims || arg.n_codims) {
-                trait_call_error("runtime trait allocation requires a scalar allocatable owner",
+                trait_call_error("runtime trait allocation requires a scalar allocatable or pointer target",
                     arg.loc);
             }
-            if (!ASRUtils::trait_owner_is_definable(arg.m_a)) {
+            bool definable = is_pointer_target
+                ? (ASR::is_a<ASR::Var_t>(*arg.m_a)
+                    ? ASRUtils::EXPR2VAR(arg.m_a)->m_intent != ASR::intentType::In
+                    : ASRUtils::association_is_definable(arg.m_a))
+                : ASRUtils::trait_owner_is_definable(arg.m_a);
+            if (!definable) {
                 trait_call_error("cannot allocate an intent(in) runtime trait slot", arg.loc);
             }
             if ((source && mold) || (arg.m_type && (source || mold))) {
@@ -5964,7 +5973,8 @@ public:
         }
 
         ASR::Variable_t* tmp_v = ASR::down_cast<ASR::Variable_t>(tmp_sym);
-        if (ASRUtils::is_trait_owner(tmp_v->m_type) &&
+        if ((ASRUtils::is_trait_owner(tmp_v->m_type) ||
+                ASRUtils::is_trait_pointer(tmp_v->m_type)) &&
                 tmp_v->m_intent == ASR::intentType::In) {
             trait_call_error("cannot deallocate an intent(in) runtime trait slot", loc);
         }
@@ -6011,7 +6021,8 @@ public:
                 trait_call_error("runtime trait deallocation with stat, errmsg or other "
                     "options is not implemented yet", x.base.base.loc);
             }
-            if (ASRUtils::is_trait_owner(ASRUtils::expr_type(tmp_expr))) {
+            if (ASRUtils::is_trait_owner(ASRUtils::expr_type(tmp_expr)) ||
+                    ASRUtils::is_trait_pointer(ASRUtils::expr_type(tmp_expr))) {
                 for (auto *previous : trait_owners) {
                     if (ASRUtils::trait_owner_same_slot(previous, tmp_expr)) {
                         trait_call_error("an owner cannot appear twice in one deallocation",
@@ -6028,7 +6039,8 @@ public:
                 const ASR::StructInstanceMember_t* tmp_struct_ref = ASR::down_cast<ASR::StructInstanceMember_t>(tmp_expr);
                 if ((ASRUtils::is_trait_owner(ASRUtils::expr_type(tmp_expr)) &&
                         !ASRUtils::trait_owner_is_definable(tmp_expr)) ||
-                        (ASRUtils::is_trait_array_owner(ASRUtils::expr_type(tmp_expr)) &&
+                        ((ASRUtils::is_trait_array_owner(ASRUtils::expr_type(tmp_expr)) ||
+                          ASRUtils::is_trait_pointer(ASRUtils::expr_type(tmp_expr))) &&
                         !ASRUtils::association_is_definable(tmp_expr))) {
                     trait_call_error("cannot deallocate a nondefinable runtime trait component",
                         tmp_expr->base.loc);
@@ -6565,6 +6577,8 @@ public:
     void visit_data_select_type(const AST::SelectType_t &x, ASR::expr_t *selector) {
         if (!ASR::is_a<ASR::Var_t>(*selector) &&
                 !ASRUtils::trait_owner_variable(selector) &&
+                !(ASR::is_a<ASR::StructInstanceMember_t>(*selector) &&
+                  ASRUtils::is_trait_pointer(ASRUtils::expr_type(selector))) &&
                 !(ASR::is_a<ASR::FunctionCall_t>(*selector) &&
                   ASRUtils::is_trait_owner(ASRUtils::expr_type(selector)))) {
             trait_call_error("runtime trait inspection requires a scalar variable "

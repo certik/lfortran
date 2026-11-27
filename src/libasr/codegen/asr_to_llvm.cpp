@@ -3824,6 +3824,27 @@ public:
                     llvm_utils->getTraitType(cur_type)->getPointerTo()), slot);
                 continue;
             }
+            if (ASRUtils::is_trait_pointer(cur_type)) {
+                auto *slot = tmp;
+                auto *header_type = llvm_utils->getTraitType(cur_type);
+                auto *payload = llvm_utils->trait_field(slot, 1);
+                if constexpr (std::is_same_v<T, ASR::ExplicitDeallocate_t>) {
+                    llvm_utils->trait_error_if(builder->CreateIsNull(payload),
+                        "cannot deallocate a disassociated runtime trait pointer");
+                }
+                llvm_utils->create_if_else(builder->CreateIsNotNull(payload), [&]() {
+                    auto *destroy = llvm::FunctionType::get(
+                        llvm::Type::getVoidTy(context), {llvm_utils->i8_ptr}, false);
+                    llvm_utils->trait_lifecycle_call(
+                        llvm_utils->trait_field(slot, 2),
+                        llvm_utils->trait_field(slot, 0),
+                        LLVMUtils::TraitLifecycleEntry::Destroy,
+                        destroy, {payload});
+                    llvm_utils->lfortran_free(payload);
+                }, [](){});
+                builder->CreateStore(llvm::Constant::getNullValue(header_type), slot);
+                continue;
+            }
             bool in_struct = ASR::is_a<ASR::StructInstanceMember_t>(*tmp_expr);
             ASR::Struct_t* struct_sym = nullptr;
             if (cur_type_past->type == ASR::StructType ||
@@ -17531,9 +17552,13 @@ public:
             return;
         }
 
-        // An element of a runtime trait array is the address of its view.
-        bool trait_element = x->type == ASR::exprType::ArrayItem &&
-            ASR::is_a<ASR::TraitObjectType_t>(*ASRUtils::expr_type(x));
+        // An element of a runtime trait array is the address of its view, and
+        // a runtime trait pointer component carries an inline header addressed
+        // by pointer.
+        bool trait_element = (x->type == ASR::exprType::ArrayItem &&
+            ASR::is_a<ASR::TraitObjectType_t>(*ASRUtils::expr_type(x))) ||
+            (x->type == ASR::exprType::StructInstanceMember &&
+            ASRUtils::is_trait_pointer(ASRUtils::expr_type(x)));
         if( x->type == ASR::exprType::ArrayItem ||
             x->type == ASR::exprType::ArraySection ||
             x->type == ASR::exprType::StructInstanceMember ) {
@@ -30327,8 +30352,15 @@ public:
 
     void visit_TraitAllocate(const ASR::TraitAllocate_t &x) {
         auto *slot = trait_owner_slot(x.m_target);
-        auto *old = llvm_utils->CreateLoad2(
-            llvm_utils->getTraitType(ASRUtils::expr_type(x.m_target))->getPointerTo(), slot);
+        auto *target_type = ASRUtils::expr_type(x.m_target);
+        auto *header_type = llvm_utils->getTraitType(target_type);
+        if (ASRUtils::is_trait_pointer(target_type)) {
+            auto *value = trait_snapshot(x.m_source, x.m_copy_value, x.m_witness);
+            builder->CreateStore(llvm_utils->CreateLoad2(header_type, value), slot);
+            llvm_utils->lfortran_free(builder->CreateBitCast(value, llvm_utils->i8_ptr));
+            return;
+        }
+        auto *old = llvm_utils->CreateLoad2(header_type->getPointerTo(), slot);
         llvm_utils->trait_error_if(builder->CreateIsNotNull(old),
             "cannot allocate an already allocated runtime trait object");
         auto *value = trait_snapshot(x.m_source, x.m_copy_value, x.m_witness);

@@ -1255,6 +1255,11 @@ namespace LCompilers {
                         assign = guard_allocatable_component_assignment(
                             replacer->al, x->base.base.loc,
                             ASRUtils::trait_borrowed_owner(x_m_args_i), derived_ref, assign);
+                    } else if (ASRUtils::is_trait_pointer(ASRUtils::expr_type(derived_ref))) {
+                        ASR::expr_t* assoc_val = ASR::is_a<ASR::PointerNullConstant_t>(*x_m_args_i)
+                            ? nullptr : x_m_args_i;
+                        assign = ASRUtils::STMT(ASR::make_TraitAssociate_t(
+                            replacer->al, x->base.base.loc, derived_ref, assoc_val));
                     } else if (ASRUtils::is_pointer(ASRUtils::expr_type(derived_ref))) {
                         assign = ASRUtils::STMT(ASRUtils::make_Associate_t_util(replacer->al,
                                                     x->base.base.loc, derived_ref, x_m_args_i));

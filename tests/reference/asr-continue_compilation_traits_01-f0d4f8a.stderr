@@ -556,12 +556,6 @@ semantic error: a type-set trait cannot be used as a runtime class
 3061 |     class(A + INumeric), pointer :: not_universal
      |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 
-semantic error: runtime trait components currently require allocatable storage
-    --> tests/errors/continue_compilation_traits_01.f90:3063:9
-     |
-3063 |         class(A + B), pointer :: component
-     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
-
 semantic error: runtime trait arrays other than assumed-shape dummy arguments without the allocatable or pointer attribute and deferred-shape allocatable dummy arguments, local variables and components are not implemented yet
     --> tests/errors/continue_compilation_traits_01.f90:3067:9
      |
@@ -878,19 +872,13 @@ semantic error: initializer 'make' must return a nonpointer, nonallocatable scal
 4451 |         initial :: make
      |         ^^^^^^^^^^^^^^^^ 
 
-semantic error: runtime trait components currently require allocatable storage
+semantic error: runtime trait components currently require allocatable or pointer storage
     --> tests/errors/continue_compilation_traits_01.f90:4474:9
      |
 4474 |         class(IValue) :: item
      |         ^^^^^^^^^^^^^^^^^^^^^ 
 
-semantic error: runtime trait components currently require allocatable storage
-    --> tests/errors/continue_compilation_traits_01.f90:4481:9
-     |
-4481 |         class(IValue), pointer :: item
-     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
-
-semantic error: runtime trait components currently require allocatable storage
+semantic error: runtime trait arrays other than assumed-shape dummy arguments without the allocatable or pointer attribute and deferred-shape allocatable dummy arguments, local variables and components are not implemented yet
     --> tests/errors/continue_compilation_traits_01.f90:4488:9
      |
 4488 |         class(IValue), pointer :: items(:)
@@ -1234,7 +1222,7 @@ semantic error: Cannot assign to an intent(in) variable `view`
 2298 |         view = Item(9)
      |         ^^^^ 
 
-semantic error: runtime trait allocation requires a scalar allocatable owner
+semantic error: runtime trait allocation requires a scalar allocatable or pointer target
     --> tests/errors/continue_compilation_traits_01.f90:2302:9
      |
 2302 |         allocate(Item :: view)
